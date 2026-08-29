@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.6.9
+// @version      2.6.10
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.6.9"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.6.10"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -1409,7 +1409,12 @@
     // V2.6.8 捕获隐式释放兜底：元素被 display:none/移除等会导致 setPointerCapture 隐式释放，
     // 此时浏览器只派发 lostpointercapture、不派发 pointerup/pointercancel → 残留监听未清理、
     // moving 恒 true → 悬浮标/面板「没按住也跟鼠标走」。在此事件统一收尾。
-    el.addEventListener("lostpointercapture", function () {
+    // V2.6.10 回归修复:lostpointercapture 在正常拖拽中也常被派发(改样式重排/移动端手势取消捕获/
+    // 松手 releasePointerCapture),V2.6.8 的无脑清理会把正常拖拽打断(删监听+moving=false)→ 拖不动。
+    // 仅当「真的松开且未按住」才收尾;仍按住但捕获被临时取消=保留监听继续拖,由 onMove 未按键自愈收尾
+    el.addEventListener("lostpointercapture", function (e) {
+      if (!moving) return;         // 正常松手:onUp 已收尾,moving=false,忽略
+      if (e.buttons & 1) return;   // 仍按住但捕获被取消:保留监听继续拖
       moving = false;
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);

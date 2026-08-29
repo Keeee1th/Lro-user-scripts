@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.6.5
+// @version      2.6.6
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.6.5"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.6.6"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -1410,6 +1410,23 @@
   // ---------------- 拖动（标题栏 + 悬浮球 + 拉伸手柄）----------------
   function dragEl(el, onmove) {
     var sx, sy, ox, oy, moving = false, dx0 = 0, dy0 = 0;
+    // V2.6.6 移动端防断触：禁掉浏览器对 pointer 的默认手势（滚动/缩放），否则 Kiwi/手机
+    // 会把拖动当页面滚动而打断 pointermove（断触）。标题栏/球/手柄三处统一。
+    try { el.style.touchAction = "none"; } catch (e) {}
+    function onMove(e) {
+      if (!moving) return;
+      onmove(ox + e.clientX - sx, oy + e.clientY - sy);
+    }
+    // move/up/cancel 挂到 window：手指移出元素范围仍持续收到事件，拖动跟手不中断
+    function onUp(e) {
+      moving = false;
+      // V1.7.6：拖动位移 >8px = 拖动（松手不触发球展开），未拖动=单击（照常展开）
+      el.__dsDragged = Math.abs(e.clientX - dx0) + Math.abs(e.clientY - dy0) > 8;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      try { el.releasePointerCapture && el.releasePointerCapture(e.pointerId); } catch (err) {}
+    }
     el.addEventListener("pointerdown", function (e) {
       if (e.target.closest && e.target.closest("button")) return;
       moving = true;
@@ -1426,18 +1443,13 @@
       el.style.right = "auto";
       el.style.bottom = "auto";
       ox = r.left; oy = r.top;
-      el.setPointerCapture && el.setPointerCapture(e.pointerId);
+      try { if (e.cancelable) e.preventDefault(); } catch (err) {}
+      try { el.setPointerCapture && el.setPointerCapture(e.pointerId); } catch (err) {}
+      // 挂到 window，避免移动端手指移出元素后丢事件
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onUp);
     });
-    el.addEventListener("pointermove", function (e) {
-      if (!moving) return;
-      onmove(ox + e.clientX - sx, oy + e.clientY - sy);
-    });
-    el.addEventListener("pointerup", function (e) {
-      moving = false;
-      // V1.7.6：拖动位移 >8px = 拖动（松手不触发球展开），未拖动=单击（照常展开）
-      el.__dsDragged = Math.abs(e.clientX - dx0) + Math.abs(e.clientY - dy0) > 8;
-    });
-    el.addEventListener("pointercancel", function () { moving = false; });
   }
   dragEl(panel.querySelector(".hd"), function (x, y) {
     panel.style.left = x + "px"; panel.style.top = y + "px";

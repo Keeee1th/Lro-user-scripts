@@ -2,8 +2,8 @@
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
 // @version      2.6.5
-// @updateURL    https://cdn.jsdelivr.net/gh/Keeee1th/Lro-user-scripts@main/ro-assist.user.js
-// @downloadURL  https://cdn.jsdelivr.net/gh/Keeee1th/Lro-user-scripts@main/ro-assist.user.js
+// @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
+// @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
 // @author       DSH
 // @match        https://post.lastro.cn/*

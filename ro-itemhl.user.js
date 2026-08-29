@@ -2,8 +2,8 @@
 // @name         RO 物品标色 (ItemHighlight)
 // @namespace    dsh.ro
 // @version      1.1
-// @updateURL    https://cdn.jsdelivr.net/gh/Keeee1th/Lro-user-scripts@main/ro-itemhl.user.js
-// @downloadURL  https://cdn.jsdelivr.net/gh/Keeee1th/Lro-user-scripts@main/ro-itemhl.user.js
+// @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-itemhl.user.js
+// @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-itemhl.user.js
 // @description  物品栏赏金材料/自定义 ID 金边高亮（独立版）：赏金任务收集品默认金色（92 件清单），自定义高亮 ID[颜色] 进名单可增删；名单数据与助手共用（localStorage dsh_ro_hlrules）。纯显示，不影响拾取/防御。
 // @match        https://post.lastro.cn/*
 // @match        https://post.lastro.cn/ro/api.html*

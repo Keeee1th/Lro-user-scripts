@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.6.6
+// @version      2.6.7
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.6.6"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.6.7"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -791,7 +791,6 @@
         '<div class="row"><span class="st" style="font-size:11px;color:#7c2d12">③ 助手已加后台保活：切后台瞬间连发心跳 + 回前台自动补心跳，超 90 秒自动重登。切后台勿超 90 秒；长时间挂机请保持屏幕常亮或分屏。</span></div></div>' : '') +
       (IS_MN ? '<div class="box" style="background:rgba(240,248,255,.95);border:1px solid #2b7fd0"><div class="b-hd" style="color:#1c5fa8">手机版操作 · 方向键</div>' +
         '<div class="row"><label class="switch"><input id="dsh-mn-wasd" type="checkbox" checked>方向键移动</label></div>' +
-        '<div class="row"><span class="lb">屏幕方向</span><button id="dsh-or-land" style="flex:0 0 auto">横屏</button><button id="dsh-or-port" class="ghost" style="flex:0 0 auto">竖屏</button><button id="dsh-or-auto" class="ghost" style="flex:0 0 auto">自动</button><span class="st" id="dsh-or-msg" style="margin-left:6px"></span></div>' +
         '<div class="row"><span class="st" style="font-size:11px;color:#7c2d12">摇杆保持游戏原生（底部居中可拖动，不挪位不隐藏）。勾选「方向键移动」后：手机接蓝牙/外接键盘，用上下左右方向键走路（同步向原生摇杆派发触摸，走位与游戏一致）。</span></div></div>' : '') +
       '<div class="sec">快速侦查（附近怪物/物品）</div>' +
       '<details style="margin-top:2px"><summary style="cursor:pointer;color:#1259b3;font-size:12px">🕵 点开查看附近目标</summary>' +
@@ -1221,25 +1220,6 @@
         }
         if (had) mnSendJoy(0, -1);
       }
-      // 模拟屏幕翻转（横屏/竖屏/自动）：screen.orientation.lock 需 HTTPS + 全屏 + 点击触发，浏览器不支持则提示
-      function mnOrient(mode) {
-        var msg = $id("dsh-or-msg");
-        try {
-          var so = window.screen && screen.orientation;
-          if (!so) { if (msg) msg.textContent = "无 orientation 接口"; return; }
-          if (mode === "auto") {
-            if (typeof so.unlock === "function") { so.unlock(); if (msg) msg.textContent = "已解锁（自动）"; }
-            else if (msg) msg.textContent = "无 unlock";
-            return;
-          }
-          if (typeof so.lock !== "function") { if (msg) msg.textContent = "无 lock 接口"; return; }
-          so.lock(mode === "landscape" ? "landscape" : "portrait").then(function () {
-            if (msg) msg.textContent = mode === "landscape" ? "已横屏" : "已竖屏";
-          }).catch(function (err) {
-            if (msg) msg.textContent = "被拒：" + (err && err.name ? err.name : "需 HTTPS+全屏+点击");
-          });
-        } catch (e) { if (msg) msg.textContent = "方向切换异常"; }
-      }
       // V1.6.15：屏幕方向(dx,dy) → 游戏 REQUEST_JOYSTICK_DIR direction（与游戏 w()/keepMove 一致：
       // 0=上 1=左上 2=左 3=左下 4=下 5=右下 6=右 7=右上）
       function mnDirKey(dir) {
@@ -1323,10 +1303,6 @@
         var elWasd = $id("dsh-mn-wasd");
         if (!elWasd) return;
         elWasd.addEventListener("change", function () { mnJoy.wasd = elWasd.checked; if (!mnJoy.wasd) mnJoyStop(); });
-        var orLand = $id("dsh-or-land"), orPort = $id("dsh-or-port"), orAuto = $id("dsh-or-auto");
-        if (orLand && !orLand._bound) { orLand._bound = true; orLand.addEventListener("click", function () { mnOrient("landscape"); }); }
-        if (orPort && !orPort._bound) { orPort._bound = true; orPort.addEventListener("click", function () { mnOrient("portrait"); }); }
-        if (orAuto && !orAuto._bound) { orAuto._bound = true; orAuto.addEventListener("click", function () { mnOrient("auto"); }); }
       }
       // 懒轮询 .drag：进图后 #vbk 才渲染，每 2s 应用一次状态并绑定开关（面板可能被重挂）
       var mnTimer = setInterval(function () {

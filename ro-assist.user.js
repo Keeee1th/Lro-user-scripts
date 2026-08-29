@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.6.7
+// @version      2.6.9
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.6.7"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.6.9"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -1391,6 +1391,9 @@
     try { el.style.touchAction = "none"; } catch (e) {}
     function onMove(e) {
       if (!moving) return;
+      // V2.6.8 防「未按住却跟手」：鼠标未按键仍在移动 = 此前的 pointerup 丢失（如
+      // captured 元素被隐藏/捕获隐式释放），立即按松手收尾，杜绝残留监听把悬浮标带着跑
+      if (e.pointerType === "mouse" && !(e.buttons & 1)) { onUp(e); return; }
       onmove(ox + e.clientX - sx, oy + e.clientY - sy);
     }
     // move/up/cancel 挂到 window：手指移出元素范围仍持续收到事件，拖动跟手不中断
@@ -1403,6 +1406,15 @@
       window.removeEventListener("pointercancel", onUp);
       try { el.releasePointerCapture && el.releasePointerCapture(e.pointerId); } catch (err) {}
     }
+    // V2.6.8 捕获隐式释放兜底：元素被 display:none/移除等会导致 setPointerCapture 隐式释放，
+    // 此时浏览器只派发 lostpointercapture、不派发 pointerup/pointercancel → 残留监听未清理、
+    // moving 恒 true → 悬浮标/面板「没按住也跟鼠标走」。在此事件统一收尾。
+    el.addEventListener("lostpointercapture", function () {
+      moving = false;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    });
     el.addEventListener("pointerdown", function (e) {
       if (e.target.closest && e.target.closest("button")) return;
       moving = true;
@@ -6568,7 +6580,114 @@
       } catch (e) {}
     }, 2000);
   }
+
+  // ---------------- V2.6.9 选服前白屏自愈（仅 IS_MN；PC 不干预） ----------------
+  // 根因1:页面 SW cache-first 且无网络校验,坏缓存被永久喂给客户端;
+  // 根因2:Online_mn.js 内置 requirejs waitSeconds=7,弱网下引擎模块 7s 加载不完即超时,客户端永不启动。
+  function bootHealSetup() {
+    if (!IS_MN) return;
+    var HEAL_KEY = 'lro_heal_v269';
+    var alive = true;
+    function log(m) { try { console.log('[RO助手]自愈 ' + m); } catch (e) {} }
+    function show(msg, sticky) {
+      try {
+        var old = document.getElementById('ro-heal-toast');
+        if (old && old.parentNode) old.parentNode.removeChild(old);
+        var d = document.createElement('div');
+        d.id = 'ro-heal-toast';
+        d.style.cssText = 'position:fixed;right:10px;bottom:14px;z-index:2147483646;max-width:84vw;' +
+          'background:#1e1f26;border:1px solid #e08a2a;border-radius:10px;padding:10px 12px;' +
+          'color:#ffd9a0;font:12px/1.5 "Microsoft YaHei",sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.5)';
+        var b = document.createElement('div');
+        b.textContent = msg;
+        d.appendChild(b);
+        var retry = document.createElement('div');
+        retry.style.cssText = 'margin-top:6px;color:#6cb7ff;text-decoration:underline;cursor:pointer';
+        retry.textContent = '点击重试(清缓存刷新)';
+        retry.onclick = function () { try { sessionStorage.removeItem(HEAL_KEY); } catch (e) {} runHeal(); };
+        d.appendChild(retry);
+        document.documentElement.appendChild(d);
+        if (!sticky) setTimeout(function () { try { d.parentNode.removeChild(d); } catch (e) {} }, 12000);
+      } catch (e) {}
+    }
+    function groupsExist() {
+      try { var l = document.querySelector('#ServerBox .list'); return !!(l && l.children && l.children.length > 0); } catch (e) { return false; }
+    }
+    function clearSWCache() {
+      var p = [];
+      try {
+        if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+          p.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
+            rs.forEach(function (r) { try { r.unregister().then(function () { log('SW 已注销'); }); } catch (e) {} });
+          }));
+        }
+      } catch (e) {}
+      try {
+        if (window.caches && caches.keys) {
+          p.push(caches.keys().then(function (ks) {
+            ks.forEach(function (k) {
+              try { if (/lro|lastro|post\.lastro/i.test(k)) caches.delete(k).then(function () { log('缓存已删 ' + k); }); } catch (e) {}
+            });
+          }));
+        }
+      } catch (e) {}
+      return Promise.all(p);
+    }
+    function runHeal() {
+      var done = false;
+      try { done = sessionStorage.getItem(HEAL_KEY) === '1'; } catch (e) {}
+      if (!done) show('检测到加载卡住:正在清除旧缓存并刷新,请稍候(需重新下载约3MB客户端)', true);
+      clearSWCache().then(function () {
+        setTimeout(function () {
+          try { if (!done) sessionStorage.setItem(HEAL_KEY, '1'); } catch (e) {}
+          log('reload');
+          try { location.reload(); } catch (e) {}
+        }, 2500);
+      });
+    }
+    // 1) 提高 requirejs 模块加载超时:弱网 7s 太短,改为 120s(轮询到 window.require 出现即配置,竞态在超时判定前生效)
+    var cfgDone = false;
+    var cfgTimer = setInterval(function () {
+      try {
+        if (window.require && window.require.config && !cfgDone) {
+          cfgDone = true;
+          window.require.config({ waitSeconds: 120 });
+          log('waitSeconds→120');
+          clearInterval(cfgTimer);
+        }
+      } catch (e) {}
+    }, 150);
+    setTimeout(function () { clearInterval(cfgTimer); }, 15000);
+    // 2) 捕获 require 超时/脚本错误 = 确定性启动失败,直接清缓存自愈
+    window.addEventListener('error', function (ev) {
+      try {
+        var s = String((ev && ev.message) || ev.error || '').toLowerCase();
+        if (/(load timeout|script error|scripterror|timeout for modules)/.test(s)) {
+          log('捕获启动错误: ' + String((ev && ev.message) || ev.error).slice(0, 140));
+          runHeal();
+        }
+      } catch (e) {}
+    }, true);
+    // 3) 兜底:2.5 分钟仍无服务器组 → 提示(不自动刷新,避免打断弱网下的正常慢加载)
+    var t0 = Date.now();
+    setInterval(function () {
+      try {
+        if (!alive) return;
+        if (groupsExist()) { alive = false; return; }
+        if (Date.now() - t0 > 150000) {
+          alive = false;
+          var done = false;
+          try { done = sessionStorage.getItem(HEAL_KEY) === '1'; } catch (e) {}
+          log('boot-stuck 150s');
+          show(done ? '已清理缓存仍卡在加载面:可能网络过慢(需下载约3MB客户端)或客户端异常。点击重试;仍失败请把浏览器控制台 [RO助手] 日志发来。'
+                    : '加载异常:客户端 2.5 分钟未出现服务器列表。点击重试(清缓存刷新)。', true);
+        }
+      } catch (e) {}
+    }, 5000);
+  }
+
   function init() {
+    bootHealSetup();
     document.head.appendChild(style);
     tlog("script-loaded url=" + location.href.slice(0, 60));
     waitForReady();

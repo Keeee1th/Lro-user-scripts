@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.6.10
+// @version      2.7.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.6.10"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.7.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -661,7 +661,8 @@
       '<div class="a-nav">' +
       '<button class="sub-tab active" data-sub="ap-pot">自动吃药/物品</button>' +
       '<button class="sub-tab" data-sub="ap-pet">宠物投喂</button>' +
-      '<button class="sub-tab" data-sub="ap-hl">物品标色</button></div>' +
+      '<button class="sub-tab" data-sub="ap-hl">物品标色</button>' +
+      '<button class="sub-tab" data-sub="ap-scr">脚本执行</button></div>' +
       '<div class="a-body">' +
       // 子页1：自动吃药 + 使用背包物品 + 自动跟随（默认）
       '<div class="sub-page active" data-subpage="ap-pot">' +
@@ -714,6 +715,19 @@
       '<div class="box"><div class="b-hd">高亮名单 <span class="tag blue" id="dsh-hlcount" style="float:right">0 条</span></div>' +
       '<div id="dsh-hllist" style="font-size:11px;max-height:110px;overflow:auto"><span class="st">空（输入 ID[颜色] 添加，赏金材料默认黄）</span></div></div>' +
       '<div class="log">按赏金任务收集品清单（92 件，V2.6.5 按游戏内导出重建）给物品栏物品槽加金边框+数量变金（V1.8.4：选择器按实测物品栏结构 .item[data-itid] 重写，v0.13.10 探针取证）。仓库/装备槽无 itid 属性，暂不覆盖。</div>' +
+      '</div>' +
+            '<div class="sub-page" data-subpage="ap-scr">' +
+      '<div class="sec">脚本执行（导入 JSON 模板 · 白名单 8 类动作）</div>' +
+      '<div class="row"><span class="lb" style="min-width:42px">脚本名</span><input id="dsh-scr-name" type="text" placeholder="如：每日签到" style="flex:1 1 90px"></div>' +
+      '<textarea id="dsh-scr-json" rows="4" placeholder="JSON 模板：{\"templateId\":\"daily\",\"version\":1,\"steps\":[{\"action\":\"walk\",\"params\":{\"x\":100,\"y\":80}},{\"action\":\"talk\",\"params\":{\"npc\":\"^_^\"}}]}"></textarea>' +
+      '<div class="row"><button id="dsh-scr-imp" style="flex:0 0 auto">导入校验</button>' +
+      '<button class="ghost" id="dsh-scr-clear" style="flex:0 0 auto">清空输入</button>' +
+      '<span class="st" id="dsh-scr-msg" style="font-size:10px"></span></div>' +
+      '<div class="box"><div class="b-hd">已导入脚本 <span class="tag green" id="dsh-scr-count" style="float:right">0</span></div>' +
+      '<div id="dsh-scr-list" style="font-size:11px;max-height:110px;overflow:auto"><span class="st">空（粘贴 JSON 后点「导入校验」）</span></div></div>' +
+      '<div class="row"><span class="lb" style="min-width:42px">运行</span><span class="st" id="dsh-scr-state" style="font-size:11px">未运行</span>' +
+      '<button class="ghost" id="dsh-scr-stop" style="flex:0 0 auto;color:#b91c1c;border-color:#e5b3b3">停止</button></div>' +
+      '<div class="log" id="dsh-scr-log" style="font-size:10px;max-height:64px;overflow:auto">模板动作：teleport 传送 / walk 走路 / battleOn 开自动 / battleOff 关自动 / useItem 用物品 / stopMove 停止 / check 读取状态 / talk 对话NPC；判定：arrive 到达 / waitFor 界面文本 / until 物品数量；HP<25% 自动停手。</div>' +
       '</div>' +
       '</div></div>',
     pickup: '' +
@@ -6743,7 +6757,239 @@
     });
   }
 
+  // ---------------- V2.7.0 脚本执行器（导入 JSON 模板 · 白名单 8 类动作） ----------------
+  var SCRIPTS_KEY = "dsh_scripts";
+  var SCR_ACTIONS = ["teleport", "walk", "battleOn", "battleOff", "useItem", "stopMove", "check", "talk"];
+  function scrLoad() { try { var a = JSON.parse(localStorage.getItem(SCRIPTS_KEY) || "[]"); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+  function scrSave(a) { try { localStorage.setItem(SCRIPTS_KEY, JSON.stringify(a)); } catch (e) {} }
+  function scrValidate(obj) {
+    if (!obj || typeof obj !== "object") return { ok: false, err: "顶层须为对象 {templateId, version, steps[]}" };
+    if (typeof obj.templateId !== "string" || !obj.templateId.trim()) return { ok: false, err: "缺少 templateId（脚本名）" };
+    if (!Array.isArray(obj.steps) || !obj.steps.length) return { ok: false, err: "steps 须为非空数组" };
+    for (var i = 0; i < obj.steps.length; i++) {
+      var s = obj.steps[i];
+      if (!s || typeof s !== "object") return { ok: false, err: "steps[" + i + "] 须为对象" };
+      if (SCR_ACTIONS.indexOf(s.action) < 0) return { ok: false, err: "steps[" + i + "].action 非法: " + s.action + "（白名单: " + SCR_ACTIONS.join("/") + "）" };
+      if (s.onFail && ["skip", "alert", "stop"].indexOf(s.onFail) < 0) return { ok: false, err: "steps[" + i + "].onFail 非法" };
+    }
+    return { ok: true, script: obj };
+  }
+  var scrRun = { running: false, script: null, stepIndex: 0, timer: null, stop: false };
+  function scrLogLine(t) {
+    try {
+      var el = $id("dsh-scr-log");
+      if (!el) return;
+      var pre = el.textContent || "";
+      el.textContent = (pre ? pre + "\n" : "") + t;
+      el.scrollTop = el.scrollHeight;
+      if (el.textContent.length > 3000) el.textContent = el.textContent.slice(-3000);
+    } catch (e) {}
+  }
+  function scrSetState(t, cls) {
+    try { var el = $id("dsh-scr-state"); if (el) { el.textContent = t; if (cls) el.className = "st " + cls; } } catch (e) {}
+  }
+  function scrRenderList() {
+    try {
+      var list = scrLoad(), box = $id("dsh-scr-list"), cnt = $id("dsh-scr-count");
+      if (cnt) cnt.textContent = String(list.length);
+      if (!box) return;
+      box.innerHTML = "";
+      if (!list.length) { box.innerHTML = '<span class="st">空（粘贴 JSON 后点「导入校验」）</span>'; return; }
+      list.forEach(function (it, i) {
+        var row = document.createElement("div");
+        row.style.cssText = "display:flex;align-items:center;gap:6px;padding:3px 4px;border-bottom:1px solid #eef2f6";
+        var nm = document.createElement("span");
+        nm.textContent = (i + 1) + ". " + (it.name || it.templateId || "未命名") + " (v" + (it.version || 1) + ") · " + (it.steps ? it.steps.length : 0) + "步";
+        nm.style.cssText = "flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+        row.appendChild(nm);
+        var runB = document.createElement("button");
+        runB.textContent = "执行";
+        runB.style.cssText = "flex:0 0 auto;padding:1px 8px;font-size:11px";
+        runB.addEventListener("click", function () { scrRunScript(i); });
+        row.appendChild(runB);
+        var delB = document.createElement("button");
+        delB.textContent = "删除";
+        delB.style.cssText = "flex:0 0 auto;padding:1px 8px;font-size:11px;background:#fff;color:#b91c1c;border:1px solid #e5b3b3";
+        delB.addEventListener("click", function () { var a = scrLoad(); a.splice(i, 1); scrSave(a); scrRenderList(); });
+        row.appendChild(delB);
+        box.appendChild(row);
+      });
+    } catch (e) {}
+  }
+  function scrGetPos() { try { var ent = CLIENT.SS && CLIENT.SS.Entity; return ent && ent.position; } catch (e) { return null; } }
+  function scrCheckArrive(step) {
+    var a = step.arrive || {};
+    if (a.map) {
+      var cur = getMapName();
+      if (!cur || String(cur).toLowerCase() !== String(a.map).toLowerCase()) return false;
+    }
+    if (a.x != null && a.y != null) {
+      var p = scrGetPos();
+      if (!p) return false;
+      var d = Math.abs(p[0] - a.x) + Math.abs(p[1] - a.y);
+      if (d > (a.dist || 0)) return false;
+    }
+    return true;
+  }
+  function scrCheckWait(step) {
+    var w = step.waitFor;
+    if (!w) return true;
+    try {
+      var body = document.body ? document.body.innerText : "";
+      if (w.text) return body.indexOf(w.text) >= 0;
+      var arr = w.options || w.option;
+      if (Array.isArray(arr)) { for (var i = 0; i < arr.length; i++) if (body.indexOf(arr[i]) >= 0) return true; return false; }
+    } catch (e) {}
+    return true;
+  }
+  function scrCheckUntil(step) {
+    var u = step.until;
+    if (!u) return true;
+    try {
+      var inv = findInventory();
+      if (!inv) return false;
+      var qty = 0;
+      for (var i = 0; i < inv.length; i++) {
+        var it = inv[i] || {};
+        if (it.ITID === u.item || it.itemid === u.item) qty += (it.amount || it.count || 1);
+      }
+      return qty >= (u.amount || 1);
+    } catch (e) { return false; }
+  }
+  function scrDoAction(step) {
+    var p = step.params || {};
+    try {
+      switch (step.action) {
+        case "teleport": teleportToMap(p.map); break;
+        case "walk": walkToXY(p.x, p.y, null, "dsh-scr-log"); break;
+        case "battleOn": setBattle(true); break;
+        case "battleOff": setBattle(false); break;
+        case "useItem": useItemById(p.item != null ? p.item : p.id); break;
+        case "stopMove": stopWalkXY(); break;
+        case "check": scrLogLine("check: map=" + getMapName() + " pos=" + (scrGetPos() ? Math.floor(scrGetPos()[0]) + "," + Math.floor(scrGetPos()[1]) : "?")); break;
+        case "talk": scrTalkNpc(p.npc); break;
+      }
+    } catch (e) { scrLogLine("动作异常: " + e.message); }
+  }
+  function scrTalkNpc(name) {
+    try {
+      if (!clientReady()) { scrLogLine("talk: 客户端未就绪"); return; }
+      var EM = window.require("Renderer/EntityManager");
+      var ent = CLIENT.SS.Entity, target = null, best = 1e9;
+      EM.forEach(function (e) {
+        try {
+          if ((e.objecttype === 6 || e.objecttype === 12) && ent && e.position) {
+            if (name && String(e.name || e.displayName || "") !== String(name)) return;
+            var d = Math.abs(e.position[0] - ent.position[0]) + Math.abs(e.position[1] - ent.position[1]);
+            if (d < best) { best = d; target = e; }
+          }
+        } catch (e2) {}
+      });
+      if (!target) { scrLogLine("talk: 附近无目标NPC" + (name ? "（" + name + "）" : "")); return; }
+      var pkt = new CLIENT.PS.CZ.CONTACTNPC();
+      pkt.NAID = target.GID; pkt.type = 1;
+      CLIENT.NM.sendPacket(pkt);
+      scrLogLine("talk: 已对话 " + (target.name || target.displayName || target.GID));
+    } catch (e) { scrLogLine("talk异常: " + e.message); }
+  }
+  function scrTick() {
+    if (!scrRun.running || scrRun.stop) return;
+    var script = scrRun.script, i = scrRun.stepIndex;
+    if (!script || i >= script.steps.length) { scrFinish(true); return; }
+    var step = script.steps[i];
+    try {
+      var entG = CLIENT.SS && CLIENT.SS.Entity;
+      if (entG && entG.life && entG.life.hp_max > 0 && entG.life.hp / entG.life.hp_max < 0.25) {
+        scrLogLine("HP<25% 自动停手");
+        stopWalkXY(); try { setBattle(false); } catch (e) {}
+        scrFinish(false, "HP<25% 自动停手");
+        return;
+      }
+    } catch (e) {}
+    if (!step._started) {
+      step._started = Date.now();
+      step._tries = 0;
+      scrLogLine("[" + (i + 1) + "/" + script.steps.length + "] " + step.action + (step.params && step.params.map ? " " + step.params.map : "") + (step.params && step.params.x != null ? " (" + step.params.x + "," + step.params.y + ")" : ""));
+      scrDoAction(step);
+      if (step.action === "stopMove" || step.action === "check") {
+        if (scrCheckUntil(step)) scrNextStep();
+        return;
+      }
+    }
+    if (scrCheckArrive(step) && scrCheckWait(step) && scrCheckUntil(step)) { scrNextStep(); return; }
+    var maxT = step.timeoutMs || 20000;
+    if (Date.now() - step._started > maxT) {
+      step._tries = (step._tries || 0) + 1;
+      var retry = step.retry != null ? step.retry : 0;
+      if (step._tries <= retry) {
+        scrLogLine("步 " + (i + 1) + " 超时,重试 " + step._tries + "/" + retry);
+        step._started = Date.now();
+        scrDoAction(step);
+      } else {
+        scrLogLine("步 " + (i + 1) + " 超时(" + maxT + "ms),onFail=" + (step.onFail || "skip"));
+        if (step.onFail === "stop") scrFinish(false, "步骤超时停止");
+        else if (step.onFail === "alert") { scrSetState("步骤超时", "warn"); scrNextStep(); }
+        else scrNextStep();
+      }
+    }
+  }
+  function scrNextStep() {
+    scrRun.stepIndex++;
+    scrSetState("运行中… " + scrRun.stepIndex + "/" + scrRun.script.steps.length, "ok");
+  }
+  function scrFinish(ok, msg) {
+    scrRun.running = false;
+    if (scrRun.timer) { clearInterval(scrRun.timer); scrRun.timer = null; }
+    scrSetState(ok ? "完成" : (msg || "已停止"), ok ? "ok" : "warn");
+    scrLogLine(ok ? "脚本执行完成" : (msg || "已停止"));
+  }
+  function scrRunScript(idx) {
+    if (scrRun.running) { scrRun.stop = true; if (scrRun.timer) { clearInterval(scrRun.timer); scrRun.timer = null; } scrRun.running = false; }
+    var list = scrLoad();
+    if (idx < 0 || idx >= list.length) return;
+    var v = scrValidate(list[idx]);
+    if (!v.ok) { scrSetState("脚本无效: " + v.err, "err"); return; }
+    scrRun.script = JSON.parse(JSON.stringify(v.script));
+    scrRun.script.steps.forEach(function (st) { try { delete st._started; } catch (e) {} });
+    scrRun.stepIndex = 0; scrRun.stop = false;
+    scrSetState("运行中… 0/" + scrRun.script.steps.length, "ok");
+    scrLogLine("执行 " + scrRun.script.templateId + " (v" + (scrRun.script.version || 1) + ")");
+    scrRun.running = true;
+    scrRun.timer = setInterval(scrTick, 800);
+  }
+  try {
+    var impB = $id("dsh-scr-imp");
+    if (impB) impB.addEventListener("click", function () {
+      var msg = $id("dsh-scr-msg");
+      var name = ($id("dsh-scr-name").value || "").trim();
+      var raw = ($id("dsh-scr-json").value || "").trim();
+      if (!raw) { msg.textContent = "请粘贴 JSON 模板"; return; }
+      var obj = null;
+      try { obj = JSON.parse(raw); } catch (e) { msg.textContent = "JSON 解析失败: " + e.message; return; }
+      var v = scrValidate(obj);
+      if (!v.ok) { msg.textContent = v.err; return; }
+      var list = scrLoad();
+      v.script.name = name || v.script.templateId || ("脚本" + (list.length + 1));
+      list.push(v.script);
+      scrSave(list);
+      scrRenderList();
+      msg.textContent = "已导入 " + list.length + " 个";
+      $id("dsh-scr-json").value = "";
+    });
+    var clrB = $id("dsh-scr-clear");
+    if (clrB) clrB.addEventListener("click", function () { $id("dsh-scr-json").value = ""; $id("dsh-scr-name").value = ""; });
+    var stopB = $id("dsh-scr-stop");
+    if (stopB) stopB.addEventListener("click", function () {
+      scrRun.stop = true; scrRun.running = false;
+      if (scrRun.timer) { clearInterval(scrRun.timer); scrRun.timer = null; }
+      try { stopWalkXY(); } catch (e) {}
+      scrSetState("已停止", "warn");
+      scrLogLine("手动停止");
+    });
+    scrRenderList();
+  } catch (e) {}
   // ---------------- 自动化 API ----------------
+
   window.__ROPlugin = {
     getState: function () { return JSON.parse(JSON.stringify(state)); },
     getConfig: buildConfig,

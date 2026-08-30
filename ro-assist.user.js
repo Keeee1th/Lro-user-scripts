@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.7.0
+// @version      2.7.1
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.7.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.7.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -1415,9 +1415,9 @@
       moving = false;
       // V1.7.6：拖动位移 >8px = 拖动（松手不触发球展开），未拖动=单击（照常展开）
       el.__dsDragged = Math.abs(e.clientX - dx0) + Math.abs(e.clientY - dy0) > 8;
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onUp);
       try { el.releasePointerCapture && el.releasePointerCapture(e.pointerId); } catch (err) {}
     }
     // V2.6.8 捕获隐式释放兜底：元素被 display:none/移除等会导致 setPointerCapture 隐式释放，
@@ -1430,9 +1430,9 @@
       if (!moving) return;         // 正常松手:onUp 已收尾,moving=false,忽略
       if (e.buttons & 1) return;   // 仍按住但捕获被取消:保留监听继续拖
       moving = false;
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onUp);
     });
     el.addEventListener("pointerdown", function (e) {
       if (e.target.closest && e.target.closest("button")) return;
@@ -1452,10 +1452,10 @@
       ox = r.left; oy = r.top;
       try { if (e.cancelable) e.preventDefault(); } catch (err) {}
       try { el.setPointerCapture && el.setPointerCapture(e.pointerId); } catch (err) {}
-      // 挂到 window，避免移动端手指移出元素后丢事件
-      window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
-      window.addEventListener("pointercancel", onUp);
+      // 挂到元素本身（配合 setPointerCapture 持续收事件）——隔离层文档级阻断冒泡，window 收不到
+      el.addEventListener("pointermove", onMove);
+      el.addEventListener("pointerup", onUp);
+      el.addEventListener("pointercancel", onUp);
     });
   }
   dragEl(panel.querySelector(".hd"), function (x, y) {

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.7.2
+// @version      2.7.3
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.7.2"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.7.3"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -4120,7 +4120,7 @@
     } catch (e) {}
   }
   masterTickReg(function () { try { tickMoveXY(); } catch (e) {} });
-  var zWalkState = { lastMove: 0, dir: 0, noTargetSince: 0, lastIdleFly: 0, lastPos: null, stuckCnt: 0, tried: 0 };
+  var zWalkState = { lastMove: 0, lastChase: 0, dir: 0, noTargetSince: 0, lastIdleFly: 0, lastPos: null, stuckCnt: 0, tried: 0 };
   // 状态前置穿插平A计时：zWaitSince = 上次穿插普攻时间（间隔跟随攻击循环，见 zAttack wait 分支）
   var zWaitSince = 0;
   // 补状态节流：距上次补状态技能 <1s 不重复补 → 间隙让普攻穿插（蓄气链不再霸占每轮）
@@ -4129,6 +4129,32 @@
   var zLastCastAt = 0;
   // 被攻击检测：HP 下降窗口 → 触发「非选中怪攻击」处理（无视/瞬移/还击）
   var zHpWatch = { hp: null, lastHitAt: 0 };
+  // ---------- V2.7.3 平A断续修复：NOCTRL 模式发包 ----------
+  // vbk 客户端铁证：Preferences/Controls 默认 noctrl:!0（夜RO 默认免ctrl自动攻击开），
+  //   点击怪 CZ.REQUEST_ACT 的 action = noctrl ? 7 : 0 → noctrl 开应发 7（脚本旧版硬编码 0 = 断续根因）。
+  //   且攻击循环由服务器驱动（发一次锁定后服务器自动连击，客户端发包为0仍持续攻击），
+  //   故同目标 1s 节流防重复点击打断服务器攻击循环；换目标/重进射程自然触发新包。
+  function npNoCtrlOn() {
+    try {
+      var PC = window.require && window.require("Preferences/Controls");
+      if (PC && PC.noctrl != null) return !!PC.noctrl;
+    } catch (e) {}
+    return true; // 读不到默认 noctrl 开（该服默认开启）
+  }
+  var zAtkLast = { gid: null, at: 0 }; // 平A 1s 节流：最近一次 REQUEST_ACT 的目标
+  function sendNormalAtk(gid) {
+    try {
+      if (!clientReady() || !gid) return;
+      var now = Date.now();
+      if (zAtkLast.gid === gid && now - zAtkLast.at < 1000) return; // 同目标 1s 内不重发（服务器驱动持续攻击）
+      var p = new CLIENT.PS.CZ.REQUEST_ACT();
+      p.targetGID = gid;
+      p.action = npNoCtrlOn() ? 7 : 0; // noctrl 开=7（免ctrl锁定攻击），关=0
+      CLIENT.NM.sendPacket(p);
+      zAtkLast.gid = gid;
+      zAtkLast.at = now;
+    } catch (e) {}
+  }
   // 客户端 A* 避障寻路：从玩家到目标点，返回沿路径约 5 格处的移动目标点（含路径点数）
   function pathFindTo(tx, ty) {
     try {
@@ -4167,8 +4193,7 @@
       // np 模式（内挂机制寻怪）不设 2s 走路门槛：发包时机由状态机控制（可攻击→停、无怪/超出→发）
       // 否则每次巡怪都要等满 2s 才发内挂指令（用户反馈的「巡怪延迟」）
       var npMode = npHuntMode() === "np";
-      if (!npMode && now - zWalkState.lastMove < 2000) return; // 2s 判定：走路间隔（仅自研直走模式）
-      if (!npMode) zWalkState.lastMove = now;
+      // V2.7.3：2s 判定门槛下移到「无怪直走」段；追怪用独立 1s 节流（缩短锁定→出手周期）
       // 优先：找最近的锁定怪（任意距离）→ 避障寻路走过去
       var EM = window.require("Renderer/EntityManager");
       var anyLock = Object.keys(lockList).length > 0;
@@ -4204,16 +4229,17 @@
           }
           if (npHuntOn) npHuntStop();
         }
-        var r = pathFindTo(near.position[0], near.position[1]);
-        if (r) {
-          zWalkState.noTargetSince = 0; // 有目标，重置无目标计时
-          var pm = new CLIENT.PS.CZ.REQUEST_MOVE();
-          pm.dest = [r.x, r.y];
-          CLIENT.NM.sendPacket(pm);
-          tlog("walk-追怪 " + (near._job != null ? near._job : near.GID) + " -> " + r.x + "," + r.y);
-          setStatus("发现目标，避障前进…", "ok");
-          return;
-        }
+        // V2.7.3：追怪直发怪坐标（服务器寻路，不再 pathFindTo 取 5 格小步），独立 1s 节流
+        if (now - zWalkState.lastChase < 1000) return;
+        zWalkState.lastChase = now;
+        var cDest = mvSnapWalkable(Math.round(near.position[0]), Math.round(near.position[1]));
+        zWalkState.noTargetSince = 0; // 有目标，重置无目标计时
+        var pm = new CLIENT.PS.CZ.REQUEST_MOVE();
+        pm.dest = [cDest[0], cDest[1]];
+        CLIENT.NM.sendPacket(pm);
+        tlog("walk-追怪 " + (near._job != null ? near._job : near.GID) + " -> " + cDest[0] + "," + cDest[1]);
+        setStatus("发现目标，直发追怪…", "ok");
+        return;
       }
       // 无锁定怪持续 N 秒 → 自动瞬移换位置（苍蝇/瞬移术）
       var idleFly = $id("dsh-z-idlefly") && $id("dsh-z-idlefly").checked;
@@ -4247,6 +4273,9 @@
         return;
       }
       // 无怪 / 不可达 → 定向直走寻怪：持续朝一个方向走（A* 避障），遇障/卡住才转向
+      // V2.7.3：直走 2s 节流（追怪已独立 1s，不占用此门槛）
+      if (!npMode && now - zWalkState.lastMove < 2000) return;
+      if (!npMode) zWalkState.lastMove = now;
       // 8 方向（0=右,1=右下,2=下,3=左下,4=左,5=左上,6=上,7=右上）
       var dirs = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
       var WALK_RANGE = 12; // 每次向目标方向走 12 格
@@ -4265,20 +4294,18 @@
         tlog("walk-stuck turn dir=" + zWalkState.dir);
         setStatus("前方卡住，转向 " + zWalkState.dir, "warn");
       }
-      // 当前方向目标点（A* 避障寻路）
+      // 当前方向目标点（V2.7.3：直发方向终点 12 格，服务器寻路，不再 pathFindTo 取 5 格小步）
       var dd = dirs[zWalkState.dir];
       var tx = px0 + dd[0] * WALK_RANGE;
       var ty = py0 + dd[1] * WALK_RANGE;
-      var rr = pathFindTo(tx, ty);
-      if (rr && rr.n >= 2) {
-        var pm = new CLIENT.PS.CZ.REQUEST_MOVE();
-        pm.dest = [rr.x, rr.y];
-        CLIENT.NM.sendPacket(pm);
-        zWalkState.tried = 0;
-        tlog("walk-dir " + zWalkState.dir + " -> " + rr.x + "," + rr.y);
-        setStatus("无目标，直走避障寻怪（方向" + zWalkState.dir + "）…", "st");
-        return;
-      }
+      var dDest = mvSnapWalkable(tx, ty);
+      var pmm = new CLIENT.PS.CZ.REQUEST_MOVE();
+      pmm.dest = [dDest[0], dDest[1]];
+      CLIENT.NM.sendPacket(pmm);
+      zWalkState.tried = 0;
+      tlog("walk-dir " + zWalkState.dir + " -> " + dDest[0] + "," + dDest[1]);
+      setStatus("无目标，直走寻怪（方向" + zWalkState.dir + "）…", "st");
+      return;
       // 当前方向不可达（撞墙/边界）→ 转向再试
       zWalkState.tried++;
       if (zWalkState.tried >= 8) {
@@ -4294,18 +4321,16 @@
       zWalkState.dir = (zWalkState.dir + 1) % dirs.length;
       tlog("walk-block turn dir=" + zWalkState.dir);
       setStatus("前方障碍，转向 " + zWalkState.dir + "…", "st");
-      // 转向后立刻走新方向
+      // 转向后立刻走新方向（V2.7.3：直发新方向终点，服务器寻路）
       var dd2 = dirs[zWalkState.dir];
       var tx2 = px0 + dd2[0] * WALK_RANGE;
       var ty2 = py0 + dd2[1] * WALK_RANGE;
-      var rr2 = pathFindTo(tx2, ty2);
-      if (rr2 && rr2.n >= 2) {
-        var pm2 = new CLIENT.PS.CZ.REQUEST_MOVE();
-        pm2.dest = [rr2.x, rr2.y];
-        CLIENT.NM.sendPacket(pm2);
-        tlog("walk-turn-go " + zWalkState.dir + " -> " + rr2.x + "," + rr2.y);
-        setStatus("转向后前进（方向" + zWalkState.dir + "）…", "st");
-      }
+      var dDest2 = mvSnapWalkable(tx2, ty2);
+      var pm2 = new CLIENT.PS.CZ.REQUEST_MOVE();
+      pm2.dest = [dDest2[0], dDest2[1]];
+      CLIENT.NM.sendPacket(pm2);
+      tlog("walk-turn-go " + zWalkState.dir + " -> " + dDest2[0] + "," + dDest2[1]);
+      setStatus("转向后前进（方向" + zWalkState.dir + "）…", "st");
     } catch (e) {}
   }
   // 换怪延迟控制：打完一只 → 等待设定秒数 → 再找下一只攻击
@@ -4469,10 +4494,7 @@
         }
         var distCd = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]);
         if (distCd <= pmRange) {
-          var pc = new CLIENT.PS.CZ.REQUEST_ACT();
-          pc.targetGID = target.GID;
-          pc.action = 0;
-          CLIENT.NM.sendPacket(pc);
+          sendNormalAtk(target.GID); // V2.7.3 NOCTRL 平A（action 跟随 noctrl；同目标 1s 节流，服务器驱动连击）
           zMon.action = "穿插平A(冷却)";
           setStatus("技能冷却，穿插平A…", "st");
           return;
@@ -4491,10 +4513,7 @@
         // 默认锁定普攻：对锁定目标 REQUEST_ACT（间隔=攻击循环本身，每轮一击，无需额外判断）
         var distToT2 = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]);
         if (distToT2 <= pmRange) {
-          var p2 = new CLIENT.PS.CZ.REQUEST_ACT();
-          p2.targetGID = target.GID;
-          p2.action = 0;
-          CLIENT.NM.sendPacket(p2);
+          sendNormalAtk(target.GID); // V2.7.3 NOCTRL 平A
           zMon.action = "穿插平A(锁定)";
           setStatus("前置未就绪，锁定普攻…", "st");
           return;
@@ -4513,10 +4532,7 @@
         }
         var distToT = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]);
         if (distToT > pmRange) { zMon.action = "追怪（普攻射程外）"; zWalk(); return; }
-        var p = new CLIENT.PS.CZ.REQUEST_ACT();
-        p.targetGID = target.GID;
-        p.action = 0;
-        CLIENT.NM.sendPacket(p);
+        sendNormalAtk(target.GID); // V2.7.3 NOCTRL 平A
         zMon.action = "普攻(锁定)";
       } else {
         zMon.action = "施放技能";

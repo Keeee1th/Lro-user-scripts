@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.7.1
+// @version      2.7.2
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.7.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.7.2"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -4081,6 +4081,19 @@
     moveXY.onArrive = null;
     mvLog("走路已停止");
   }
+  // 引擎点地走 y() 同款：目标格不可走时 3×3 由近及远吸附到最近可走格（防终点在墙/障碍上被服务器拒收）
+  function mvSnapWalkable(tx, ty) {
+    try {
+      var ALT = window.require && window.require("Renderer/Map/Altitude");
+      var WALK = ALT && ALT.TYPE && ALT.TYPE.WALKABLE;
+      if (!ALT || !ALT.getCellType || !WALK) return [tx, ty];
+      for (var g = 0; g <= 1; ++g)
+        for (var e = -g; e <= g; ++e)
+          for (var f = -g; f <= g; ++f)
+            if (ALT.getCellType(tx + e, ty + f) & WALK) return [tx + e, ty + f];
+    } catch (e) {}
+    return [tx, ty];
+  }
   function tickMoveXY() {
     if (!moveXY.busy) return;
     try {
@@ -4098,15 +4111,11 @@
       if (Date.now() - moveXY.since > 30000) { moveXY.busy = false; mvLog("走路超时（30s 未到达）已停止"); return; }
       if (Date.now() - moveXY.last < 1000) return; // 1s 节流
       moveXY.last = Date.now();
-      var r = pathFindTo(moveXY.tx, moveXY.ty);
-      if (!r) {
-        moveXY.fail++;
-        if (moveXY.fail >= 5) { moveXY.busy = false; mvLog("目标不可达（避障连续失败），停止"); }
-        return;
-      }
-      moveXY.fail = 0;
+      // 坐标走路修复：直发终点 REQUEST_MOVE（引擎点地走 onRequestWalk→A() 同款），由服务器寻路；
+      // 不再客户端 A*（pathFindTo）分段发中间点——分段发包与服务器寻路节奏冲突致走路失效
+      var dest = mvSnapWalkable(moveXY.tx, moveXY.ty); // 终点在墙/障碍上时 3×3 就近吸附可走格
       var pm = new CLIENT.PS.CZ.REQUEST_MOVE();
-      pm.dest = [r.x, r.y];
+      pm.dest = [dest[0], dest[1]];
       CLIENT.NM.sendPacket(pm);
     } catch (e) {}
   }
@@ -4322,6 +4331,9 @@
       var ent = CLIENT.SS.Entity;
       if (!ent || !ent.life) return;
       var now = Date.now();
+      // V2.7.2 锁定怪站桩修复：np 模式（内挂机制寻怪）→ 目标判定强制 ld<=atkRange（射程外锁定怪不当目标、
+      //   不解锁、交内挂移动靠近），杜绝「npHuntStop 关内挂⇄zWalk npEnsureHunt 开内挂」每轮拉锯站桩
+      var npMode = npHuntMode() === "np";
       updateHpWatch(ent);
       var EM = window.require("Renderer/EntityManager");
       var range = parseInt($id("dsh-z-range").value, 10) || 12; // 寻怪范围（触发目标考虑）
@@ -4345,6 +4357,7 @@
       var target = null, best = 1e9;
       var hitTarget = null, hitBest = 1e9;
       // 锁定模式：已锁定目标 → 只认锁定目标（固定 GID 持续攻击，防目标漂移），不重新扫描选最近
+      var lockAliveOutside = false; // V2.7.2：锁定怪仍在但超攻击距离（np 模式下不解锁）
       if (zLock.gid) {
         EM.forEach(function (e) {
           try {
@@ -4353,13 +4366,18 @@
             if (!ent.position || !e.position) return;
             var ld = Math.abs(e.position[0] - ent.position[0]) + Math.abs(e.position[1] - ent.position[1]);
             // follow 开：寻怪范围内持续打/追；follow 关：仅攻击距离内，超出即解锁
-            if (zFollow ? ld <= range : ld <= atkRange) { target = e; zLock.dist = ld; }
+            // V2.7.2：np 模式下无论 follow 一律仅攻击距离内才当战斗目标（射程外交内挂靠近）
+            if (npMode ? ld <= atkRange : (zFollow ? ld <= range : ld <= atkRange)) { target = e; zLock.dist = ld; }
+            else if (npMode && ld > atkRange) lockAliveOutside = true;
           } catch (e2) {}
         });
         if (target) {
           zLock.name = (target.display && target.display.name) || String(target._job != null ? target._job : target.GID);
+        } else if (npMode && lockAliveOutside) {
+          // V2.7.2 站桩修复：np 模式下锁定怪仍存活但超出攻击距离 → 不解锁（交内挂移动靠近，由 zWalk np 分支 ensureHunt）
+          zMon.action = "锁定怪超出射程（内挂靠近）";
         } else {
-          // 目标死亡/丢失/超出范围 → 解锁；next=关 时击杀后停手（done），否则重新扫描换下一个
+          // 目标死亡/丢失 → 解锁；next=关 时击杀后停手（done），否则重新扫描换下一个
           zLock.done = !zNext;
           zLock.gid = null;
           zLockCounts = {}; // V1.7.5 解锁 → 锁定次数清零（重新锁定重计）

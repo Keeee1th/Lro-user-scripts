@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO 手机自适应 ro-mobile
 // @namespace    https://github.com/Keeee1th/Lro-user-scripts
-// @version      1.0.2
+// @version      1.0.3
 // @description  手机使用 PC 网页 api.html 的触控适配与掉线防护:自动加载手机内核(Online_mn),自定义操作键(开窗/键盘/点地),后台保活(隐藏PING+音频+WebLock+防熄屏),可与 ro-assist 双开(检测式不抢占)
 // @match        https://post.lastro.cn/ro/api.html*
 // @match        http://post.lastro.cn/ro/api.html*
@@ -13,7 +13,7 @@
 
 (function () {
   "use strict";
-  var VER = "1.0.2";
+  var VER = "1.0.3";
   var LS_KEY = "dsh_ro_mobile_v1";
   var version = (location.href.match(/[?&]v=([\d.]+)/i) || [null, "69.32"])[1];
 
@@ -84,7 +84,8 @@
         { id: "c2", t: "key", label: "菜单", key: "Escape" }
       ],
       line: null,                       // 线路:null=未选(首次弹层),3=V6-Online 三转,5=V6-Eden 进阶二转
-      opts: { bgkeep: true, fullscreen: true, autoReload: false, remember: false, edge: true },
+      opts: { bgkeep: true, fullscreen: true, autoReload: false, remember: false, edge: true,
+        uiScale: 100, keyScale: 100, joyScale: 100, joyShow: true, joyProto: false },
       acc: "",
       pwd: ""
     };
@@ -102,6 +103,11 @@
         if (o.line == null) o.line = null;
         o.opts = o.opts || {};
         if (typeof o.opts.edge !== "boolean") o.opts.edge = true;
+        if (typeof o.opts.uiScale !== "number" || o.opts.uiScale < 60 || o.opts.uiScale > 180) o.opts.uiScale = 100;
+        if (typeof o.opts.keyScale !== "number" || o.opts.keyScale < 60 || o.opts.keyScale > 200) o.opts.keyScale = 100;
+        if (typeof o.opts.joyScale !== "number" || o.opts.joyScale < 50 || o.opts.joyScale > 200) o.opts.joyScale = 100;
+        if (typeof o.opts.joyShow !== "boolean") o.opts.joyShow = true;
+        if (typeof o.opts.joyProto !== "boolean") o.opts.joyProto = false;
         return o;
       }
     } catch (e) {}
@@ -186,7 +192,8 @@
     state.kernel = kernelNow();
     initOverlay();
     initKeepalive();
-    toast("客户端已启动 " + (state.kernel === "mn" ? "(手机内核)" : "(电脑内核,已启用自建摇杆)"));
+    try { applyUiScale(); } catch (e) {}
+    toast("客户端已启动 " + (state.kernel === "mn" ? "(手机内核)" : "(电脑内核)") + (cfg.opts.joyShow ? " · 模拟摇杆可用" : ""));
   }
   function bootCheck() {
     hideShell();
@@ -232,6 +239,9 @@
       "#dsh-mk-edit .dsh-mk-sel,#dsh-mk-edit .dsh-mk-inp,#dsh-mk-edit .dsh-mk-sw,#dsh-mk-edit .dsh-mk-sw *{touch-action:manipulation}" +
       ".dsh-mk-sw{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid #e2e8f2}" +
       ".dsh-mk-sw input{width:44px;height:24px;flex:0 0 auto}" +
+      ".dsh-mk-range{display:flex;align-items:center;gap:8px;padding:9px 4px;border-bottom:1px solid #e2e8f2}" +
+      ".dsh-mk-range input[type=range]{flex:1;min-width:0;height:28px}" +
+      ".dsh-mk-range-v{flex:0 0 auto;min-width:54px;text-align:right;font-size:12px;color:#1c3a66}" +
       ".dsh-mk-panel .dsh-mk-foot{display:flex;gap:10px;margin-top:14px}" +
       ".dsh-mk-panel .dsh-mk-ok{flex:1;padding:12px;border-radius:10px;background:#2b7fd0;color:#fff;border:none;font-size:15px;font-weight:600;cursor:pointer;touch-action:none}" +
       ".dsh-mk-panel .dsh-mk-reset{flex:1;padding:12px;border-radius:10px;background:#fff;color:#b3261e;border:1px solid #e6b4b0;font-size:15px;font-weight:600;cursor:pointer;touch-action:none}";
@@ -271,7 +281,7 @@
     applyEdgeUI();
     rootEl.appendChild(gearEl);
     document.body.appendChild(rootEl);
-    if (state.kernel === "pc") showJoystick();
+    if (cfg.opts.joyShow) showJoystick();
   }
   function toast(msg) {
     if (!toastEl) { try { console.log("[ro-mobile] " + msg); } catch (e) {} return; }
@@ -303,19 +313,40 @@
     } catch (e) {}
     try { applyJoyEdge(); } catch (e) {}
   }
+  // 画面缩放(游戏主容器 transform:scale,居中;找不到容器给提示) ----
+  var uiWrap = null;
+  function applyUiScale() {
+    try {
+      if (!document.body) return;
+      if (!uiWrap) {
+        var cands = ["#wrap", "#container", "#game", ".game-container", ".view-wrap", "#viewWrap", "#view"];
+        for (var i = 0; i < cands.length; i++) { var e = document.querySelector(cands[i]); if (e) { uiWrap = e; break; } }
+        if (!uiWrap) {
+          var cv = document.querySelector("canvas");
+          if (cv && cv.parentElement && cv.parentElement !== document.body) uiWrap = cv.parentElement;
+        }
+      }
+      if (!uiWrap) { toast("未找到画面容器(真机确认页面结构)"); return; }
+      var s = (cfg.opts.uiScale || 100) / 100;
+      uiWrap.style.transformOrigin = "50% 0";
+      uiWrap.style.transform = s === 1 ? "" : "scale(" + s + ")";
+    } catch (e) {}
+  }
   function renderKeys() {
     if (!rootEl) return;
     var old = rootEl.querySelector(".dsh-mk-bar");
     if (old) old.parentNode.removeChild(old);
     var old2 = rootEl.querySelector(".dsh-mk-col");
     if (old2) old2.parentNode.removeChild(old2);
+    var ks = (cfg.opts.keyScale || 100) / 100;
     var bar = el("div", "dsh-mk-bar");
     var barBottom = cfg.opts.edge ? "calc(100px + env(safe-area-inset-bottom))" : "calc(8px + env(safe-area-inset-bottom))";
-    bar.style.cssText = "position:absolute;left:0;right:0;bottom:" + barBottom + ";display:flex;justify-content:center;gap:8px;padding:0 8px;z-index:3;flex-wrap:wrap";
+    bar.style.cssText = "position:absolute;left:0;right:0;bottom:" + barBottom + ";display:flex;justify-content:center;gap:" + Math.round(8 * ks) + "px;padding:0 8px;z-index:3;flex-wrap:wrap";
     cfg.bar.forEach(function (k, i) {
       var b = keyBtn(k);
-      b.style.width = "52px";
-      b.style.height = "46px";
+      b.style.width = Math.round(52 * ks) + "px";
+      b.style.height = Math.round(46 * ks) + "px";
+      b.style.fontSize = Math.round(13 * ks) + "px";
       b.style.position = "static";
       bar.appendChild(b);
     });
@@ -324,8 +355,9 @@
     col.style.cssText = "position:absolute;right:" + colRight + ";top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:8px;z-index:2";
     cfg.col.forEach(function (k) {
       var b = keyBtn(k);
-      b.style.width = "48px";
-      b.style.height = "48px";
+      b.style.width = Math.round(48 * ks) + "px";
+      b.style.height = Math.round(48 * ks) + "px";
+      b.style.fontSize = Math.round(13 * ks) + "px";
       b.style.position = "static";
       col.appendChild(b);
     });
@@ -342,22 +374,22 @@
       var resume = !!(b._breakTs && Date.now() - b._breakTs < 1000);
       b._breakTs = 0;
       if (!resume) trigger(k);
-      if (k.t === "key") { // 方向/按键长按立即连发,消除空窗(引擎按 keydown 状态持续走)
-        iv = setInterval(function () { synthKey(k.key, "keydown", k.mods); }, 120);
+      if (k.t === "key" || k.t === "combo") { // 按键/组合长按立即连发,消除空窗(引擎按 keydown 状态持续走)
+        iv = setInterval(function () { fireKeys(k.t === "combo" ? k.keys : [k.key], k.mods, "keydown"); }, 120);
       } else if (k.t === "move") {
-        if (resume) iv = setInterval(function () { walkTo(k.x, k.y); }, 600);
-        else timer = setTimeout(function () { iv = setInterval(function () { walkTo(k.x, k.y); }, 600); }, 300);
+        if (resume) iv = setInterval(function () { walkTo(k.x, k.y); }, 400);
+        else timer = setTimeout(function () { iv = setInterval(function () { walkTo(k.x, k.y); }, 400); }, 300);
       }
     }
     function up() {
       clearTimeout(timer); timer = null;
       if (iv) { clearInterval(iv); iv = null; }
-      if (k.t === "key") synthKey(k.key, "keyup", k.mods);
+      if (k.t === "key" || k.t === "combo") fireKeys(k.t === "combo" ? k.keys : [k.key], k.mods, "keyup");
     }
     function broken() { // 断触/滑出:立即停,记录断点;1 秒内重按即恢复连发
       clearTimeout(timer); timer = null;
       if (iv) { clearInterval(iv); iv = null; b._breakTs = Date.now(); }
-      if (k.t === "key") synthKey(k.key, "keyup", k.mods);
+      if (k.t === "key" || k.t === "combo") fireKeys(k.t === "combo" ? k.keys : [k.key], k.mods, "keyup");
     }
     b.addEventListener("pointerdown", down);
     b.addEventListener("pointerup", up);
@@ -371,7 +403,11 @@
   function trigger(k) {
     if (k.t === "win") toggleWin(k.win);
     else if (k.t === "key") synthKey(k.key, "keydown", k.mods);
-    else if (k.t === "move") walkTo(k.x, k.y);
+    else if (k.t === "combo") fireKeys(k.keys, k.mods, "keydown"); // 组合键:两键同发同收
+    else if (k.t === "move") { toast("点地 " + k.x + "," + k.y); walkTo(k.x, k.y); } // 诊断可见:真机点地不灵时先看 toast
+  }
+  function fireKeys(keys, mods, kind) {
+    (keys || []).forEach(function (kk) { synthKey(kk, kind, mods); });
   }
 
   // ---------------- 三类触发 ----------------
@@ -439,12 +475,12 @@
     } catch (e) {}
   }
 
-  // ---------------- 自建摇杆(仅电脑内核 Online;协议直驱 REQUEST_JOYSTICK_DIR) ----------------
+  // ---------------- 模拟摇杆(两内核均显示;默认「直发移动」:朝方向发 REQUEST_MOVE 目标点,服务端寻路,比协议直驱稳) ----------------
   var JOY_DIRS = [
     { dx: 0, dy: -1 }, { dx: -1, dy: -1 }, { dx: -1, dy: 0 }, { dx: -1, dy: 1 },
     { dx: 0, dy: 1 }, { dx: 1, dy: 1 }, { dx: 1, dy: 0 }, { dx: 1, dy: -1 }
   ];
-  function joySend(move, dir) {
+  function joySend(move, dir) { // 协议直驱(旧模式,可选)
     if (!clientReady()) return;
     try {
       var cl = CL();
@@ -454,8 +490,22 @@
       cl.NM.sendPacket(p);
     } catch (e) {}
   }
+  // 当前玩家坐标(直发移动需要)
+  function playerPos() {
+    try {
+      var SS = window.require("Engine/SessionStorage");
+      var e = SS && SS.Entity;
+      if (e && e.position) return e.position;
+      var EM = window.require("Renderer/EntityManager");
+      if (EM) {
+        try { if (EM.getEntity && SS && SS.GID) { var m = EM.getEntity(SS.GID); if (m && m.position) return m.position; } } catch (e2) {}
+        try { if (EM.forEach && SS && SS.GID) { var found = null; EM.forEach(function (x) { if (x && x.GID === SS.GID) found = x; }); if (found && found.position) return found.position; } } catch (e2) {}
+      }
+      return null;
+    } catch (e) { return null; }
+  }
   function showJoystick() {
-    if (document.getElementById("dsh-mk-joy")) return;
+    if (document.getElementById("dsh-mk-joy")) { if (joyEl && joyEl._updateSize) joyEl._updateSize(); return; }
     var joy = el("div");
     joy.id = "dsh-mk-joy";
     var base = el("div", "dsh-mk-joy-base");
@@ -466,7 +516,7 @@
     (rootEl || document.body).appendChild(joy);
     joyEl = joy;
     applyJoyEdge();
-    var o = { px: 0, py: 0, ax: 0, ay: 0, active: false, dir: -1, lastDir: -1, lastSent: 0, breakTs: 0 };
+    var o = { px: 0, py: 0, ax: 0, ay: 0, active: false, dir: -1, lastDir: -1, lastSent: 0, breakTs: 0, r: 30 };
     function dir8() {
       var dx = o.ax - o.px, dy = o.ay - o.py;
       var len = Math.sqrt(dx * dx + dy * dy);
@@ -483,9 +533,19 @@
     function knobPos(e) {
       var dx = e.clientX - o.px, dy = e.clientY - o.py;
       var len = Math.sqrt(dx * dx + dy * dy);
-      var r = Math.min(len, 30);
+      var r = Math.min(len, o.r);
       if (len < 0.001) return;
       knob.style.transform = "translate(" + (dx / len * r) + "px," + (dy / len * r) + "px)";
+    }
+    function steerSend() {
+      if (o.dir < 0 || !clientReady()) return;
+      var p = playerPos();
+      if (!p || !isFinite(p[0]) || !isFinite(p[1])) {
+        if (!steerSend._warned) { steerSend._warned = true; toast("未取到玩家坐标(进入游戏后可用)"); }
+        return;
+      }
+      var d = JOY_DIRS[o.dir];
+      walkTo(p[0] + d.dx * 12, p[1] + d.dy * 12); // 朝拖拽方向目标点(服务端寻路,持续重发保持走动)
     }
     function start(e) {
       if (e) { try { e.stopPropagation(); e.preventDefault(); } catch (err) {} }
@@ -496,8 +556,9 @@
       try { base.setPointerCapture(e.pointerId); } catch (err) {}
       // 断触兜底:1 秒内重新按下即带入上次方向续走
       if (o.breakTs && Date.now() - o.breakTs < 1000 && o.lastDir >= 0) {
-        o.dir = o.lastDir; o.lastSent = 0;
-        joySend(1, o.dir);
+        o.dir = o.lastDir;
+        if (cfg.opts.joyProto) { o.lastSent = 0; joySend(1, o.dir); }
+        else { o.lastSent = 0; steerSend(); }
       }
       o.breakTs = 0;
     }
@@ -510,7 +571,10 @@
       if (!o.active) return;
       o.active = false;
       o.breakTs = Date.now();
-      if (o.dir >= 0) { joySend(0, -1); o.lastDir = o.dir; o.dir = -1; }
+      if (o.dir >= 0) {
+        if (cfg.opts.joyProto) joySend(0, -1);
+        o.lastDir = o.dir; o.dir = -1;
+      }
       knob.style.transition = "transform .15s";
       knob.style.transform = "translate(0,0)";
     }
@@ -519,12 +583,19 @@
       var d = dir8();
       var now = Date.now();
       if (d >= 0) {
-        if (d !== o.dir) { o.dir = d; o.lastSent = 0; }
-        else if (now - o.lastSent < 700) return;   // 同方向 700ms 心跳刷新即可
-        o.lastSent = now;
-        joySend(1, o.dir);
-      } else {
-        if (o.dir >= 0) { joySend(0, -1); o.lastDir = o.dir; o.dir = -1; }
+        o.dir = d; o.lastDir = d;
+        if (cfg.opts.joyProto) {
+          if (now - o.lastSent < 700) return;   // 协议模式:同方向 700ms 心跳
+          o.lastSent = now;
+          joySend(1, o.dir);
+        } else {
+          if (now - o.lastSent < 500) return;   // 直发模式:每 500ms 重发目标点保持走动
+          o.lastSent = now;
+          steerSend();
+        }
+      } else if (o.dir >= 0) {
+        if (cfg.opts.joyProto) joySend(0, -1);
+        o.lastDir = o.dir; o.dir = -1;
       }
     }, 140);
     base.addEventListener("pointerdown", start);
@@ -532,6 +603,16 @@
     base.addEventListener("pointerup", end);
     base.addEventListener("pointercancel", end);
     joy._timer = steerTimer;
+    joy._updateSize = function () {
+      var s = (cfg.opts.joyScale || 100) / 100;
+      if (s < 0.5) s = 0.5; if (s > 2) s = 2;
+      var d0 = Math.round(96 * s), k0 = Math.round(40 * s);
+      o.r = Math.max(10, Math.round(30 * s));
+      joy.style.width = d0 + "px"; joy.style.height = d0 + "px";
+      knob.style.width = k0 + "px"; knob.style.height = k0 + "px";
+      knob.style.marginLeft = (-k0 / 2) + "px"; knob.style.marginTop = (-k0 / 2) + "px";
+    };
+    joy._updateSize();
   }
 
   // ---------------- 掉线防护(核心) ----------------
@@ -739,32 +820,62 @@
     var addH = el("h3", null, "添加操作键");
     panel.appendChild(addH);
     var addRow = el("div", "dsh-mk-row");
+    addRow.style.flexWrap = "wrap";
     var posSel = el("select", "dsh-mk-sel");
     posSel.innerHTML = '<option value="bar">底部</option><option value="col">右侧</option>';
     var typeSel = el("select", "dsh-mk-sel");
-    typeSel.innerHTML = '<option value="win">开窗</option><option value="key">键盘</option><option value="move">点地</option>';
+    typeSel.innerHTML = '<option value="win">开窗</option><option value="key">键盘</option><option value="combo">组合</option><option value="move">点地</option>';
     var paramSel = el("select", "dsh-mk-sel");
+    var paramSel2 = el("select", "dsh-mk-sel"); // 组合键第2键
+    var modsRow = el("div", "dsh-mk-row");
+    modsRow.style.cssText = "display:none;justify-content:flex-start;gap:12px;padding:8px 4px;border-bottom:1px solid #e2e8f2";
+    var cbCtrl = null, cbAlt = null, cbShift = null;
+    function cbMod(label) {
+      var lb = el("label");
+      lb.style.cssText = "display:flex;align-items:center;gap:4px;font-size:12px;color:#1c3a66";
+      var c = el("input");
+      c.type = "checkbox";
+      lb.appendChild(c); lb.appendChild(el("span", null, label));
+      modsRow.appendChild(lb);
+      return c;
+    }
+    cbCtrl = cbMod("Ctrl"); cbAlt = cbMod("Alt"); cbShift = cbMod("Shift");
+    function fillKeys(sel) {
+      sel.innerHTML = "";
+      KEY_ORDER.forEach(function (kk) {
+        var op = document.createElement("option");
+        op.value = kk; op.textContent = kk;
+        sel.appendChild(op);
+      });
+    }
     function fillParams() {
       var t = typeSel.value;
-      paramSel.innerHTML = "";
+      paramSel2.style.display = "none"; modsRow.style.display = "none";
       if (t === "win") {
+        paramSel.innerHTML = "";
         WIN_ORDER.forEach(function (w) {
           var op = document.createElement("option");
           op.value = w; op.textContent = WIN_MAP[w] || w;
           paramSel.appendChild(op);
         });
       } else if (t === "key") {
-        KEY_ORDER.forEach(function (kk) {
-          var op = document.createElement("option");
-          op.value = kk; op.textContent = kk;
-          paramSel.appendChild(op);
-        });
+        fillKeys(paramSel);
+      } else if (t === "combo") {
+        fillKeys(paramSel);
+        fillKeys(paramSel2);
+        if (paramSel2.value === paramSel.value) {
+          var ni = KEY_ORDER.indexOf(paramSel.value) + 1;
+          paramSel2.value = KEY_ORDER[ni] || KEY_ORDER[0];
+        }
+        paramSel2.style.display = "inline-block";
+        modsRow.style.display = "flex";
       } else {
-        paramSel.style.display = "none";
+        paramSel.innerHTML = "";
       }
     }
     typeSel.addEventListener("change", function () {
       paramSel.style.display = "inline-block";
+      xInp.style.display = "none"; yInp.style.display = "none";
       fillParams();
     });
     fillParams();
@@ -780,7 +891,14 @@
       var k;
       if (t === "win") k = { id: Math.random().toString(36).slice(2, 9), t: "win", label: WIN_MAP[paramSel.value] || paramSel.value, win: paramSel.value };
       else if (t === "key") k = { id: Math.random().toString(36).slice(2, 9), t: "key", label: paramSel.value, key: paramSel.value };
-      else {
+      else if (t === "combo") {
+        var k1 = paramSel.value, k2 = paramSel2.value || paramSel.value;
+        var mods = {};
+        if (cbCtrl.checked) mods.ctrl = true;
+        if (cbAlt.checked) mods.alt = true;
+        if (cbShift.checked) mods.shift = true;
+        k = { id: Math.random().toString(36).slice(2, 9), t: "combo", label: k1 + "+" + k2, keys: [k1, k2], mods: mods };
+      } else {
         var xx = parseFloat(xInp.value), yy = parseFloat(yInp.value);
         if (!isFinite(xx) || !isFinite(yy)) { toast("请填写点地坐标"); return; }
         k = { id: Math.random().toString(36).slice(2, 9), t: "move", label: "点地", x: Math.round(xx), y: Math.round(yy) };
@@ -788,14 +906,8 @@
       if (posSel.value === "bar") cfg.bar.push(k); else cfg.col.push(k);
       saveCfg(); renderKeys(); openEdit();
     });
-    addRow.appendChild(posSel); addRow.appendChild(typeSel); addRow.appendChild(paramSel); addRow.appendChild(xInp); addRow.appendChild(yInp); addRow.appendChild(addBtn);
+    addRow.appendChild(posSel); addRow.appendChild(typeSel); addRow.appendChild(paramSel); addRow.appendChild(paramSel2); addRow.appendChild(modsRow); addRow.appendChild(xInp); addRow.appendChild(yInp); addRow.appendChild(addBtn);
     panel.appendChild(addRow);
-    typeSel.addEventListener("change", function () {
-      var isMove = typeSel.value === "move";
-      xInp.style.display = isMove ? "inline-block" : "none";
-      yInp.style.display = isMove ? "inline-block" : "none";
-      paramSel.style.display = isMove ? "none" : "inline-block";
-    });
     if (typeSel.value === "move") { xInp.style.display = "inline-block"; yInp.style.display = "inline-block"; paramSel.style.display = "none"; }
     // 设置区
     var st = el("h3", null, "设置");
@@ -857,6 +969,32 @@
     isolate(lineSel);
     line.appendChild(lineLb); line.appendChild(lineSel);
     panel.appendChild(line);
+    // 尺寸与画面
+    function rangeRow(label, getv, setv, min, max, step, unit, onapply) {
+      var row = el("div", "dsh-mk-range");
+      var lb = el("div", "dsh-mk-label", label);
+      var sp = el("div", "dsh-mk-range-v", String(getv()) + unit);
+      var inp = el("input");
+      inp.type = "range"; inp.min = min; inp.max = max; inp.step = step; inp.value = String(getv());
+      inp.addEventListener("input", function () {
+        setv(parseInt(inp.value, 10));
+        sp.textContent = inp.value + unit;
+        saveCfg();
+        try { onapply && onapply(); } catch (e) {}
+      });
+      row.appendChild(lb); row.appendChild(inp); row.appendChild(sp);
+      isolate(row);
+      return row;
+    }
+    panel.appendChild(rangeRow("键大小", function () { return cfg.opts.keyScale; }, function (v) { cfg.opts.keyScale = v; }, 60, 200, 5, "%", function () { renderKeys(); }));
+    panel.appendChild(rangeRow("摇杆大小", function () { return cfg.opts.joyScale; }, function (v) { cfg.opts.joyScale = v; }, 50, 200, 5, "%", function () { if (joyEl && joyEl._updateSize) joyEl._updateSize(); }));
+    panel.appendChild(rangeRow("画面缩放", function () { return cfg.opts.uiScale; }, function (v) { cfg.opts.uiScale = v; }, 60, 180, 5, "%", function () { applyUiScale(); }));
+    panel.appendChild(swRow("模拟摇杆(两内核显示)", function () { return cfg.opts.joyShow; }, function (v) {
+      cfg.opts.joyShow = v;
+      if (v) { if (!joyEl) showJoystick(); }
+      else if (joyEl && joyEl.parentNode) { var jj = joyEl; joyEl = null; jj.parentNode.removeChild(jj); }
+    }));
+    panel.appendChild(swRow("摇杆协议直驱(默认关,不稳时开)", function () { return cfg.opts.joyProto; }, function (v) { cfg.opts.joyProto = v; }));
     // 底部按钮
     var foot = el("div", "dsh-mk-foot");
     var ok = el("button", "dsh-mk-ok", "完成");
@@ -876,6 +1014,10 @@
   function descKey(k) {
     if (k.t === "win") return (WIN_MAP[k.win] || k.win) + "(开窗)";
     if (k.t === "key") return "按键 " + k.key;
+    if (k.t === "combo") {
+      var modsTxt = (k.mods && (k.mods.ctrl || k.mods.alt || k.mods.shift)) ? " [+修饰]" : "";
+      return "组合 " + (k.keys || []).join("+") + modsTxt;
+    }
     return "点地 " + k.x + "," + k.y;
   }
 

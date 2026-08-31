@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO 手机自适应 ro-mobile
 // @namespace    https://github.com/Keeee1th/Lro-user-scripts
-// @version      1.0.1
+// @version      1.0.2
 // @description  手机使用 PC 网页 api.html 的触控适配与掉线防护:自动加载手机内核(Online_mn),自定义操作键(开窗/键盘/点地),后台保活(隐藏PING+音频+WebLock+防熄屏),可与 ro-assist 双开(检测式不抢占)
 // @match        https://post.lastro.cn/ro/api.html*
 // @match        http://post.lastro.cn/ro/api.html*
@@ -13,7 +13,7 @@
 
 (function () {
   "use strict";
-  var VER = "1.0.1";
+  var VER = "1.0.2";
   var LS_KEY = "dsh_ro_mobile_v1";
   var version = (location.href.match(/[?&]v=([\d.]+)/i) || [null, "69.32"])[1];
 
@@ -122,9 +122,9 @@
     if (html !== undefined) e.innerHTML = html;
     return e;
   }
-  // 触摸隔离:操作层内交互不再穿透到游戏 document/#vbk(同元素自身监听不受影响)
+  // 触摸隔离:只阻断传播(防穿透游戏),不 preventDefault——否则真机吞掉 click 与原生控件激活(单选/下拉/按钮全点不动)
   function isolate(el_) {
-    var stop = function (e) { try { e.stopPropagation(); e.preventDefault(); } catch (err) {} };
+    var stop = function (e) { try { e.stopPropagation(); } catch (err) {} };
     ["touchstart", "touchmove", "touchend", "pointerdown", "pointerup", "mousedown", "mouseup", "click"].forEach(function (t) {
       el_.addEventListener(t, stop, { passive: false });
     });
@@ -228,6 +228,8 @@
       ".dsh-mk-add{flex:0 0 auto;padding:6px 12px;border-radius:8px;background:#2b7fd0;color:#fff;border:none;font-size:13px;cursor:pointer;touch-action:none}" +
       ".dsh-mk-sel{padding:6px 8px;border-radius:8px;border:1px solid #b9c8e2;background:#fff;font-size:13px;color:#1c3a66;max-width:150px}" +
       ".dsh-mk-inp{padding:6px 8px;border-radius:8px;border:1px solid #b9c8e2;background:#fff;font-size:13px;color:#1c3a66;width:56px}" +
+      "#dsh-mk-line *{touch-action:manipulation}" +
+      "#dsh-mk-edit .dsh-mk-sel,#dsh-mk-edit .dsh-mk-inp,#dsh-mk-edit .dsh-mk-sw,#dsh-mk-edit .dsh-mk-sw *{touch-action:manipulation}" +
       ".dsh-mk-sw{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid #e2e8f2}" +
       ".dsh-mk-sw input{width:44px;height:24px;flex:0 0 auto}" +
       ".dsh-mk-panel .dsh-mk-foot{display:flex;gap:10px;margin-top:14px}" +
@@ -891,8 +893,8 @@
     sub.style.cssText = "color:#666;font-size:12px;margin:0 0 12px";
     box.appendChild(h); box.appendChild(sub);
     function opt(cv, title, desc) {
-      var row = el("div");
-      row.style.cssText = "display:flex;align-items:center;gap:10px;padding:12px;border:2px solid #b9c8e2;border-radius:10px;margin-bottom:10px;background:#fff;touch-action:none";
+      var row = el("label"); // label 整行可点选(原生激活不依赖 JS)
+      row.style.cssText = "display:flex;align-items:center;gap:10px;padding:12px;border:2px solid #b9c8e2;border-radius:10px;margin-bottom:10px;background:#fff;touch-action:manipulation";
       var radio = el("input");
       radio.type = "radio"; radio.name = "dsh-mk-line"; radio.value = String(cv);
       if (cv === 5) radio.checked = true; // 预选二转(用户目标线路)

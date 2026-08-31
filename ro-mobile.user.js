@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO 手机自适应 ro-mobile
 // @namespace    https://github.com/Keeee1th/Lro-user-scripts
-// @version      1.0.0
+// @version      1.0.1
 // @description  手机使用 PC 网页 api.html 的触控适配与掉线防护:自动加载手机内核(Online_mn),自定义操作键(开窗/键盘/点地),后台保活(隐藏PING+音频+WebLock+防熄屏),可与 ro-assist 双开(检测式不抢占)
 // @match        https://post.lastro.cn/ro/api.html*
 // @match        http://post.lastro.cn/ro/api.html*
@@ -13,7 +13,7 @@
 
 (function () {
   "use strict";
-  var VER = "1.0.0";
+  var VER = "1.0.1";
   var LS_KEY = "dsh_ro_mobile_v1";
   var version = (location.href.match(/[?&]v=([\d.]+)/i) || [null, "69.32"])[1];
 
@@ -21,7 +21,8 @@
   if (!/\/ro\/api\.html/.test(location.pathname)) return;
 
   // ---------------- 客户端配置(对齐 ro-assist 的 ROConfig DEFAULTS,application 换手机内核) ----------------
-  function pickCv() { var m = location.href.match(/[?&]cv=(\d+)/); return m ? parseInt(m[1], 10) : 3; }
+  function urlCv() { var m = location.href.match(/[?&]cv=(\d+)/); return m ? parseInt(m[1], 10) : null; }
+  function pickCv() { var u = urlCv(); if (u != null) return u; return (cfg && cfg.line) ? cfg.line : 3; }
   var DEFAULTS = {
     application: "Online_mn",           // 手机内核:原生摇杆 + 触摸驱动 + 掉线 keepalive
     servers: "data/clientinfo.xml",
@@ -69,7 +70,7 @@
   // ---------------- 默认配置与持久化 ----------------
   function defaultCfg() {
     return {
-      v: 1,
+      v: 2,
       kernel: "auto",                    // auto|mn|pc(内核偏好;auto=跟随已启动,未启动注入 Online_mn)
       bar: [
         { id: "b1", t: "win", label: "装备", win: "Equipment" },
@@ -80,13 +81,10 @@
       ],
       col: [
         { id: "c1", t: "key", label: "回车", key: "Enter" },
-        { id: "c2", t: "key", label: "菜单", key: "Escape" },
-        { id: "c3", t: "key", label: "上", key: "W" },
-        { id: "c4", t: "key", label: "左", key: "A" },
-        { id: "c5", t: "key", label: "下", key: "S" },
-        { id: "c6", t: "key", label: "右", key: "D" }
+        { id: "c2", t: "key", label: "菜单", key: "Escape" }
       ],
-      opts: { bgkeep: true, fullscreen: true, autoReload: false, remember: false },
+      line: null,                       // 线路:null=未选(首次弹层),3=V6-Online 三转,5=V6-Eden 进阶二转
+      opts: { bgkeep: true, fullscreen: true, autoReload: false, remember: false, edge: true },
       acc: "",
       pwd: ""
     };
@@ -94,7 +92,18 @@
   function loadCfg() {
     try {
       var o = JSON.parse(localStorage.getItem(LS_KEY));
-      if (o && o.v === 1) return o;
+      if (o && (o.v === 1 || o.v === 2)) {
+        if (o.v === 1) { // v1→v2:右侧剔除方向/移动键(摇杆承担移动),补线路与避让开关
+          o.col = (o.col || []).filter(function (k) {
+            return !(k && k.t === "key" && ["W", "A", "S", "D", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].indexOf(k.key) >= 0);
+          });
+          o.v = 2;
+        }
+        if (o.line == null) o.line = null;
+        o.opts = o.opts || {};
+        if (typeof o.opts.edge !== "boolean") o.opts.edge = true;
+        return o;
+      }
     } catch (e) {}
     return defaultCfg();
   }
@@ -104,7 +113,7 @@
   var cfg = loadCfg();
 
   // ---------------- 状态 ----------------
-  var state = { ready: false, injected: false, kernel: null, shown: false, hiddenAt: 0, dcAlerting: false, clickTarget: null, joyTarget: null };
+  var state = { ready: false, injected: false, kernel: null, shown: false, hiddenAt: 0, dcAlerting: false, clickTarget: null };
 
   // ---------------- 工具 ----------------
   function el(tag, cls, html) {
@@ -112,6 +121,14 @@
     if (cls) e.className = cls;
     if (html !== undefined) e.innerHTML = html;
     return e;
+  }
+  // 触摸隔离:操作层内交互不再穿透到游戏 document/#vbk(同元素自身监听不受影响)
+  function isolate(el_) {
+    var stop = function (e) { try { e.stopPropagation(); e.preventDefault(); } catch (err) {} };
+    ["touchstart", "touchmove", "touchend", "pointerdown", "pointerup", "mousedown", "mouseup", "click"].forEach(function (t) {
+      el_.addEventListener(t, stop, { passive: false });
+    });
+    return el_;
   }
   function clientReady() { return typeof window.require === "function"; }
   function clientScript() { return document.querySelector('script[src*="Online"]'); }
@@ -135,6 +152,7 @@
     var c = {};
     for (var k in DEFAULTS) c[k] = DEFAULTS[k];
     c.version = version;
+    c.ClientVer = pickCv();
     if (cfg.opts.remember && cfg.acc && cfg.pwd) c.autoLogin = [cfg.acc, cfg.pwd];
     return c;
   }
@@ -175,6 +193,7 @@
     if (clientScript()) { waitReady(); return; }        // 已启动(ro-assist 先注入):不接管
     setTimeout(function () {                              // 给其他脚本(document-idle)注入窗口,超时未启动才自己上
       if (clientScript()) { waitReady(); return; }
+      if (!cfg.line && urlCv() == null) { showLinePicker(); return; } // 首次使用:先选线路再注入
       injectClient(cfg.kernel === "pc" ? "pc" : "mn");
     }, 300);
   }
@@ -185,19 +204,20 @@
 
   // ---------------- 壳清理与全局样式 ----------------
   function injectStyle() {
+    if (document.getElementById("dsh-mk-style")) return;
     var st = el("style");
     st.id = "dsh-mk-style";
     st.textContent = "html,body{position:fixed;inset:0;overflow:hidden;width:100%;height:100%;margin:0;touch-action:manipulation}" +
       "#dsh-mk-root{position:fixed;inset:0;z-index:2147483000;pointer-events:none;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;user-select:none;-webkit-user-select:none}" +
       ".dsh-mk-btn{pointer-events:auto;position:absolute;display:flex;align-items:center;justify-content:center;border-radius:10px;background:rgba(255,255,255,.92);border:1px solid rgba(30,60,120,.35);color:#16305f;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.18);touch-action:none}" +
       ".dsh-mk-btn:active{background:rgba(210,228,255,.95)}" +
-      "#dsh-mk-toast{position:absolute;left:50%;bottom:118px;transform:translateX(-50%) translateY(8px);background:rgba(20,30,50,.86);color:#fff;font-size:13px;padding:7px 14px;border-radius:16px;opacity:0;transition:opacity .18s,transform .18s;pointer-events:none;white-space:nowrap;max-width:80vw;overflow:hidden;text-overflow:ellipsis}" +
+      "#dsh-mk-toast{position:absolute;left:50%;bottom:calc(166px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(8px);background:rgba(20,30,50,.86);color:#fff;font-size:13px;padding:7px 14px;border-radius:16px;opacity:0;transition:opacity .18s,transform .18s;pointer-events:none;white-space:nowrap;max-width:80vw;overflow:hidden;text-overflow:ellipsis}" +
       "#dsh-mk-toast.on{opacity:1;transform:translateX(-50%) translateY(0)}" +
       "#dsh-mk-alert{position:absolute;top:0;left:0;right:0;background:rgba(200,40,40,.94);color:#fff;font-size:15px;text-align:center;padding:12px 30px;display:none;pointer-events:auto;z-index:5;border-radius:0 0 10px 10px}" +
-      ".dsh-mk-gear{pointer-events:auto;position:absolute;top:10px;right:10px;width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.9);border:1px solid rgba(30,60,120,.35);color:#16305f;font-size:22px;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.18);touch-action:none}" +
-      "#dsh-mk-joy{pointer-events:auto;position:absolute;right:18px;bottom:96px;width:96px;height:96px;z-index:4}" +
-      "#dsh-mk-joy .dsh-mk-joy-base{position:absolute;inset:0;border-radius:50%;background:rgba(255,255,255,.28);border:2px solid rgba(255,255,255,.65);box-shadow:0 2px 10px rgba(0,0,0,.25)}" +
-      "#dsh-mk-joy .dsh-mk-joy-knob{position:absolute;left:50%;top:50%;width:40px;height:40px;margin:-20px 0 0 -20px;border-radius:50%;background:rgba(255,255,255,.92);border:1px solid rgba(30,60,120,.4);box-shadow:0 2px 6px rgba(0,0,0,.25)}" +
+      ".dsh-mk-gear{pointer-events:auto;position:absolute;top:calc(10px + env(safe-area-inset-top));right:calc(48px + env(safe-area-inset-right));width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.9);border:1px solid rgba(30,60,120,.35);color:#16305f;font-size:22px;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.18);touch-action:none}" +
+      "#dsh-mk-joy{pointer-events:auto;position:absolute;left:calc(16px + env(safe-area-inset-left));bottom:calc(96px + env(safe-area-inset-bottom));width:96px;height:96px;z-index:4}" +
+      "#dsh-mk-joy .dsh-mk-joy-base{position:absolute;inset:0;border-radius:50%;background:rgba(255,255,255,.28);border:2px solid rgba(255,255,255,.65);box-shadow:0 2px 10px rgba(0,0,0,.25);touch-action:none}" +
+      "#dsh-mk-joy .dsh-mk-joy-knob{position:absolute;left:50%;top:50%;width:40px;height:40px;margin:-20px 0 0 -20px;border-radius:50%;background:rgba(255,255,255,.92);border:1px solid rgba(30,60,120,.4);box-shadow:0 2px 6px rgba(0,0,0,.25);touch-action:none}" +
       "#dsh-mk-edit{position:absolute;inset:0;background:rgba(10,20,40,.45);display:none;pointer-events:auto;z-index:10}" +
       "#dsh-mk-edit .dsh-mk-panel{position:absolute;left:0;right:0;bottom:0;max-height:78vh;overflow-y:auto;background:#f4f7fc;border-radius:14px 14px 0 0;padding:14px 14px 26px;box-shadow:0 -4px 20px rgba(0,0,0,.25);font-size:14px;color:#1c3a66}" +
       ".dsh-mk-panel h3{margin:2px 0 8px;font-size:15px;color:#16305f}" +
@@ -224,7 +244,7 @@
   }
 
   // ---------------- 操作层(操作键 + 摇杆 + 齿轮) ----------------
-  var rootEl = null, toastEl = null, alertEl = null;
+  var rootEl = null, toastEl = null, alertEl = null, gearEl = null, joyEl = null;
   function initOverlay() {
     if (state.shown) return;
     state.shown = true;
@@ -233,14 +253,21 @@
     alertEl = el("div");
     alertEl.id = "dsh-mk-alert";
     alertEl.addEventListener("click", function () { alertEl.style.display = "none"; });
+    isolate(alertEl);
     rootEl.appendChild(alertEl);
     toastEl = el("div");
     toastEl.id = "dsh-mk-toast";
     rootEl.appendChild(toastEl);
+    // 触摸隔离网:操作层内事件不再穿透到游戏 document/#vbk
+    ["touchstart", "touchmove", "touchend", "pointerdown", "pointerup", "mousedown", "mouseup", "click"].forEach(function (t) {
+      rootEl.addEventListener(t, function (e) { try { e.stopPropagation(); } catch (err) {} }, { passive: false });
+    });
     renderKeys();
-    var gear = el("div", "dsh-mk-gear", "设");
-    gear.addEventListener("click", function (e) { e.stopPropagation(); openEdit(); });
-    rootEl.appendChild(gear);
+    gearEl = el("div", "dsh-mk-gear", "设");
+    gearEl.addEventListener("click", function (e) { e.stopPropagation(); openEdit(); });
+    isolate(gearEl);
+    applyEdgeUI();
+    rootEl.appendChild(gearEl);
     document.body.appendChild(rootEl);
     if (state.kernel === "pc") showJoystick();
   }
@@ -256,6 +283,24 @@
     alertEl.textContent = msg;
     alertEl.style.display = "block";
   }
+  // 边缘避让开关:齿轮/摇杆坐标(默认开=退出手势区)
+  function applyJoyEdge() {
+    if (!joyEl) return;
+    if (cfg.opts.edge) {
+      joyEl.style.left = ""; joyEl.style.right = ""; joyEl.style.bottom = "";
+    } else {
+      joyEl.style.left = "auto"; joyEl.style.right = "18px"; joyEl.style.bottom = "96px";
+    }
+  }
+  function applyEdgeUI() {
+    try {
+      if (gearEl) {
+        gearEl.style.top = ""; gearEl.style.right = "";
+        if (!cfg.opts.edge) { gearEl.style.top = "10px"; gearEl.style.right = "10px"; }
+      }
+    } catch (e) {}
+    try { applyJoyEdge(); } catch (e) {}
+  }
   function renderKeys() {
     if (!rootEl) return;
     var old = rootEl.querySelector(".dsh-mk-bar");
@@ -263,7 +308,8 @@
     var old2 = rootEl.querySelector(".dsh-mk-col");
     if (old2) old2.parentNode.removeChild(old2);
     var bar = el("div", "dsh-mk-bar");
-    bar.style.cssText = "position:absolute;left:0;right:0;bottom:calc(8px + env(safe-area-inset-bottom));display:flex;justify-content:center;gap:8px;padding:0 8px;z-index:3;flex-wrap:wrap";
+    var barBottom = cfg.opts.edge ? "calc(100px + env(safe-area-inset-bottom))" : "calc(8px + env(safe-area-inset-bottom))";
+    bar.style.cssText = "position:absolute;left:0;right:0;bottom:" + barBottom + ";display:flex;justify-content:center;gap:8px;padding:0 8px;z-index:3;flex-wrap:wrap";
     cfg.bar.forEach(function (k, i) {
       var b = keyBtn(k);
       b.style.width = "52px";
@@ -272,7 +318,8 @@
       bar.appendChild(b);
     });
     var col = el("div", "dsh-mk-col");
-    col.style.cssText = "position:absolute;right:10px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:8px;z-index:2";
+    var colRight = cfg.opts.edge ? "calc(48px + env(safe-area-inset-right))" : "10px";
+    col.style.cssText = "position:absolute;right:" + colRight + ";top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:8px;z-index:2";
     cfg.col.forEach(function (k) {
       var b = keyBtn(k);
       b.style.width = "48px";
@@ -286,14 +333,18 @@
   }
   function keyBtn(k) {
     var b = el("div", "dsh-mk-btn", escapeHtml(k.label));
+    isolate(b);
     var timer = null, iv = null;
     function down(e) {
-      if (e) { e.preventDefault(); e.stopPropagation(); }
-      trigger(k);
+      if (e) { try { e.preventDefault(); e.stopPropagation(); } catch (err) {} }
+      var resume = !!(b._breakTs && Date.now() - b._breakTs < 1000);
+      b._breakTs = 0;
+      if (!resume) trigger(k);
       if (k.t === "key") { // 方向/按键长按立即连发,消除空窗(引擎按 keydown 状态持续走)
         iv = setInterval(function () { synthKey(k.key, "keydown", k.mods); }, 120);
       } else if (k.t === "move") {
-        timer = setTimeout(function () { iv = setInterval(function () { walkTo(k.x, k.y); }, 600); }, 300);
+        if (resume) iv = setInterval(function () { walkTo(k.x, k.y); }, 600);
+        else timer = setTimeout(function () { iv = setInterval(function () { walkTo(k.x, k.y); }, 600); }, 300);
       }
     }
     function up() {
@@ -301,10 +352,15 @@
       if (iv) { clearInterval(iv); iv = null; }
       if (k.t === "key") synthKey(k.key, "keyup", k.mods);
     }
+    function broken() { // 断触/滑出:立即停,记录断点;1 秒内重按即恢复连发
+      clearTimeout(timer); timer = null;
+      if (iv) { clearInterval(iv); iv = null; b._breakTs = Date.now(); }
+      if (k.t === "key") synthKey(k.key, "keyup", k.mods);
+    }
     b.addEventListener("pointerdown", down);
     b.addEventListener("pointerup", up);
-    b.addEventListener("pointercancel", up);
-    b.addEventListener("pointerleave", up);
+    b.addEventListener("pointercancel", broken);
+    b.addEventListener("pointerleave", broken);
     return b;
   }
   function escapeHtml(s) {
@@ -317,16 +373,44 @@
   }
 
   // ---------------- 三类触发 ----------------
-  function toggleWin(name) {
-    if (!clientReady()) { toast("客户端未就绪"); return; }
+  function uiComponents() {
     try {
       var UI = window.require("UI/UIManager");
-      var c = UI.getComponent(name);
-      var open = !!(c && c.__active);
-      if (open) { try { c.remove(); } catch (e) {} }
-      else { try { c.append(); } catch (e) {} }
-      toast((WIN_MAP[name] || name) + (open ? " 已关闭" : " 已打开"));
-    } catch (e) { toast("组件未就绪: " + (WIN_MAP[name] || name)); }
+      return { UI: UI, map: (UI && UI.components) || null };
+    } catch (e) { return { UI: null, map: null }; }
+  }
+  function findComponent(name) {
+    var r = uiComponents();
+    var map = r.map;
+    if (!map) return null;
+    if (map[name]) return map[name];
+    var low = name.toLowerCase();
+    var hits = Object.keys(map).filter(function (k) {
+      var kl = k.toLowerCase();
+      return kl === low || kl.indexOf(low) >= 0 || low.indexOf(kl) >= 0;
+    });
+    return hits.length === 1 ? map[hits[0]] : null;
+  }
+  function toggleWin(name) {
+    if (!clientReady()) { toast("客户端未就绪"); return; }
+    var label = WIN_MAP[name] || name;
+    var c = null;
+    try { c = findComponent(name); } catch (e) { c = null; }
+    if (!c) { toast("组件未就绪: " + label + " (进入游戏后可用)"); return; }
+    try {
+      var open = !!c.__active;
+      if (open) {
+        try { c.remove(); } catch (e) {}
+        toast(label + " 已关闭");
+      } else {
+        try { c.append(); } catch (e) { toast("打开失败: " + label + ": " + (e && e.message ? e.message : e)); return; }
+        // 300ms 后确认窗口真的挂上,没有则重试一次
+        setTimeout(function () {
+          try { if (c.__active && c.ui && !c.ui.isConnected && c.append) c.append(); } catch (e2) {}
+        }, 300);
+        toast(label + " 已打开");
+      }
+    } catch (e) { toast("组件未就绪: " + label + ": " + (e && e.message ? e.message : e)); }
   }
   function synthKey(code, kind, mods) {
     var m = KEY_MAP[code];
@@ -353,7 +437,21 @@
     } catch (e) {}
   }
 
-  // ---------------- 自建摇杆(仅电脑内核 Online) ----------------
+  // ---------------- 自建摇杆(仅电脑内核 Online;协议直驱 REQUEST_JOYSTICK_DIR) ----------------
+  var JOY_DIRS = [
+    { dx: 0, dy: -1 }, { dx: -1, dy: -1 }, { dx: -1, dy: 0 }, { dx: -1, dy: 1 },
+    { dx: 0, dy: 1 }, { dx: 1, dy: 1 }, { dx: 1, dy: 0 }, { dx: 1, dy: -1 }
+  ];
+  function joySend(move, dir) {
+    if (!clientReady()) return;
+    try {
+      var cl = CL();
+      if (!cl || !cl.PS || !cl.PS.CZ || !cl.PS.CZ.REQUEST_JOYSTICK_DIR || !cl.NM) return;
+      var p = new cl.PS.CZ.REQUEST_JOYSTICK_DIR();
+      p.move = move; p.direction = dir;
+      cl.NM.sendPacket(p);
+    } catch (e) {}
+  }
   function showJoystick() {
     if (document.getElementById("dsh-mk-joy")) return;
     var joy = el("div");
@@ -362,15 +460,23 @@
     var knob = el("div", "dsh-mk-joy-knob");
     base.appendChild(knob);
     joy.appendChild(base);
+    isolate(base); isolate(knob);
     (rootEl || document.body).appendChild(joy);
-    var o = { px: 0, py: 0, ax: 0, ay: 0, active: false };
-    function center() { return { x: innerWidth / 2, y: innerHeight / 2 }; }
-    function dirVec() {
+    joyEl = joy;
+    applyJoyEdge();
+    var o = { px: 0, py: 0, ax: 0, ay: 0, active: false, dir: -1, lastDir: -1, lastSent: 0, breakTs: 0 };
+    function dir8() {
       var dx = o.ax - o.px, dy = o.ay - o.py;
       var len = Math.sqrt(dx * dx + dy * dy);
-      if (len < 4) return null;
-      var k = Math.min(1, len / 40);
-      return { dx: dx / len * k, dy: dy / len * k };
+      if (len < 5) return -1;   // 死区
+      var best = -1, bestDot = -1;
+      for (var i = 0; i < 8; i++) {
+        var d = JOY_DIRS[i];
+        var dl = Math.sqrt(d.dx * d.dx + d.dy * d.dy); // 对角向量归一化,避免与轴向平局
+        var dot = (dx * d.dx + dy * d.dy) / (len * dl);
+        if (dot > bestDot) { bestDot = dot; best = i; }
+      }
+      return best;
     }
     function knobPos(e) {
       var dx = e.clientX - o.px, dy = e.clientY - o.py;
@@ -380,12 +486,18 @@
       knob.style.transform = "translate(" + (dx / len * r) + "px," + (dy / len * r) + "px)";
     }
     function start(e) {
-      e.preventDefault();
+      if (e) { try { e.stopPropagation(); e.preventDefault(); } catch (err) {} }
       o.px = o.ax = e.clientX; o.py = o.ay = e.clientY;
-      o.active = true;
-      try { base.setPointerCapture(e.pointerId); } catch (err) {}
+      o.active = true; o.dir = -1;
       knob.style.transition = "none";
       knob.style.transform = "translate(0,0)";
+      try { base.setPointerCapture(e.pointerId); } catch (err) {}
+      // 断触兜底:1 秒内重新按下即带入上次方向续走
+      if (o.breakTs && Date.now() - o.breakTs < 1000 && o.lastDir >= 0) {
+        o.dir = o.lastDir; o.lastSent = 0;
+        joySend(1, o.dir);
+      }
+      o.breakTs = 0;
     }
     function move(e) {
       if (!o.active) return;
@@ -395,35 +507,29 @@
     function end() {
       if (!o.active) return;
       o.active = false;
+      o.breakTs = Date.now();
+      if (o.dir >= 0) { joySend(0, -1); o.lastDir = o.dir; o.dir = -1; }
       knob.style.transition = "transform .15s";
       knob.style.transform = "translate(0,0)";
     }
-    var clickTimer = setInterval(function () {
+    var steerTimer = setInterval(function () {
       if (!o.active || !clientReady()) return;
-      var d = dirVec();
-      if (!d) return;
-      var c = center();
-      var tx = Math.round(c.x + d.dx * 150), ty = Math.round(c.y + d.dy * 150);
-      var tgt = state.joyTarget;
-      tgt = tgt && tgt.isConnected ? tgt : null;
-      if (!tgt) {
-        var hit = document.elementFromPoint(c.x, c.y);
-        tgt = hit && hit !== joy ? hit : document.body;
+      var d = dir8();
+      var now = Date.now();
+      if (d >= 0) {
+        if (d !== o.dir) { o.dir = d; o.lastSent = 0; }
+        else if (now - o.lastSent < 700) return;   // 同方向 700ms 心跳刷新即可
+        o.lastSent = now;
+        joySend(1, o.dir);
+      } else {
+        if (o.dir >= 0) { joySend(0, -1); o.lastDir = o.dir; o.dir = -1; }
       }
-      try {
-        tgt.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window, clientX: tx, clientY: ty, button: 0 }));
-        tgt.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window, clientX: tx, clientY: ty, button: 0 }));
-      } catch (e) {}
-    }, 400);
+    }, 140);
     base.addEventListener("pointerdown", start);
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", end);
-    window.addEventListener("pointercancel", end);
-    // 真机触摸地图会派发兼容 mouse 事件 → 记录点击目标,摇杆后续复用
-    document.addEventListener("mousedown", function (e) {
-      if (e.isTrusted) state.joyTarget = e.target;
-    }, true);
-    joy._timer = clickTimer;
+    base.addEventListener("pointermove", move);
+    base.addEventListener("pointerup", end);
+    base.addEventListener("pointercancel", end);
+    joy._timer = steerTimer;
   }
 
   // ---------------- 掉线防护(核心) ----------------
@@ -705,6 +811,7 @@
     panel.appendChild(swRow("后台保活(音频+锁+防熄屏)", function () { return cfg.opts.bgkeep; }, function (v) { cfg.opts.bgkeep = v; }));
     panel.appendChild(swRow("首次操作自动全屏", function () { return cfg.opts.fullscreen; }, function (v) { cfg.opts.fullscreen = v; }));
     panel.appendChild(swRow("掉线自动重连(需记住账号)", function () { return cfg.opts.autoReload; }, function (v) { cfg.opts.autoReload = v; }));
+    panel.appendChild(swRow("边缘避让(避开系统手势区)", function () { return cfg.opts.edge; }, function (v) { cfg.opts.edge = v; saveCfg(); renderKeys(); try { applyEdgeUI(); } catch (e) {} }));
     var remRow = el("div", "dsh-mk-sw");
     var remLb = el("div", "dsh-mk-label", "记住账号(自动重登)");
     var remInp = el("input");
@@ -732,6 +839,22 @@
     kerSel.addEventListener("change", function () { cfg.kernel = kerSel.value; saveCfg(); });
     ker.appendChild(kerLb); ker.appendChild(kerSel);
     panel.appendChild(ker);
+    var line = el("div", "dsh-mk-sw");
+    var lineLb = el("div", "dsh-mk-label", "登录线路");
+    var lineSel = el("select", "dsh-mk-sel");
+    lineSel.innerHTML = '<option value="3">V6-Online 三转</option><option value="5">V6-Eden 进阶二转</option>';
+    lineSel.value = String(pickCv());
+    lineSel.addEventListener("change", function () {
+      cfg.line = parseInt(lineSel.value, 10);
+      saveCfg();
+      toast("切换线路,重载中…");
+      var u = location.href.replace(/([?&])cv=\d+/, "$1cv=" + lineSel.value);
+      if (!/[?&]cv=/.test(u)) u += (u.indexOf("?") >= 0 ? "&" : "?") + "cv=" + lineSel.value;
+      setTimeout(function () { try { location.replace(u); } catch (e) {} }, 400);
+    });
+    isolate(lineSel);
+    line.appendChild(lineLb); line.appendChild(lineSel);
+    panel.appendChild(line);
     // 底部按钮
     var foot = el("div", "dsh-mk-foot");
     var ok = el("button", "dsh-mk-ok", "完成");
@@ -745,12 +868,63 @@
     panel.appendChild(foot);
     mask.appendChild(panel);
     (rootEl || document.body).appendChild(mask);
+    isolate(mask);
     mask.style.display = "block";
   }
   function descKey(k) {
     if (k.t === "win") return (WIN_MAP[k.win] || k.win) + "(开窗)";
     if (k.t === "key") return "按键 " + k.key;
     return "点地 " + k.x + "," + k.y;
+  }
+
+  // ---------------- 线路选择(首次使用;选定前不注入) ----------------
+  function showLinePicker() {
+    if (document.getElementById("dsh-mk-line")) return;
+    var mask = el("div");
+    mask.id = "dsh-mk-line";
+    mask.style.cssText = "position:fixed;inset:0;z-index:2147483001;background:rgba(10,20,40,.6);display:flex;align-items:center;justify-content:center;pointer-events:auto";
+    var box = el("div");
+    box.style.cssText = "width:84%;max-width:340px;background:#f4f7fc;border-radius:14px;padding:20px 18px;box-shadow:0 -4px 20px rgba(0,0,0,.3);font-size:14px;color:#1c3a66";
+    var h = el("h3", null, "选择登录线路");
+    h.style.cssText = "margin:0 0 4px;font-size:16px;color:#16305f";
+    var sub = el("div", null, "二转服请选 V6-Eden 进阶二转(之后可在设置里修改)");
+    sub.style.cssText = "color:#666;font-size:12px;margin:0 0 12px";
+    box.appendChild(h); box.appendChild(sub);
+    function opt(cv, title, desc) {
+      var row = el("div");
+      row.style.cssText = "display:flex;align-items:center;gap:10px;padding:12px;border:2px solid #b9c8e2;border-radius:10px;margin-bottom:10px;background:#fff;touch-action:none";
+      var radio = el("input");
+      radio.type = "radio"; radio.name = "dsh-mk-line"; radio.value = String(cv);
+      if (cv === 5) radio.checked = true; // 预选二转(用户目标线路)
+      var tx = el("div", null, "<b>" + title + "</b><br><span style='color:#777;font-size:12px'>" + desc + "</span>");
+      row.appendChild(radio); row.appendChild(tx);
+      isolate(row);
+      return row;
+    }
+    box.appendChild(opt(3, "V6-Online 三转", "ClientVer 3"));
+    box.appendChild(opt(5, "V6-Eden 进阶二转", "ClientVer 5"));
+    var foot = el("div");
+    foot.style.cssText = "display:flex;gap:10px;margin-top:14px";
+    var go = el("button", "dsh-mk-ok", "进入游戏");
+    go.addEventListener("click", function () {
+      var checked = null;
+      (box.querySelectorAll("input") || []).forEach(function (inp) { if (inp.checked) checked = inp; });
+      cfg.line = checked ? parseInt(checked.value, 10) : 5;
+      saveCfg();
+      mask.style.display = "none";
+      injectClient(cfg.kernel === "pc" ? "pc" : "mn");
+    });
+    var skip = el("button", "dsh-mk-reset", "默认三转(不记忆)");
+    skip.addEventListener("click", function () {
+      cfg.line = 3; // 本次生效但不保存:下次打开仍询问
+      mask.style.display = "none";
+      injectClient(cfg.kernel === "pc" ? "pc" : "mn");
+    });
+    isolate(go); isolate(skip);
+    foot.appendChild(go); foot.appendChild(skip);
+    box.appendChild(foot);
+    mask.appendChild(box);
+    (document.body || document.documentElement).appendChild(mask);
   }
 
   // ---------------- 启动 ----------------

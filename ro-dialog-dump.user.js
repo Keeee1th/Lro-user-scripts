@@ -1,13 +1,15 @@
 // ==UserScript==
 // @name         RO 对话框载体临时探测
 // @namespace    dsh-dialog-dump
-// @version      0.1.0
-// @description  临时：开一次 NPC 对话，dump DOM 变更与入站包，判对话框文本是 DOM 还是 canvas/协议
+// @version      0.2.0
+// @description  临时：判对话框是 DOM 还是 canvas/协议。修自观察bug+UTF8/GBK解码+完整hex+DOM快照
 // @match        https://post.lastro.cn/*
 // @match        https://post.lastro.cn/ro/api.html*
 // @match        https://post.lastro.cn/ro/api-old.html*
 // @run-at       document-start
 // @grant        none
+// @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-dialog-dump.user.js
+// @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-dialog-dump.user.js
 // ==/UserScript==
 
 (function () {
@@ -15,22 +17,30 @@
   if (window.__dshDialogDumpDone) return;
   window.__dshDialogDumpDone = true;
 
-  var T = { dom: [], pkt: [], pktCounts: {} };
+  var T0 = performance.now();
+  function ts() { return Math.round(performance.now() - T0); }
+  var T = { dom: [], pkt: [], snap: null };
+  var seenDom = {};
 
   function hex(dv, off, n) {
     var s = '', end = Math.min(off + n, dv.byteLength);
     for (var i = off; i < end; i++) { var x = dv.getUint8(i); s += (x < 16 ? '0' : '') + x.toString(16); }
     return s;
   }
-  function asciiRuns(dv, minLen) {
-    var runs = [], cur = '';
-    for (var i = 0; i < dv.byteLength; i++) {
-      var c = dv.getUint8(i);
-      if (c >= 0x20 && c <= 0x7e) { cur += String.fromCharCode(c); }
-      else { if (cur.length >= minLen) runs.push(cur); cur = ''; }
+  function hasCJK(s) { return /[\u4e00-\u9fff]/.test(s); }
+  function extText(buf) {
+    var out = [];
+    function collect(s, enc) {
+      var runs = s.split(/[\x00-\x1f\x7f]+/);
+      for (var i = 0; i < runs.length; i++) {
+        var r = runs[i].replace(/\s+/g, ' ').trim();
+        if (!r) continue;
+        if ((hasCJK(r) && r.length >= 2) || (!hasCJK(r) && r.length >= 6)) out.push('[' + enc + '] ' + r);
+      }
     }
-    if (cur.length >= minLen) runs.push(cur);
-    return runs;
+    try { collect(new TextDecoder('utf-8', { fatal: false }).decode(buf), 'utf8'); } catch (e) {}
+    try { collect(new TextDecoder('gbk').decode(buf), 'gbk'); } catch (e) {}
+    return out.slice(0, 8);
   }
   function onInbound(data) {
     try {
@@ -38,13 +48,14 @@
       var dv = new DataView(data);
       var id = dv.byteLength >= 2 ? dv.getUint16(0, true) : -1;
       var key = id + ':' + hex(dv, 0, Math.min(24, dv.byteLength));
-      if (!T.pktCounts[key]) {
-        if (T.pkt.length < 120) {
-          T.pkt.push({ id: id, len: dv.byteLength, hex: hex(dv, 0, Math.min(20, dv.byteLength)), ascii: asciiRuns(dv, 4).slice(0, 5) });
+      if (!T.pktSeen) T.pktSeen = {};
+      if (!T.pktSeen[key]) {
+        if (T.pkt.length < 200) {
+          T.pkt.push({ t: ts(), id: id, len: dv.byteLength, hex: hex(dv, 0, Math.min(64, dv.byteLength)), text: extText(data) });
         }
-        T.pktCounts[key] = 1;
+        T.pktSeen[key] = 1;
       } else {
-        T.pktCounts[key]++;
+        T.pktSeen[key]++;
       }
       render();
     } catch (e) {}
@@ -62,15 +73,22 @@
       PW.CONNECTING = N.CONNECTING; PW.OPEN = N.OPEN; PW.CLOSING = N.CLOSING; PW.CLOSED = N.CLOSED;
       PW.__dshDump = true;
       window.WebSocket = PW;
-      console.log('[ddump] WebSocket 已劫持');
-    } catch (e) { console.log('[ddump] WS hook 失败', e); }
+      console.log('[ddump] WebSocket hooked');
+    } catch (e) { console.log('[ddump] WS hook fail', e); }
   })();
 
-  function textOf(n) {
-    var t = (n && n.textContent || '').replace(/\s+/g, ' ').replace(/\s+$/g, '').trim();
-    return t.length > 200 ? t.slice(0, 200) + '...' : t;
+  function nameOf(n) {
+    if (n.nodeType === 3) return '#text';
+    if (n.nodeType !== 1) return '?';
+    var s = n.tagName ? n.tagName.toLowerCase() : '';
+    if (n.id) s += '#' + n.id;
+    if (n.className && typeof n.className === 'string') s += '.' + String(n.className).trim().replace(/\s+/g, '.');
+    return s;
   }
-  var seenDom = {};
+  function textOf(n) {
+    var t = (n && n.textContent || '').replace(/\s+/g, ' ').trim();
+    return t.length > 200 ? t.slice(0, 200) : t;
+  }
   function startMo() {
     if (window.__dshMoStarted || !document.body) return;
     window.__dshMoStarted = true;
@@ -78,21 +96,23 @@
       var changed = false;
       for (var i = 0; i < muts.length; i++) {
         var m = muts[i];
-        if (m.type === 'childList') {
-          for (var j = 0; j < m.addedNodes.length; j++) {
-            var n = m.addedNodes[j];
-            if (n.nodeType !== 1 && n.nodeType !== 3) continue;
-            var t = textOf(n);
-            if (!t || t.length < 2 || seenDom[t]) continue;
-            seenDom[t] = true;
-            if (T.dom.length < 160) T.dom.push(t);
-            changed = true;
-          }
+        if (m.type !== 'childList') continue;
+        for (var j = 0; j < m.addedNodes.length; j++) {
+          var n = m.addedNodes[j];
+          if (n.nodeType !== 1 && n.nodeType !== 3) continue;
+          if (panel && panel.contains(n)) continue;
+          var t = textOf(n);
+          if (!t) continue;
+          var k = nameOf(n) + '|' + t;
+          if (seenDom[k]) continue;
+          seenDom[k] = true;
+          if (T.dom.length < 300) T.dom.push({ t: ts(), at: nameOf(n), text: t });
+          changed = true;
         }
       }
       if (changed) render();
     });
-    mo.observe(document.body, { childList: true, subtree: true, characterData: true });
+    mo.observe(document.body, { childList: true, subtree: true });
     render();
   }
   function bootMo() {
@@ -100,42 +120,40 @@
     else { document.addEventListener('DOMContentLoaded', startMo, { once: true }); }
   }
 
-  var panel = null, ta = null, btnCopy = null, btnClear = null, status = null;
+  var panel = null, ta = null;
+  function mkBtn(label, bg, fn) {
+    var b = document.createElement('button');
+    b.textContent = label;
+    b.style.cssText = 'margin:6px 6px 0 0;padding:4px 10px;background:' + bg + ';color:#fff;border:0;cursor:pointer;font-weight:bold;';
+    b.onclick = fn;
+    return b;
+  }
   function render() {
     if (!document.body) return;
     if (!panel) {
       panel = document.createElement('div');
-      panel.style.cssText = 'position:fixed;top:8px;left:8px;z-index:2147483647;background:#0b0b0b;color:#3f3;font:12px/1.5 monospace;padding:8px;border:1px solid #3f3;max-width:460px;max-height:82vh;overflow:auto;';
-      status = document.createElement('div');
-      status.style.cssText = 'margin-bottom:6px;font-weight:bold;';
+      panel.setAttribute('data-dsh-dump', '1');
+      panel.style.cssText = 'position:fixed;top:8px;left:8px;z-index:2147483647;background:#0b0b0b;color:#3f3;font:12px/1.5 monospace;padding:8px;border:1px solid #3f3;max-width:480px;max-height:82vh;overflow:auto;';
       ta = document.createElement('textarea');
       ta.readOnly = true;
-      ta.style.cssText = 'width:100%;height:200px;background:#000;color:#3f3;font:11px/1.4 monospace;border:1px solid #333;';
-      btnClear = document.createElement('button');
-      btnClear.textContent = '清空重记';
-      btnClear.style.cssText = 'margin:6px 6px 0 0;padding:4px 10px;background:#333;color:#fff;border:0;cursor:pointer;font-weight:bold;';
-      btnCopy = document.createElement('button');
-      btnCopy.textContent = '复制 dump';
-      btnCopy.style.cssText = 'margin-top:6px;padding:4px 10px;background:#3f3;color:#000;border:0;cursor:pointer;font-weight:bold;';
-      panel.appendChild(status);
+      ta.style.cssText = 'width:100%;height:220px;background:#000;color:#3f3;font:11px/1.4 monospace;border:1px solid #333;';
       panel.appendChild(ta);
-      panel.appendChild(btnClear);
-      panel.appendChild(btnCopy);
+      panel.appendChild(mkBtn('清空重记', '#333', function () {
+        T.dom = []; T.pkt = []; T.snap = null; T.pktSeen = {}; seenDom = {};
+        render();
+      }));
+      panel.appendChild(mkBtn('抓 DOM 快照', '#226', function () {
+        var s = document.body.innerText || '';
+        T.snap = s.length > 4000 ? s.slice(0, 4000) : s;
+        render();
+      }));
+      panel.appendChild(mkBtn('复制 dump', '#3f3', function () {
+        try { navigator.clipboard.writeText(ta.value).then(function () {}); } catch (e) { ta.select(); document.execCommand('copy'); }
+      }));
       document.body.appendChild(panel);
-      btnClear.onclick = function () {
-        T.dom = []; T.pkt = []; T.pktCounts = {}; seenDom = {};
-        render(); btnClear.textContent = '已清空，去开对话';
-      };
-      btnCopy.onclick = function () {
-        try {
-          navigator.clipboard.writeText(ta.value).then(function(){ btnCopy.textContent = '已复制'; });
-        } catch (e) {
-          ta.select(); document.execCommand('copy'); btnCopy.textContent = '已复制';
-        }
-      };
     }
-    status.textContent = 'DOM 新增 ' + T.dom.length + ' 条 / 入站包 ' + T.pkt.length + ' 种 / 去重后 ' + Object.keys(T.pktCounts).length;
-    ta.value = JSON.stringify(T, null, 1);
+    var o = { counts: { dom: T.dom.length, pkt: T.pkt.length }, dom: T.dom.slice(-60), pkt: T.pkt, snap: T.snap };
+    ta.value = JSON.stringify(o, null, 1);
   }
 
   bootMo();

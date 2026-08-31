@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO 手机自适应 ro-mobile
 // @namespace    https://github.com/Keeee1th/Lro-user-scripts
-// @version      1.0.3
+// @version      1.0.4
 // @description  手机使用 PC 网页 api.html 的触控适配与掉线防护:自动加载手机内核(Online_mn),自定义操作键(开窗/键盘/点地),后台保活(隐藏PING+音频+WebLock+防熄屏),可与 ro-assist 双开(检测式不抢占)
 // @match        https://post.lastro.cn/ro/api.html*
 // @match        http://post.lastro.cn/ro/api.html*
@@ -13,7 +13,7 @@
 
 (function () {
   "use strict";
-  var VER = "1.0.3";
+  var VER = "1.0.4";
   var LS_KEY = "dsh_ro_mobile_v1";
   var version = (location.href.match(/[?&]v=([\d.]+)/i) || [null, "69.32"])[1];
 
@@ -85,7 +85,7 @@
       ],
       line: null,                       // 线路:null=未选(首次弹层),3=V6-Online 三转,5=V6-Eden 进阶二转
       opts: { bgkeep: true, fullscreen: true, autoReload: false, remember: false, edge: true,
-        uiScale: 100, keyScale: 100, joyScale: 100, joyShow: true, joyProto: false },
+        uiScale: 100, keyScale: 100, joyScale: 100, joyShow: true, joyProto: false, joyPos: null },
       acc: "",
       pwd: ""
     };
@@ -108,6 +108,7 @@
         if (typeof o.opts.joyScale !== "number" || o.opts.joyScale < 50 || o.opts.joyScale > 200) o.opts.joyScale = 100;
         if (typeof o.opts.joyShow !== "boolean") o.opts.joyShow = true;
         if (typeof o.opts.joyProto !== "boolean") o.opts.joyProto = false;
+        if (!o.opts.joyPos || typeof o.opts.joyPos.x !== "number" || typeof o.opts.joyPos.y !== "number") o.opts.joyPos = null;
         return o;
       }
     } catch (e) {}
@@ -119,7 +120,7 @@
   var cfg = loadCfg();
 
   // ---------------- 状态 ----------------
-  var state = { ready: false, injected: false, kernel: null, shown: false, hiddenAt: 0, dcAlerting: false, clickTarget: null };
+  var state = { ready: false, injected: false, kernel: null, shown: false, hiddenAt: 0, dcAlerting: false, clickTarget: null, posMode: false };
 
   // ---------------- 工具 ----------------
   function el(tag, cls, html) {
@@ -244,7 +245,9 @@
       ".dsh-mk-range-v{flex:0 0 auto;min-width:54px;text-align:right;font-size:12px;color:#1c3a66}" +
       ".dsh-mk-panel .dsh-mk-foot{display:flex;gap:10px;margin-top:14px}" +
       ".dsh-mk-panel .dsh-mk-ok{flex:1;padding:12px;border-radius:10px;background:#2b7fd0;color:#fff;border:none;font-size:15px;font-weight:600;cursor:pointer;touch-action:none}" +
-      ".dsh-mk-panel .dsh-mk-reset{flex:1;padding:12px;border-radius:10px;background:#fff;color:#b3261e;border:1px solid #e6b4b0;font-size:15px;font-weight:600;cursor:pointer;touch-action:none}";
+      ".dsh-mk-panel .dsh-mk-reset{flex:1;padding:12px;border-radius:10px;background:#fff;color:#b3261e;border:1px solid #e6b4b0;font-size:15px;font-weight:600;cursor:pointer;touch-action:none}" +
+      ".dsh-mk-posmode .dsh-mk-btn,.dsh-mk-posmode .dsh-mk-joy{opacity:.55;box-shadow:0 0 0 2px rgba(43,127,208,.6)}" +
+      "#dsh-mk-posdone{pointer-events:auto;position:absolute;top:calc(10px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);background:#2b7fd0;color:#fff;font-size:15px;font-weight:600;padding:10px 22px;border-radius:20px;z-index:12;touch-action:none;box-shadow:0 2px 10px rgba(0,0,0,.3)}";
     (document.head || document.documentElement).appendChild(st);
   }
   function hideShell() {
@@ -256,7 +259,7 @@
   }
 
   // ---------------- 操作层(操作键 + 摇杆 + 齿轮) ----------------
-  var rootEl = null, toastEl = null, alertEl = null, gearEl = null, joyEl = null;
+  var rootEl = null, toastEl = null, alertEl = null, gearEl = null, joyEl = null, posDoneEl = null, posDrag = null;
   function initOverlay() {
     if (state.shown) return;
     state.shown = true;
@@ -280,6 +283,12 @@
     isolate(gearEl);
     applyEdgeUI();
     rootEl.appendChild(gearEl);
+    posDoneEl = el("div", "dsh-mk-posdone", "完成拖拽");
+    posDoneEl.id = "dsh-mk-posdone";
+    posDoneEl.style.display = "none";
+    posDoneEl.addEventListener("click", function (e) { try { e.stopPropagation(); } catch (err) {} posModeExit(); });
+    isolate(posDoneEl);
+    rootEl.appendChild(posDoneEl);
     document.body.appendChild(rootEl);
     if (cfg.opts.joyShow) showJoystick();
   }
@@ -298,6 +307,11 @@
   // 边缘避让开关:齿轮/摇杆坐标(默认开=退出手势区)
   function applyJoyEdge() {
     if (!joyEl) return;
+    if (cfg.opts.joyPos && typeof cfg.opts.joyPos.x === "number") {
+      joyEl.style.left = cfg.opts.joyPos.x + "%"; joyEl.style.top = cfg.opts.joyPos.y + "%";
+      joyEl.style.right = "auto"; joyEl.style.bottom = "auto";
+      return;
+    }
     if (cfg.opts.edge) {
       joyEl.style.left = ""; joyEl.style.right = ""; joyEl.style.bottom = "";
     } else {
@@ -312,6 +326,56 @@
       }
     } catch (e) {}
     try { applyJoyEdge(); } catch (e) {}
+  }
+  // ---------------- 按键位置调整模式(透明拖拽;位置按视口%记忆) ----------------
+  function posModeEnter() {
+    state.posMode = true;
+    if (rootEl) rootEl.classList.add("dsh-mk-posmode");
+    if (posDoneEl) posDoneEl.style.display = "block";
+    var em = document.getElementById("dsh-mk-edit");
+    if (em) em.style.display = "none"; // 先关设置,露出游戏画面
+    toast("拖拽按键/摇杆到新位置");
+  }
+  function posModeExit() {
+    state.posMode = false;
+    if (rootEl) rootEl.classList.remove("dsh-mk-posmode");
+    if (posDoneEl) posDoneEl.style.display = "none";
+    posDrag = null;
+    saveCfg();
+    renderKeys();
+    toast("位置已保存");
+  }
+  function dragStart(e, el, target) { // target: {kind:'key',k} | {kind:'joy'}
+    if (!state.posMode) return;
+    try { e.stopPropagation(); e.preventDefault(); } catch (err) {}
+    var pp = el.parentNode;
+    if (pp && pp !== rootEl && pp.classList && (pp.classList.contains("dsh-mk-bar") || pp.classList.contains("dsh-mk-col"))) {
+      rootEl.appendChild(el); // 拖出容器,改绝对定位
+    }
+    var rect = null;
+    try { rect = el.getBoundingClientRect(); } catch (err) {}
+    var l0 = rect ? rect.left : (parseFloat(el.style.left) || 0);
+    var t0 = rect ? rect.top : (parseFloat(el.style.top) || 0);
+    posDrag = { el: el, target: target, dx: e.clientX - l0, dy: e.clientY - t0 };
+    try { if (el.setPointerCapture) el.setPointerCapture(e.pointerId); } catch (err) {}
+  }
+  function dragMove(e) {
+    if (!posDrag) return;
+    try { e.stopPropagation(); e.preventDefault(); } catch (err) {}
+    posDrag.el.style.left = Math.max(0, e.clientX - posDrag.dx) + "px";
+    posDrag.el.style.top = Math.max(0, e.clientY - posDrag.dy) + "px";
+  }
+  function dragEnd() {
+    if (!posDrag) return;
+    var el = posDrag.el, t = posDrag.target;
+    var x = parseFloat(el.style.left) || 0, y = parseFloat(el.style.top) || 0;
+    var W = window.innerWidth || 375, H = window.innerHeight || 667;
+    var px = Math.round(x / W * 100), py = Math.round(y / H * 100);
+    if (px < 0) px = 0; if (py < 0) py = 0; if (px > 95) px = 95; if (py > 92) py = 92;
+    posDrag = null;
+    if (!t) return;
+    if (t.kind === "key" && t.k) { t.k.pos = { x: px, y: py }; saveCfg(); }
+    else if (t.kind === "joy") { cfg.opts.joyPos = { x: px, y: py }; saveCfg(); }
   }
   // 画面缩放(游戏主容器 transform:scale,居中;找不到容器给提示) ----
   var uiWrap = null;
@@ -347,8 +411,14 @@
       b.style.width = Math.round(52 * ks) + "px";
       b.style.height = Math.round(46 * ks) + "px";
       b.style.fontSize = Math.round(13 * ks) + "px";
-      b.style.position = "static";
-      bar.appendChild(b);
+      if (k.pos && typeof k.pos.x === "number") { // 自定义位置(拖拽保存,%坐标)
+        b.style.position = "absolute";
+        b.style.left = k.pos.x + "%"; b.style.top = k.pos.y + "%";
+        rootEl.appendChild(b);
+      } else {
+        b.style.position = "static";
+        bar.appendChild(b);
+      }
     });
     var col = el("div", "dsh-mk-col");
     var colRight = cfg.opts.edge ? "calc(48px + env(safe-area-inset-right))" : "10px";
@@ -358,8 +428,14 @@
       b.style.width = Math.round(48 * ks) + "px";
       b.style.height = Math.round(48 * ks) + "px";
       b.style.fontSize = Math.round(13 * ks) + "px";
-      b.style.position = "static";
-      col.appendChild(b);
+      if (k.pos && typeof k.pos.x === "number") { // 自定义位置(拖拽保存,%坐标)
+        b.style.position = "absolute";
+        b.style.left = k.pos.x + "%"; b.style.top = k.pos.y + "%";
+        rootEl.appendChild(b);
+      } else {
+        b.style.position = "static";
+        col.appendChild(b);
+      }
     });
     rootEl.insertBefore(bar, rootEl.firstChild);
     rootEl.insertBefore(col, rootEl.firstChild);
@@ -370,6 +446,7 @@
     isolate(b);
     var timer = null, iv = null;
     function down(e) {
+      if (state.posMode) return; // 位置调整模式:不触发功能
       if (e) { try { e.preventDefault(); e.stopPropagation(); } catch (err) {} }
       var resume = !!(b._breakTs && Date.now() - b._breakTs < 1000);
       b._breakTs = 0;
@@ -377,8 +454,8 @@
       if (k.t === "key" || k.t === "combo") { // 按键/组合长按立即连发,消除空窗(引擎按 keydown 状态持续走)
         iv = setInterval(function () { fireKeys(k.t === "combo" ? k.keys : [k.key], k.mods, "keydown"); }, 120);
       } else if (k.t === "move") {
-        if (resume) iv = setInterval(function () { walkTo(k.x, k.y); }, 400);
-        else timer = setTimeout(function () { iv = setInterval(function () { walkTo(k.x, k.y); }, 400); }, 300);
+        if (resume) iv = setInterval(function () { walkTo(k.x, k.y); }, 1200); // 移动发包铁律:低频率重发,防服务器卡顿
+        else timer = setTimeout(function () { iv = setInterval(function () { walkTo(k.x, k.y); }, 1200); }, 300);
       }
     }
     function up() {
@@ -395,6 +472,10 @@
     b.addEventListener("pointerup", up);
     b.addEventListener("pointercancel", broken);
     b.addEventListener("pointerleave", broken);
+    b.addEventListener("pointerdown", function (e) { if (state.posMode) dragStart(e, b, { kind: "key", k: k }); });
+    b.addEventListener("pointermove", function (e) { if (state.posMode) dragMove(e); });
+    b.addEventListener("pointerup", function () { if (state.posMode) dragEnd(); });
+    b.addEventListener("pointercancel", function () { if (state.posMode) posDrag = null; });
     return b;
   }
   function escapeHtml(s) {
@@ -516,7 +597,7 @@
     (rootEl || document.body).appendChild(joy);
     joyEl = joy;
     applyJoyEdge();
-    var o = { px: 0, py: 0, ax: 0, ay: 0, active: false, dir: -1, lastDir: -1, lastSent: 0, breakTs: 0, r: 30 };
+    var o = { px: 0, py: 0, ax: 0, ay: 0, active: false, dir: -1, lastDir: -1, lastSent: 0, lastTgt: null, breakTs: 0, r: 40 };
     function dir8() {
       var dx = o.ax - o.px, dy = o.ay - o.py;
       var len = Math.sqrt(dx * dx + dy * dy);
@@ -537,17 +618,23 @@
       if (len < 0.001) return;
       knob.style.transform = "translate(" + (dx / len * r) + "px," + (dy / len * r) + "px)";
     }
-    function steerSend() {
-      if (o.dir < 0 || !clientReady()) return;
+    function steerTarget() {
+      if (o.dir < 0 || !clientReady()) return null;
       var p = playerPos();
       if (!p || !isFinite(p[0]) || !isFinite(p[1])) {
-        if (!steerSend._warned) { steerSend._warned = true; toast("未取到玩家坐标(进入游戏后可用)"); }
-        return;
+        if (!steerTarget._warned) { steerTarget._warned = true; toast("未取到玩家坐标(进入游戏后可用)"); }
+        return null;
       }
       var d = JOY_DIRS[o.dir];
-      walkTo(p[0] + d.dx * 12, p[1] + d.dy * 12); // 朝拖拽方向目标点(服务端寻路,持续重发保持走动)
+      return [p[0] + d.dx * 12, p[1] + d.dy * 12]; // 朝拖拽方向目标点(服务端寻路)
+    }
+    function joyDistTo(tgt) {
+      var p = playerPos();
+      if (!p) return 999;
+      return Math.sqrt((p[0] - tgt[0]) * (p[0] - tgt[0]) + (p[1] - tgt[1]) * (p[1] - tgt[1]));
     }
     function start(e) {
+      if (state.posMode) return; // 位置调整模式:不触发行走
       if (e) { try { e.stopPropagation(); e.preventDefault(); } catch (err) {} }
       o.px = o.ax = e.clientX; o.py = o.ay = e.clientY;
       o.active = true; o.dir = -1;
@@ -558,7 +645,7 @@
       if (o.breakTs && Date.now() - o.breakTs < 1000 && o.lastDir >= 0) {
         o.dir = o.lastDir;
         if (cfg.opts.joyProto) { o.lastSent = 0; joySend(1, o.dir); }
-        else { o.lastSent = 0; steerSend(); }
+        else { o.lastSent = 0; o.lastTgt = null; var t2 = steerTarget(); if (t2) walkTo(t2[0], t2[1]); }
       }
       o.breakTs = 0;
     }
@@ -574,6 +661,7 @@
       if (o.dir >= 0) {
         if (cfg.opts.joyProto) joySend(0, -1);
         o.lastDir = o.dir; o.dir = -1;
+        o.lastTgt = null;
       }
       knob.style.transition = "transform .15s";
       knob.style.transform = "translate(0,0)";
@@ -583,15 +671,17 @@
       var d = dir8();
       var now = Date.now();
       if (d >= 0) {
+        var dirChanged = (d !== o.dir);
         o.dir = d; o.lastDir = d;
         if (cfg.opts.joyProto) {
-          if (now - o.lastSent < 700) return;   // 协议模式:同方向 700ms 心跳
+          if (!dirChanged && now - o.lastSent < 1200) return; // 协议模式:方向变立即发,同向 1200ms 心跳
           o.lastSent = now;
           joySend(1, o.dir);
         } else {
-          if (now - o.lastSent < 500) return;   // 直发模式:每 500ms 重发目标点保持走动
-          o.lastSent = now;
-          steerSend();
+          if (!dirChanged && now - o.lastSent < 1500) return; // 直发模式:方向变立即发,同向 1500ms 心跳(防高频发包致服务器/任务卡顿)
+          if (!dirChanged && o.lastTgt && joyDistTo(o.lastTgt) >= 8) return; // 铁律:离目标还远不补发,仅接近目标(<8格)才补
+          var tgt = steerTarget();
+          if (tgt) { o.lastTgt = tgt; o.lastSent = now; walkTo(tgt[0], tgt[1]); }
         }
       } else if (o.dir >= 0) {
         if (cfg.opts.joyProto) joySend(0, -1);
@@ -603,11 +693,15 @@
     base.addEventListener("pointerup", end);
     base.addEventListener("pointercancel", end);
     joy._timer = steerTimer;
+    joy.addEventListener("pointerdown", function (e) { if (state.posMode) dragStart(e, joy, { kind: "joy" }); });
+    joy.addEventListener("pointermove", function (e) { if (state.posMode) dragMove(e); });
+    joy.addEventListener("pointerup", function () { if (state.posMode) dragEnd(); });
+    joy.addEventListener("pointercancel", function () { if (state.posMode) posDrag = null; });
     joy._updateSize = function () {
       var s = (cfg.opts.joyScale || 100) / 100;
       if (s < 0.5) s = 0.5; if (s > 2) s = 2;
-      var d0 = Math.round(96 * s), k0 = Math.round(40 * s);
-      o.r = Math.max(10, Math.round(30 * s));
+      var d0 = Math.round(120 * s), k0 = Math.round(52 * s);
+      o.r = Math.max(12, Math.round(40 * s));
       joy.style.width = d0 + "px"; joy.style.height = d0 + "px";
       knob.style.width = k0 + "px"; knob.style.height = k0 + "px";
       knob.style.marginLeft = (-k0 / 2) + "px"; knob.style.marginTop = (-k0 / 2) + "px";
@@ -826,7 +920,8 @@
     var typeSel = el("select", "dsh-mk-sel");
     typeSel.innerHTML = '<option value="win">开窗</option><option value="key">键盘</option><option value="combo">组合</option><option value="move">点地</option>';
     var paramSel = el("select", "dsh-mk-sel");
-    var paramSel2 = el("select", "dsh-mk-sel"); // 组合键第2键
+    var comboBox = el("div"); // 组合键:自选多键(动态,初始2键,最多6键)
+    comboBox.style.cssText = "display:none;flex-direction:column;gap:4px;flex:1 1 100%;min-width:100%";
     var modsRow = el("div", "dsh-mk-row");
     modsRow.style.cssText = "display:none;justify-content:flex-start;gap:12px;padding:8px 4px;border-bottom:1px solid #e2e8f2";
     var cbCtrl = null, cbAlt = null, cbShift = null;
@@ -848,9 +943,38 @@
         sel.appendChild(op);
       });
     }
+    function comboKeySel() {
+      var row = el("div", "dsh-mk-row");
+      row.style.cssText = "display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #eef2f8";
+      var sel = el("select", "dsh-mk-sel");
+      sel.style.flex = "1";
+      fillKeys(sel);
+      var del = el("button", "dsh-mk-mini del", "删");
+      del.addEventListener("click", function () {
+        if (comboBox.querySelectorAll("select").length <= 2) { toast("组合至少2键"); return; }
+        row.parentNode.removeChild(row);
+      });
+      row.appendChild(sel); row.appendChild(del);
+      return row;
+    }
+    var comboRowBt = el("div", "dsh-mk-row");
+    comboRowBt.style.cssText = "display:flex;align-items:center;gap:6px;padding:4px 0";
+    var addKeyBt = el("button", "dsh-mk-mini", "+加键");
+    addKeyBt.addEventListener("click", function () {
+      if (comboBox.querySelectorAll("select").length >= 6) { toast("最多6键"); return; }
+      comboBox.insertBefore(comboKeySel(), comboRowBt);
+    });
+    comboRowBt.appendChild(addKeyBt);
+    comboBox.appendChild(comboRowBt);
+    function comboVals() {
+      var vs = [];
+      comboBox.querySelectorAll("select").forEach(function (s) { if (s.value) vs.push(s.value); });
+      return vs;
+    }
     function fillParams() {
       var t = typeSel.value;
-      paramSel2.style.display = "none"; modsRow.style.display = "none";
+      paramSel.style.display = "inline-block";
+      comboBox.style.display = "none"; modsRow.style.display = "none";
       if (t === "win") {
         paramSel.innerHTML = "";
         WIN_ORDER.forEach(function (w) {
@@ -861,13 +985,12 @@
       } else if (t === "key") {
         fillKeys(paramSel);
       } else if (t === "combo") {
-        fillKeys(paramSel);
-        fillKeys(paramSel2);
-        if (paramSel2.value === paramSel.value) {
-          var ni = KEY_ORDER.indexOf(paramSel.value) + 1;
-          paramSel2.value = KEY_ORDER[ni] || KEY_ORDER[0];
-        }
-        paramSel2.style.display = "inline-block";
+        paramSel.style.display = "none";
+        while (comboBox.children.length) comboBox.removeChild(comboBox.children[0]); // 清空重建
+        comboBox.appendChild(comboKeySel());
+        comboBox.appendChild(comboKeySel());
+        comboBox.appendChild(comboRowBt);
+        comboBox.style.display = "flex";
         modsRow.style.display = "flex";
       } else {
         paramSel.innerHTML = "";
@@ -892,12 +1015,13 @@
       if (t === "win") k = { id: Math.random().toString(36).slice(2, 9), t: "win", label: WIN_MAP[paramSel.value] || paramSel.value, win: paramSel.value };
       else if (t === "key") k = { id: Math.random().toString(36).slice(2, 9), t: "key", label: paramSel.value, key: paramSel.value };
       else if (t === "combo") {
-        var k1 = paramSel.value, k2 = paramSel2.value || paramSel.value;
+        var vs = comboVals();
+        if (vs.length < 2) { toast("组合至少2键"); return; }
         var mods = {};
         if (cbCtrl.checked) mods.ctrl = true;
         if (cbAlt.checked) mods.alt = true;
         if (cbShift.checked) mods.shift = true;
-        k = { id: Math.random().toString(36).slice(2, 9), t: "combo", label: k1 + "+" + k2, keys: [k1, k2], mods: mods };
+        k = { id: Math.random().toString(36).slice(2, 9), t: "combo", label: vs.join("+"), keys: vs, mods: mods };
       } else {
         var xx = parseFloat(xInp.value), yy = parseFloat(yInp.value);
         if (!isFinite(xx) || !isFinite(yy)) { toast("请填写点地坐标"); return; }
@@ -906,7 +1030,7 @@
       if (posSel.value === "bar") cfg.bar.push(k); else cfg.col.push(k);
       saveCfg(); renderKeys(); openEdit();
     });
-    addRow.appendChild(posSel); addRow.appendChild(typeSel); addRow.appendChild(paramSel); addRow.appendChild(paramSel2); addRow.appendChild(modsRow); addRow.appendChild(xInp); addRow.appendChild(yInp); addRow.appendChild(addBtn);
+    addRow.appendChild(posSel); addRow.appendChild(typeSel); addRow.appendChild(paramSel); addRow.appendChild(comboBox); addRow.appendChild(modsRow); addRow.appendChild(xInp); addRow.appendChild(yInp); addRow.appendChild(addBtn);
     panel.appendChild(addRow);
     if (typeSel.value === "move") { xInp.style.display = "inline-block"; yInp.style.display = "inline-block"; paramSel.style.display = "none"; }
     // 设置区
@@ -989,6 +1113,12 @@
     panel.appendChild(rangeRow("键大小", function () { return cfg.opts.keyScale; }, function (v) { cfg.opts.keyScale = v; }, 60, 200, 5, "%", function () { renderKeys(); }));
     panel.appendChild(rangeRow("摇杆大小", function () { return cfg.opts.joyScale; }, function (v) { cfg.opts.joyScale = v; }, 50, 200, 5, "%", function () { if (joyEl && joyEl._updateSize) joyEl._updateSize(); }));
     panel.appendChild(rangeRow("画面缩放", function () { return cfg.opts.uiScale; }, function (v) { cfg.opts.uiScale = v; }, 60, 180, 5, "%", function () { applyUiScale(); }));
+    var posRow = el("div", "dsh-mk-row");
+    var posBt = el("button", "dsh-mk-add", "调整按键位置(拖拽)");
+    posBt.style.flex = "1";
+    posBt.addEventListener("click", function () { posModeEnter(); });
+    posRow.appendChild(posBt);
+    panel.appendChild(posRow);
     panel.appendChild(swRow("模拟摇杆(两内核显示)", function () { return cfg.opts.joyShow; }, function (v) {
       cfg.opts.joyShow = v;
       if (v) { if (!joyEl) showJoystick(); }

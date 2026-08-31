@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         RO 对话框载体临时探测
 // @namespace    dsh-dialog-dump
-// @version      0.2.0
-// @description  临时：判对话框是 DOM 还是 canvas/协议。修自观察bug+UTF8/GBK解码+完整hex+DOM快照
+// @version      0.3.0
+// @description  临时：判对话框载体+逆向封包。加游戏层隔离(不点地面)+可拖动窗口。GBK解码+DOM快照
 // @match        https://post.lastro.cn/*
 // @match        https://post.lastro.cn/ro/api.html*
 // @match        https://post.lastro.cn/ro/api-old.html*
@@ -21,6 +21,51 @@
   function ts() { return Math.round(performance.now() - T0); }
   var T = { dom: [], pkt: [], snap: null };
   var seenDom = {};
+
+  // ---- 与游戏层隔离 + 拖动（复用 ro-assist isolateEl / dragEl 思路）----
+  var ISO = ["mousedown", "mousemove", "mouseup", "click", "dblclick", "wheel", "contextmenu",
+    "touchstart", "touchmove", "touchend", "pointerdown", "pointermove", "pointerup"];
+  function isolateEl(el) {
+    if (!el) return;
+    for (var i = 0; i < ISO.length; i++) {
+      el.addEventListener(ISO[i], function (ev) { try { ev.stopPropagation(); } catch (e) {} }, false);
+    }
+    return el;
+  }
+  function fallbackStop(ev) {
+    try { if (ev.target && ev.target.closest && ev.target.closest('[data-dsh-dump]')) ev.stopPropagation(); } catch (e) {}
+  }
+  function makeDraggable(handle, panelEl) {
+    var sx, sy, ox, oy, moving = false;
+    try { handle.style.touchAction = 'none'; handle.style.cursor = 'move'; } catch (e) {}
+    function onMove(e) {
+      if (!moving) return;
+      if (e.pointerType === 'mouse' && !(e.buttons & 1)) { onUp(e); return; }
+      var nx = ox + e.clientX - sx, ny = oy + e.clientY - sy;
+      nx = Math.max(0, Math.min(nx, window.innerWidth - 60));
+      ny = Math.max(0, Math.min(ny, window.innerHeight - 40));
+      panelEl.style.left = nx + 'px'; panelEl.style.top = ny + 'px';
+    }
+    function onUp(e) {
+      moving = false;
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
+      handle.removeEventListener('pointercancel', onUp);
+      try { handle.releasePointerCapture && handle.releasePointerCapture(e.pointerId); } catch (err) {}
+    }
+    handle.addEventListener('pointerdown', function (e) {
+      if (e.target && e.target.closest && e.target.closest('button')) return;
+      moving = true;
+      sx = e.clientX; sy = e.clientY;
+      var r = panelEl.getBoundingClientRect();
+      ox = r.left; oy = r.top;
+      try { if (e.cancelable) e.preventDefault(); } catch (err) {}
+      try { handle.setPointerCapture && handle.setPointerCapture(e.pointerId); } catch (err) {}
+      handle.addEventListener('pointermove', onMove);
+      handle.addEventListener('pointerup', onUp);
+      handle.addEventListener('pointercancel', onUp);
+    });
+  }
 
   function hex(dv, off, n) {
     var s = '', end = Math.min(off + n, dv.byteLength);
@@ -134,6 +179,10 @@
       panel = document.createElement('div');
       panel.setAttribute('data-dsh-dump', '1');
       panel.style.cssText = 'position:fixed;top:8px;left:8px;z-index:2147483647;background:#0b0b0b;color:#3f3;font:12px/1.5 monospace;padding:8px;border:1px solid #3f3;max-width:480px;max-height:82vh;overflow:auto;';
+      var hd = document.createElement('div');
+      hd.textContent = 'Dump 探测 — 按住此处拖动';
+      hd.style.cssText = 'padding:4px 8px;background:#153;color:#3f3;font-weight:bold;user-select:none;-webkit-user-select:none;cursor:move;margin:-8px -8px 6px;';
+      panel.appendChild(hd);
       ta = document.createElement('textarea');
       ta.readOnly = true;
       ta.style.cssText = 'width:100%;height:220px;background:#000;color:#3f3;font:11px/1.4 monospace;border:1px solid #333;';
@@ -151,6 +200,9 @@
         try { navigator.clipboard.writeText(ta.value).then(function () {}); } catch (e) { ta.select(); document.execCommand('copy'); }
       }));
       document.body.appendChild(panel);
+      isolateEl(panel);
+      makeDraggable(hd, panel);
+      for (var i3 = 0; i3 < ISO.length; i3++) { document.addEventListener(ISO[i3], fallbackStop, false); }
     }
     var o = { counts: { dom: T.dom.length, pkt: T.pkt.length }, dom: T.dom.slice(-60), pkt: T.pkt, snap: T.snap };
     ta.value = JSON.stringify(o, null, 1);

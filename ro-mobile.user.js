@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO 手机自适应 ro-mobile
 // @namespace    https://github.com/Keeee1th/Lro-user-scripts
-// @version      1.0.10
+// @version      1.0.11
 // @description  手机使用 PC 网页 api.html 的触控适配与掉线防护:自动加载手机内核(Online_mn),自定义操作键(开窗/键盘/点地),后台保活(隐藏PING+音频+WebLock+防熄屏),可与 ro-assist 双开(检测式不抢占)
 // @match        https://post.lastro.cn/ro/api.html*
 // @match        http://post.lastro.cn/ro/api.html*
@@ -13,7 +13,7 @@
 
 (function () {
   "use strict";
-  var VER = "1.0.10";
+  var VER = "1.0.11";
   var LS_KEY = "dsh_ro_mobile_v1";
   var version = (location.href.match(/[?&]v=([\d.]+)/i) || [null, "69.32"])[1];
 
@@ -51,12 +51,13 @@
     Escape: "菜单", StatusIcons: "状态栏", ShortCut: "快捷键栏", WinList: "窗口列表"
   };
   var WIN_ORDER = ["Equipment", "Inventory", "SkillList", "Storage", "ChatBox", "MiniMap", "WorldMap", "BasicInfo", "Escape", "StatusIcons", "ShortCut", "WinList"];
-  // 合成键盘映射(keyCode 对齐客户端 Controls/KeyEventHandler;全键位,字母用大写码值;Ctrl/Alt/Shift 不进列表,仅作组合修饰)
+  // 合成键盘映射(keyCode 对齐客户端 Controls/KeyEventHandler;全键位,字母用大写码值;V1.0.11 起 Ctrl/Alt/Shift 作为可选键进列表(组合键可直接选为修饰键,单键亦可)
   var KEY_MAP = (function () {
     var m = {};
     function put(code, key, keyCode, domCode) { m[code] = { key: key, keyCode: keyCode, code: domCode || key }; }
     var letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     for (var li = 0; li < 26; li++) put(letters[li], letters[li].toLowerCase(), 65 + li, "Key" + letters[li]);
+    put("Ctrl", "Control", 17, "ControlLeft"); put("Alt", "Alt", 18, "AltLeft"); put("Shift", "Shift", 16, "ShiftLeft");
     for (var di = 0; di < 10; di++) put(String(di), String(di), 48 + di, "Digit" + di);
     for (var fi = 1; fi <= 12; fi++) put("F" + fi, "F" + fi, 111 + fi, "F" + fi);
     put("Escape", "Escape", 27, "Escape"); put("Tab", "Tab", 9, "Tab"); put("Space", " ", 32, "Space");
@@ -72,7 +73,7 @@
     put(",", ",", 188, "Comma"); put(".", ".", 190, "Period"); put("/", "/", 191, "Slash");
     return m;
   })();
-  var KEY_ORDER = ["A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z",
+  var KEY_ORDER = ["Ctrl","Alt","Shift","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z",
     "0","1","2","3","4","5","6","7","8","9",
     "F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12",
     "`","-","=","[","]","\\",";","'",",",".","/",
@@ -127,6 +128,18 @@
         function _normKey(k) {
           if (!k || typeof k !== "object") return null;
           if (k.pos && (typeof k.pos.x !== "number" || typeof k.pos.y !== "number")) k.pos = null;
+          // V1.0.11:旧配置 mods{ctrl,alt,shift} 并入 keys(修饰键现为可选键),删 mods
+          if (k.mods && (k.mods.ctrl || k.mods.alt || k.mods.shift)) {
+            var _mo = [];
+            if (k.mods.ctrl) _mo.push("Ctrl");
+            if (k.mods.alt) _mo.push("Alt");
+            if (k.mods.shift) _mo.push("Shift");
+            var _pv = k.keys || [];
+            var _mg = _mo.slice();
+            _pv.forEach(function (kk) { if (_mg.indexOf(kk) < 0) _mg.push(kk); });
+            k.keys = _mg;
+            delete k.mods;
+          }
           if (!k.label) {
             if (k.t === "combo") k.label = (k.keys || []).join("+") || "组合";
             else if (k.t === "move") k.label = "点地";
@@ -501,6 +514,20 @@
         }
       } catch (e) { try { console.error("[ro-mobile] col键渲染失败 " + i, e); } catch (e2) {} }
     });
+    var fBtn = el("div", "dsh-mk-btn dsh-mk-fight", "战"); // V1.0.11 内挂自动战斗快捷按钮
+    fBtn.style.width = Math.round(48 * ks) + "px";
+    fBtn.style.height = Math.round(48 * ks) + "px";
+    fBtn.style.fontSize = Math.round(13 * ks) + "px";
+    isolate(fBtn);
+    fBtn.addEventListener("click", function (e) {
+      if (state.posMode) return;
+      try { e.stopPropagation(); e.preventDefault(); } catch (err) {}
+      npFightOn = !npFightOn;
+      npAutoFight(npFightOn);
+      synchFightBtn();
+    });
+    col.appendChild(fBtn);
+    synchFightBtn();
     rootEl.insertBefore(bar, rootEl.firstChild);
     rootEl.insertBefore(col, rootEl.firstChild);
     if (rootEl.parentNode && !rootEl.isConnected) { try { document.documentElement.appendChild(rootEl); } catch (e) { document.body.appendChild(rootEl); } }
@@ -517,7 +544,7 @@
       b._breakTs = 0;
       if (!resume) trigger(k);
       if (k.t === "key" || k.t === "combo") { // 按键/组合长按立即连发,消除空窗(引擎按 keydown 状态持续走)
-        iv = setInterval(function () { fireKeys(k.t === "combo" ? k.keys : [k.key], k.mods, "keydown"); }, 120);
+        iv = setInterval(function () { fireKeys(k.t === "combo" ? k.keys : [k.key], "keydown"); }, 120);
       } else if (k.t === "move") {
         if (resume) iv = setInterval(function () { walkTo(k.x, k.y); }, 1200); // 移动发包铁律:低频率重发,防服务器卡顿
         else timer = setTimeout(function () { iv = setInterval(function () { walkTo(k.x, k.y); }, 1200); }, 300);
@@ -526,12 +553,12 @@
     function up() {
       clearTimeout(timer); timer = null;
       if (iv) { clearInterval(iv); iv = null; }
-      if (k.t === "key" || k.t === "combo") fireKeys(k.t === "combo" ? k.keys : [k.key], k.mods, "keyup");
+      if (k.t === "key" || k.t === "combo") scheduleKeyUp(k.t === "combo" ? k.keys : [k.key]);
     }
     function broken() { // 断触/滑出:立即停,记录断点;1 秒内重按即恢复连发
       clearTimeout(timer); timer = null;
       if (iv) { clearInterval(iv); iv = null; b._breakTs = Date.now(); }
-      if (k.t === "key" || k.t === "combo") fireKeys(k.t === "combo" ? k.keys : [k.key], k.mods, "keyup");
+      if (k.t === "key" || k.t === "combo") scheduleKeyUp(k.t === "combo" ? k.keys : [k.key]);
     }
     b.addEventListener("pointerdown", down);
     b.addEventListener("pointerup", up);
@@ -548,45 +575,26 @@
   }
   function trigger(k) {
     if (k.t === "win") toggleWin(k.win);
-    else if (k.t === "key") synthKey(k.key, "keydown", k.mods);
-    else if (k.t === "combo") fireKeys(k.keys, k.mods, "keydown"); // 组合键:两键同发同收
+    else if (k.t === "key") synthKey(k.key, "keydown", {});
+    else if (k.t === "combo") fireKeys(k.keys, "keydown"); // 组合键:整批同发(修饰与主键同批,keyup 延迟抬起)
     else if (k.t === "move") { toast("点地 " + k.x + "," + k.y); walkTo(k.x, k.y); } // 诊断可见:真机点地不灵时先看 toast
   }
-  var MOD_KEYS = {
-    ctrl: { key: "Control", code: "ControlLeft", keyCode: 17 },
-    alt: { key: "Alt", code: "AltLeft", keyCode: 18 },
-    shift: { key: "Shift", code: "ShiftLeft", keyCode: 16 }
-  };
-  var modHeld = {};
-  function synthKeyRaw(p, kind, flags) {
-    try {
-      var ev = new KeyboardEvent(kind, {
-        key: p.key, code: p.code,
-        bubbles: true, cancelable: true,
-        ctrlKey: !!flags.ctrl, altKey: !!flags.alt, shiftKey: !!flags.shift
-      });
-      try { Object.defineProperty(ev, "keyCode", { value: p.keyCode }); Object.defineProperty(ev, "which", { value: p.keyCode }); } catch (e) {}
-      window.dispatchEvent(ev);
-    } catch (e) {}
-  }
-  function synthMods(mods, kind) { // 修饰键以真实按键序列发出(引擎需按下 Control 本身,而不只看事件标志)
-    ["ctrl", "alt", "shift"].forEach(function (mk) {
-      if (!mods || !mods[mk]) return;
-      if (kind === "keydown") {
-        if (modHeld["m" + mk]) return; // 已按住,连发不重复
-        modHeld["m" + mk] = true;
-        synthKeyRaw(MOD_KEYS[mk], "keydown", { ctrl: mk === "ctrl", alt: mk === "alt", shift: mk === "shift" });
-      } else {
-        if (!modHeld["m" + mk]) return;
-        modHeld["m" + mk] = false;
-        synthKeyRaw(MOD_KEYS[mk], "keyup", { ctrl: mk === "ctrl", alt: mk === "alt", shift: mk === "shift" });
-      }
+  // V1.0.11 组合键触发:修饰键(Ctrl/Alt/Shift)作为可选键进列表;整批同发——所有键事件携带完整 flags(顺序=列表顺序),
+  // keyup 经 scheduleKeyUp 统一延迟 80ms 抬起(先 clearTimeout 再新起),保证引擎采到组合按下态;
+  // 不再先真实按住修饰键再按主键(旧的顺序序列是真机无效来源)
+  function fireKeys(keys, kind) {
+    var flags = { ctrl: false, alt: false, shift: false };
+    (keys || []).forEach(function (kk) {
+      if (kk === "Ctrl") flags.ctrl = true;
+      else if (kk === "Alt") flags.alt = true;
+      else if (kk === "Shift") flags.shift = true;
     });
+    (keys || []).forEach(function (kk) { synthKey(kk, kind, flags); });
   }
-  function fireKeys(keys, mods, kind) {
-    if (kind === "keydown") synthMods(mods, "keydown");
-    (keys || []).forEach(function (kk) { synthKey(kk, kind, mods); });
-    if (kind === "keyup") synthMods(mods, "keyup");
+  var _upTimer = null;
+  function scheduleKeyUp(keys) {
+    if (_upTimer) { try { clearTimeout(_upTimer); } catch (e) {} }
+    _upTimer = setTimeout(function () { _upTimer = null; fireKeys(keys, "keyup"); }, 80);
   }
 
   // ---------------- 三类触发 ----------------
@@ -651,6 +659,51 @@
       var pm = new cl.PS.CZ.REQUEST_MOVE();
       pm.dest = [x, y];
       cl.NM.sendPacket(pm);
+    } catch (e) {}
+  }
+
+  // ---------------- 内挂自动战斗快捷开关(V1.0.11,与 ro-assist「开自动战斗(移动寻怪)」同机制) ----------------
+  // 三转(WHISPER 可用):NPC:setautoattack(toggle,msg="0");二转(NOTIFY_UPDATEINFO 可用):id=38(移动寻怪,设置型)+id=34(自动战斗,toggle)
+  var npFightOn = false;
+  function npFightPort() {
+    try {
+      var cl = CL();
+      if (!cl || !cl.PS || !cl.PS.CZ) return null;
+      var C = cl.PS.CZ;
+      if (C.WHISPER) return "three";
+      if (C.NOTIFY_UPDATEINFO) return "two";
+      return null;
+    } catch (e) { return null; }
+  }
+  function npSend(cls, fill) {
+    if (!clientReady()) return false;
+    try {
+      var cl = CL();
+      if (!cl || !cl.PS || !cl.PS.CZ || !cl.NM) return false;
+      var p = new cl.PS.CZ[cls]();
+      if (fill) fill(p);
+      cl.NM.sendPacket(p);
+      return true;
+    } catch (e) { return false; }
+  }
+  function npAutoFight(on) {
+    var port = npFightPort();
+    if (!port) { toast("未找到内挂指令协议(进入游戏后可用)"); return; }
+    if (port === "three") {
+      npSend("WHISPER", function (p) { p.receiver = "NPC:setautoattack"; p.msg = "0"; }); // toggle 型
+      try { var MM = window.require("UI/Components/MiniMap/MiniMap"); if (MM && MM.removeDestination) MM.removeDestination(); } catch (e) {}
+      toast((on ? "开" : "关") + "自动战斗(三转 setautoattack)");
+    } else {
+      if (on) npSend("NOTIFY_UPDATEINFO", function (p) { p.id = 38; p.value = 0; }); // 移动寻怪(设置型)
+      npSend("NOTIFY_UPDATEINFO", function (p) { p.id = 34; p.value = 1; });          // 自动战斗(toggle)
+      toast((on ? "开" : "关") + "自动战斗(二转 38移动寻怪/34)");
+    }
+    if (on && !npFightOn) toast("内挂寻怪中,建议停用摇杆/点地以免打断");
+  }
+  function synchFightBtn() {
+    try {
+      var f = document.querySelector(".dsh-mk-fight");
+      if (f) f.style.background = npFightOn ? "#b23b3b" : "#2f6bb0";
     } catch (e) {}
   }
 
@@ -799,8 +852,15 @@
       if (o.dir >= 0) {
         if (cfg.opts.joyProto) joySend(0, -1);
         else {
-          // V1.0.10 松开即停:直发模式发「目标=自身位置」停止包,避免角色继续漂移到最后一个目标
-          try { var pp = playerPos(); if (pp && isFinite(pp[0]) && isFinite(pp[1])) walkTo(pp[0], pp[1]); } catch (e) {}
+          // V1.0.11 松开即停:停止包目标取整到最近格(round,防 float 被服务器向前取整拉回身后格→回撤),并清客户端残留导航;心跳由 steerTimer 停发
+          try {
+            var pp = playerPos();
+            if (pp && isFinite(pp[0]) && isFinite(pp[1])) {
+              walkTo(Math.round(pp[0]), Math.round(pp[1]));
+              var MM = null; try { MM = window.require("UI/Components/MiniMap/MiniMap"); } catch (e) {}
+              if (MM && MM.removeDestination) { try { MM.removeDestination(); } catch (e) {} }
+            }
+          } catch (e) {}
         }
         o.lastDir = o.dir; o.dir = -1;
         o.lastTgt = null;
@@ -1105,20 +1165,8 @@
     var paramSel = el("select", "dsh-mk-sel");
     var comboBox = el("div"); // 组合键:自选多键(动态,初始2键,最多6键)
     comboBox.style.cssText = "display:none;flex-direction:column;gap:4px;flex:1 1 100%;min-width:100%";
-    var modsRow = el("div", "dsh-mk-row");
-    modsRow.style.cssText = "display:none;justify-content:flex-start;gap:12px;padding:8px 4px;border-bottom:1px solid #e2e8f2";
-    var cbCtrl = null, cbAlt = null, cbShift = null;
     var comboNameRow = null, comboNameInp = null; // 组合键自定义名称
-    function cbMod(label) {
-      var lb = el("label");
-      lb.style.cssText = "display:flex;align-items:center;gap:4px;font-size:12px;color:#1c3a66";
-      var c = el("input");
-      c.type = "checkbox";
-      lb.appendChild(c); lb.appendChild(el("span", null, label));
-      modsRow.appendChild(lb);
-      return c;
-    }
-    cbCtrl = cbMod("Ctrl"); cbAlt = cbMod("Alt"); cbShift = cbMod("Shift");
+    // V1.0.11:不再有外部 Ctrl/Alt/Shift 勾选行——修饰键直接作为可选键进组合列表(见 KEY_ORDER 头三项)
     function fillKeys(sel) {
       sel.innerHTML = "";
       KEY_ORDER.forEach(function (kk) {
@@ -1158,7 +1206,7 @@
     function fillParams() {
       var t = typeSel.value;
       paramSel.style.display = "inline-block";
-      comboBox.style.display = "none"; modsRow.style.display = "none";
+      comboBox.style.display = "none";
       if (t === "win") {
         paramSel.innerHTML = "";
         WIN_ORDER.forEach(function (w) {
@@ -1182,7 +1230,6 @@
         comboBox.appendChild(comboKeySel()); // 初始 1 键,自选任意数量(1..6)
         comboBox.appendChild(comboRowBt);
         comboBox.style.display = "flex";
-        modsRow.style.display = "flex";
       } else {
         paramSel.innerHTML = "";
       }
@@ -1208,12 +1255,8 @@
       else if (t === "combo") {
         var vs = comboVals();
         if (vs.length < 1) { toast("请选择至少1个键"); return; }
-        var mods = {};
-        if (cbCtrl.checked) mods.ctrl = true;
-        if (cbAlt.checked) mods.alt = true;
-        if (cbShift.checked) mods.shift = true;
         var nameV = (comboNameInp && comboNameInp.value && comboNameInp.value.trim()) || vs.join("+");
-        k = { id: Math.random().toString(36).slice(2, 9), t: "combo", label: nameV, keys: vs, mods: mods };
+        k = { id: Math.random().toString(36).slice(2, 9), t: "combo", label: nameV, keys: vs };
       } else {
         var xx = parseFloat(xInp.value), yy = parseFloat(yInp.value);
         if (!isFinite(xx) || !isFinite(yy)) { toast("请填写点地坐标"); return; }
@@ -1222,7 +1265,7 @@
       if (posSel.value === "bar") cfg.bar.push(k); else cfg.col.push(k);
       saveCfg(); renderKeys(); openEdit();
     });
-    addRow.appendChild(posSel); addRow.appendChild(typeSel); addRow.appendChild(paramSel); addRow.appendChild(comboBox); addRow.appendChild(modsRow); addRow.appendChild(xInp); addRow.appendChild(yInp); addRow.appendChild(addBtn);
+    addRow.appendChild(posSel); addRow.appendChild(typeSel); addRow.appendChild(paramSel); addRow.appendChild(comboBox); addRow.appendChild(xInp); addRow.appendChild(yInp); addRow.appendChild(addBtn);
     panel.appendChild(addRow);
     if (typeSel.value === "move") { xInp.style.display = "inline-block"; yInp.style.display = "inline-block"; paramSel.style.display = "none"; }
     // 设置区
@@ -1317,6 +1360,7 @@
       else if (joyEl && joyEl.parentNode) { var jj = joyEl; joyEl = null; jj.parentNode.removeChild(jj); }
     }));
     panel.appendChild(swRow("摇杆协议直驱(默认关,不稳时开)", function () { return cfg.opts.joyProto; }, function (v) { cfg.opts.joyProto = v; }));
+    panel.appendChild(swRow("内挂自动战斗(移动寻怪)快捷开关", function () { return npFightOn; }, function (v) { npFightOn = v; npAutoFight(v); synchFightBtn(); }));
     // 底部按钮
     var foot = el("div", "dsh-mk-foot");
     var ok = el("button", "dsh-mk-ok", "完成");
@@ -1338,10 +1382,7 @@
   function descKey(k) {
     if (k.t === "win") return (WIN_MAP[k.win] || k.win) + "(开窗)";
     if (k.t === "key") return "按键 " + k.key;
-    if (k.t === "combo") {
-      var modsTxt = (k.mods && (k.mods.ctrl || k.mods.alt || k.mods.shift)) ? " [+修饰]" : "";
-      return "组合 " + (k.label || (k.keys || []).join("+")) + modsTxt;
-    }
+    if (k.t === "combo") return "组合 " + (k.label || (k.keys || []).join("+"));
     return "点地 " + k.x + "," + k.y;
   }
 

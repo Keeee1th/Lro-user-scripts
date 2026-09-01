@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.7.3
+// @version      2.8.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.7.3"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.8.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -522,9 +522,15 @@
       '<div class="row"><span class="lb">主动技能</span><select id="dsh-autoskill"><option>- 请选择 -</option></select>' +
       '<span class="lb" style="min-width:26px">Lv</span><input id="dsh-autoskilllv" type="number" value="10" style="flex:0 0 38px">' +
       '<span class="lb" style="min-width:26px">概率</span><input id="dsh-autoskillpro" type="number" value="100" style="flex:0 0 40px"><span style="color:#5a6b7f">%</span></div>' +
-      '<div class="row"><span class="lb">辅助技能</span><select id="dsh-addiskill"><option>- 请选择 -</option></select>' +
-      '<span class="lb" style="min-width:26px">Lv</span><input id="dsh-addiskilllv" type="number" value="10" style="flex:0 0 38px">' +
-      '<label class="switch"><input id="dsh-addiskillop" type="checkbox" checked>开启</label></div>' +
+      '<div class="row"><span class="lb">辅助技能</span><span class="st" id="dsh-nei-addi-count" style="font-size:10px">0 槽</span>' +
+      '<button class="ghost" id="dsh-nei-addi-add" style="flex:0 0 auto">添加</button>' +
+      '<button class="ghost" id="dsh-nei-addi-import" style="flex:0 0 auto">一次性导入</button>' +
+      '<button class="ghost" id="dsh-nei-addi-clear" style="flex:0 0 auto">清空</button></div>' +
+      '<div id="dsh-nei-addi" style="display:flex;flex-direction:column;gap:3px"></div>' +
+      '<div class="row" id="dsh-nei-addi-importbox" style="display:none;flex-direction:column;align-items:stretch;gap:3px">' +
+      '<textarea id="dsh-nei-addi-importta" rows="4" placeholder="一次性导入：每行一条 技能名或ID:等级，例：&#10;12:5&#10;加速术:10&#10;天使之赐福:9&#10;导入=整批替换当前列表，未识别的行跳过并在状态栏提示"></textarea>' +
+      '<div class="row"><button id="dsh-nei-addi-importok" style="flex:0 0 auto">导入并替换</button>' +
+      '<button class="ghost" id="dsh-nei-addi-importcancel" style="flex:0 0 auto">取消</button></div></div>' +
       '<div class="row"><span class="lb">自动念咒</span><select id="dsh-automatic"><option>- 请选择 -</option></select>' +
       '<span class="lb" style="min-width:40px">触发技能</span><select id="dsh-touchskill"><option>- 请选择 -</option></select>' +
       '<label class="switch"><input id="dsh-touchskillop" type="checkbox" checked>开</label></div>' +
@@ -555,7 +561,7 @@
       '<span class="lb" style="margin-left:auto;min-width:26px">HP</span><input id="dsh-sithplo" type="number" value="40" style="flex:0 0 38px"><span style="color:#5a6b7f">~</span><input id="dsh-sithphi" type="number" value="80" style="flex:0 0 38px"><span style="color:#5a6b7f">%</span></div>' +
       '<div class="row"><span class="lb">SP范围</span><input id="dsh-sitsplo" type="number" value="30" style="flex:0 0 38px"><span style="color:#5a6b7f">~</span><input id="dsh-sitsphi" type="number" value="70" style="flex:0 0 38px"><span style="color:#5a6b7f">%</span>' +
       '<span class="lb" style="min-width:60px">坐下被锁定</span><select id="dsh-sitxw" style="flex:0 0 72px"><option selected>无视</option><option>还击</option><option>瞬移</option><option>逃脱</option></select></div>' +
-      '<div class="log">内挂模式：技能/战斗/防御/瞬移/坐下全部由游戏内挂执行，助手只读写内挂设置。技能下拉只显示角色已学习。</div>' +
+      '<div class="log">内挂模式：技能/战斗/防御/瞬移/坐下全部由游戏内挂执行，助手只读写内挂设置。技能下拉只显示角色已学习。辅助技能支持多槽（每槽独立选技能+独立开关），buff 消失由内挂自动补状态（含队友状态），本页为查看/记录多辅助配置。</div>' +
       '</div>' +
       '<div class="sub-page drawer-page" data-subpage="zhu" data-dname="battle-zhu">' +
       '<div class="sec">助手模式（自控发包 · 无CD）</div>' +
@@ -812,10 +818,16 @@
       '<div class="sec">面板</div>' +
       '<div class="row"><span class="lb">状态</span><span id="dsh-status" class="warn">等待启动…</span></div>' +
       '<div class="row"><span class="lb">大小</span><span class="st">右下角 ↘ 拖动手柄可拉伸</span></div>' +
-      '<div class="row"><span class="lb">快捷键</span><span class="st" id="dsh-hotkey-info" style="min-width:0;word-break:break-all"></span></div>' +
+      '<div class="row"><span class="lb">面板快捷键</span><span class="st" id="dsh-hotkey-info" style="min-width:0;word-break:break-all"></span></div>' +
       '<div class="row"><button id="dsh-hotkey-set" style="flex:0 0 auto">设置快捷键</button>' +
       '<button class="ghost" id="dsh-hotkey-clear" style="flex:0 0 auto">清除</button></div>' +
-      '<div class="log">快捷键：点击「设置快捷键」后按下你要用的按键组合（建议带 Ctrl/Alt 的组合，避免与游戏按键冲突），再按一次切换面板收起/展开；未设置时悬浮球照常工作。</div>'
+      '<div class="row"><span class="lb">内挂自动战斗键</span><span class="st" id="dsh-hotkey-info-np" style="min-width:0;word-break:break-all"></span></div>' +
+      '<div class="row"><button id="dsh-hotkey-set-np" style="flex:0 0 auto">设置快捷键</button>' +
+      '<button class="ghost" id="dsh-hotkey-clear-np" style="flex:0 0 auto">清除</button></div>' +
+      '<div class="row"><span class="lb">助手自动战斗键</span><span class="st" id="dsh-hotkey-info-z" style="min-width:0;word-break:break-all"></span></div>' +
+      '<div class="row"><button id="dsh-hotkey-set-z" style="flex:0 0 auto">设置快捷键</button>' +
+      '<button class="ghost" id="dsh-hotkey-clear-z" style="flex:0 0 auto">清除</button></div>' +
+      '<div class="log">快捷键均为 Switch 单键切换（每次按下切换一次，不分开/关两键）：面板键=面板收起/展开；内挂自动战斗键=直接 toggle 发包；助手自动战斗键=开始/停止。点击「设置快捷键」后按下组合键（支持 Ctrl/Alt/Shift/Win+键），Esc 取消；相同组合不可重复绑定；未设置时悬浮球/按钮照常工作。</div>'
   };
 
   // ---------------- 构建面板 ----------------
@@ -1536,8 +1548,37 @@
   });
   if (saved.collapsed) applyCollapse(true);
 
-  // ---------------- 面板快捷键（V1.7.5）：绑定可调，按一下切换面板收起/展开 ----------------
-  var hotkeyListening = false;
+  // ---------------- 快捷键（V2.8.0 三组 · Switch 单键切换）：面板收起 / 内挂自动战斗 / 助手自动战斗 ----------------
+  // 捕获态 hkTarget：null|panel|np|zhu；三组分别存 saved.hotkey / saved.hotkeyNp / saved.hotkeyZhu（面板键向后兼容旧档案）
+  var HK_TARGETS = {
+    panel: { key: "hotkey", label: "面板", info: "dsh-hotkey-info", set: "dsh-hotkey-set", clear: "dsh-hotkey-clear" },
+    np: { key: "hotkeyNp", label: "内挂自动战斗", info: "dsh-hotkey-info-np", set: "dsh-hotkey-set-np", clear: "dsh-hotkey-clear-np" },
+    zhu: { key: "hotkeyZhu", label: "助手自动战斗", info: "dsh-hotkey-info-z", set: "dsh-hotkey-set-z", clear: "dsh-hotkey-clear-z" }
+  };
+  var hkTarget = null;
+  function hkLabelName(t) { var d = HK_TARGETS[t]; return d ? d.label : t; }
+  function hkAction(t) {
+    if (t === "panel") hkToggle();
+    else if (t === "np") npToggleFight();
+    else if (t === "zhu") zToggleFight();
+  }
+  // 内挂自动战斗快捷键：校准后 toggle 发包一次（无需开面板），本地 npHuntOn 跟随本次按下翻转
+  function npToggleFight() {
+    try {
+      npCalibrate();
+      npToggleHunt();
+      npHuntOn = !npHuntOn;
+      setStatus("内挂自动战斗：快捷键切换（toggle 一次）", "ok");
+      tlog("hk np-toggle");
+    } catch (e) {}
+  }
+  // 助手自动战斗快捷键：运行中→停止，否则→开始
+  function zToggleFight() {
+    try {
+      if (zRunning) stopZhu();
+      else startZhu();
+    } catch (e) {}
+  }
   function hkFriendly(code) {
     try {
       if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
@@ -1557,16 +1598,22 @@
     if (h.meta) mods.push("Win");
     return mods.concat([hkFriendly(h.key)]).join("+");
   }
+  function hkIsSame(a, b) {
+    return !!(a && b && a.key === b.key && !!a.ctrl === !!b.ctrl && !!a.alt === !!b.alt && !!a.shift === !!b.shift && !!a.meta === !!b.meta);
+  }
   function hkRender() {
-    var el = $id("dsh-hotkey-info");
-    if (el) el.textContent = hkLabel(saved.hotkey);
-    var sb = $id("dsh-hotkey-set");
-    if (sb) sb.textContent = hotkeyListening ? "请按组合键…（Esc 取消）" : (saved.hotkey && saved.hotkey.key ? "重新设置快捷键" : "设置快捷键");
+    Object.keys(HK_TARGETS).forEach(function (t) {
+      var d = HK_TARGETS[t];
+      var infoEl = $id(d.info);
+      if (infoEl) infoEl.textContent = hkLabel(saved[d.key]);
+      var sb = $id(d.set);
+      if (sb) sb.textContent = hkTarget === t ? "请按组合键…（Esc 取消）" : (saved[d.key] && saved[d.key].key ? "重新设置快捷键" : "设置快捷键");
+    });
   }
   function hkIsTyping(e) {
     try {
-      var t = e.target;
-      return t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || (t.isContentEditable));
+      var el = e.target;
+      return el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || (el.isContentEditable));
     } catch (e2) { return false; }
   }
   function hkToggle() {
@@ -1577,42 +1624,58 @@
   }
   document.addEventListener("keydown", function (e) {
     try {
-      if (hotkeyListening) {
+      if (hkTarget) {
         e.preventDefault();
         e.stopPropagation();
-        if (e.key === "Escape" || e.key === "Esc") { hotkeyListening = false; hkRender(); setStatus("快捷键设置已取消", "st"); return; }
+        if (e.key === "Escape" || e.key === "Esc") { hkTarget = null; hkRender(); setStatus("快捷键设置已取消", "st"); return; }
         if (e.key === "Control" || e.key === "Alt" || e.key === "Shift" || e.key === "Meta") return; // 等待组合键完整按下
-        if (hkIsTyping(e)) { hotkeyListening = false; hkRender(); setStatus("快捷键设置已取消（输入框内不响应）", "st"); return; }
-        saved.hotkey = { ctrl: !!e.ctrlKey, alt: !!e.altKey, shift: !!e.shiftKey, meta: !!e.metaKey, key: e.code || e.key };
+        if (hkIsTyping(e)) { hkTarget = null; hkRender(); setStatus("快捷键设置已取消（输入框内不响应）", "st"); return; }
+        var h = { ctrl: !!e.ctrlKey, alt: !!e.altKey, shift: !!e.shiftKey, meta: !!e.metaKey, key: e.code || e.key };
+        var dup = null;
+        Object.keys(HK_TARGETS).forEach(function (t2) {
+          if (t2 === hkTarget) return;
+          if (hkIsSame(h, saved[HK_TARGETS[t2].key])) dup = t2;
+        });
+        if (dup) { hkRender(); setStatus("此组合已用于「" + hkLabelName(dup) + "」，请换一组", "warn"); return; }
+        var curT = hkTarget;
+        saved[HK_TARGETS[curT].key] = h;
         saveSaved(saved);
-        hotkeyListening = false;
+        hkTarget = null;
         hkRender();
-        setStatus("快捷键已设为 " + hkLabel(saved.hotkey), "ok");
+        setStatus("「" + hkLabelName(curT) + "」快捷键已设为 " + hkLabel(h), "ok");
         return;
       }
-      var h = saved.hotkey;
-      if (!h || !h.key) return;
       if (hkIsTyping(e)) return; // 打字/输入框聚焦时不响应
       if (e.key === "Control" || e.key === "Alt" || e.key === "Shift" || e.key === "Meta") return;
-      var match = (h.ctrl === (e.ctrlKey || e.metaKey)) && (h.alt === !!e.altKey) && (h.shift === !!e.shiftKey) &&
-        ((h.key === (e.code || e.key)) || (h.key === e.key));
-      if (!match) return;
-      e.preventDefault();
-      e.stopPropagation();
-      hkToggle();
+      var keys = Object.keys(HK_TARGETS);
+      for (var ki = 0; ki < keys.length; ki++) {
+        var t = keys[ki];
+        var hh = saved[HK_TARGETS[t].key];
+        if (!hh || !hh.key) continue;
+        var match = (hh.ctrl === (e.ctrlKey || e.metaKey)) && (hh.alt === !!e.altKey) && (hh.shift === !!e.shiftKey) &&
+          ((hh.key === (e.code || e.key)) || (hh.key === e.key));
+        if (!match) continue;
+        e.preventDefault();
+        e.stopPropagation();
+        hkAction(t);
+        break;
+      }
     } catch (e3) {}
   }, true);
-  var hkSetBtn = $id("dsh-hotkey-set"), hkClearBtn = $id("dsh-hotkey-clear");
-  if (hkSetBtn) hkSetBtn.addEventListener("click", function () {
-    hotkeyListening = !hotkeyListening;
-    hkRender();
-    if (hotkeyListening) setStatus("请在 5 秒内按下快捷键组合（建议带 Ctrl/Alt）…", "ok");
-  });
-  if (hkClearBtn) hkClearBtn.addEventListener("click", function () {
-    hotkeyListening = false;
-    saved.hotkey = null; saveSaved(saved);
-    hkRender();
-    setStatus("快捷键已清除", "st");
+  Object.keys(HK_TARGETS).forEach(function (t) {
+    var d = HK_TARGETS[t];
+    var sb = $id(d.set), cb = $id(d.clear);
+    if (sb) sb.addEventListener("click", function () {
+      hkTarget = hkTarget === t ? null : t;
+      hkRender();
+      if (hkTarget === t) setStatus("请在 5 秒内按下「" + hkLabelName(t) + "」快捷键组合（建议带 Ctrl/Alt）…", "ok");
+    });
+    if (cb) cb.addEventListener("click", function () {
+      if (hkTarget === t) hkTarget = null;
+      saved[d.key] = null; saveSaved(saved);
+      hkRender();
+      setStatus("「" + hkLabelName(t) + "」快捷键已清除", "st");
+    });
   });
   hkRender();
 
@@ -1906,7 +1969,7 @@
     ["dsh-z-attint", "v"], ["dsh-z-range", "v"], ["dsh-z-pmrange", "v"], ["dsh-z-mgrange", "v"],
     ["dsh-z-switchdelay", "v"], ["dsh-z-huntmode", "v"], ["dsh-z-follow", "c"], ["dsh-z-next", "c"],
     ["dsh-autoskill", "v"], ["dsh-autoskilllv", "v"], ["dsh-autoskillpro", "v"],
-    ["dsh-addiskill", "v"], ["dsh-addiskilllv", "v"], ["dsh-addiskillop", "c"],
+
     ["dsh-automatic", "v"], ["dsh-touchskill", "v"], ["dsh-touchskillop", "c"],
     ["dsh-qoautoskill", "v"], ["dsh-qoautoskilllv", "v"], ["dsh-autoshadow", "v"],
     ["dsh-searchmode", "v"], ["dsh-distarget", "v"], ["dsh-onlynoattack", "v"],
@@ -3165,6 +3228,7 @@
       syncBotVal(".MinHpVal", "dsh-minhpout");
       syncBotCheck(".bossfly", "dsh-bossfly");
       syncBotCheck(".opensit", "dsh-opensit");
+      syncNeiAddiFromPanel(); // V2.8.0：辅助技能多槽逐槽回填
       syncBotVal(".AutoUseSit_reHpVal", "dsh-sithplo");
       syncBotVal(".AutoUseSit_reHpUpVal", "dsh-sithphi");
       syncBotVal(".AutoUseSit_reSpVal", "dsh-sitsplo");
@@ -3188,7 +3252,7 @@
   function fillSkillSelects() {
     try {
       // 优先：内挂 DOM 自己的技能下拉（带中文名 textContent）
-      var domMap = { "dsh-autoskill": ".autoskillid", "dsh-addiskill": ".addiskillid", "dsh-automatic": ".automaticid", "dsh-touchskill": ".touchskillid", "dsh-qoautoskill": ".qoautoskillid", "dsh-autoshadow": ".autoshadowid" };
+      var domMap = { "dsh-autoskill": ".autoskillid", "dsh-automatic": ".automaticid", "dsh-touchskill": ".touchskillid", "dsh-qoautoskill": ".qoautoskillid", "dsh-autoshadow": ".autoshadowid" };
       var domSynced = false;
       Object.keys(domMap).forEach(function (sid) {
         var src = document.querySelector(domMap[sid]);
@@ -3209,6 +3273,7 @@
         }
       });
       if (domSynced) return;
+      neiAddiFillOptions(); // V2.8.0：多槽辅助技能下拉填充（面板 option 优先，兜底已学技能）
       var DB = CLIENT.DB;
       if (!DB) { CLIENT.DB = window.require && window.require("DB/DBManager"); DB = CLIENT.DB; }
       if (!DB || typeof DB.getAllSkillInfo !== "function") return;
@@ -3221,7 +3286,7 @@
         if (s && s.level > 0 && !isPassiveSkill(s.SKID != null ? s.SKID : k)) learned[s.SKID != null ? s.SKID : k] = s;
       });
       var ids = Object.keys(learned);
-      var map = { "dsh-autoskill": ids, "dsh-addiskill": ids, "dsh-automatic": ids, "dsh-touchskill": ids, "dsh-qoautoskill": ids, "dsh-autoshadow": ids };
+      var map = { "dsh-autoskill": ids, "dsh-automatic": ids, "dsh-touchskill": ids, "dsh-qoautoskill": ids, "dsh-autoshadow": ids };
       Object.keys(map).forEach(function (sid) {
         var sel = $id(sid);
         if (!sel) return;
@@ -3237,6 +3302,235 @@
       setStatus("已读取内挂 + 已学技能 " + ids.length + " 个", "ok");
     } catch (e) { console.log("[RO助手] fillSkillSelects: " + e.message); }
   }
+  // ---------------- 内挂辅助技能多槽（V2.8.0）：每槽独立技能/等级/开关，可增删、整批导入 ----------------
+  function neiAddiDefault() { return [{ sid: "", lv: "10", on: true }]; }
+  function neiAddiLoad() {
+    if (Array.isArray(saved.neiAddi) && saved.neiAddi.length) return saved.neiAddi;
+    // 旧档案迁移：V2.8.0 之前单槽存于 saved.ui（dsh-addiskill/lv/op）
+    try {
+      var u = saved.ui || {};
+      if (u["dsh-addiskill"] || u["dsh-addiskilllv"] || u["dsh-addiskillop"]) {
+        var mig = [{ sid: String(u["dsh-addiskill"] || ""), lv: String(u["dsh-addiskilllv"] != null ? u["dsh-addiskilllv"] : "10"), on: !!u["dsh-addiskillop"] }];
+        saved.neiAddi = mig;
+        saveSaved(saved);
+        return mig;
+      }
+    } catch (e) {}
+    return neiAddiDefault();
+  }
+  function neiAddiFillOptions() {
+    try {
+      var sels = document.querySelectorAll(".dsh-addi-sel");
+      if (!sels.length) return;
+      var src = document.querySelector(".addiskillid");
+      var html = null;
+      if (src && src.options && src.options.length > 1) {
+        html = '<option value="">- 请选择 -</option>';
+        for (var oi = 0; oi < src.options.length; oi++) {
+          var op = src.options[oi];
+          var val = op.value || op.getAttribute("data-index") || op.getAttribute("data-id") || "";
+          if (!val) continue;
+          if (/^\d+$/.test(val) && isPassiveSkill(parseInt(val, 10))) continue;
+          html += '<option value="' + val + '">' + (op.textContent || val).trim() + '</option>';
+        }
+      } else {
+        var DB = CLIENT.DB;
+        if (!DB) { CLIENT.DB = window.require && window.require("DB/DBManager"); DB = CLIENT.DB; }
+        if (!DB || typeof DB.getAllSkillInfo !== "function") return;
+        var info = DB.getAllSkillInfo();
+        if (!info) return;
+        var learned = {};
+        Object.keys(info).forEach(function (k) {
+          var s = info[k];
+          if (s && s.level > 0 && !isPassiveSkill(s.SKID != null ? s.SKID : k)) learned[s.SKID != null ? s.SKID : k] = s;
+        });
+        var ids = Object.keys(learned);
+        html = '<option value="">- 请选择 -</option>';
+        for (var i = 0; i < ids.length; i++) {
+          var nm = getSkillNameById(ids[i]) || (learned[ids[i]] && (learned[ids[i]].name || learned[ids[i]].SkillName)) || ids[i];
+          html += '<option value="' + ids[i] + '">' + nm + ' Lv' + (learned[ids[i]].level || "?") + '</option>';
+        }
+      }
+      for (var si = 0; si < sels.length; si++) {
+        var cur = sels[si].value;
+        sels[si].innerHTML = html;
+        if (!cur) continue;
+        for (var oi2 = 0; oi2 < sels[si].options.length; oi2++) {
+          if (sels[si].options[oi2].value === cur) { sels[si].selectedIndex = oi2; break; }
+        }
+      }
+    } catch (e) { console.log("[RO助手] neiAddiFillOptions: " + e.message); }
+  }
+  function neiAddiRender() {
+    var box = $id("dsh-nei-addi");
+    if (!box) return;
+    var list = neiAddiLoad();
+    if (list.length > 6) { list = list.slice(0, 6); saved.neiAddi = list; }
+    var html = "";
+    for (var i = 0; i < list.length; i++) {
+      var it = list[i] || {};
+      var sid = String(it.sid || ""), lv = String(it.lv != null ? it.lv : "10"), on = !!it.on;
+      html += '<div class="row" style="gap:3px"><select class="dsh-addi-sel" data-i="' + i + '" style="flex:1 1 90px;min-width:0"><option>- 请选择 -</option></select>' +
+        '<span class="lb" style="min-width:22px">Lv</span><input class="dsh-addi-lv" data-i="' + i + '" type="number" value="' + lv + '" min="1" max="10" style="flex:0 0 34px">' +
+        '<label class="switch"><input class="dsh-addi-on" data-i="' + i + '" type="checkbox"' + (on ? " checked" : "") + '>开</label>' +
+        '<button class="ghost dsh-addi-del" data-i="' + i + '" style="flex:0 0 auto">删</button></div>';
+    }
+    box.innerHTML = html;
+    var cnt = $id("dsh-nei-addi-count");
+    if (cnt) cnt.textContent = list.length + " 槽";
+    neiAddiFillOptions();
+    var sels = box.querySelectorAll(".dsh-addi-sel");
+    for (var j = 0; j < sels.length; j++) {
+      var v = String((list[j] || {}).sid || "");
+      if (!v) continue;
+      for (var oi3 = 0; oi3 < sels[j].options.length; oi3++) {
+        if (sels[j].options[oi3].value === v) { sels[j].selectedIndex = oi3; break; }
+      }
+    }
+    box.querySelectorAll(".dsh-addi-sel").forEach(function (el) {
+      el.addEventListener("change", function () {
+        var k = parseInt(el.getAttribute("data-i"), 10);
+        var l2 = neiAddiLoad();
+        if (!l2[k]) l2[k] = { sid: "", lv: "10", on: true };
+        l2[k].sid = el.value;
+        saved.neiAddi = l2; saveSaved(saved);
+      });
+    });
+    box.querySelectorAll(".dsh-addi-lv").forEach(function (el) {
+      el.addEventListener("input", function () {
+        var k = parseInt(el.getAttribute("data-i"), 10);
+        var l2 = neiAddiLoad();
+        if (!l2[k]) l2[k] = { sid: "", lv: "10", on: true };
+        l2[k].lv = el.value;
+        saved.neiAddi = l2; saveSaved(saved);
+      });
+    });
+    box.querySelectorAll(".dsh-addi-on").forEach(function (el) {
+      el.addEventListener("change", function () {
+        var k = parseInt(el.getAttribute("data-i"), 10);
+        var l2 = neiAddiLoad();
+        if (!l2[k]) l2[k] = { sid: "", lv: "10", on: true };
+        l2[k].on = el.checked;
+        saved.neiAddi = l2; saveSaved(saved);
+      });
+    });
+    box.querySelectorAll(".dsh-addi-del").forEach(function (el) {
+      el.addEventListener("click", function () {
+        var k = parseInt(el.getAttribute("data-i"), 10);
+        var l2 = neiAddiLoad();
+        if (l2.length <= 1) { setStatus("至少保留 1 个辅助技能槽", "warn"); return; }
+        l2.splice(k, 1);
+        saved.neiAddi = l2; saveSaved(saved);
+        neiAddiRender();
+      });
+    });
+  }
+  var neiAddiAddBtn = $id("dsh-nei-addi-add");
+  if (neiAddiAddBtn) neiAddiAddBtn.addEventListener("click", function () {
+    var l2 = neiAddiLoad();
+    if (l2.length >= 6) { setStatus("辅助技能最多 6 槽", "warn"); return; }
+    l2.push({ sid: "", lv: "10", on: true });
+    saved.neiAddi = l2; saveSaved(saved);
+    neiAddiRender();
+  });
+  var neiAddiClearBtn = $id("dsh-nei-addi-clear");
+  if (neiAddiClearBtn) neiAddiClearBtn.addEventListener("click", function () {
+    saved.neiAddi = neiAddiDefault(); saveSaved(saved); neiAddiRender();
+    setStatus("已清空辅助技能（保留 1 空槽）", "ok");
+  });
+  var neiAddiImportBtn = $id("dsh-nei-addi-import"), neiAddiImportBox = $id("dsh-nei-addi-importbox");
+  if (neiAddiImportBtn && neiAddiImportBox) neiAddiImportBtn.addEventListener("click", function () {
+    var show = neiAddiImportBox.style.display === "none";
+    neiAddiImportBox.style.display = show ? "flex" : "none";
+    if (show) { var ta = $id("dsh-nei-addi-importta"); if (ta) ta.focus(); }
+  });
+  var neiAddiImportCancel = $id("dsh-nei-addi-importcancel");
+  if (neiAddiImportCancel) neiAddiImportCancel.addEventListener("click", function () {
+    var b = $id("dsh-nei-addi-importbox"); if (b) b.style.display = "none";
+  });
+  var neiAddiImportOk = $id("dsh-nei-addi-importok");
+  if (neiAddiImportOk) neiAddiImportOk.addEventListener("click", function () {
+    try {
+      var ta = $id("dsh-nei-addi-importta");
+      var parsed = [], skipped = [];
+      String(ta ? ta.value : "").split(/\r?\n/).forEach(function (lnRaw) {
+        var ln = String(lnRaw || "").replace(/#.*$/, "").trim();
+        if (!ln) return;
+        var parts = ln.split(":");
+        var nameOrId = (parts[0] || "").trim();
+        var lv2 = parts[1] !== undefined && String(parts[1]).trim().length ? parseInt(parts[1], 10) : 10;
+        if (isNaN(lv2) || lv2 <= 0 || lv2 > 10) lv2 = 10;
+        if (/^\d+$/.test(nameOrId)) { parsed.push({ sid: nameOrId, lv: String(lv2), on: true }); }
+        else {
+          var sid3 = neiSkillIdByName(nameOrId);
+          if (sid3) parsed.push({ sid: String(sid3), lv: String(lv2), on: true });
+          else skipped.push(nameOrId);
+        }
+      });
+      if (!parsed.length) { setStatus("未解析到任何辅助技能行（格式：技能名或ID:等级）", "warn"); return; }
+      if (parsed.length > 6) parsed = parsed.slice(0, 6);
+      saved.neiAddi = parsed; saveSaved(saved);
+      neiAddiRender();
+      setStatus("已导入 " + parsed.length + " 个辅助技能槽" + (skipped.length ? "；未识别跳过：" + skipped.join("、") : ""), "ok");
+      if (ta) ta.value = "";
+      var b2 = $id("dsh-nei-addi-importbox"); if (b2) b2.style.display = "none";
+    } catch (e) { setStatus("导入异常: " + e.message, "err"); }
+  });
+  function neiSkillIdByName(nm) {
+    try {
+      var DB = CLIENT.DB;
+      if (!DB) { CLIENT.DB = window.require && window.require("DB/DBManager"); DB = CLIENT.DB; }
+      if (!DB || typeof DB.getAllSkillInfo !== "function") {
+        var dsel = document.querySelector(".dsh-addi-sel");
+        if (dsel) {
+          var found = null, n = 0;
+          for (var oi4 = 0; oi4 < dsel.options.length; oi4++) {
+            if (String(dsel.options[oi4].textContent || "").indexOf(nm) >= 0) { n++; if (n === 1) found = dsel.options[oi4].value; }
+          }
+          return n === 1 ? found : null;
+        }
+        return null;
+      }
+      var info = DB.getAllSkillInfo(); if (!info) return null;
+      var exact = null, exactN = 0, pre = null, preN = 0;
+      Object.keys(info).forEach(function (k) {
+        var s = info[k];
+        if (!s || !(s.level > 0)) return;
+        var skid = s.SKID != null ? s.SKID : k;
+        if (isPassiveSkill(skid)) return;
+        var nm2 = getSkillNameById(skid) || s.SkillName || s.name || "";
+        if (!nm2) return;
+        if (String(nm2) === nm) { exactN++; if (exactN === 1) exact = skid; }
+        if (String(nm2).indexOf(nm) >= 0) { preN++; if (preN === 1) pre = skid; }
+      });
+      if (exactN === 1) return exact;
+      return preN === 1 ? pre : null;
+    } catch (e) { return null; }
+  }
+  function syncNeiAddiFromPanel() {
+    try {
+      var sels = document.querySelectorAll(".addiskillid");
+      var lvs = document.querySelectorAll(".addiskilllv");
+      var ops = document.querySelectorAll(".addiskillop");
+      if (!sels.length) return;
+      var list = Array.isArray(saved.neiAddi) ? saved.neiAddi.slice() : [];
+      for (var i = 0; i < sels.length; i++) {
+        var sel = sels[i];
+        var sid = "";
+        if (sel.selectedIndex >= 0 && sel.options[sel.selectedIndex]) {
+          var opx = sel.options[sel.selectedIndex];
+          sid = opx.value || opx.getAttribute("data-index") || opx.getAttribute("data-id") || "";
+        }
+        var lv = lvs[i] && lvs[i].value != null ? lvs[i].value : "";
+        var on = ops[i] ? !!ops[i].checked : true;
+        if (i < list.length) list[i] = { sid: sid, lv: String(lv), on: on };
+        else list.push({ sid: sid, lv: String(lv), on: on });
+      }
+      saved.neiAddi = list; saveSaved(saved);
+      neiAddiRender();
+    } catch (e) { console.log("[RO助手] syncNeiAddiFromPanel: " + e.message); }
+  }
+  neiAddiRender();
   $id("dsh-readbot").addEventListener("click", function () {
     setStatus("内挂: " + readBot(), "ok");
   });

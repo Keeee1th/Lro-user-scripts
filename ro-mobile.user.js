@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO 手机自适应 ro-mobile
 // @namespace    https://github.com/Keeee1th/Lro-user-scripts
-// @version      1.0.11
+// @version      1.0.12
 // @description  手机使用 PC 网页 api.html 的触控适配与掉线防护:自动加载手机内核(Online_mn),自定义操作键(开窗/键盘/点地),后台保活(隐藏PING+音频+WebLock+防熄屏),可与 ro-assist 双开(检测式不抢占)
 // @match        https://post.lastro.cn/ro/api.html*
 // @match        http://post.lastro.cn/ro/api.html*
@@ -13,7 +13,7 @@
 
 (function () {
   "use strict";
-  var VER = "1.0.11";
+  var VER = "1.0.12";
   var LS_KEY = "dsh_ro_mobile_v1";
   var version = (location.href.match(/[?&]v=([\d.]+)/i) || [null, "69.32"])[1];
 
@@ -98,7 +98,8 @@
       ],
       line: null,                       // 线路:null=未选(首次弹层),3=V6-Online 三转,5=V6-Eden 进阶二转
       opts: { bgkeep: true, fullscreen: true, autoReload: false, remember: false, edge: true,
-        uiScale: 100, keyScale: 100, joyScale: 100, joyShow: true, joyProto: false, joyPos: null },
+        uiScale: 100, keyScale: 100, joyScale: 100, joyShow: true, joyProto: false, joyPos: null,
+        joyDead: 15, joyAng: 20 },  // V1.0.12 摇杆死区(半径%内不触发)/方向切换回差(°内保持)
       acc: "",
       pwd: ""
     };
@@ -121,6 +122,9 @@
         if (typeof o.opts.joyScale !== "number" || o.opts.joyScale < 50 || o.opts.joyScale > 200) o.opts.joyScale = 100;
         if (typeof o.opts.joyShow !== "boolean") o.opts.joyShow = true;
         if (typeof o.opts.joyProto !== "boolean") o.opts.joyProto = false;
+        // V1.0.12 摇杆死区(5%~50%半径,默认15%)/方向切换回差(0~45°,默认20°):防中心抖动误触发与扇区边界跳变「回头」
+        if (typeof o.opts.joyDead !== "number" || o.opts.joyDead < 5 || o.opts.joyDead > 50) o.opts.joyDead = 15;
+        if (typeof o.opts.joyAng !== "number" || o.opts.joyAng < 0 || o.opts.joyAng > 45) o.opts.joyAng = 20;
         if (!o.opts.joyPos || typeof o.opts.joyPos.x !== "number" || typeof o.opts.joyPos.y !== "number") o.opts.joyPos = null;
         // V1.0.9 配置自愈:bar/col 非数组→重建默认;逐项净化(null/非对象剔除、缺label补默认、非法pos清除),净化结果立即写回(坏配置刷一次即修复)
         var _def = defaultCfg();
@@ -514,20 +518,7 @@
         }
       } catch (e) { try { console.error("[ro-mobile] col键渲染失败 " + i, e); } catch (e2) {} }
     });
-    var fBtn = el("div", "dsh-mk-btn dsh-mk-fight", "战"); // V1.0.11 内挂自动战斗快捷按钮
-    fBtn.style.width = Math.round(48 * ks) + "px";
-    fBtn.style.height = Math.round(48 * ks) + "px";
-    fBtn.style.fontSize = Math.round(13 * ks) + "px";
-    isolate(fBtn);
-    fBtn.addEventListener("click", function (e) {
-      if (state.posMode) return;
-      try { e.stopPropagation(); e.preventDefault(); } catch (err) {}
-      npFightOn = !npFightOn;
-      npAutoFight(npFightOn);
-      synchFightBtn();
-    });
-    col.appendChild(fBtn);
-    synchFightBtn();
+    synchFightBtn(); // V1.0.12:战斗键为配置项(可单独添加/删除/拖位),不再硬编码→不与其他键重叠
     rootEl.insertBefore(bar, rootEl.firstChild);
     rootEl.insertBefore(col, rootEl.firstChild);
     if (rootEl.parentNode && !rootEl.isConnected) { try { document.documentElement.appendChild(rootEl); } catch (e) { document.body.appendChild(rootEl); } }
@@ -536,10 +527,21 @@
     if (!k || typeof k !== "object") return null; // 守卫:非法条目不渲染
     var b = el("div", "dsh-mk-btn", escapeHtml(k.label));
     isolate(b);
+    if (k.t === "fight") b.classList.add("dsh-mk-fight"); // V1.0.12 战斗键:高亮同步/可配置
     var timer = null, iv = null;
     function down(e) {
       if (state.posMode) return; // 位置调整模式:不触发功能
       if (e) { try { e.preventDefault(); e.stopPropagation(); } catch (err) {} }
+      if (k.t === "fight") { // V1.0.12 内挂战斗键:点一下翻转自动战斗,不连发
+        npFightOn = !npFightOn;
+        npAutoFight(npFightOn);
+        synchFightBtn();
+        return;
+      }
+      if (k.t === "rot") { // V1.0.12 旋转屏幕键:点一下横/竖屏切换,不连发
+        toggleRotate();
+        return;
+      }
       var resume = !!(b._breakTs && Date.now() - b._breakTs < 1000);
       b._breakTs = 0;
       if (!resume) trigger(k);
@@ -702,9 +704,41 @@
   }
   function synchFightBtn() {
     try {
-      var f = document.querySelector(".dsh-mk-fight");
-      if (f) f.style.background = npFightOn ? "#b23b3b" : "#2f6bb0";
+      var fs = document.querySelectorAll(".dsh-mk-fight");
+      for (var i = 0; i < fs.length; i++) fs[i].style.background = npFightOn ? "#b23b3b" : "#2f6bb0";
     } catch (e) {}
+  }
+
+  // V1.0.12:旋转屏幕(可配置键「旋转屏幕」,点击即横/竖屏切换,不写死;真机按键可删/可拖)
+  // 可行性:浏览器 Screen Orientation API(screen.orientation.lock)通常需全屏态生效(Android Chrome/WebView 支持;
+  // iOS Safari 不支持 lock,降级提示)。点击时先请求全屏再 lock,失败仅 toast,不影响游戏操作。
+  var rotState = null; // 本地目标记忆:null=跟随 API type 判定,null 且无 API 时翻转
+  function toggleRotate() {
+    try {
+      var so = null;
+      try { so = window.screen && (window.screen.orientation || window.screen.mozOrientation || null); } catch (e) {}
+      var want = null;
+      if (so && so.type) {
+        want = /landscape/.test(String(so.type)) ? "portrait" : "landscape"; // 按当前实际朝向取反
+      } else {
+        rotState = rotState === true ? false : true; // API 无 type:本地翻转(防重复触发同一朝向)
+        want = rotState ? "landscape" : "portrait";
+      }
+      try {
+        var d = document.documentElement || document.body;
+        if (d.requestFullscreen && !document.fullscreenElement) {
+          var pr = d.requestFullscreen();
+          if (pr && pr.catch) pr.catch(function () {});
+        }
+      } catch (e) {}
+      if (so && so.lock) {
+        var lp = so.lock(want + "-primary");
+        if (lp && lp.catch) lp.catch(function () { toast("旋转失败(需允许全屏后重试)"); });
+        else toast(want === "landscape" ? "已切横屏" : "已切竖屏");
+      } else {
+        toast("浏览器不支持屏幕旋转锁定(试用手势/系统旋转锁)");
+      }
+    } catch (e) { toast("旋转不可用"); }
   }
 
   // ---------------- 模拟摇杆(两内核均显示;默认「直发移动」:朝方向发 REQUEST_MOVE 目标点,服务端寻路,比协议直驱稳) ----------------
@@ -789,13 +823,23 @@
     function dir8() {
       var dx = o.ax - o.px, dy = o.ay - o.py;
       var len = Math.sqrt(dx * dx + dy * dy);
-      if (len < 5) return -1;   // 死区
+      // V1.0.12 死区配置化:死区=摇杆半径×joyDead%(默认15%),中心小幅推动/指尖抖动不触发方向(防误出发「回头」)
+      var dead = (cfg.opts.joyDead || 15) / 100 * o.r;
+      if (len < dead) return -1;
       var best = -1, bestDot = -1;
       for (var i = 0; i < 8; i++) {
         var d = JOY_DIRS[i];
         var dl = Math.sqrt(d.dx * d.dx + d.dy * d.dy); // 对角向量归一化,避免与轴向平局
         var dot = (dx * d.dx + dy * d.dy) / (len * dl);
         if (dot > bestDot) { bestDot = dot; best = i; }
+      }
+      // V1.0.12 方向切换回差:偏离当前方向中心 < 扇区半宽22.5°+joyAng° 时保持当前方向,
+      // 扇区边界抖动/轻微回推不再来回切方向 → 防「回头」(原地转身折返)
+      if (o.dir >= 0 && best !== o.dir) {
+        var aDeg = Math.atan2(dy, dx) * 180 / Math.PI;
+        var cDeg = Math.atan2(JOY_DIRS[o.dir].dy, JOY_DIRS[o.dir].dx) * 180 / Math.PI;
+        var off = Math.abs(aDeg - cDeg); if (off > 180) off = 360 - off;
+        if (off < 22.5 + (cfg.opts.joyAng || 0)) return o.dir;
       }
       return best;
     }
@@ -1161,7 +1205,7 @@
     var posSel = el("select", "dsh-mk-sel");
     posSel.innerHTML = '<option value="bar">底部</option><option value="col">右侧</option>';
     var typeSel = el("select", "dsh-mk-sel");
-    typeSel.innerHTML = '<option value="win">开窗</option><option value="key">键盘</option><option value="combo">组合</option><option value="move">点地</option>';
+    typeSel.innerHTML = '<option value="win">开窗</option><option value="key">键盘</option><option value="combo">组合</option><option value="move">点地</option><option value="fight">内挂战斗</option><option value="rot">旋转屏幕</option>'; // V1.0.12 旋转屏幕(可配置键)
     var paramSel = el("select", "dsh-mk-sel");
     var comboBox = el("div"); // 组合键:自选多键(动态,初始2键,最多6键)
     comboBox.style.cssText = "display:none;flex-direction:column;gap:4px;flex:1 1 100%;min-width:100%";
@@ -1216,6 +1260,8 @@
         });
       } else if (t === "key") {
         fillKeys(paramSel);
+      } else if (t === "fight" || t === "rot") {
+        paramSel.style.display = "none";
       } else if (t === "combo") {
         paramSel.style.display = "none";
         while (comboBox.children.length) comboBox.removeChild(comboBox.children[0]); // 清空重建
@@ -1257,6 +1303,10 @@
         if (vs.length < 1) { toast("请选择至少1个键"); return; }
         var nameV = (comboNameInp && comboNameInp.value && comboNameInp.value.trim()) || vs.join("+");
         k = { id: Math.random().toString(36).slice(2, 9), t: "combo", label: nameV, keys: vs };
+      } else if (t === "fight") {
+        k = { id: Math.random().toString(36).slice(2, 9), t: "fight", label: "内挂战斗" };
+      } else if (t === "rot") {
+        k = { id: Math.random().toString(36).slice(2, 9), t: "rot", label: "旋转屏幕" };
       } else {
         var xx = parseFloat(xInp.value), yy = parseFloat(yInp.value);
         if (!isFinite(xx) || !isFinite(yy)) { toast("请填写点地坐标"); return; }
@@ -1347,6 +1397,8 @@
     }
     panel.appendChild(rangeRow("键大小", function () { return cfg.opts.keyScale; }, function (v) { cfg.opts.keyScale = v; }, 60, 200, 5, "%", function () { renderKeys(); }));
     panel.appendChild(rangeRow("摇杆大小", function () { return cfg.opts.joyScale; }, function (v) { cfg.opts.joyScale = v; }, 50, 200, 5, "%", function () { if (joyEl && joyEl._updateSize) joyEl._updateSize(); }));
+    panel.appendChild(rangeRow("摇杆死区(半径%内不触发)", function () { return cfg.opts.joyDead; }, function (v) { cfg.opts.joyDead = v; }, 5, 50, 5, "%")); // V1.0.12 防中心抖动误出发
+    panel.appendChild(rangeRow("方向切换回差(防回头)", function () { return cfg.opts.joyAng; }, function (v) { cfg.opts.joyAng = v; }, 0, 45, 5, "°")); // V1.0.12 扇区边界抖动不来回切
     panel.appendChild(rangeRow("画面缩放", function () { return cfg.opts.uiScale; }, function (v) { cfg.opts.uiScale = v; }, 60, 180, 5, "%", function () { applyUiScale(); }));
     var posRow = el("div", "dsh-mk-row");
     var posBt = el("button", "dsh-mk-add", "调整按键/摇杆位置(拖拽)");
@@ -1360,7 +1412,7 @@
       else if (joyEl && joyEl.parentNode) { var jj = joyEl; joyEl = null; jj.parentNode.removeChild(jj); }
     }));
     panel.appendChild(swRow("摇杆协议直驱(默认关,不稳时开)", function () { return cfg.opts.joyProto; }, function (v) { cfg.opts.joyProto = v; }));
-    panel.appendChild(swRow("内挂自动战斗(移动寻怪)快捷开关", function () { return npFightOn; }, function (v) { npFightOn = v; npAutoFight(v); synchFightBtn(); }));
+    panel.appendChild(swRow("内挂自动战斗状态开关(战斗键可在下方单独添加)", function () { return npFightOn; }, function (v) { npFightOn = v; npAutoFight(v); synchFightBtn(); }));
     // 底部按钮
     var foot = el("div", "dsh-mk-foot");
     var ok = el("button", "dsh-mk-ok", "完成");
@@ -1383,6 +1435,8 @@
     if (k.t === "win") return (WIN_MAP[k.win] || k.win) + "(开窗)";
     if (k.t === "key") return "按键 " + k.key;
     if (k.t === "combo") return "组合 " + (k.label || (k.keys || []).join("+"));
+    if (k.t === "fight") return "内挂战斗 " + (k.label && k.label !== "内挂战斗" ? "(" + k.label + ")" : "");
+    if (k.t === "rot") return "旋转屏幕 " + (k.label && k.label !== "旋转屏幕" ? "(" + k.label + ")" : "");
     return "点地 " + k.x + "," + k.y;
   }
 

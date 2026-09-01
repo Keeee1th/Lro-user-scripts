@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO 手机自适应 ro-mobile
 // @namespace    https://github.com/Keeee1th/Lro-user-scripts
-// @version      1.0.6
+// @version      1.0.7
 // @description  手机使用 PC 网页 api.html 的触控适配与掉线防护:自动加载手机内核(Online_mn),自定义操作键(开窗/键盘/点地),后台保活(隐藏PING+音频+WebLock+防熄屏),可与 ro-assist 双开(检测式不抢占)
 // @match        https://post.lastro.cn/ro/api.html*
 // @match        http://post.lastro.cn/ro/api.html*
@@ -13,7 +13,7 @@
 
 (function () {
   "use strict";
-  var VER = "1.0.6";
+  var VER = "1.0.7";
   var LS_KEY = "dsh_ro_mobile_v1";
   var version = (location.href.match(/[?&]v=([\d.]+)/i) || [null, "69.32"])[1];
 
@@ -237,7 +237,7 @@
       ".dsh-mk-gear{pointer-events:auto;position:absolute;top:calc(10px + env(safe-area-inset-top));right:calc(48px + env(safe-area-inset-right));width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.9);border:1px solid rgba(30,60,120,.35);color:#16305f;font-size:22px;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.18);touch-action:none}" +
       "#dsh-mk-joy{pointer-events:auto;position:absolute;left:calc(28px + env(safe-area-inset-left));bottom:calc(96px + env(safe-area-inset-bottom));width:96px;height:96px;z-index:4;touch-action:none}" +
       "#dsh-mk-joy .dsh-mk-joy-base{position:absolute;inset:0;border-radius:50%;background:rgba(255,255,255,.28);border:2px solid rgba(255,255,255,.65);box-shadow:0 2px 10px rgba(0,0,0,.25);touch-action:none}" +
-      "#dsh-mk-joy .dsh-mk-joy-knob{position:absolute;left:50%;top:50%;width:40px;height:40px;margin:-20px 0 0 -20px;border-radius:50%;background:rgba(255,255,255,.92);border:1px solid rgba(30,60,120,.4);box-shadow:0 2px 6px rgba(0,0,0,.25);touch-action:none}" +
+      "#dsh-mk-joy .dsh-mk-joy-knob{position:absolute;left:50%;top:50%;width:40px;height:40px;margin:-20px 0 0 -20px;border-radius:50%;background:rgba(255,255,255,.92);border:1px solid rgba(30,60,120,.4);box-shadow:0 2px 6px rgba(0,0,0,.25);touch-action:none;pointer-events:none}" +
       "#dsh-mk-edit{position:absolute;inset:0;background:rgba(10,20,40,.45);display:none;pointer-events:auto;z-index:10}" +
       "#dsh-mk-edit .dsh-mk-panel{position:absolute;left:0;right:0;bottom:0;max-height:78vh;overflow-y:auto;background:#f4f7fc;border-radius:14px 14px 0 0;padding:14px 14px 26px;box-shadow:0 -4px 20px rgba(0,0,0,.25);font-size:14px;color:#1c3a66}" +
       ".dsh-mk-panel h3{margin:2px 0 8px;font-size:15px;color:#16305f}" +
@@ -416,6 +416,12 @@
     if (old) old.parentNode.removeChild(old);
     var old2 = rootEl.querySelector(".dsh-mk-col");
     if (old2) old2.parentNode.removeChild(old2);
+    // 清理拖拽/重建残留的 root 直子级旧按键(修复:拖拽后原位置残留副本)
+    var rk = (rootEl.children || []).slice();
+    for (var ri = 0; ri < rk.length; ri++) {
+      var rc = rk[ri];
+      if (rc.classList && rc.classList.contains("dsh-mk-btn")) { try { rc.parentNode.removeChild(rc); } catch (e) {} }
+    }
     var ks = (cfg.opts.keyScale || 100) / 100;
     var bar = el("div", "dsh-mk-bar");
     var barBottom = cfg.opts.edge ? "calc(100px + env(safe-area-inset-bottom))" : "calc(8px + env(safe-area-inset-bottom))";
@@ -501,8 +507,41 @@
     else if (k.t === "combo") fireKeys(k.keys, k.mods, "keydown"); // 组合键:两键同发同收
     else if (k.t === "move") { toast("点地 " + k.x + "," + k.y); walkTo(k.x, k.y); } // 诊断可见:真机点地不灵时先看 toast
   }
+  var MOD_KEYS = {
+    ctrl: { key: "Control", code: "ControlLeft", keyCode: 17 },
+    alt: { key: "Alt", code: "AltLeft", keyCode: 18 },
+    shift: { key: "Shift", code: "ShiftLeft", keyCode: 16 }
+  };
+  var modHeld = {};
+  function synthKeyRaw(p, kind, flags) {
+    try {
+      var ev = new KeyboardEvent(kind, {
+        key: p.key, code: p.code,
+        bubbles: true, cancelable: true,
+        ctrlKey: !!flags.ctrl, altKey: !!flags.alt, shiftKey: !!flags.shift
+      });
+      try { Object.defineProperty(ev, "keyCode", { value: p.keyCode }); Object.defineProperty(ev, "which", { value: p.keyCode }); } catch (e) {}
+      window.dispatchEvent(ev);
+    } catch (e) {}
+  }
+  function synthMods(mods, kind) { // 修饰键以真实按键序列发出(引擎需按下 Control 本身,而不只看事件标志)
+    ["ctrl", "alt", "shift"].forEach(function (mk) {
+      if (!mods || !mods[mk]) return;
+      if (kind === "keydown") {
+        if (modHeld["m" + mk]) return; // 已按住,连发不重复
+        modHeld["m" + mk] = true;
+        synthKeyRaw(MOD_KEYS[mk], "keydown", { ctrl: mk === "ctrl", alt: mk === "alt", shift: mk === "shift" });
+      } else {
+        if (!modHeld["m" + mk]) return;
+        modHeld["m" + mk] = false;
+        synthKeyRaw(MOD_KEYS[mk], "keyup", { ctrl: mk === "ctrl", alt: mk === "alt", shift: mk === "shift" });
+      }
+    });
+  }
   function fireKeys(keys, mods, kind) {
+    if (kind === "keydown") synthMods(mods, "keydown");
     (keys || []).forEach(function (kk) { synthKey(kk, kind, mods); });
+    if (kind === "keyup") synthMods(mods, "keyup");
   }
 
   // ---------------- 三类触发 ----------------
@@ -594,12 +633,14 @@
     }
     return ALT_CACHE;
   }
-  function snapWalkable(x, y, dx, dy) {
+  function snapWalkable(x, y, dx, dy, px0, py0) {
     var alt = altApi();
     if (!alt) return [x, y];
     var isW = function (cx, cy) {
       try { return (alt.getCellType(cx, cy) & alt.TYPE.WALKABLE) !== 0; } catch (e) { return true; }
     };
+    // 坐标自检:玩家当前位置在 ALT 网格判为不可走 ⇒ ALT 坐标系与玩家坐标不匹配,禁用吸附(修复上下镜像错位)
+    if (typeof px0 === "number" && typeof py0 === "number" && !isW(px0, py0)) return [x, y];
     if (isW(x, y)) return [x, y];
     for (var gy = -1; gy <= 1; gy++) {
       for (var gx = -1; gx <= 1; gx++) {
@@ -675,7 +716,7 @@
         return null;
       }
       var d = JOY_DIRS[o.dir];
-      return snapWalkable(p[0] + d.dx * 8, p[1] + d.dy * 8, d.dx, d.dy); // 朝方向目标点(8格)+可走吸附(服务端寻路)
+      return snapWalkable(p[0] + d.dx * 8, p[1] + d.dy * 8, d.dx, d.dy, p[0], p[1]); // 朝方向目标点(8格)+可走吸附(自检失配自动禁用)
     }
     function joyDistTo(tgt) {
       var p = playerPos();
@@ -982,7 +1023,23 @@
           pair[1].splice(i, 1);
           saveCfg(); renderKeys(); openEdit();
         });
-        row.appendChild(up); row.appendChild(dn); row.appendChild(del);
+        var re = el("button", "dsh-mk-mini", "名"); // 自定义名称(组合/按键/开窗/点地通用)
+        re.addEventListener("click", function () {
+          var inp = el("input", "dsh-mk-inp");
+          inp.style.width = "72px";
+          inp.value = k.label || "";
+          lb.textContent = "";
+          lb.appendChild(inp);
+          re.style.display = "none";
+          var ok = el("button", "dsh-mk-mini", "存");
+          ok.addEventListener("click", function () {
+            var v = inp.value.trim();
+            if (v) k.label = v;
+            saveCfg(); renderKeys(); openEdit();
+          });
+          row.insertBefore(ok, re);
+        });
+        row.appendChild(up); row.appendChild(dn); row.appendChild(del); row.appendChild(re);
         panel.appendChild(row);
       });
     });
@@ -1001,6 +1058,7 @@
     var modsRow = el("div", "dsh-mk-row");
     modsRow.style.cssText = "display:none;justify-content:flex-start;gap:12px;padding:8px 4px;border-bottom:1px solid #e2e8f2";
     var cbCtrl = null, cbAlt = null, cbShift = null;
+    var comboNameRow = null, comboNameInp = null; // 组合键自定义名称
     function cbMod(label) {
       var lb = el("label");
       lb.style.cssText = "display:flex;align-items:center;gap:4px;font-size:12px;color:#1c3a66";
@@ -1063,6 +1121,14 @@
       } else if (t === "combo") {
         paramSel.style.display = "none";
         while (comboBox.children.length) comboBox.removeChild(comboBox.children[0]); // 清空重建
+        comboNameRow = el("div", "dsh-mk-row");
+        comboNameRow.style.cssText = "display:flex;align-items:center;gap:6px;padding:4px 0";
+        comboNameRow.appendChild(el("label", null, "名称"));
+        comboNameInp = el("input", "dsh-mk-inp");
+        comboNameInp.style.width = "90px";
+        comboNameInp.placeholder = "默认键序列";
+        comboNameRow.appendChild(comboNameInp);
+        comboBox.appendChild(comboNameRow);
         comboBox.appendChild(comboKeySel()); // 初始 1 键,自选任意数量(1..6)
         comboBox.appendChild(comboRowBt);
         comboBox.style.display = "flex";
@@ -1096,7 +1162,8 @@
         if (cbCtrl.checked) mods.ctrl = true;
         if (cbAlt.checked) mods.alt = true;
         if (cbShift.checked) mods.shift = true;
-        k = { id: Math.random().toString(36).slice(2, 9), t: "combo", label: vs.join("+"), keys: vs, mods: mods };
+        var nameV = (comboNameInp && comboNameInp.value && comboNameInp.value.trim()) || vs.join("+");
+        k = { id: Math.random().toString(36).slice(2, 9), t: "combo", label: nameV, keys: vs, mods: mods };
       } else {
         var xx = parseFloat(xInp.value), yy = parseFloat(yInp.value);
         if (!isFinite(xx) || !isFinite(yy)) { toast("请填写点地坐标"); return; }
@@ -1223,7 +1290,7 @@
     if (k.t === "key") return "按键 " + k.key;
     if (k.t === "combo") {
       var modsTxt = (k.mods && (k.mods.ctrl || k.mods.alt || k.mods.shift)) ? " [+修饰]" : "";
-      return "组合 " + (k.keys || []).join("+") + modsTxt;
+      return "组合 " + (k.label || (k.keys || []).join("+")) + modsTxt;
     }
     return "点地 " + k.x + "," + k.y;
   }

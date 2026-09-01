@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO 对话框/封包/走路 联合探测
 // @namespace    dsh-dialog-dump
-// @version      0.4.0
+// @version      0.4.1
 // @description  探测对话框载体+逆向封包+试走路(定位坐标走路失效)。GBK解码+DOM快照+出站包捕获
 // @match        https://post.lastro.cn/*
 // @match        https://post.lastro.cn/ro/api.html*
@@ -77,7 +77,7 @@
     try {
       var dv = new DataView(buf, 0, Math.min(buf.byteLength, 16));
       var id = buf.byteLength >= 2 ? dv.getUint16(0, true) : -1;
-      if (OUT.length < 24) OUT.push({ id: id, len: buf.byteLength, hex: hex(dv, 0, Math.min(8, buf.byteLength)) });
+      if (OUT.length < 100) OUT.push({ t: ts(), id: id, len: buf.byteLength, hex: hex(dv, 0, Math.min(8, buf.byteLength)) });
     } catch (e) {}
   }
   function onOutbound(d) {
@@ -247,7 +247,7 @@
       panel.setAttribute('data-dsh-dump', '1');
       panel.style.cssText = 'position:fixed;top:8px;left:8px;z-index:2147483647;background:#0b0b0b;color:#3f3;font:12px/1.5 monospace;padding:8px;border:1px solid #3f3;max-width:480px;max-height:82vh;overflow:auto;';
       var hd = document.createElement('div');
-      hd.textContent = 'Dump 探测 v0.4.0 — 按住此处拖动';
+      hd.textContent = 'Dump 探测 v0.4.1 — 按住此处拖动';
       hd.style.cssText = 'padding:4px 8px;background:#153;color:#3f3;font-weight:bold;user-select:none;-webkit-user-select:none;cursor:move;margin:-8px -8px 6px;';
       panel.appendChild(hd);
       ta = document.createElement('textarea');
@@ -257,6 +257,7 @@
       walkMsg = document.createElement('div');
       walkMsg.style.cssText = 'margin-top:6px;color:#ff0;font-size:11px;white-space:pre-wrap;';
       panel.appendChild(walkMsg);
+      panel.appendChild(mkBtn('清空出站', '#333', function () { OUT = []; setWalkOut('出站已清空'); render(); }));
       panel.appendChild(mkBtn('试走路(+2格 500ms×5)', '#660', walkTest));
       panel.appendChild(mkBtn('清空重记', '#333', function () {
         T.dom = []; T.pkt = []; T.snap = null; T.pktSeen = {}; seenDom = {};
@@ -275,7 +276,7 @@
       makeDraggable(hd, panel);
       for (var i3 = 0; i3 < ISO.length; i3++) { document.addEventListener(ISO[i3], fallbackStop, false); }
     }
-    var o = { counts: { dom: T.dom.length, pkt: T.pkt.length }, dom: T.dom.slice(-60), pkt: T.pkt, snap: T.snap, walk: walkMsg ? walkMsg.textContent : null };
+    var o = { counts: { dom: T.dom.length, pkt: T.pkt.length, out: OUT.length }, dom: T.dom.slice(-60), pkt: T.pkt, out: OUT, snap: T.snap, walk: walkMsg ? walkMsg.textContent : null };
     ta.value = JSON.stringify(o, null, 1);
   }
 

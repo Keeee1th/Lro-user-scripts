@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO 手机自适应 ro-mobile
 // @namespace    https://github.com/Keeee1th/Lro-user-scripts
-// @version      1.0.5
+// @version      1.0.6
 // @description  手机使用 PC 网页 api.html 的触控适配与掉线防护:自动加载手机内核(Online_mn),自定义操作键(开窗/键盘/点地),后台保活(隐藏PING+音频+WebLock+防熄屏),可与 ro-assist 双开(检测式不抢占)
 // @match        https://post.lastro.cn/ro/api.html*
 // @match        http://post.lastro.cn/ro/api.html*
@@ -13,7 +13,7 @@
 
 (function () {
   "use strict";
-  var VER = "1.0.5";
+  var VER = "1.0.6";
   var LS_KEY = "dsh_ro_mobile_v1";
   var version = (location.href.match(/[?&]v=([\d.]+)/i) || [null, "69.32"])[1];
 
@@ -235,7 +235,7 @@
       "#dsh-mk-toast.on{opacity:1;transform:translateX(-50%) translateY(0)}" +
       "#dsh-mk-alert{position:absolute;top:0;left:0;right:0;background:rgba(200,40,40,.94);color:#fff;font-size:15px;text-align:center;padding:12px 30px;display:none;pointer-events:auto;z-index:5;border-radius:0 0 10px 10px}" +
       ".dsh-mk-gear{pointer-events:auto;position:absolute;top:calc(10px + env(safe-area-inset-top));right:calc(48px + env(safe-area-inset-right));width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.9);border:1px solid rgba(30,60,120,.35);color:#16305f;font-size:22px;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.18);touch-action:none}" +
-      "#dsh-mk-joy{pointer-events:auto;position:absolute;left:calc(16px + env(safe-area-inset-left));bottom:calc(96px + env(safe-area-inset-bottom));width:96px;height:96px;z-index:4}" +
+      "#dsh-mk-joy{pointer-events:auto;position:absolute;left:calc(28px + env(safe-area-inset-left));bottom:calc(96px + env(safe-area-inset-bottom));width:96px;height:96px;z-index:4;touch-action:none}" +
       "#dsh-mk-joy .dsh-mk-joy-base{position:absolute;inset:0;border-radius:50%;background:rgba(255,255,255,.28);border:2px solid rgba(255,255,255,.65);box-shadow:0 2px 10px rgba(0,0,0,.25);touch-action:none}" +
       "#dsh-mk-joy .dsh-mk-joy-knob{position:absolute;left:50%;top:50%;width:40px;height:40px;margin:-20px 0 0 -20px;border-radius:50%;background:rgba(255,255,255,.92);border:1px solid rgba(30,60,120,.4);box-shadow:0 2px 6px rgba(0,0,0,.25);touch-action:none}" +
       "#dsh-mk-edit{position:absolute;inset:0;background:rgba(10,20,40,.45);display:none;pointer-events:auto;z-index:10}" +
@@ -352,6 +352,7 @@
     posDrag = null;
     saveCfg();
     renderKeys();
+    try { applyJoyEdge(); } catch (e) {} // 摇杆按 joyPos 百分比归位
     toast("位置已保存");
   }
   function dragStart(e, el, target) { // target: {kind:'key',k} | {kind:'joy'}
@@ -370,7 +371,7 @@
       rootEl.appendChild(el); // 拖出容器,改绝对定位
     }
     posDrag = { el: el, target: target, dx: e.clientX - l0, dy: e.clientY - t0 };
-    try { if (el.setPointerCapture) el.setPointerCapture(e.pointerId); } catch (err) {}
+    try { if (e.target && e.target.setPointerCapture) e.target.setPointerCapture(e.pointerId); } catch (err) {} // 捕获到事件源(按键自身/摇杆base),移出仍可拖
   }
   function dragMove(e) {
     if (!posDrag) return;
@@ -584,16 +585,51 @@
       cl.NM.sendPacket(p);
     } catch (e) {}
   }
-  // 当前玩家坐标(直发移动需要)
+  // 目标点可走吸附:内核 ALT 可走性检查,3×3 就近吸附,全不可走沿方向退格兜底;接口缺失时原样返回(降级)
+  var ALT_CACHE;
+  function altApi() {
+    if (ALT_CACHE === undefined) {
+      try { ALT_CACHE = window.require("Renderer/Map/Altitude"); } catch (e) { ALT_CACHE = null; }
+      if (!ALT_CACHE || !ALT_CACHE.getCellType || !ALT_CACHE.TYPE) ALT_CACHE = null;
+    }
+    return ALT_CACHE;
+  }
+  function snapWalkable(x, y, dx, dy) {
+    var alt = altApi();
+    if (!alt) return [x, y];
+    var isW = function (cx, cy) {
+      try { return (alt.getCellType(cx, cy) & alt.TYPE.WALKABLE) !== 0; } catch (e) { return true; }
+    };
+    if (isW(x, y)) return [x, y];
+    for (var gy = -1; gy <= 1; gy++) {
+      for (var gx = -1; gx <= 1; gx++) {
+        if (!gx && !gy) continue;
+        if (isW(x + gx, y + gy)) return [x + gx, y + gy];
+      }
+    }
+    if (dx || dy) {
+      for (var k = 1; k <= 7; k++) { var nx = x - dx * k, ny = y - dy * k; if (isW(nx, ny)) return [nx, ny]; }
+    }
+    return [x, y];
+  }
+  // 当前玩家坐标(直发移动需要);position 兼容数组与 {x,y} 对象
+  function normPos(m) {
+    if (!m || !m.position) return null;
+    var ps = m.position;
+    if (typeof ps[0] === "number") return [ps[0], ps[1]];
+    if (typeof ps.x === "number" && typeof ps.y === "number") return [ps.x, ps.y];
+    return null;
+  }
   function playerPos() {
     try {
       var SS = window.require("Engine/SessionStorage");
       var e = SS && SS.Entity;
-      if (e && e.position) return e.position;
+      var pos0 = e && e.position;
+      if (pos0) { var n0 = normPos({ position: pos0 }); if (n0) return n0; }
       var EM = window.require("Renderer/EntityManager");
       if (EM) {
-        try { if (EM.getEntity && SS && SS.GID) { var m = EM.getEntity(SS.GID); if (m && m.position) return m.position; } } catch (e2) {}
-        try { if (EM.forEach && SS && SS.GID) { var found = null; EM.forEach(function (x) { if (x && x.GID === SS.GID) found = x; }); if (found && found.position) return found.position; } } catch (e2) {}
+        try { if (EM.getEntity && SS && SS.GID) { var m = EM.getEntity(SS.GID); var n1 = normPos(m); if (n1) return n1; } } catch (e2) {}
+        try { if (EM.forEach && SS && SS.GID) { var found = null; EM.forEach(function (x) { if (x && x.GID === SS.GID) found = x; }); var n2 = normPos(found); if (n2) return n2; } } catch (e2) {}
       }
       return null;
     } catch (e) { return null; }
@@ -610,7 +646,7 @@
     (rootEl || document.body).appendChild(joy);
     joyEl = joy;
     applyJoyEdge();
-    var o = { px: 0, py: 0, ax: 0, ay: 0, active: false, dir: -1, lastDir: -1, lastSent: 0, lastTgt: null, breakTs: 0, r: 40 };
+    var o = { px: 0, py: 0, ax: 0, ay: 0, active: false, dir: -1, lastDir: -1, lastSent: 0, lastTgt: null, breakTs: 0, r: 40, mode: null, stillCnt: 0, lastPos: null };
     function dir8() {
       var dx = o.ax - o.px, dy = o.ay - o.py;
       var len = Math.sqrt(dx * dx + dy * dy);
@@ -639,7 +675,7 @@
         return null;
       }
       var d = JOY_DIRS[o.dir];
-      return [p[0] + d.dx * 12, p[1] + d.dy * 12]; // 朝拖拽方向目标点(服务端寻路)
+      return snapWalkable(p[0] + d.dx * 8, p[1] + d.dy * 8, d.dx, d.dy); // 朝方向目标点(8格)+可走吸附(服务端寻路)
     }
     function joyDistTo(tgt) {
       var p = playerPos();
@@ -649,6 +685,7 @@
     function start(e) {
       if (state.posMode) return; // 位置调整模式:不触发行走
       if (e) { try { e.stopPropagation(); e.preventDefault(); } catch (err) {} }
+      o.mode = (e && (e.pointerType || typeof e.pointerId === "number")) ? "p" : "t"; // 输入通道:pointer / touch
       o.px = o.ax = e.clientX; o.py = o.ay = e.clientY;
       o.active = true; o.dir = -1;
       knob.style.transition = "none";
@@ -671,6 +708,7 @@
       if (!o.active) return;
       o.active = false;
       o.breakTs = Date.now();
+      o.stillCnt = 0; o.lastPos = null; o.mode = null; // 重置静止检测与输入通道
       if (o.dir >= 0) {
         if (cfg.opts.joyProto) joySend(0, -1);
         o.lastDir = o.dir; o.dir = -1;
@@ -683,6 +721,7 @@
       if (!o.active || !clientReady()) return;
       var d = dir8();
       var now = Date.now();
+      var pNow = playerPos(); // 静止检测共用
       if (d >= 0) {
         var dirChanged = (d !== o.dir);
         o.dir = d; o.lastDir = d;
@@ -691,25 +730,49 @@
           o.lastSent = now;
           joySend(1, o.dir);
         } else {
-          if (!dirChanged && now - o.lastSent < 1500) return; // 直发模式:方向变立即发,同向 1500ms 心跳(防高频发包致服务器/任务卡顿)
-          if (!dirChanged && o.lastTgt && joyDistTo(o.lastTgt) >= 8) return; // 铁律:离目标还远不补发,仅接近目标(<8格)才补
+          // 直发:方向变立即发;同向按 1500ms 心跳,仅「接近目标(<8格)」或「检测到角色停住(坐标连续未变)」才补发
+          // 铁律兼容:不近目标且未停住不补发→包率上限约0.67包/秒,不再墙边封死
+          if (pNow) {
+            var moved = !!(o.lastPos && (Math.abs(pNow[0] - o.lastPos[0]) >= 1 || Math.abs(pNow[1] - o.lastPos[1]) >= 1));
+            o.stillCnt = moved ? 0 : (o.stillCnt + 1);
+            o.lastPos = pNow;
+          }
+          var stopped = o.stillCnt >= 2; // 连续 2 tick(约280ms)坐标未变视为卡住
+          if (!dirChanged && now - o.lastSent < 1500) return;
+          var near = !o.lastTgt || joyDistTo(o.lastTgt) < 8;
+          if (!dirChanged && !near && !stopped) return;
           var tgt = steerTarget();
-          if (tgt) { o.lastTgt = tgt; o.lastSent = now; walkTo(tgt[0], tgt[1]); }
+          if (tgt) { o.lastTgt = tgt; o.lastSent = now; o.stillCnt = 0; walkTo(tgt[0], tgt[1]); }
         }
       } else if (o.dir >= 0) {
         if (cfg.opts.joyProto) joySend(0, -1);
         o.lastDir = o.dir; o.dir = -1;
       }
     }, 140);
-    base.addEventListener("pointerdown", start);
-    base.addEventListener("pointermove", move);
-    base.addEventListener("pointerup", end);
-    base.addEventListener("pointercancel", end);
+    function ptGate(fn) { return function (e) { if (o.mode === "t") return; fn(e); }; } // pointer 通道:触摸接管时让位
+    function tch(e, fn, dfn) { // touch 兜底通道(webview 吞 pointer 时仍可摇/可拖)
+      if (o.mode === "p" && !state.posMode) return;
+      var t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]);
+      if (!t) return;
+      var evt = { clientX: t.clientX, clientY: t.clientY, target: base,
+        preventDefault: function () { try { e.preventDefault(); } catch (err) {} },
+        stopPropagation: function () { try { e.stopPropagation(); } catch (err) {} } };
+      if (state.posMode && dfn) dfn(evt); else fn(evt);
+    }
+    base.addEventListener("pointerdown", ptGate(start));
+    base.addEventListener("pointermove", ptGate(move));
+    base.addEventListener("pointerup", ptGate(end));
+    base.addEventListener("pointercancel", ptGate(end));
+    base.addEventListener("touchstart", function (e) { tch(e, start, function (evt) { dragStart(evt, joy, { kind: "joy" }); }); }, { passive: false });
+    base.addEventListener("touchmove", function (e) { tch(e, move, dragMove); }, { passive: false });
+    base.addEventListener("touchend", function (e) { tch(e, end, function () { dragEnd(); }); }, { passive: false });
+    base.addEventListener("touchcancel", function (e) { tch(e, end, function () { posDrag = null; }); }, { passive: false });
     joy._timer = steerTimer;
-    joy.addEventListener("pointerdown", function (e) { if (state.posMode) dragStart(e, joy, { kind: "joy" }); });
-    joy.addEventListener("pointermove", function (e) { if (state.posMode) dragMove(e); });
-    joy.addEventListener("pointerup", function () { if (state.posMode) dragEnd(); });
-    joy.addEventListener("pointercancel", function () { if (state.posMode) posDrag = null; });
+    // 摇杆位置拖拽:监听必须挂事件源 base(同元素收听才不受 isolate stopPropagation 影响;曾挂 joy 永远收不到)
+    base.addEventListener("pointerdown", function (e) { if (state.posMode) dragStart(e, joy, { kind: "joy" }); });
+    base.addEventListener("pointermove", function (e) { if (state.posMode) dragMove(e); });
+    base.addEventListener("pointerup", function () { if (state.posMode) dragEnd(); });
+    base.addEventListener("pointercancel", function () { if (state.posMode) posDrag = null; });
     joy._updateSize = function () {
       var s = (cfg.opts.joyScale || 100) / 100;
       if (s < 0.5) s = 0.5; if (s > 2) s = 2;
@@ -1126,7 +1189,7 @@
     panel.appendChild(rangeRow("摇杆大小", function () { return cfg.opts.joyScale; }, function (v) { cfg.opts.joyScale = v; }, 50, 200, 5, "%", function () { if (joyEl && joyEl._updateSize) joyEl._updateSize(); }));
     panel.appendChild(rangeRow("画面缩放", function () { return cfg.opts.uiScale; }, function (v) { cfg.opts.uiScale = v; }, 60, 180, 5, "%", function () { applyUiScale(); }));
     var posRow = el("div", "dsh-mk-row");
-    var posBt = el("button", "dsh-mk-add", "调整按键位置(拖拽)");
+    var posBt = el("button", "dsh-mk-add", "调整按键/摇杆位置(拖拽)");
     posBt.style.flex = "1";
     posBt.addEventListener("click", function () { posModeEnter(); });
     posRow.appendChild(posBt);
@@ -1144,7 +1207,9 @@
     var reset = el("button", "dsh-mk-reset", "恢复默认");
     reset.addEventListener("click", function () {
       cfg = defaultCfg();
-      saveCfg(); renderKeys(); openEdit();
+      saveCfg(); renderKeys();
+      try { applyEdgeUI(); if (joyEl && joyEl._updateSize) joyEl._updateSize(); } catch (e) {} // 摇杆即时归位
+      openEdit();
     });
     foot.appendChild(ok); foot.appendChild(reset);
     panel.appendChild(foot);

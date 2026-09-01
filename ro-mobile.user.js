@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO 手机自适应 ro-mobile
 // @namespace    https://github.com/Keeee1th/Lro-user-scripts
-// @version      1.0.8
+// @version      1.0.9
 // @description  手机使用 PC 网页 api.html 的触控适配与掉线防护:自动加载手机内核(Online_mn),自定义操作键(开窗/键盘/点地),后台保活(隐藏PING+音频+WebLock+防熄屏),可与 ro-assist 双开(检测式不抢占)
 // @match        https://post.lastro.cn/ro/api.html*
 // @match        http://post.lastro.cn/ro/api.html*
@@ -13,7 +13,7 @@
 
 (function () {
   "use strict";
-  var VER = "1.0.8";
+  var VER = "1.0.9";
   var LS_KEY = "dsh_ro_mobile_v1";
   var version = (location.href.match(/[?&]v=([\d.]+)/i) || [null, "69.32"])[1];
 
@@ -121,6 +121,24 @@
         if (typeof o.opts.joyShow !== "boolean") o.opts.joyShow = true;
         if (typeof o.opts.joyProto !== "boolean") o.opts.joyProto = false;
         if (!o.opts.joyPos || typeof o.opts.joyPos.x !== "number" || typeof o.opts.joyPos.y !== "number") o.opts.joyPos = null;
+        // V1.0.9 配置自愈:bar/col 非数组→重建默认;逐项净化(null/非对象剔除、缺label补默认、非法pos清除),净化结果立即写回(坏配置刷一次即修复)
+        var _def = defaultCfg();
+        var _needSave = false;
+        function _normKey(k) {
+          if (!k || typeof k !== "object") return null;
+          if (k.pos && (typeof k.pos.x !== "number" || typeof k.pos.y !== "number")) k.pos = null;
+          if (!k.label) {
+            if (k.t === "combo") k.label = (k.keys || []).join("+") || "组合";
+            else if (k.t === "move") k.label = "点地";
+            else k.label = k.key || k.win || "键";
+          }
+          return k;
+        }
+        if (!Array.isArray(o.bar) || !o.bar.length) { o.bar = _def.bar; _needSave = true; }
+        else { var _nb = o.bar.map(_normKey).filter(Boolean); if (_nb.length !== o.bar.length) _needSave = true; o.bar = _nb; }
+        if (!Array.isArray(o.col) || !o.col.length) { o.col = _def.col; _needSave = true; }
+        else { var _nc = o.col.map(_normKey).filter(Boolean); if (_nc.length !== o.col.length) _needSave = true; o.col = _nc; }
+        if (_needSave) { try { localStorage.setItem(LS_KEY, JSON.stringify(o)); } catch (e) {} }
         return o;
       }
     } catch (e) {}
@@ -186,6 +204,18 @@
     (document.head || document.documentElement).appendChild(s);
     waitReady();
   }
+  function showFatal(msg) { // 启动失败全屏提示(不依赖操作层,失败可见不再静默)
+    try {
+      var b = document.getElementById("dsh-mk-fatal");
+      if (!b) {
+        b = el("div");
+        b.id = "dsh-mk-fatal";
+        b.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:2147483647;background:rgba(200,40,40,.95);color:#fff;font-size:14px;text-align:center;padding:10px 16px;font-family:system-ui,-apple-system,sans-serif";
+        (document.documentElement || document.body).appendChild(b);
+      }
+      b.textContent = msg;
+    } catch (e) {}
+  }
   function waitReady() {
     var tries = 0;
     var iv = setInterval(function () {
@@ -195,7 +225,8 @@
         onClientUp();
       } else if (tries > 60) { // 20s 超时
         clearInterval(iv);
-        toast("客户端加载超时,请刷新重试");
+        try { toast("客户端加载超时,请刷新重试"); } catch (e) {}
+        showFatal("客户端加载超时(20 秒),请刷新重试");
       }
     }, 400);
   }
@@ -203,10 +234,10 @@
     if (state.ready) return;
     state.ready = true;
     state.kernel = kernelNow();
-    initOverlay();
-    initKeepalive();
+    try { initOverlay(); } catch (e) { try { console.error("[ro-mobile] initOverlay", e); } catch (e2) {} }
+    try { initKeepalive(); } catch (e) {}
     try { applyUiScale(); } catch (e) {}
-    toast("客户端已启动 " + (state.kernel === "mn" ? "(手机内核)" : "(电脑内核)") + (cfg.opts.joyShow ? " · 模拟摇杆可用" : ""));
+    try { toast("客户端已启动 " + (state.kernel === "mn" ? "(手机内核)" : "(电脑内核)") + (cfg.opts.joyShow ? " · 模拟摇杆可用" : "")); } catch (e) {}
   }
   function bootCheck() {
     hideShell();
@@ -275,34 +306,41 @@
   function initOverlay() {
     if (state.shown) return;
     state.shown = true;
-    rootEl = el("div");
-    rootEl.id = "dsh-mk-root";
-    alertEl = el("div");
-    alertEl.id = "dsh-mk-alert";
-    alertEl.addEventListener("click", function () { alertEl.style.display = "none"; });
-    isolate(alertEl);
-    rootEl.appendChild(alertEl);
-    toastEl = el("div");
-    toastEl.id = "dsh-mk-toast";
-    rootEl.appendChild(toastEl);
-    // 触摸隔离网:操作层内事件不再穿透到游戏 document/#vbk
-    ["touchstart", "touchmove", "touchend", "pointerdown", "pointerup", "mousedown", "mouseup", "click"].forEach(function (t) {
-      rootEl.addEventListener(t, function (e) { try { e.stopPropagation(); } catch (err) {} }, { passive: false });
-    });
-    renderKeys();
-    gearEl = el("div", "dsh-mk-gear", "设");
-    gearEl.addEventListener("click", function (e) { e.stopPropagation(); openEdit(); });
-    isolate(gearEl);
-    applyEdgeUI();
-    rootEl.appendChild(gearEl);
-    posDoneEl = el("div", "dsh-mk-posdone", "完成拖拽");
-    posDoneEl.id = "dsh-mk-posdone";
-    posDoneEl.style.display = "none";
-    posDoneEl.addEventListener("click", function (e) { try { e.stopPropagation(); } catch (err) {} posModeExit(); });
-    isolate(posDoneEl);
-    rootEl.appendChild(posDoneEl);
-    try { document.documentElement.appendChild(rootEl); } catch (e) { document.body.appendChild(rootEl); } // 挂 documentElement 末位:与助手面板同层时后挂载者在上(共存)
-    if (cfg.opts.joyShow) showJoystick();
+    try {
+      rootEl = el("div");
+      rootEl.id = "dsh-mk-root";
+      alertEl = el("div");
+      alertEl.id = "dsh-mk-alert";
+      alertEl.addEventListener("click", function () { alertEl.style.display = "none"; });
+      isolate(alertEl);
+      rootEl.appendChild(alertEl);
+      toastEl = el("div");
+      toastEl.id = "dsh-mk-toast";
+      rootEl.appendChild(toastEl);
+      // 触摸隔离网:操作层内事件不再穿透到游戏 document/#vbk
+      ["touchstart", "touchmove", "touchend", "pointerdown", "pointerup", "mousedown", "mouseup", "click"].forEach(function (t) {
+        rootEl.addEventListener(t, function (e) { try { e.stopPropagation(); } catch (err) {} }, { passive: false });
+      });
+      renderKeys();
+      gearEl = el("div", "dsh-mk-gear", "设");
+      gearEl.addEventListener("click", function (e) { e.stopPropagation(); openEdit(); });
+      isolate(gearEl);
+      applyEdgeUI();
+      rootEl.appendChild(gearEl);
+      posDoneEl = el("div", "dsh-mk-posdone", "完成拖拽");
+      posDoneEl.id = "dsh-mk-posdone";
+      posDoneEl.style.display = "none";
+      posDoneEl.addEventListener("click", function (e) { try { e.stopPropagation(); } catch (err) {} posModeExit(); });
+      isolate(posDoneEl);
+      rootEl.appendChild(posDoneEl);
+      try { document.documentElement.appendChild(rootEl); } catch (e) { document.body.appendChild(rootEl); } // 挂 documentElement 末位:与助手面板同层时后挂载者在上(共存)
+    } catch (e) {
+      // 防御:渲染/初始化失败不再静默吞掉界面——仍挂出操作层,错误可见可反馈
+      try { console.error("[ro-mobile] 界面初始化异常", e); } catch (e2) {}
+      try { if (rootEl && !rootEl.parentNode) { if (document.documentElement) document.documentElement.appendChild(rootEl); else document.body.appendChild(rootEl); } } catch (e2) {}
+      try { if (toastEl) toast("界面初始化异常:" + ((e && e.message) || e)); } catch (e2) {}
+    }
+    try { if (cfg.opts.joyShow) showJoystick(); } catch (e) {}
   }
   function toast(msg) {
     if (!toastEl) { try { console.log("[ro-mobile] " + msg); } catch (e) {} return; }
@@ -427,41 +465,48 @@
     var barBottom = cfg.opts.edge ? "calc(100px + env(safe-area-inset-bottom))" : "calc(8px + env(safe-area-inset-bottom))";
     bar.style.cssText = "position:absolute;left:0;right:0;bottom:" + barBottom + ";display:flex;justify-content:center;gap:" + Math.round(8 * ks) + "px;padding:0 8px;z-index:3;flex-wrap:wrap";
     cfg.bar.forEach(function (k, i) {
-      var b = keyBtn(k);
-      b.style.width = Math.round(52 * ks) + "px";
-      b.style.height = Math.round(46 * ks) + "px";
-      b.style.fontSize = Math.round(13 * ks) + "px";
-      if (k.pos && typeof k.pos.x === "number") { // 自定义位置(拖拽保存,%坐标)
-        b.style.position = "absolute";
-        b.style.left = k.pos.x + "%"; b.style.top = k.pos.y + "%";
-        rootEl.appendChild(b);
-      } else {
-        b.style.position = "static";
-        bar.appendChild(b);
-      }
+      try {
+        var b = keyBtn(k);
+        if (!b) return; // 非法键条目跳过,不中断整批渲染
+        b.style.width = Math.round(52 * ks) + "px";
+        b.style.height = Math.round(46 * ks) + "px";
+        b.style.fontSize = Math.round(13 * ks) + "px";
+        if (k.pos && typeof k.pos.x === "number") { // 自定义位置(拖拽保存,%坐标)
+          b.style.position = "absolute";
+          b.style.left = k.pos.x + "%"; b.style.top = k.pos.y + "%";
+          rootEl.appendChild(b);
+        } else {
+          b.style.position = "static";
+          bar.appendChild(b);
+        }
+      } catch (e) { try { console.error("[ro-mobile] bar键渲染失败 " + i, e); } catch (e2) {} }
     });
     var col = el("div", "dsh-mk-col");
     var colRight = cfg.opts.edge ? "calc(48px + env(safe-area-inset-right))" : "10px";
     col.style.cssText = "position:absolute;right:" + colRight + ";top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:8px;z-index:2";
-    cfg.col.forEach(function (k) {
-      var b = keyBtn(k);
-      b.style.width = Math.round(48 * ks) + "px";
-      b.style.height = Math.round(48 * ks) + "px";
-      b.style.fontSize = Math.round(13 * ks) + "px";
-      if (k.pos && typeof k.pos.x === "number") { // 自定义位置(拖拽保存,%坐标)
-        b.style.position = "absolute";
-        b.style.left = k.pos.x + "%"; b.style.top = k.pos.y + "%";
-        rootEl.appendChild(b);
-      } else {
-        b.style.position = "static";
-        col.appendChild(b);
-      }
+    cfg.col.forEach(function (k, i) {
+      try {
+        var b = keyBtn(k);
+        if (!b) return;
+        b.style.width = Math.round(48 * ks) + "px";
+        b.style.height = Math.round(48 * ks) + "px";
+        b.style.fontSize = Math.round(13 * ks) + "px";
+        if (k.pos && typeof k.pos.x === "number") { // 自定义位置(拖拽保存,%坐标)
+          b.style.position = "absolute";
+          b.style.left = k.pos.x + "%"; b.style.top = k.pos.y + "%";
+          rootEl.appendChild(b);
+        } else {
+          b.style.position = "static";
+          col.appendChild(b);
+        }
+      } catch (e) { try { console.error("[ro-mobile] col键渲染失败 " + i, e); } catch (e2) {} }
     });
     rootEl.insertBefore(bar, rootEl.firstChild);
     rootEl.insertBefore(col, rootEl.firstChild);
     if (rootEl.parentNode && !rootEl.isConnected) { try { document.documentElement.appendChild(rootEl); } catch (e) { document.body.appendChild(rootEl); } }
   }
   function keyBtn(k) {
+    if (!k || typeof k !== "object") return null; // 守卫:非法条目不渲染
     var b = el("div", "dsh-mk-btn", escapeHtml(k.label));
     isolate(b);
     var timer = null, iv = null;

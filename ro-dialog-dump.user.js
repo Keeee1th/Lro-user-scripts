@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         RO 对话框载体临时探测
+// @name         RO 对话框/封包/走路 联合探测
 // @namespace    dsh-dialog-dump
-// @version      0.3.0
-// @description  临时：判对话框载体+逆向封包。加游戏层隔离(不点地面)+可拖动窗口。GBK解码+DOM快照
+// @version      0.4.0
+// @description  探测对话框载体+逆向封包+试走路(定位坐标走路失效)。GBK解码+DOM快照+出站包捕获
 // @match        https://post.lastro.cn/*
 // @match        https://post.lastro.cn/ro/api.html*
 // @match        https://post.lastro.cn/ro/api-old.html*
@@ -21,8 +21,9 @@
   function ts() { return Math.round(performance.now() - T0); }
   var T = { dom: [], pkt: [], snap: null };
   var seenDom = {};
+  var OUT = []; // 出站包捕获（试走路用）
 
-  // ---- 与游戏层隔离 + 拖动（复用 ro-assist isolateEl / dragEl 思路）----
+  // ---- 与游戏层隔离 + 拖动 ----
   var ISO = ["mousedown", "mousemove", "mouseup", "click", "dblclick", "wheel", "contextmenu",
     "touchstart", "touchmove", "touchend", "pointerdown", "pointermove", "pointerup"];
   function isolateEl(el) {
@@ -72,6 +73,24 @@
     for (var i = off; i < end; i++) { var x = dv.getUint8(i); s += (x < 16 ? '0' : '') + x.toString(16); }
     return s;
   }
+  function recordOut(buf) {
+    try {
+      var dv = new DataView(buf, 0, Math.min(buf.byteLength, 16));
+      var id = buf.byteLength >= 2 ? dv.getUint16(0, true) : -1;
+      if (OUT.length < 24) OUT.push({ id: id, len: buf.byteLength, hex: hex(dv, 0, Math.min(8, buf.byteLength)) });
+    } catch (e) {}
+  }
+  function onOutbound(d) {
+    try {
+      if (d instanceof ArrayBuffer) recordOut(d);
+      else if (d && d.buffer instanceof ArrayBuffer) recordOut(d.buffer);
+      else if (typeof Blob !== 'undefined' && d instanceof Blob) {
+        var fr = new FileReader();
+        fr.onload = function () { try { recordOut(fr.result); } catch (e) {} };
+        fr.readAsArrayBuffer(d);
+      }
+    } catch (e) {}
+  }
   function hasCJK(s) { return /[\u4e00-\u9fff]/.test(s); }
   function extText(buf) {
     var out = [];
@@ -112,6 +131,10 @@
       function PW(url, protocols) {
         var inst = protocols !== undefined ? new N(url, protocols) : new N(url);
         try { inst.addEventListener('message', function (ev) { onInbound(ev.data); }); } catch (e) {}
+        try {
+          var os = inst.send.bind(inst);
+          inst.send = function (d) { try { onOutbound(d); } catch (e) {} return os(d); };
+        } catch (e) {}
         return inst;
       }
       PW.prototype = N.prototype;
@@ -165,7 +188,51 @@
     else { document.addEventListener('DOMContentLoaded', startMo, { once: true }); }
   }
 
-  var panel = null, ta = null;
+  function posArr(pos) {
+    if (Array.isArray(pos)) return [pos[0], pos[1]];
+    if (pos && typeof pos.x === 'number' && typeof pos.y === 'number') return [pos.x, pos.y];
+    return null;
+  }
+
+  var panel = null, ta = null, walkMsg = null;
+  function setWalkOut(t) { if (walkMsg) walkMsg.textContent = t; }
+  function walkTest() {
+    setWalkOut('');
+    try {
+      var SS = window.require('Engine/SessionStorage');
+      var NM = window.require('Network/NetworkManager');
+      var PS = window.require('Network/PacketStructure');
+      var ent = SS && SS.Entity;
+      var p0 = ent && posArr(ent.position);
+      if (!p0) { setWalkOut('取不到 Entity.position（未进图？）'); return; }
+      var dest = [p0[0], p0[1] + 2];
+      OUT = [];
+      var n = 0, iv;
+      function one() {
+        try {
+          var pm = new PS.CZ.REQUEST_MOVE();
+          pm.dest = dest;
+          NM.sendPacket(pm);
+        } catch (e) { setWalkOut('发包异常: ' + e.message); if (iv) clearInterval(iv); return; }
+        n++;
+        if (n >= 5) if (iv) clearInterval(iv);
+      }
+      one();
+      iv = setInterval(one, 500);
+      setWalkOut('测试中：从 ' + p0 + ' 走向 ' + dest + '（500ms×5）…');
+      setTimeout(function () {
+        try {
+          var p1 = ent && posArr(ent.position);
+          var delta = (p0 && p1) ? (Math.abs(p1[0] - p0[0]) + Math.abs(p1[1] - p0[1])) : -1;
+          setWalkOut('结果：pos0=' + JSON.stringify(p0) + ' dest=' + JSON.stringify(dest)
+            + ' pos1=' + JSON.stringify(p1)
+            + ' 移动=' + (delta > 0 ? delta + ' 格（成功）' : delta === 0 ? '0 格（没动=包被拒/坐标错）' : '?')
+            + ' 发包=' + JSON.stringify(OUT));
+        } catch (e) { setWalkOut('读数异常: ' + e.message); }
+      }, 3200);
+    } catch (e) { setWalkOut('walkTest异常: ' + e.message); }
+  }
+
   function mkBtn(label, bg, fn) {
     var b = document.createElement('button');
     b.textContent = label;
@@ -180,13 +247,17 @@
       panel.setAttribute('data-dsh-dump', '1');
       panel.style.cssText = 'position:fixed;top:8px;left:8px;z-index:2147483647;background:#0b0b0b;color:#3f3;font:12px/1.5 monospace;padding:8px;border:1px solid #3f3;max-width:480px;max-height:82vh;overflow:auto;';
       var hd = document.createElement('div');
-      hd.textContent = 'Dump 探测 — 按住此处拖动';
+      hd.textContent = 'Dump 探测 v0.4.0 — 按住此处拖动';
       hd.style.cssText = 'padding:4px 8px;background:#153;color:#3f3;font-weight:bold;user-select:none;-webkit-user-select:none;cursor:move;margin:-8px -8px 6px;';
       panel.appendChild(hd);
       ta = document.createElement('textarea');
       ta.readOnly = true;
       ta.style.cssText = 'width:100%;height:220px;background:#000;color:#3f3;font:11px/1.4 monospace;border:1px solid #333;';
       panel.appendChild(ta);
+      walkMsg = document.createElement('div');
+      walkMsg.style.cssText = 'margin-top:6px;color:#ff0;font-size:11px;white-space:pre-wrap;';
+      panel.appendChild(walkMsg);
+      panel.appendChild(mkBtn('试走路(+2格 500ms×5)', '#660', walkTest));
       panel.appendChild(mkBtn('清空重记', '#333', function () {
         T.dom = []; T.pkt = []; T.snap = null; T.pktSeen = {}; seenDom = {};
         render();
@@ -204,7 +275,7 @@
       makeDraggable(hd, panel);
       for (var i3 = 0; i3 < ISO.length; i3++) { document.addEventListener(ISO[i3], fallbackStop, false); }
     }
-    var o = { counts: { dom: T.dom.length, pkt: T.pkt.length }, dom: T.dom.slice(-60), pkt: T.pkt, snap: T.snap };
+    var o = { counts: { dom: T.dom.length, pkt: T.pkt.length }, dom: T.dom.slice(-60), pkt: T.pkt, snap: T.snap, walk: walkMsg ? walkMsg.textContent : null };
     ta.value = JSON.stringify(o, null, 1);
   }
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO 手机自适应 ro-mobile
 // @namespace    https://github.com/Keeee1th/Lro-user-scripts
-// @version      1.0.7
+// @version      1.0.8
 // @description  手机使用 PC 网页 api.html 的触控适配与掉线防护:自动加载手机内核(Online_mn),自定义操作键(开窗/键盘/点地),后台保活(隐藏PING+音频+WebLock+防熄屏),可与 ro-assist 双开(检测式不抢占)
 // @match        https://post.lastro.cn/ro/api.html*
 // @match        http://post.lastro.cn/ro/api.html*
@@ -13,7 +13,7 @@
 
 (function () {
   "use strict";
-  var VER = "1.0.7";
+  var VER = "1.0.8";
   var LS_KEY = "dsh_ro_mobile_v1";
   var version = (location.href.match(/[?&]v=([\d.]+)/i) || [null, "69.32"])[1];
 
@@ -228,7 +228,7 @@
     var st = el("style");
     st.id = "dsh-mk-style";
     st.textContent = "html,body{position:fixed;inset:0;overflow:hidden;width:100%;height:100%;margin:0;touch-action:manipulation}" +
-      "#dsh-mk-root{position:fixed;inset:0;z-index:2147483000;pointer-events:none;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;user-select:none;-webkit-user-select:none}" +
+      "#dsh-mk-root{position:fixed;inset:0;z-index:2147483647;pointer-events:none;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;user-select:none;-webkit-user-select:none}" +
       ".dsh-mk-btn{pointer-events:auto;position:absolute;display:flex;align-items:center;justify-content:center;border-radius:10px;background:rgba(255,255,255,.92);border:1px solid rgba(30,60,120,.35);color:#16305f;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.18);touch-action:none}" +
       ".dsh-mk-btn:active{background:rgba(210,228,255,.95)}" +
       "#dsh-mk-toast{position:absolute;left:50%;bottom:calc(166px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(8px);background:rgba(20,30,50,.86);color:#fff;font-size:13px;padding:7px 14px;border-radius:16px;opacity:0;transition:opacity .18s,transform .18s;pointer-events:none;white-space:nowrap;max-width:80vw;overflow:hidden;text-overflow:ellipsis}" +
@@ -301,7 +301,7 @@
     posDoneEl.addEventListener("click", function (e) { try { e.stopPropagation(); } catch (err) {} posModeExit(); });
     isolate(posDoneEl);
     rootEl.appendChild(posDoneEl);
-    document.body.appendChild(rootEl);
+    try { document.documentElement.appendChild(rootEl); } catch (e) { document.body.appendChild(rootEl); } // 挂 documentElement 末位:与助手面板同层时后挂载者在上(共存)
     if (cfg.opts.joyShow) showJoystick();
   }
   function toast(msg) {
@@ -459,7 +459,7 @@
     });
     rootEl.insertBefore(bar, rootEl.firstChild);
     rootEl.insertBefore(col, rootEl.firstChild);
-    if (rootEl.parentNode && !rootEl.isConnected) document.body.appendChild(rootEl);
+    if (rootEl.parentNode && !rootEl.isConnected) { try { document.documentElement.appendChild(rootEl); } catch (e) { document.body.appendChild(rootEl); } }
   }
   function keyBtn(k) {
     var b = el("div", "dsh-mk-btn", escapeHtml(k.label));

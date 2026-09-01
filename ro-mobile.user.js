@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO 手机自适应 ro-mobile
 // @namespace    https://github.com/Keeee1th/Lro-user-scripts
-// @version      1.0.9
+// @version      1.0.10
 // @description  手机使用 PC 网页 api.html 的触控适配与掉线防护:自动加载手机内核(Online_mn),自定义操作键(开窗/键盘/点地),后台保活(隐藏PING+音频+WebLock+防熄屏),可与 ro-assist 双开(检测式不抢占)
 // @match        https://post.lastro.cn/ro/api.html*
 // @match        http://post.lastro.cn/ro/api.html*
@@ -13,7 +13,7 @@
 
 (function () {
   "use strict";
-  var VER = "1.0.9";
+  var VER = "1.0.10";
   var LS_KEY = "dsh_ro_mobile_v1";
   var version = (location.href.match(/[?&]v=([\d.]+)/i) || [null, "69.32"])[1];
 
@@ -454,8 +454,8 @@
     if (old) old.parentNode.removeChild(old);
     var old2 = rootEl.querySelector(".dsh-mk-col");
     if (old2) old2.parentNode.removeChild(old2);
-    // 清理拖拽/重建残留的 root 直子级旧按键(修复:拖拽后原位置残留副本)
-    var rk = (rootEl.children || []).slice();
+    // 清理拖拽/重建残留的 root 直子级旧按键(修复:拖拽后原位置残留副本;children 是 HTMLCollection 无 slice,须经 Array.prototype)
+    var rk = Array.prototype.slice.call(rootEl.children || []);
     for (var ri = 0; ri < rk.length; ri++) {
       var rc = rk[ri];
       if (rc.classList && rc.classList.contains("dsh-mk-btn")) { try { rc.parentNode.removeChild(rc); } catch (e) {} }
@@ -761,7 +761,8 @@
         return null;
       }
       var d = JOY_DIRS[o.dir];
-      return snapWalkable(p[0] + d.dx * 8, p[1] + d.dy * 8, d.dx, d.dy, p[0], p[1]); // 朝方向目标点(8格)+可走吸附(自检失配自动禁用)
+      // V1.0.10:直发目标 y 轴翻转为内核行进方向(屏幕上拉=行进 y+;协议方向码不变),吸附同步用翻转后方向
+      return snapWalkable(p[0] + d.dx * 8, p[1] - d.dy * 8, d.dx, -d.dy, p[0], p[1]); // 朝方向目标点(8格)+可走吸附(自检失配自动禁用)
     }
     function joyDistTo(tgt) {
       var p = playerPos();
@@ -797,6 +798,10 @@
       o.stillCnt = 0; o.lastPos = null; o.mode = null; // 重置静止检测与输入通道
       if (o.dir >= 0) {
         if (cfg.opts.joyProto) joySend(0, -1);
+        else {
+          // V1.0.10 松开即停:直发模式发「目标=自身位置」停止包,避免角色继续漂移到最后一个目标
+          try { var pp = playerPos(); if (pp && isFinite(pp[0]) && isFinite(pp[1])) walkTo(pp[0], pp[1]); } catch (e) {}
+        }
         o.lastDir = o.dir; o.dir = -1;
         o.lastTgt = null;
       }
@@ -1147,7 +1152,7 @@
     comboBox.appendChild(comboRowBt);
     function comboVals() {
       var vs = [];
-      comboBox.querySelectorAll("select").forEach(function (s) { if (s.value) vs.push(s.value); });
+      Array.prototype.forEach.call(comboBox.querySelectorAll("select"), function (s) { if (s.value) vs.push(s.value); }); // NodeList/HTMLCollection 兼容
       return vs;
     }
     function fillParams() {

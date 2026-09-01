@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO 手机自适应 ro-mobile
 // @namespace    https://github.com/Keeee1th/Lro-user-scripts
-// @version      1.0.12
+// @version      1.0.13
 // @description  手机使用 PC 网页 api.html 的触控适配与掉线防护:自动加载手机内核(Online_mn),自定义操作键(开窗/键盘/点地),后台保活(隐藏PING+音频+WebLock+防熄屏),可与 ro-assist 双开(检测式不抢占)
 // @match        https://post.lastro.cn/ro/api.html*
 // @match        http://post.lastro.cn/ro/api.html*
@@ -13,7 +13,7 @@
 
 (function () {
   "use strict";
-  var VER = "1.0.12";
+  var VER = "1.0.13";
   var LS_KEY = "dsh_ro_mobile_v1";
   var version = (location.href.match(/[?&]v=([\d.]+)/i) || [null, "69.32"])[1];
 
@@ -672,8 +672,12 @@
       var cl = CL();
       if (!cl || !cl.PS || !cl.PS.CZ) return null;
       var C = cl.PS.CZ;
-      if (C.WHISPER) return "three";
+      // V1.0.13:按用户选定线路判断转数(二转进阶内核同样带 WHISPER 聊天协议,按协议探测会误判三转→二转服指令失效)
+      if (cfg.line === 5) return "two";   // V6-Eden 进阶二转
+      if (cfg.line === 3) return "three"; // V6-Online 三转
+      // 线路未显式选择时回退协议探测:二转专有 UPDATEINFO(38移动寻怪)优先,其次才是通用 WHISPER
       if (C.NOTIFY_UPDATEINFO) return "two";
+      if (C.WHISPER) return "three";
       return null;
     } catch (e) { return null; }
   }

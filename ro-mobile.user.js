@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO 手机自适应 ro-mobile
 // @namespace    https://github.com/Keeee1th/Lro-user-scripts
-// @version      1.0.4
+// @version      1.0.5
 // @description  手机使用 PC 网页 api.html 的触控适配与掉线防护:自动加载手机内核(Online_mn),自定义操作键(开窗/键盘/点地),后台保活(隐藏PING+音频+WebLock+防熄屏),可与 ro-assist 双开(检测式不抢占)
 // @match        https://post.lastro.cn/ro/api.html*
 // @match        http://post.lastro.cn/ro/api.html*
@@ -13,7 +13,7 @@
 
 (function () {
   "use strict";
-  var VER = "1.0.4";
+  var VER = "1.0.5";
   var LS_KEY = "dsh_ro_mobile_v1";
   var version = (location.href.match(/[?&]v=([\d.]+)/i) || [null, "69.32"])[1];
 
@@ -51,21 +51,33 @@
     Escape: "菜单", StatusIcons: "状态栏", ShortCut: "快捷键栏", WinList: "窗口列表"
   };
   var WIN_ORDER = ["Equipment", "Inventory", "SkillList", "Storage", "ChatBox", "MiniMap", "WorldMap", "BasicInfo", "Escape", "StatusIcons", "ShortCut", "WinList"];
-  // 合成键盘映射(keyCode 对齐客户端 Controls/KeyEventHandler)
-  var KEY_MAP = {
-    Enter: { key: "Enter", keyCode: 13, code: "Enter" }, Escape: { key: "Escape", keyCode: 27, code: "Escape" },
-    Tab: { key: "Tab", keyCode: 9, code: "Tab" }, Space: { key: " ", keyCode: 32, code: "Space" },
-    ArrowUp: { key: "ArrowUp", keyCode: 38, code: "ArrowUp" }, ArrowDown: { key: "ArrowDown", keyCode: 40, code: "ArrowDown" },
-    ArrowLeft: { key: "ArrowLeft", keyCode: 37, code: "ArrowLeft" }, ArrowRight: { key: "ArrowRight", keyCode: 39, code: "ArrowRight" },
-    W: { key: "w", keyCode: 87, code: "KeyW" }, A: { key: "a", keyCode: 65, code: "KeyA" },
-    S: { key: "s", keyCode: 83, code: "KeyS" }, D: { key: "d", keyCode: 68, code: "KeyD" },
-    "1": { key: "1", keyCode: 49, code: "Digit1" }, "2": { key: "2", keyCode: 50, code: "Digit2" },
-    "3": { key: "3", keyCode: 51, code: "Digit3" }, "4": { key: "4", keyCode: 52, code: "Digit4" },
-    "5": { key: "5", keyCode: 53, code: "Digit5" }, "6": { key: "6", keyCode: 54, code: "Digit6" },
-    "7": { key: "7", keyCode: 55, code: "Digit7" }, "8": { key: "8", keyCode: 56, code: "Digit8" },
-    "9": { key: "9", keyCode: 57, code: "Digit9" }, "0": { key: "0", keyCode: 48, code: "Digit0" }
-  };
-  var KEY_ORDER = ["Enter", "Escape", "Tab", "Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "W", "A", "S", "D", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
+  // 合成键盘映射(keyCode 对齐客户端 Controls/KeyEventHandler;全键位,字母用大写码值;Ctrl/Alt/Shift 不进列表,仅作组合修饰)
+  var KEY_MAP = (function () {
+    var m = {};
+    function put(code, key, keyCode, domCode) { m[code] = { key: key, keyCode: keyCode, code: domCode || key }; }
+    var letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    for (var li = 0; li < 26; li++) put(letters[li], letters[li].toLowerCase(), 65 + li, "Key" + letters[li]);
+    for (var di = 0; di < 10; di++) put(String(di), String(di), 48 + di, "Digit" + di);
+    for (var fi = 1; fi <= 12; fi++) put("F" + fi, "F" + fi, 111 + fi, "F" + fi);
+    put("Escape", "Escape", 27, "Escape"); put("Tab", "Tab", 9, "Tab"); put("Space", " ", 32, "Space");
+    put("Enter", "Enter", 13, "Enter"); put("Backspace", "Backspace", 8, "Backspace"); put("Delete", "Delete", 46, "Delete");
+    put("Insert", "Insert", 45, "Insert"); put("Home", "Home", 36, "Home"); put("End", "End", 35, "End");
+    put("PageUp", "PageUp", 33, "PageUp"); put("PageDown", "PageDown", 34, "PageDown"); put("CapsLock", "CapsLock", 20, "CapsLock");
+    put("ArrowUp", "ArrowUp", 38, "ArrowUp"); put("ArrowDown", "ArrowDown", 40, "ArrowDown");
+    put("ArrowLeft", "ArrowLeft", 37, "ArrowLeft"); put("ArrowRight", "ArrowRight", 39, "ArrowRight");
+    put("\\", "\\", 220, "Backslash");
+    put("`", "`", 192, "Backquote"); put("-", "-", 189, "Minus"); put("=", "=", 187, "Equal");
+    put("[", "[", 219, "BracketLeft"); put("]", "]", 221, "BracketRight");
+    put(";", ";", 186, "Semicolon"); put("'", "'", 222, "Quote");
+    put(",", ",", 188, "Comma"); put(".", ".", 190, "Period"); put("/", "/", 191, "Slash");
+    return m;
+  })();
+  var KEY_ORDER = ["A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z",
+    "0","1","2","3","4","5","6","7","8","9",
+    "F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12",
+    "`","-","=","[","]","\\",";","'",",",".","/",
+    "Enter","Escape","Tab","Space","Backspace","Delete","Insert","Home","End","PageUp","PageDown","CapsLock",
+    "ArrowUp","ArrowDown","ArrowLeft","ArrowRight"];
 
   // ---------------- 默认配置与持久化 ----------------
   function defaultCfg() {
@@ -312,11 +324,8 @@
       joyEl.style.right = "auto"; joyEl.style.bottom = "auto";
       return;
     }
-    if (cfg.opts.edge) {
-      joyEl.style.left = ""; joyEl.style.right = ""; joyEl.style.bottom = "";
-    } else {
-      joyEl.style.left = "auto"; joyEl.style.right = "18px"; joyEl.style.bottom = "96px";
-    }
+    // 防误触开关只调按键/侧列边距,不再移动摇杆(避免左右跳边);摇杆位置用「调整按键位置(拖拽)」自定义
+    joyEl.style.left = ""; joyEl.style.right = ""; joyEl.style.bottom = ""; joyEl.style.top = "";
   }
   function applyEdgeUI() {
     try {
@@ -348,14 +357,18 @@
   function dragStart(e, el, target) { // target: {kind:'key',k} | {kind:'joy'}
     if (!state.posMode) return;
     try { e.stopPropagation(); e.preventDefault(); } catch (err) {}
-    var pp = el.parentNode;
-    if (pp && pp !== rootEl && pp.classList && (pp.classList.contains("dsh-mk-bar") || pp.classList.contains("dsh-mk-col"))) {
-      rootEl.appendChild(el); // 拖出容器,改绝对定位
-    }
     var rect = null;
     try { rect = el.getBoundingClientRect(); } catch (err) {}
     var l0 = rect ? rect.left : (parseFloat(el.style.left) || 0);
     var t0 = rect ? rect.top : (parseFloat(el.style.top) || 0);
+    // 先按当前实际位置固定,再脱离容器,避免"点击即弹到屏幕左上角"
+    el.style.position = "absolute";
+    el.style.left = l0 + "px";
+    el.style.top = t0 + "px";
+    var pp = el.parentNode;
+    if (pp && pp !== rootEl && pp.classList && (pp.classList.contains("dsh-mk-bar") || pp.classList.contains("dsh-mk-col"))) {
+      rootEl.appendChild(el); // 拖出容器,改绝对定位
+    }
     posDrag = { el: el, target: target, dx: e.clientX - l0, dy: e.clientY - t0 };
     try { if (el.setPointerCapture) el.setPointerCapture(e.pointerId); } catch (err) {}
   }
@@ -951,7 +964,7 @@
       fillKeys(sel);
       var del = el("button", "dsh-mk-mini del", "删");
       del.addEventListener("click", function () {
-        if (comboBox.querySelectorAll("select").length <= 2) { toast("组合至少2键"); return; }
+        if (comboBox.querySelectorAll("select").length <= 1) { toast("至少保留1个键"); return; }
         row.parentNode.removeChild(row);
       });
       row.appendChild(sel); row.appendChild(del);
@@ -987,8 +1000,7 @@
       } else if (t === "combo") {
         paramSel.style.display = "none";
         while (comboBox.children.length) comboBox.removeChild(comboBox.children[0]); // 清空重建
-        comboBox.appendChild(comboKeySel());
-        comboBox.appendChild(comboKeySel());
+        comboBox.appendChild(comboKeySel()); // 初始 1 键,自选任意数量(1..6)
         comboBox.appendChild(comboRowBt);
         comboBox.style.display = "flex";
         modsRow.style.display = "flex";
@@ -1016,7 +1028,7 @@
       else if (t === "key") k = { id: Math.random().toString(36).slice(2, 9), t: "key", label: paramSel.value, key: paramSel.value };
       else if (t === "combo") {
         var vs = comboVals();
-        if (vs.length < 2) { toast("组合至少2键"); return; }
+        if (vs.length < 1) { toast("请选择至少1个键"); return; }
         var mods = {};
         if (cbCtrl.checked) mods.ctrl = true;
         if (cbAlt.checked) mods.alt = true;

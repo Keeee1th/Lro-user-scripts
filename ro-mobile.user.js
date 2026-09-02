@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO 手机自适应 ro-mobile
 // @namespace    https://github.com/Keeee1th/Lro-user-scripts
-// @version      1.0.13
+// @version      1.0.14
 // @description  手机使用 PC 网页 api.html 的触控适配与掉线防护:自动加载手机内核(Online_mn),自定义操作键(开窗/键盘/点地),后台保活(隐藏PING+音频+WebLock+防熄屏),可与 ro-assist 双开(检测式不抢占)
 // @match        https://post.lastro.cn/ro/api.html*
 // @match        http://post.lastro.cn/ro/api.html*
@@ -13,7 +13,7 @@
 
 (function () {
   "use strict";
-  var VER = "1.0.13";
+  var VER = "1.0.14";
   var LS_KEY = "dsh_ro_mobile_v1";
   var version = (location.href.match(/[?&]v=([\d.]+)/i) || [null, "69.32"])[1];
 
@@ -99,7 +99,7 @@
       line: null,                       // 线路:null=未选(首次弹层),3=V6-Online 三转,5=V6-Eden 进阶二转
       opts: { bgkeep: true, fullscreen: true, autoReload: false, remember: false, edge: true,
         uiScale: 100, keyScale: 100, joyScale: 100, joyShow: true, joyProto: false, joyPos: null,
-        joyDead: 15, joyAng: 20 },  // V1.0.12 摇杆死区(半径%内不触发)/方向切换回差(°内保持)
+        joyDead: 15, joyAng: 20, snap: true },  // V1.0.12 摇杆死区(半径%内不触发)/方向切换回差(°内保持);V1.0.14 拖拽吸附网格
       acc: "",
       pwd: ""
     };
@@ -125,6 +125,7 @@
         // V1.0.12 摇杆死区(5%~50%半径,默认15%)/方向切换回差(0~45°,默认20°):防中心抖动误触发与扇区边界跳变「回头」
         if (typeof o.opts.joyDead !== "number" || o.opts.joyDead < 5 || o.opts.joyDead > 50) o.opts.joyDead = 15;
         if (typeof o.opts.joyAng !== "number" || o.opts.joyAng < 0 || o.opts.joyAng > 45) o.opts.joyAng = 20;
+        if (typeof o.opts.snap !== "boolean") o.opts.snap = true; // V1.0.14 拖拽结束吸附 5% 网格
         if (!o.opts.joyPos || typeof o.opts.joyPos.x !== "number" || typeof o.opts.joyPos.y !== "number") o.opts.joyPos = null;
         // V1.0.9 配置自愈:bar/col 非数组→重建默认;逐项净化(null/非对象剔除、缺label补默认、非法pos清除),净化结果立即写回(坏配置刷一次即修复)
         var _def = defaultCfg();
@@ -441,29 +442,68 @@
     var W = window.innerWidth || 375, H = window.innerHeight || 667;
     var px = Math.round(x / W * 100), py = Math.round(y / H * 100);
     if (px < 0) px = 0; if (py < 0) py = 0; if (px > 95) px = 95; if (py > 92) py = 92;
+    if (cfg.opts.snap) { // V1.0.14 拖拽吸附 5% 网格,松手即整齐
+      px = Math.round(px / 5) * 5; py = Math.round(py / 5) * 5;
+      if (px < 0) px = 0; if (py < 0) py = 0; if (px > 95) px = 95; if (py > 92) py = 92;
+    }
     posDrag = null;
     if (!t) return;
     if (t.kind === "key" && t.k) { t.k.pos = { x: px, y: py }; saveCfg(); }
     else if (t.kind === "joy") { cfg.opts.joyPos = { x: px, y: py }; saveCfg(); }
   }
-  // 画面缩放(游戏主容器 transform:scale,居中;找不到容器给提示) ----
+  // 画面缩放(游戏主视口 transform:scale;V1.0.14 容器探测优先内核主视口 #map + 面积校验,修复误缩右上小地图)
   var uiWrap = null;
   function applyUiScale() {
     try {
       if (!document.body) return;
       if (!uiWrap) {
-        var cands = ["#wrap", "#container", "#game", ".game-container", ".view-wrap", "#viewWrap", "#view"];
-        for (var i = 0; i < cands.length; i++) { var e = document.querySelector(cands[i]); if (e) { uiWrap = e; break; } }
+        var cands = ["#map", "#view", "#wrap", "#container", "#game", ".game-container", ".view-wrap", "#viewWrap"];
+        var got = null;
+        for (var i = 0; i < cands.length; i++) {
+          try { got = document.querySelector(cands[i]); } catch (e) { got = null; }
+          if (got && pickMainView(got)) { uiWrap = got; break; }
+        }
         if (!uiWrap) {
-          var cv = document.querySelector("canvas");
-          if (cv && cv.parentElement && cv.parentElement !== document.body) uiWrap = cv.parentElement;
+          // 兜底:找面积足够大(≥视口40%)的 canvas 宿主,排除小地图等小元素
+          var cvs = document.querySelectorAll("canvas");
+          for (var ci = 0; ci < cvs.length; ci++) {
+            var pe = cvs[ci].parentElement;
+            if (pe && pickMainView(pe)) { uiWrap = pe; break; }
+          }
         }
       }
-      if (!uiWrap) { toast("未找到画面容器(真机确认页面结构)"); return; }
+      if (!uiWrap) { toast("未找到画面主视口(真机确认页面结构)"); return; }
       var s = (cfg.opts.uiScale || 100) / 100;
       uiWrap.style.transformOrigin = "50% 0";
       uiWrap.style.transform = s === 1 ? "" : "scale(" + s + ")";
     } catch (e) {}
+  }
+  // V1.0.14 主视口判定:含足够大的 canvas 且尺寸接近屏幕(排除小地图/窗口类小元素)
+  function pickMainView(e) {
+    try {
+      if (!e || !e.getBoundingClientRect) return false;
+      var r = e.getBoundingClientRect();
+      var rw = window.innerWidth || 375, rh = window.innerHeight || 667;
+      if (!rw || !rh) return false;
+      if (r.width < rw * 0.4 || r.height < rh * 0.4) return false;
+      var has = false, ls = e.querySelectorAll ? e.querySelectorAll("canvas") : [];
+      for (var i = 0; i < ls.length; i++) { var lr = ls[i].getBoundingClientRect(); if (lr.width >= rw * 0.4 && lr.height >= rh * 0.4) { has = true; break; } }
+      return has;
+    } catch (e2) { return false; }
+  }
+  // V1.0.14 自动排列:全部键(bar+col,含自定义位置键)按 4 列网格顺序重排,写回配置并重绘
+  function autoArrange() {
+    var all = cfg.bar.concat(cfg.col);
+    if (!all.length) return;
+    var cols = 4, stepX = 20, stepY = 12, x0 = 10, y0 = 8;
+    all.forEach(function (k, i) {
+      if (!k || typeof k !== "object") return;
+      var col = i % cols, row = Math.floor(i / cols);
+      k.pos = { x: x0 + col * stepX, y: y0 + row * stepY };
+    });
+    saveCfg();
+    try { renderKeys(); } catch (e) {}
+    toast("已自动排列 " + all.length + " 个按键");
   }
   function renderKeys() {
     if (!rootEl) return;
@@ -581,17 +621,20 @@
     else if (k.t === "combo") fireKeys(k.keys, "keydown"); // 组合键:整批同发(修饰与主键同批,keyup 延迟抬起)
     else if (k.t === "move") { toast("点地 " + k.x + "," + k.y); walkTo(k.x, k.y); } // 诊断可见:真机点地不灵时先看 toast
   }
-  // V1.0.11 组合键触发:修饰键(Ctrl/Alt/Shift)作为可选键进列表;整批同发——所有键事件携带完整 flags(顺序=列表顺序),
-  // keyup 经 scheduleKeyUp 统一延迟 80ms 抬起(先 clearTimeout 再新起),保证引擎采到组合按下态;
-  // 不再先真实按住修饰键再按主键(旧的顺序序列是真机无效来源)
+  // V1.0.11 组合键触发:修饰键(Ctrl/Alt/Shift)作为可选键进列表;整批同发——所有键事件携带完整 flags;
+  // V1.0.14 修复 Alt 等组合无效:引擎 KeyEventHandler 在 window keydown 时记录修饰键状态(ALT=!!altKey),匹配窗口快捷键时
+  // 要求 e.which===init 且 KeyEventHandler.ALT==cfg.alt —— 若主键先于修饰键发出,修饰键状态尚未置位即失配。
+  // 因此 keydown 强制"修饰键先发、主键后发";keyup 反序"主键先抬、修饰键后抬",贴合真实键盘时序。
+  // keyup 经 scheduleKeyUp 统一延迟 80ms 抬起(先 clearTimeout 再新起)。
   function fireKeys(keys, kind) {
     var flags = { ctrl: false, alt: false, shift: false };
+    var mods = [], mains = [];
     (keys || []).forEach(function (kk) {
-      if (kk === "Ctrl") flags.ctrl = true;
-      else if (kk === "Alt") flags.alt = true;
-      else if (kk === "Shift") flags.shift = true;
+      if (kk === "Ctrl" || kk === "Alt" || kk === "Shift") { mods.push(kk); if (kk === "Ctrl") flags.ctrl = true; else if (kk === "Alt") flags.alt = true; else flags.shift = true; }
+      else mains.push(kk);
     });
-    (keys || []).forEach(function (kk) { synthKey(kk, kind, flags); });
+    var seq = kind === "keyup" ? mains.concat(mods) : mods.concat(mains); // V1.0.14:按下修饰先,抬起修饰后
+    seq.forEach(function (kk) { synthKey(kk, kind, flags); });
   }
   var _upTimer = null;
   function scheduleKeyUp(keys) {
@@ -618,26 +661,46 @@
     });
     return hits.length === 1 ? map[hits[0]] : null;
   }
+  // V1.0.14 引擎内置窗口快捷键表(Preferences/ShortCutControls 默认值;Storage 无默认快捷键,须与卡普拉对话打开)
+  var WIN_HOTKEY = {
+    Equipment: { k: "Q", alt: true }, Inventory: { k: "E", alt: true }, SkillList: { k: "S", alt: true },
+    BasicInfo: { k: "V", alt: true }, Basicinfo: { k: "V", alt: true }, WorldMap: { k: "M", alt: true },
+    MiniMap: { k: "N", alt: true }, Quest: { k: "U", alt: true }, ChatRoomCreate: { k: "C", alt: true },
+    Guild: { k: "G", alt: true }, PetInformations: { k: "J", alt: true }, EMO: { k: "L", alt: true },
+    OnPushCart: { k: "W", alt: true }, Friends: { k: "H", alt: true }
+  };
+  function winHotkeyFallback(name) {
+    var h = WIN_HOTKEY[name];
+    if (!h) return false;
+    try { fireKeys([h.alt ? "Alt" : "Ctrl", h.k], "keydown"); } catch (e) { return false; }
+    toast("已触发引擎快捷键(开/关" + (WIN_MAP[name] || name) + ")");
+    return true;
+  }
   function toggleWin(name) {
     if (!clientReady()) { toast("客户端未就绪"); return; }
     var label = WIN_MAP[name] || name;
     var c = null;
     try { c = findComponent(name); } catch (e) { c = null; }
-    if (!c) { toast("组件未就绪: " + label + " (进入游戏后可用)"); return; }
-    try {
-      var open = !!c.__active;
-      if (open) {
-        try { c.remove(); } catch (e) {}
-        toast(label + " 已关闭");
-      } else {
-        try { c.append(); } catch (e) { toast("打开失败: " + label + ": " + (e && e.message ? e.message : e)); return; }
-        // 300ms 后确认窗口真的挂上,没有则重试一次
-        setTimeout(function () {
-          try { if (c.__active && c.ui && !c.ui.isConnected && c.append) c.append(); } catch (e2) {}
-        }, 300);
-        toast(label + " 已打开");
-      }
-    } catch (e) { toast("组件未就绪: " + label + ": " + (e && e.message ? e.message : e)); }
+    // V1.0.14 双通道:组件直开(append/remove)失败或未注册 → 降级引擎快捷键(与官方开窗同机制)
+    if (c) {
+      try {
+        var open = !!c.__active;
+        if (open) {
+          try { c.remove(); } catch (e) {}
+          toast(label + " 已关闭");
+        } else {
+          try { c.append(); } catch (e) { if (!winHotkeyFallback(name)) toast("打开失败: " + label); return; }
+          // 300ms 后确认窗口真的挂上,没有则重试一次
+          setTimeout(function () {
+            try { if (c.__active && c.ui && !c.ui.isConnected && c.append) c.append(); } catch (e2) {}
+          }, 300);
+          if (name === "Storage") toast("仓库已打开(数据需先与卡普拉对话,若为空请先对话)"); // V1.0.14 仓库数据提示
+          else toast(label + " 已打开");
+        }
+        return;
+      } catch (e) { if (!winHotkeyFallback(name)) toast("打开失败: " + label); return; }
+    }
+    if (!winHotkeyFallback(name)) toast("组件未就绪: " + label + " (进入游戏后可用)");
   }
   function synthKey(code, kind, mods) {
     var m = KEY_MAP[code];
@@ -1410,6 +1473,13 @@
     posBt.addEventListener("click", function () { posModeEnter(); });
     posRow.appendChild(posBt);
     panel.appendChild(posRow);
+    var arRow = el("div", "dsh-mk-row"); // V1.0.14 自动排列(4 列网格)
+    var arBt = el("button", "dsh-mk-add", "自动排列(4列网格)");
+    arBt.style.flex = "1";
+    arBt.addEventListener("click", function () { try { autoArrange(); } catch (e) { toast("自动排列失败"); } });
+    arRow.appendChild(arBt);
+    panel.appendChild(arRow);
+    panel.appendChild(swRow("拖拽吸附 5% 网格(松手自动对齐)", function () { return cfg.opts.snap; }, function (v) { cfg.opts.snap = v; saveCfg(); }));
     panel.appendChild(swRow("模拟摇杆(两内核显示)", function () { return cfg.opts.joyShow; }, function (v) {
       cfg.opts.joyShow = v;
       if (v) { if (!joyEl) showJoystick(); }

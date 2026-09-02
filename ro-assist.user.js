@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.8.1
+// @version      2.8.2
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.8.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.8.2"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -814,9 +814,6 @@
       (IS_MN ? '<div class="box" style="background:rgba(255,235,215,.95);border:1px solid #e08a2a"><div class="b-hd" style="color:#b45309">📱 手机版保活 · 重要设置（必做）</div>' +
         '<div class="row"><span class="st" style="font-size:11px;color:#7c2d12">① 系统设置 → 电池/应用管理 → 找到本浏览器（Kiwi 等）→ 电池优化 → 选 <b>「不限制 / 无限制」</b>（小米/华为等品牌在「应用启动管理」里允许后台活动）。<br>② 否则切后台会被系统杀进程/断网络 → 掉线。</span></div>' +
         '<div class="row"><span class="st" style="font-size:11px;color:#7c2d12">③ 助手已加后台保活：切后台瞬间连发心跳 + 回前台自动补心跳，超 90 秒自动重登。切后台勿超 90 秒；长时间挂机请保持屏幕常亮或分屏。</span></div></div>' : '') +
-      (IS_MN ? '<div class="box" style="background:rgba(240,248,255,.95);border:1px solid #2b7fd0"><div class="b-hd" style="color:#1c5fa8">手机版操作 · 方向键</div>' +
-        '<div class="row"><label class="switch"><input id="dsh-mn-wasd" type="checkbox" checked>方向键移动</label></div>' +
-        '<div class="row"><span class="st" style="font-size:11px;color:#7c2d12">摇杆保持游戏原生（底部居中可拖动，不挪位不隐藏）。勾选「方向键移动」后：手机接蓝牙/外接键盘，用上下左右方向键走路（同步向原生摇杆派发触摸，走位与游戏一致）。</span></div></div>' : '') +
       '<div class="sec">快速侦查（附近怪物/物品）</div>' +
       '<details style="margin-top:2px"><summary style="cursor:pointer;color:#1259b3;font-size:12px">🕵 点开查看附近目标</summary>' +
       '<div class="st" id="dsh-recon" style="font-size:11px;max-height:110px;overflow:auto">未就绪</div></details>' +
@@ -1186,196 +1183,6 @@
       }
     }
   } catch (e) {}
-
-  // ---------------- 手机版方向键控制（仅 IS_MN） ----------------
-  // 网页自带摇杆 = #vbk 组件内 .drag（position:fixed 底部居中，90x90 圆形 + .arrowkeys 白钮）。
-  // 保留功能：方向键移动——合成触摸派发到摇杆 .drag（游戏原生逐帧走 = 流畅）+ keepTick 续包兜底；
-  //    松开键 / 任何真实点击 → mnJoyStop（touchend + move=0）停，防 keyup 丢失卡走。
-  // V2.6.4 已删：摇杆固定左下角 / 隐藏摇杆（曾 inline 改 .drag 定位/display，干扰游戏原生摇杆，
-  //    且方向键仍向被挪位/隐藏的 .drag 派发合成触摸，游戏误判摇杆持续按住 → 点开其他面板被自动关闭）。
-  //    摇杆完全保持游戏原生（原生位置/可拖动），方向键仅向原生 .drag 派发触摸。
-  try {
-    if (IS_MN) {
-      var mnJoy = {
-        drag: null,        // .drag 元素（懒查找）
-        wasd: true,        // 方向键移动（键位开关）
-        keys: {},          // 当前按下的 WASD/方向键
-        tid: 19,           // 合成触摸 identifier
-        active: false,     // 是否已向摇杆派发 touchstart
-        keepTimer: null    // 长按续包定时器（V1.6.15：game w() 仅在方向变化时发包，合成拖动不足以持续移动）
-      };
-      function mnFindDrag() {
-        try { return document.querySelector("#vbk .drag"); } catch (e) { return null; }
-      }
-      function mnMkTouch(x, y, target) {
-        try { return new Touch({ identifier: mnJoy.tid, target: target, clientX: x, clientY: y, pageX: x, pageY: y, screenX: x, screenY: y }); }
-        catch (e) { return null; }
-      }
-      function mnFire(type, touches, changed, target) {
-        try {
-          var ev = new TouchEvent(type, { bubbles: true, cancelable: true, touches: touches, targetTouches: touches, changedTouches: changed });
-          target.dispatchEvent(ev);
-        } catch (e) {}
-      }
-      // 计算当前合成方向：(dx,dy) 屏幕位移（-1..1 组合；无按键返回 null）
-      function mnKeyDir() {
-        var k = mnJoy.keys;
-        var L = !!k["arrowleft"], R = !!k["arrowright"];
-        var U = !!k["arrowup"], Dn = !!k["arrowdown"];
-        var dx = (R ? 1 : 0) - (L ? 1 : 0);
-        var dy = (Dn ? 1 : 0) - (U ? 1 : 0);
-        if (!dx && !dy) return null;
-        return { dx: dx, dy: dy };
-      }
-      // 派发 touchstart + touchmove 到摇杆（dock 处按下，朝方向推）
-      function mnPush(dir) {
-        var d = mnJoy.drag || mnFindDrag();
-        if (!d) return;
-        try {
-          // 以摇杆中心为 dock（游戏只取相对位移，起点值不影响方向）
-          var r = d.getBoundingClientRect();
-          var cx = (r.width ? r.left + r.width / 2 : window.innerWidth / 2);
-          var cy = (r.height ? r.top + r.height / 2 : window.innerHeight / 2);
-          var t0 = mnMkTouch(cx, cy, d);
-          if (!t0) return;
-          if (!mnJoy.active) {
-            mnJoy.active = true;
-            mnFire("touchstart", [t0], [t0], d);
-          }
-          // 位移 30px（.drag 半径=45，30 在圆内且 > 识别阈值 30px 判定用角度）
-          var tx = cx + dir.dx * 30, ty = cy + dir.dy * 30;
-          var t1 = mnMkTouch(tx, ty, d);
-          if (t1) mnFire("touchmove", [t1], [t1], d);
-        } catch (e) {}
-      }
-      // 全部松开 → touchend（游戏发 move=0 停止）；V1.6.15 改为同时直接发包 move=0 保证停
-      function mnRelease() {
-        if (!mnJoy.active) return;
-        var d = mnJoy.drag || mnFindDrag();
-        mnJoy.active = false;
-        mnKeepStop();
-        if (!d) return;
-        try {
-          var t = mnMkTouch(0, 0, d);
-          if (t) mnFire("touchend", [], [t], d);
-        } catch (e) {}
-        mnSendJoy(0, -1);
-      }
-      // 统一停止：清键 + 停续包 + 释放合成触摸 + 发 move=0（松键与真实交互共用）
-      function mnJoyStop() {
-        var had = !!(Object.keys(mnJoy.keys).length) || mnJoy.active;
-        mnJoy.keys = {};
-        mnKeepStop();
-        var d = mnJoy.drag || mnFindDrag();
-        if (mnJoy.active) {
-          mnJoy.active = false;
-          try { if (d) { var t = mnMkTouch(0, 0, d); if (t) mnFire("touchend", [], [t], d); } } catch (e) {}
-        }
-        if (had) mnSendJoy(0, -1);
-      }
-      // V1.6.15：屏幕方向(dx,dy) → 游戏 REQUEST_JOYSTICK_DIR direction（与游戏 w()/keepMove 一致：
-      // 0=上 1=左上 2=左 3=左下 4=下 5=右下 6=右 7=右上）
-      function mnDirKey(dir) {
-        if (dir.dx === 0 && dir.dy === -1) return 0;
-        if (dir.dx === 1 && dir.dy === -1) return 7;
-        if (dir.dx === 1 && dir.dy === 0) return 6;
-        if (dir.dx === 1 && dir.dy === 1) return 5;
-        if (dir.dx === 0 && dir.dy === 1) return 4;
-        if (dir.dx === -1 && dir.dy === 1) return 3;
-        if (dir.dx === -1 && dir.dy === 0) return 2;
-        if (dir.dx === -1 && dir.dy === -1) return 1;
-        return null;
-      }
-      // V1.6.15：直接发 REQUEST_JOYSTICK_DIR（keepMove 同款），不依赖游戏 w() 方向变化判定
-      function mnSendJoy(move, dirKey) {
-        try {
-          if (typeof CLIENT === "undefined" || !CLIENT || !CLIENT.PS || !CLIENT.PS.CZ ||
-              !CLIENT.NM || !CLIENT.NM.sendPacket || !CLIENT.PS.CZ.REQUEST_JOYSTICK_DIR) return;
-          var p = new CLIENT.PS.CZ.REQUEST_JOYSTICK_DIR();
-          p.move = move;
-          p.direction = dirKey;
-          CLIENT.NM.sendPacket(p);
-        } catch (e) {}
-      }
-      function mnKeepTick() {
-        try {
-          if (!mnJoy.wasd) return;
-          var ks = Object.keys(mnJoy.keys);
-          if (!ks.length) { mnKeepStop(); mnSendJoy(0, -1); return; }
-          var dir = mnKeyDir();
-          if (!dir) return;
-          var dk = mnDirKey(dir);
-          if (dk === null) return;
-          mnSendJoy(1, dk);
-        } catch (e) {}
-      }
-      function mnKeepStart() {
-        if (mnJoy.keepTimer) return;
-        mnJoy.keepTimer = setInterval(mnKeepTick, 200);
-      }
-      function mnKeepStop() {
-        if (mnJoy.keepTimer) { clearInterval(mnJoy.keepTimer); mnJoy.keepTimer = null; }
-      }
-      function mnKeyDown(e) {
-        var kk = (e.key || "").toLowerCase();
-        if (!/^(arrowup|arrowdown|arrowleft|arrowright)$/.test(kk)) return;
-        // 输入框内不拦截（打字）
-        try {
-          var tgt = e.target;
-          if (tgt && (tgt.tagName === "INPUT" || tgt.tagName === "TEXTAREA" || tgt.isContentEditable)) return;
-        } catch (e2) {}
-        if (mnJoy.keys[kk]) return; // 已按下
-        mnJoy.keys[kk] = true;
-        var d = mnFindDrag();
-        if (!d) { e.preventDefault(); return; } // 摇杆未就绪也吞方向键（防滚动）
-        var dir = mnKeyDir();
-        if (!mnJoy.wasd) return;
-        e.preventDefault();
-        if (dir) { mnPush(dir); mnKeepStart(); }
-      }
-      function mnKeyUp(e) {
-        var kk = (e.key || "").toLowerCase();
-        if (!/^(arrowup|arrowdown|arrowleft|arrowright)$/.test(kk)) return;
-        if (!mnJoy.keys[kk]) return;
-        delete mnJoy.keys[kk];
-        if (!mnJoy.wasd) { if (!Object.keys(mnJoy.keys).length) mnJoyStop(); return; }
-        var dir = mnKeyDir();
-        if (dir) mnPush(dir); else mnJoyStop();
-      }
-      document.addEventListener("keydown", mnKeyDown, true);
-      document.addEventListener("keyup", mnKeyUp, true);
-      // 用户任何真实交互（手指触摸 / 鼠标按下）→ 立即停止键位移动（防 keyup 丢失导致角色卡走、游戏移动中自动关界面）；
-      // 合成触摸 isTrusted=false 自动排除，不会误停自己
-      function mnRealStop(ev) {
-        try { if (ev && ev.isTrusted) mnJoyStop(); } catch (e) {}
-      }
-      document.addEventListener("touchstart", mnRealStop, true);
-      document.addEventListener("mousedown", mnRealStop, true);
-      // 开关联动（change 事件在面板构建后由 init 绑定）
-      function mnBindSwitches() {
-        var elWasd = $id("dsh-mn-wasd");
-        if (!elWasd) return;
-        elWasd.addEventListener("change", function () { mnJoy.wasd = elWasd.checked; if (!mnJoy.wasd) mnJoyStop(); });
-      }
-      // 懒轮询 .drag：进图后 #vbk 才渲染，每 2s 应用一次状态并绑定开关（面板可能被重挂）
-      var mnTimer = setInterval(function () {
-        try {
-          var d = mnFindDrag();
-          if (d) { mnJoy.drag = d; mnBindSwitches(); }
-        } catch (e) {}
-      }, 2000);
-      // 页面卸载清理
-      try {
-        window.addEventListener("beforeunload", function () {
-          clearInterval(mnTimer);
-          mnKeepStop();
-          document.removeEventListener("keydown", mnKeyDown, true);
-          document.removeEventListener("keyup", mnKeyUp, true);
-        });
-      } catch (e) {}
-    }
-  } catch (e) {}
-
   // 字体提档兜底：内联 font-size 以 10px/11px 结尾（无分号）的静态元素，统一 +1
   // （CSS 属性选择器只覆盖带分号的；此处正则处理结尾不带分号的）
   try {

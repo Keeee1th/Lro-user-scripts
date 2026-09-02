@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.8.0
+// @version      2.8.1
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.8.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.8.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -797,7 +797,12 @@
       '<div class="sec">回城清理（半自动）</div>' +
       '<div class="row" style="flex-wrap:wrap;gap:6px"><button id="dsh-tp-town" style="flex:0 0 auto">回城</button><button class="ghost" id="dsh-scan-npc" style="flex:0 0 auto">扫描NPC</button><button class="ghost" id="dsh-go-npc" style="flex:0 0 auto">走到选中</button><button class="ghost" id="dsh-talk-npc" style="flex:0 0 auto">点NPC对话</button><button class="ghost" id="dsh-sell" style="flex:0 0 auto">卖装备</button></div>' +
       '<div class="st" id="dsh-npclist" style="font-size:11px;max-height:96px;overflow:auto">NPC: 未扫描（点「扫描NPC」→ 点条目选中）</div>' +
-      '<div class="st" id="dsh-cleanlog" style="font-size:11px">流程日志：-</div>',
+      '<div class="st" id="dsh-cleanlog" style="font-size:11px">流程日志：-</div>' +
+      '<div class="sec">菜单侦察（对话采集）</div>' +
+      '<div class="st" style="font-size:11px;color:#7c2d12">走到任务NPC前点「点NPC对话」→ 下方自动抓菜单项与序号（序号=「选第N项」的N，从0起）。</div>' +
+      '<div id="dsh-menu-recon" style="font-size:11px;max-height:140px;overflow:auto;background:#f6f8fa;border:1px solid #dfe5ec;border-radius:4px;padding:6px;white-space:pre-wrap">菜单：未捕获（点NPC对话后自动出现）</div>' +
+      '<div class="row" style="margin-top:6px;gap:6px"><button id="dsh-menu-export" style="flex:0 0 auto">导出JSON</button><button class="ghost" id="dsh-menu-copy" style="flex:0 0 auto">复制</button></div>' +
+      '<div class="row" style="margin-top:6px;align-items:center;gap:6px"><span class="lb" style="min-width:0;margin:0">选第</span><input id="dsh-menu-num" type="number" min="0" value="0" style="flex:0 0 48px;padding:3px 6px"><span class="lb" style="margin:0">项</span><button id="dsh-menu-choose" style="flex:0 0 auto">发 CHOOSE_MENU</button><button class="ghost" id="dsh-menu-next" style="flex:0 0 auto">下一段</button></div>',
     system: '' +
       '<div class="row"><span class="lb">数据源</span><span id="dsh-datasrc">检测中…</span></div>' +
       '<div class="row"><span class="lb">角色</span><span id="dsh-chr">未登录</span></div>' +
@@ -1108,14 +1113,21 @@
 
   // 鼠标→触摸模拟层：手机版（r=mn）游戏用 jquery.mobile-events 触摸事件驱动，只认触摸不认鼠标；
   // 外接/蓝牙鼠标的 mousedown 不会变成触摸 → 游戏点不动。此处把「真实鼠标」事件合成为触摸派发到游戏。
-  // 用 sourceCapabilities.firesTouchEvents 区分来源：手指触摸派生的兼容 mouse（=true）跳过，只有真实鼠标/触控板才合成，
-  // 避免与原生触摸双发。助手 UI（面板/悬浮球/迷你按钮）内不模拟（面板已有事件隔离层）。
+  // V2.8.1 严格化（修复：手指点开内挂设置页约 1s 后自动关闭）：
+  //   兼容 mouse 事件可能由手指触摸派生（iOS Safari / 部分国产内核的 mousedown 不带 sourceCapabilities），
+  //   旧逻辑把这类事件误判为外接鼠标，在刚展开页面的遮罩/空白处二次合成触摸 → 引擎按「点外部关窗」默认逻辑关掉窗口。
+  //   现在：优先 PointerEvent，仅 pointerType==="mouse" 才合成；无 PointerEvent 回退 mouse 事件仅 firesTouchEvents===false 合成；
+  //   属性缺失一律不合成。touchend 始终派发到「按下时」的原目标并保证无悬空触摸。
   try {
     if (IS_MN) {
       var simTouchId = 1;
       var simActive = null;
       function simFromRealMouse(e) {
-        try { return !(e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents === true); } catch (err) { return true; }
+        try {
+          if (e.pointerType !== undefined) return e.pointerType === "mouse";
+          if (e.sourceCapabilities) return e.sourceCapabilities.firesTouchEvents === false;
+          return false; // 无 PointerEvent 且无 sourceCapabilities → 无法证明是外接鼠标，一律不合成
+        } catch (err) { return false; }
       }
       function simMkTouch(x, y, target) {
         try { return new Touch({ identifier: simTouchId, target: target, clientX: x, clientY: y, pageX: x, pageY: y, screenX: x, screenY: y }); }
@@ -1130,33 +1142,48 @@
       function simInUi(t) {
         try { return t && t.closest && t.closest("#dsh-ro-panel, #dsh-ball, #dsh-mini"); } catch (e) { return false; }
       }
-      document.addEventListener("mousedown", function (e) {
+      function simDown(e) {
         try {
           if (e.button !== 0 || !simFromRealMouse(e) || simInUi(e.target)) return;
           var t = simMkTouch(e.clientX, e.clientY, e.target);
           if (!t) return;
-          simActive = { t: t };
+          simActive = { t: t, target: e.target, pid: e.pointerId || 0 };
           simFire("touchstart", [t], [t], e.target);
         } catch (e2) {}
-      }, true);
-      document.addEventListener("mousemove", function (e) {
+      }
+      function simMove(e) {
         try {
-          if (!simActive || !simFromRealMouse(e) || simInUi(e.target)) return;
-          var t = simMkTouch(e.clientX, e.clientY, e.target);
+          if (!simActive) return;
+          if (e.pointerId !== undefined && e.pointerId !== simActive.pid) return;
+          if (!simFromRealMouse(e)) return;
+          var t = simMkTouch(e.clientX, e.clientY, simActive.target);
           if (!t) return;
           simActive.t = t;
-          simFire("touchmove", [t], [t], e.target);
+          simFire("touchmove", [t], [t], simActive.target);
         } catch (e2) {}
-      }, true);
-      document.addEventListener("mouseup", function (e) {
+      }
+      function simUp(e) {
         try {
-          if (!simActive || !simFromRealMouse(e)) return;
+          if (!simActive) return;
+          if (e.pointerId !== undefined && e.pointerId !== simActive.pid) return;
           var t = simActive.t;
+          var origin = simActive.target;
           simActive = null;
-          if (simInUi(e.target)) return;
-          simFire("touchend", [], [t], e.target);
+          // 始终派发到按下时的原目标：即使窗口/页面在光标下刚展开，完成点击也不会投到新窗口遮罩上；
+          // 落在助手 UI 上同样补发（保证游戏侧不残留按下的合成触摸）
+          try { if (origin && t) simFire("touchend", [], [t], origin); } catch (e3) {}
         } catch (e2) {}
-      }, true);
+      }
+      if (window.PointerEvent) {
+        document.addEventListener("pointerdown", simDown, true);
+        document.addEventListener("pointermove", simMove, true);
+        document.addEventListener("pointerup", simUp, true);
+        document.addEventListener("pointercancel", simUp, true);
+      } else {
+        document.addEventListener("mousedown", simDown, true);
+        document.addEventListener("mousemove", simMove, true);
+        document.addEventListener("mouseup", simUp, true);
+      }
     }
   } catch (e) {}
 
@@ -6416,6 +6443,115 @@
       $id("dsh-cleanlog").textContent = "已发送卖单 " + sellList.length + " 件装备";
     } catch (e) { $id("dsh-cleanlog").textContent = "卖装备异常: " + e.message; }
   });
+
+  // ---------------- 菜单侦察（对话采集 · 阶段1） ----------------
+  var menuRecon = { NAID: 0, msg: "", items: [], map: "", npcName: "", pos: null, time: 0 };
+  function decodeMenuMsg(bytes) {
+    var end = bytes.length;
+    for (var i = 0; i < bytes.length; i++) { if (bytes[i] === 0) { end = i; break; } }
+    var sub = bytes.subarray(0, end);
+    try { return new TextDecoder("gbk").decode(sub); }
+    catch (e) { return new TextDecoder("utf-8").decode(sub); }
+  }
+  function splitMenu(msg) {
+    return String(msg).split(/[\r\n]+/).map(function (s) { return s.replace(/^\s+|\s+$/g, ""); }).filter(function (s) { return s.length > 0; });
+  }
+  function renderMenuRecon() {
+    var el = $id("dsh-menu-recon");
+    if (!el) return;
+    if (!menuRecon.items.length) { el.textContent = "菜单未拆出选项（原始：" + menuRecon.msg + "）"; return; }
+    var lines = [];
+    for (var i = 0; i < menuRecon.items.length; i++) lines.push(i + ") " + menuRecon.items[i]);
+    var head = "NPC " + (menuRecon.npcName || ("GID " + menuRecon.NAID)) + " · " + (menuRecon.map || "?");
+    if (menuRecon.pos) head += " (" + menuRecon.pos[0] + "," + menuRecon.pos[1] + ")";
+    el.textContent = head + "\n" + lines.join("\n");
+  }
+  function onMenuList(bytes) {
+    try {
+      if (!bytes || bytes.byteLength < 6) return;
+      var dv = new DataView(bytes);
+      if (dv.getUint16(0, true) !== 183) return; // ZC.MENU_LIST（菜单）
+      var NAID = dv.getUint32(2, true);
+      var msg = decodeMenuMsg(new Uint8Array(bytes, 6, bytes.byteLength - 6));
+      var npcName = "", pos = null;
+      try {
+        var EM = CLIENT.EM || (window.require && window.require("Renderer/EntityManager"));
+        if (EM && EM.forEach) EM.forEach(function (e) {
+          if (e && e.GID == NAID) { npcName = e.name || e.displayName || ""; if (e.position) pos = [e.position[0], e.position[1]]; }
+        });
+      } catch (e2) {}
+      menuRecon = { NAID: NAID, msg: msg, items: splitMenu(msg), map: getMapName(), npcName: npcName, pos: pos, time: Date.now() };
+      renderMenuRecon();
+    } catch (e) {}
+  }
+  function onReconInbound(data) {
+    try {
+      if (data instanceof ArrayBuffer) { onMenuList(data); return; }
+      if (data && data.buffer instanceof ArrayBuffer) { onMenuList(data.buffer); return; }
+      if (typeof Blob !== "undefined" && data instanceof Blob && data.arrayBuffer) { data.arrayBuffer().then(onMenuList); }
+    } catch (e) {}
+  }
+  function hookMenuRecon() {
+    if (window.__dshMenuReconHooked) return;
+    try {
+      var N = window.WebSocket;
+      if (!N) return;
+      function PW(url, protocols) {
+        var inst = protocols !== undefined ? new N(url, protocols) : new N(url);
+        try { inst.addEventListener("message", function (ev) { onReconInbound(ev.data); }); } catch (e) {}
+        return inst;
+      }
+      PW.prototype = N.prototype; PW.CONNECTING = N.CONNECTING; PW.OPEN = N.OPEN; PW.CLOSING = N.CLOSING; PW.CLOSED = N.CLOSED;
+      window.WebSocket = PW;
+      window.__dshMenuReconHooked = true;
+    } catch (e) {}
+  }
+  function buildMenuJson() {
+    return JSON.stringify({
+      type: "npc_menu",
+      map: menuRecon.map || "",
+      npcName: menuRecon.npcName || "",
+      npcGID: menuRecon.NAID,
+      pos: menuRecon.pos,
+      menu: menuRecon.items.map(function (t, i) { return { idx: i, text: t }; }),
+      capturedAt: new Date().toISOString()
+    }, null, 2);
+  }
+  $id("dsh-menu-export").addEventListener("click", function () {
+    if (!menuRecon.items.length) { $id("dsh-cleanlog").textContent = "先捕获菜单（点NPC对话）"; return; }
+    var j = buildMenuJson();
+    try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(j); } catch (e) {}
+    $id("dsh-menu-recon").textContent = "已生成JSON（已尝试复制到剪贴板）:\n" + j;
+  });
+  $id("dsh-menu-copy").addEventListener("click", function () {
+    if (!menuRecon.items.length) { $id("dsh-cleanlog").textContent = "先捕获菜单（点NPC对话）"; return; }
+    var j = buildMenuJson();
+    try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(j); } catch (e) {}
+    $id("dsh-cleanlog").textContent = navigator.clipboard ? "已复制JSON到剪贴板" : "剪贴板不可用";
+  });
+  $id("dsh-menu-choose").addEventListener("click", function () {
+    try {
+      if (!clientReady()) throw new Error("客户端未就绪");
+      if (!menuRecon.NAID) { $id("dsh-cleanlog").textContent = "先捕获菜单（点NPC对话）"; return; }
+      var n = parseInt($id("dsh-menu-num").value, 10);
+      if (isNaN(n) || n < 0) { $id("dsh-cleanlog").textContent = "菜单序号无效"; return; }
+      var c = new CLIENT.PS.CZ.CHOOSE_MENU();
+      c.NAID = menuRecon.NAID; c.num = n;
+      CLIENT.NM.sendPacket(c);
+      $id("dsh-cleanlog").textContent = "已发 CHOOSE_MENU：第 " + n + " 项" + (menuRecon.items[n] ? "（" + menuRecon.items[n] + "）" : "");
+    } catch (e) { $id("dsh-cleanlog").textContent = "选菜单异常: " + e.message; }
+  });
+  $id("dsh-menu-next").addEventListener("click", function () {
+    try {
+      if (!clientReady()) throw new Error("客户端未就绪");
+      if (!menuRecon.NAID) { $id("dsh-cleanlog").textContent = "先捕获菜单（点NPC对话）"; return; }
+      var p = new CLIENT.PS.CZ.REQ_NEXT_SCRIPT();
+      p.NAID = menuRecon.NAID;
+      CLIENT.NM.sendPacket(p);
+      $id("dsh-cleanlog").textContent = "已发 REQ_NEXT_SCRIPT（下一段对话）";
+    } catch (e) { $id("dsh-cleanlog").textContent = "下一段异常: " + e.message; }
+  });
+  hookMenuRecon();
 
   // ---------------- 快速侦查 ----------------
   var reconSeen = {};

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO 手机自适应 ro-mobile
 // @namespace    https://github.com/Keeee1th/Lro-user-scripts
-// @version      1.0.14
+// @version      1.0.15
 // @description  手机使用 PC 网页 api.html 的触控适配与掉线防护:自动加载手机内核(Online_mn),自定义操作键(开窗/键盘/点地),后台保活(隐藏PING+音频+WebLock+防熄屏),可与 ro-assist 双开(检测式不抢占)
 // @match        https://post.lastro.cn/ro/api.html*
 // @match        http://post.lastro.cn/ro/api.html*
@@ -13,7 +13,7 @@
 
 (function () {
   "use strict";
-  var VER = "1.0.14";
+  var VER = "1.0.15";
   var LS_KEY = "dsh_ro_mobile_v1";
   var version = (location.href.match(/[?&]v=([\d.]+)/i) || [null, "69.32"])[1];
 
@@ -451,45 +451,18 @@
     if (t.kind === "key" && t.k) { t.k.pos = { x: px, y: py }; saveCfg(); }
     else if (t.kind === "joy") { cfg.opts.joyPos = { x: px, y: py }; saveCfg(); }
   }
-  // 画面缩放(游戏主视口 transform:scale;V1.0.14 容器探测优先内核主视口 #map + 面积校验,修复误缩右上小地图)
-  var uiWrap = null;
+  // V1.0.15 穿透修复:内核 MouseEventHandler 把 pageX/pageY 除以固定逻辑视口尺寸换算世界坐标(不用 getBoundingClientRect),
+  // 任何对主视口的 CSS transform:scale 都会让点击坐标错位 → 点游戏内交互页面(场景内渲染)会穿到角色操作/点地板移动。
+  // 因此画面缩放不再缩放游戏主视口:设置非 100 时重置并提示,避免点触穿透。
   function applyUiScale() {
     try {
-      if (!document.body) return;
-      if (!uiWrap) {
-        var cands = ["#map", "#view", "#wrap", "#container", "#game", ".game-container", ".view-wrap", "#viewWrap"];
-        var got = null;
-        for (var i = 0; i < cands.length; i++) {
-          try { got = document.querySelector(cands[i]); } catch (e) { got = null; }
-          if (got && pickMainView(got)) { uiWrap = got; break; }
-        }
-        if (!uiWrap) {
-          // 兜底:找面积足够大(≥视口40%)的 canvas 宿主,排除小地图等小元素
-          var cvs = document.querySelectorAll("canvas");
-          for (var ci = 0; ci < cvs.length; ci++) {
-            var pe = cvs[ci].parentElement;
-            if (pe && pickMainView(pe)) { uiWrap = pe; break; }
-          }
-        }
+      var s = cfg.opts.uiScale || 100;
+      if (s !== 100) {
+        cfg.opts.uiScale = 100;
+        saveCfg();
+        toast("画面缩放已停用:缩放主视口会与游戏点触坐标冲突(点UI穿透到角色操作),已恢复100%");
       }
-      if (!uiWrap) { toast("未找到画面主视口(真机确认页面结构)"); return; }
-      var s = (cfg.opts.uiScale || 100) / 100;
-      uiWrap.style.transformOrigin = "50% 0";
-      uiWrap.style.transform = s === 1 ? "" : "scale(" + s + ")";
     } catch (e) {}
-  }
-  // V1.0.14 主视口判定:含足够大的 canvas 且尺寸接近屏幕(排除小地图/窗口类小元素)
-  function pickMainView(e) {
-    try {
-      if (!e || !e.getBoundingClientRect) return false;
-      var r = e.getBoundingClientRect();
-      var rw = window.innerWidth || 375, rh = window.innerHeight || 667;
-      if (!rw || !rh) return false;
-      if (r.width < rw * 0.4 || r.height < rh * 0.4) return false;
-      var has = false, ls = e.querySelectorAll ? e.querySelectorAll("canvas") : [];
-      for (var i = 0; i < ls.length; i++) { var lr = ls[i].getBoundingClientRect(); if (lr.width >= rw * 0.4 && lr.height >= rh * 0.4) { has = true; break; } }
-      return has;
-    } catch (e2) { return false; }
   }
   // V1.0.14 自动排列:全部键(bar+col,含自定义位置键)按 4 列网格顺序重排,写回配置并重绘
   function autoArrange() {
@@ -949,9 +922,11 @@
         else { o.lastSent = 0; o.lastTgt = null; var t2 = steerTarget(); if (t2) walkTo(t2[0], t2[1]); }
       }
       o.breakTs = 0;
+      o._upAt = 0; // V1.0.15 按下即恢复方向驱动(清回弹保护窗)
     }
     function move(e) {
       if (!o.active) return;
+      if (o._upAt && Date.now() - o._upAt < 250) return; // V1.0.15 回弹保护:松手后 250ms 内的移动视为回弹/残留触控,不驱动方向
       o.ax = e.clientX; o.ay = e.clientY;
       knobPos(e);
     }
@@ -960,22 +935,22 @@
       o.active = false;
       o.breakTs = Date.now();
       o.stillCnt = 0; o.lastPos = null; o.mode = null; // 重置静止检测与输入通道
-      if (o.dir >= 0) {
-        if (cfg.opts.joyProto) joySend(0, -1);
-        else {
-          // V1.0.11 松开即停:停止包目标取整到最近格(round,防 float 被服务器向前取整拉回身后格→回撤),并清客户端残留导航;心跳由 steerTimer 停发
-          try {
-            var pp = playerPos();
-            if (pp && isFinite(pp[0]) && isFinite(pp[1])) {
-              walkTo(Math.round(pp[0]), Math.round(pp[1]));
-              var MM = null; try { MM = window.require("UI/Components/MiniMap/MiniMap"); } catch (e) {}
-              if (MM && MM.removeDestination) { try { MM.removeDestination(); } catch (e) {} }
-            }
-          } catch (e) {}
-        }
-        o.lastDir = o.dir; o.dir = -1;
-        o.lastTgt = null;
+      // V1.0.15 无条件停止:无论方向是否已被回弹/滑回死区清成 -1,松手一律发停止包(否则角色会继续朝最后方向走)
+      if (cfg.opts.joyProto) joySend(0, -1);
+      else {
+        // V1.0.11 松开即停:停止包目标取整到最近格(round,防 float 被服务器向前取整拉回身后格→回撤),并清客户端残留导航;心跳由 steerTimer 停发
+        try {
+          var pp = playerPos();
+          if (pp && isFinite(pp[0]) && isFinite(pp[1])) {
+            walkTo(Math.round(pp[0]), Math.round(pp[1]));
+            var MM = null; try { MM = window.require("UI/Components/MiniMap/MiniMap"); } catch (e) {}
+            if (MM && MM.removeDestination) { try { MM.removeDestination(); } catch (e) {} }
+          }
+        } catch (e) {}
       }
+      if (o.dir >= 0) o.lastDir = o.dir;
+      o.dir = -1; o.lastTgt = null;
+      o._upAt = Date.now(); // V1.0.15 回弹保护窗:松手后短暂窗口内的移动不视为移动指令
       knob.style.transition = "transform .15s";
       knob.style.transform = "translate(0,0)";
     }
@@ -1007,8 +982,15 @@
           if (tgt) { o.lastTgt = tgt; o.lastSent = now; o.stillCnt = 0; walkTo(tgt[0], tgt[1]); }
         }
       } else if (o.dir >= 0) {
+        // V1.0.15 回弹/滑回死区:方向回中立即停走(直发模式同样发停止包,不再朝最后方向继续走)
         if (cfg.opts.joyProto) joySend(0, -1);
-        o.lastDir = o.dir; o.dir = -1;
+        else {
+          try {
+            var pp2 = playerPos();
+            if (pp2 && isFinite(pp2[0]) && isFinite(pp2[1])) walkTo(Math.round(pp2[0]), Math.round(pp2[1]));
+          } catch (e) {}
+        }
+        o.lastDir = o.dir; o.dir = -1; o.lastTgt = null;
       }
     }, 140);
     function ptGate(fn) { return function (e) { if (o.mode === "t") return; fn(e); }; } // pointer 通道:触摸接管时让位

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.8.4
+// @version      2.8.5
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.8.4"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.8.5"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -5985,35 +5985,98 @@
       if (!clicked) console.log("[RO助手] 传送定位: .bigworld=" + !!document.querySelector(".bigworld") + " .gogogo=" + !!document.querySelector(".gogogo"));
     } catch (e) { $id("dsh-tpmsg").textContent = "传送异常: " + e.message; }
   });
+  // 从元素提取地图名（data-map / id / 背景图 map/*.png·bmp）——PC .bigworld td 与手机嗅探共用
+  var MAPBG_RE = new RegExp("map/[a-z]+/([a-zA-Z0-9_]+)[.](png|bmp)", "i");
+  function extractMapFromEl(el) {
+    try {
+      var m = el.getAttribute("data-map");
+      if (!m || m === "Mhtmltip") m = (el.id || "").replace(/^map_/, "");
+      if (!m) {
+        var raw = (el.getAttribute("data-background") || "") + " " + ((el.style && el.style.backgroundImage) || "");
+        var mm = MAPBG_RE.exec(raw);
+        if (mm) m = mm[1];
+      }
+      return m || "";
+    } catch (e) { return ""; }
+  }
+  function hasCls(cls, w) { return (" " + cls + " ").indexOf(" " + w + " ") >= 0; }
+  // 手机版世界地图嗅探：深度遍历 document（含 open shadow root），收集地图格子与传送前往按钮
+  function sniffWorldMap() {
+    var out = { maps: [], buttons: [], idMapLike: [], shadowHosts: 0 };
+    var seen = {}, seenId = {};
+    function visit(root) {
+      if (!root || !root.querySelectorAll) return;
+      var els = root.querySelectorAll("*");
+      for (var i = 0; i < els.length; i++) {
+        var el = els[i];
+        try {
+          var ta = el.tagName || "";
+          var idv = el.id || "";
+          var cls = (typeof el.className === "string" ? el.className : ((el.getAttribute && el.getAttribute("class")) || "") || "");
+          var hasDM = !!(el.getAttribute && el.getAttribute("data-map"));
+          var dn = (el.getAttribute && el.getAttribute("data-displayname")) || "";
+          var bg = ((el.getAttribute && el.getAttribute("data-background")) || "") + " " + ((el.style && el.style.backgroundImage) || "");
+          var isMapBg = MAPBG_RE.test(bg);
+          var isMapId = /^[a-z][a-z0-9_]{2,39}$/.test(idv);
+          var isSection = hasCls(cls, "section") || hasCls(cls, "map") || hasCls(cls, "world") || hasCls(cls, "town");
+          var m = extractMapFromEl(el) || (isMapId ? idv : "");
+          if ((hasDM || isMapBg || (isMapId && isSection)) && m && /^[a-zA-Z0-9_]{2,40}$/.test(m) && !seen[m]) {
+            seen[m] = true;
+            out.maps.push({ map: m, cn: dn || (el.textContent || "").trim().slice(0, 40), tag: ta, id: idv, cls: cls.slice(0, 60) });
+          } else if (isMapId && !seenId[idv]) {
+            seenId[idv] = true;
+            out.idMapLike.push({ id: idv, tag: ta, cls: cls.slice(0, 40) });
+          }
+          var isBtn = ta === "BUTTON" || (el.getAttribute && el.getAttribute("type") === "button") || hasCls(cls, "btn") || hasCls(cls, "button");
+          if (isBtn) {
+            var txt = (((el.textContent || "") + " " + (el.getAttribute && el.getAttribute("value") || "")).trim());
+            if (/传送|前往|移动|走去|确定|回去|teleport|gogo|go|move|ok/i.test(txt + " " + cls)) out.buttons.push({ tag: ta, text: txt.slice(0, 30), cls: cls.slice(0, 60), id: idv });
+          }
+          if (el.shadowRoot) { out.shadowHosts++; visit(el.shadowRoot); }
+        } catch (e2) {}
+      }
+    }
+    visit(document);
+    return out;
+  }
   $id("dsh-mapload").addEventListener("click", function () {
     try {
-      var cells = document.querySelectorAll('.bigworld td');
       var seen = {};
       var n = 0;
+      var list = [];
+      var cells = document.querySelectorAll('.bigworld td');
       for (var i = 0; i < cells.length; i++) {
-        var td = cells[i];
-        var m = td.getAttribute("data-map");
-        if (!m || m === "Mhtmltip") m = (td.id || "").replace(/^map_/, "");
-        if (!m) {
-          var bg = td.getAttribute("data-background") || "";
-          var mm = bg.match(/map\/[a-z]+\/([a-zA-Z0-9_]+)\.png/);
-          if (mm) m = mm[1];
-        }
-        if (!m || seen[m]) continue;
-        seen[m] = true;
-        var cn = mapCn(m) || (td.textContent || "").trim();
-        // 已有同 map 条目保留（避免覆盖已补充的中文名）
+        var m = extractMapFromEl(cells[i]);
+        if (m) list.push({ map: m, cn: mapCn(m) || (cells[i].textContent || "").trim() });
+      }
+      var snif = null;
+      if (!list.length) {
+        snif = sniffWorldMap();
+        for (var k = 0; k < snif.maps.length; k++) list.push({ map: snif.maps[k].map, cn: mapCn(snif.maps[k].map) || snif.maps[k].cn || "" });
+      }
+      for (var j = 0; j < list.length; j++) {
+        var it = list[j];
+        if (!it.map || seen[it.map]) continue;
+        seen[it.map] = true;
         var ex = false;
-        for (var j = 0; j < mapCache.length; j++) { if (mapCache[j].map === m) { ex = true; if (!mapCache[j].cn && cn) mapCache[j].cn = cn; break; } }
-        if (!ex) mapCache.push({ map: m, cn: cn });
+        for (var q = 0; q < mapCache.length; q++) { if (mapCache[q].map === it.map) { ex = true; if (!mapCache[q].cn && it.cn) mapCache[q].cn = it.cn; break; } }
+        if (!ex) mapCache.push({ map: it.map, cn: it.cn });
         n++;
       }
       saveMapCache();
-      // 重新渲染联想列表
       var box = $id("dsh-maplist");
       if (box) renderMapList();
-      $id("dsh-tpmsg2").textContent = n ? "已读取 " + n + " 张地图（联想列表可输入过滤）" : "未读到地图：请先在游戏内打开世界地图";
-      if (!n) console.log("[RO助手] 地图读取: td数=" + cells.length + " .bigworld=" + !!document.querySelector(".bigworld"));
+      if (snif && (snif.maps.length || snif.buttons.length || snif.shadowHosts)) {
+        var brief = { shadowHosts: snif.shadowHosts, totalMaps: snif.maps.length, maps: snif.maps.slice(0, 30), buttons: snif.buttons, idLike: snif.idMapLike.slice(0, 30) };
+        var dbg = "";
+        try { dbg = JSON.stringify(brief); console.log("[RO助手] 世界地图嗅探:", JSON.stringify(snif)); } catch (e) {}
+        $id("dsh-tpmsg2").textContent = "手机嗅探命中（复制回传）｜ " + dbg;
+      } else if (n) {
+        $id("dsh-tpmsg2").textContent = "已读取 " + n + " 张地图（联想列表可输入过滤）";
+      } else {
+        $id("dsh-tpmsg2").textContent = "未读到地图：请先在游戏内打开世界地图";
+        console.log("[RO助手] 地图读取失败: .bigworld=" + !!document.querySelector(".bigworld") + " td数=" + cells.length);
+      }
     } catch (e) { $id("dsh-tpmsg2").textContent = "读地图异常: " + e.message; }
   });
   $id("dsh-world").addEventListener("change", function () {

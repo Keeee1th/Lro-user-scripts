@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.8.3
+// @version      2.8.4
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.8.3"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.8.4"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -6267,11 +6267,13 @@
     var end = bytes.length;
     for (var i = 0; i < bytes.length; i++) { if (bytes[i] === 0) { end = i; break; } }
     var sub = bytes.subarray(0, end);
-    try { return new TextDecoder("gbk").decode(sub); }
-    catch (e) { return new TextDecoder("utf-8").decode(sub); }
+    var s;
+    try { s = new TextDecoder("gbk").decode(sub); }
+    catch (e) { s = new TextDecoder("utf-8").decode(sub); }
+    return s.replace(/[\u0000-\u001f\u007f]/g, "");
   }
   function splitMenu(msg) {
-    return String(msg).split(/[\r\n]+/).map(function (s) { return s.replace(/^\s+|\s+$/g, ""); }).filter(function (s) { return s.length > 0; });
+    return String(msg).replace(/[\u0000-\u001f\u007f]/g, "").split(":").map(function (s) { return s.replace(/^\s+|\s+$/g, ""); }).filter(function (s) { return s.length > 0; });
   }
   function renderMenuRecon() {
     var el = $id("dsh-menu-recon");
@@ -6289,12 +6291,13 @@
       var dv = new DataView(bytes);
       if (dv.getUint16(0, true) !== 183) return; // ZC.MENU_LIST（菜单）
       var NAID = dv.getUint32(2, true);
+      var NAIDs = NAID > 2147483647 ? NAID - 4294967296 : NAID;
       var msg = decodeMenuMsg(new Uint8Array(bytes, 6, bytes.byteLength - 6));
       var npcName = "", pos = null;
       try {
         var EM = CLIENT.EM || (window.require && window.require("Renderer/EntityManager"));
         if (EM && EM.forEach) EM.forEach(function (e) {
-          if (e && e.GID == NAID) { npcName = e.name || e.displayName || ""; if (e.position) pos = [e.position[0], e.position[1]]; }
+          if (e && (e.GID == NAID || e.GID == NAIDs)) { npcName = e.name || e.displayName || ""; if (e.position) pos = [e.position[0], e.position[1]]; }
         });
       } catch (e2) {}
       menuRecon = { NAID: NAID, msg: msg, items: splitMenu(msg), map: getMapName(), npcName: npcName, pos: pos, time: Date.now() };

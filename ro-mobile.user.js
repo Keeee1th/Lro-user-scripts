@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO 手机自适应 ro-mobile
 // @namespace    https://github.com/Keeee1th/Lro-user-scripts
-// @version      1.0.15
+// @version      1.0.16
 // @description  手机使用 PC 网页 api.html 的触控适配与掉线防护:自动加载手机内核(Online_mn),自定义操作键(开窗/键盘/点地),后台保活(隐藏PING+音频+WebLock+防熄屏),可与 ro-assist 双开(检测式不抢占)
 // @match        https://post.lastro.cn/ro/api.html*
 // @match        http://post.lastro.cn/ro/api.html*
@@ -13,7 +13,7 @@
 
 (function () {
   "use strict";
-  var VER = "1.0.15";
+  var VER = "1.0.16";
   var LS_KEY = "dsh_ro_mobile_v1";
   var version = (location.href.match(/[?&]v=([\d.]+)/i) || [null, "69.32"])[1];
 
@@ -624,15 +624,40 @@
   }
   function findComponent(name) {
     var r = uiComponents();
-    var map = r.map;
+    var UI = r.UI, map = r.map;
     if (!map) return null;
+    // 通道1:引擎权威 getComponent(Ragna 端内部走 UIVersionManager 别名解析 Equipment→EquipmentV4)
+    if (UI && typeof UI.getComponent === "function") {
+      try {
+        var viaAPI = UI.getComponent(name);
+        if (viaAPI) return viaAPI;
+      } catch (e) {}
+    }
+    // 通道2:公共名直查(AMD 官方端组件直接注册 Equipment/Inventory/Storage)
     if (map[name]) return map[name];
+    // 通道3:版本化扫描 Equipment→EquipmentV0..V4(带数字后缀),多命中取版本号最大者=最新 UI
     var low = name.toLowerCase();
+    var exact = null, vers = [];
+    Object.keys(map).forEach(function (k) {
+      var kl = k.toLowerCase();
+      if (kl === low) { exact = k; return; }
+      if (kl.indexOf(low + "v") === 0) vers.push(k);
+    });
+    if (exact) return map[exact];
+    if (vers.length) {
+      vers.sort(function (a, b) { return verOf(b) - verOf(a); });
+      return map[vers[0]];
+    }
+    // 兜底模糊(唯一命中才返回,保持旧行为)
     var hits = Object.keys(map).filter(function (k) {
       var kl = k.toLowerCase();
-      return kl === low || kl.indexOf(low) >= 0 || low.indexOf(kl) >= 0;
+      return kl.indexOf(low) >= 0 || low.indexOf(kl) >= 0;
     });
     return hits.length === 1 ? map[hits[0]] : null;
+  }
+  function verOf(k) {
+    var m = k.match(/(\d+)\s*$/);
+    return m ? parseInt(m[1], 10) : -1;
   }
   // V1.0.14 引擎内置窗口快捷键表(Preferences/ShortCutControls 默认值;Storage 无默认快捷键,须与卡普拉对话打开)
   var WIN_HOTKEY = {
@@ -640,7 +665,8 @@
     BasicInfo: { k: "V", alt: true }, Basicinfo: { k: "V", alt: true }, WorldMap: { k: "M", alt: true },
     MiniMap: { k: "N", alt: true }, Quest: { k: "U", alt: true }, ChatRoomCreate: { k: "C", alt: true },
     Guild: { k: "G", alt: true }, PetInformations: { k: "J", alt: true }, EMO: { k: "L", alt: true },
-    OnPushCart: { k: "W", alt: true }, Friends: { k: "H", alt: true }
+    OnPushCart: { k: "W", alt: true }, Friends: { k: "H", alt: true },
+    Bank: { k: "B", ctrl: true } // V1.0.16 新源端(Ragna)仓库实体=Bank 组件,源端快捷键 Ctrl+B
   };
   function winHotkeyFallback(name) {
     var h = WIN_HOTKEY[name];
@@ -654,6 +680,11 @@
     var label = WIN_MAP[name] || name;
     var c = null;
     try { c = findComponent(name); } catch (e) { c = null; }
+    // V1.0.16 仓库双通道:新源端(Ragna)仓库实体为 Bank 组件(独立 GUIComponent),Storage 未注册时改开 Bank
+    if (!c && name === "Storage") {
+      try { c = findComponent("Bank"); } catch (e) { c = null; }
+      if (c) label = "仓库(银行)";
+    }
     // V1.0.14 双通道:组件直开(append/remove)失败或未注册 → 降级引擎快捷键(与官方开窗同机制)
     if (c) {
       try {

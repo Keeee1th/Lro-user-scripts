@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.9.0
+// @version      2.9.1
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.9.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.9.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -4488,6 +4488,43 @@
         tlog("walk-stuck turn dir=" + zWalkState.dir);
         setStatus("前方卡住，转向 " + zWalkState.dir, "warn");
       }
+      // V2.9.1 方向可走预检：用客户端地形（Altitude GAT，同本图大地图数据）先验证方向再发包
+      //   当前方向 12 格内任意一格不可走 → 顺时针找第一个可走方向；全不通 → 瞬移兜底/不发撞墙包
+      function dirWalkable(dd, steps) {
+        try {
+          var ALT = window.require && window.require("Renderer/Map/Altitude");
+          var WALK = ALT && ALT.TYPE && ALT.TYPE.WALKABLE;
+          if (!ALT || !ALT.getCellType || !WALK || !ALT.width) return true; // 地形未就绪 → 放行（旧逻辑兜底）
+          for (var s = 1; s <= steps; s++) {
+            if (!(ALT.getCellType(Math.floor(px0 + dd[0] * s), Math.floor(py0 + dd[1] * s)) & WALK)) return false;
+          }
+          return true;
+        } catch (e) { return true; }
+      }
+      if (!dirWalkable(dirs[zWalkState.dir], WALK_RANGE)) {
+        var foundD = -1;
+        for (var ti2 = 1; ti2 <= 8; ti2++) {
+          var cand = (zWalkState.dir + ti2) % dirs.length;
+          if (dirWalkable(dirs[cand], WALK_RANGE)) { foundD = cand; break; }
+        }
+        if (foundD >= 0) {
+          zWalkState.dir = foundD;
+          zWalkState.stuckCnt = 0;
+          tlog("walk-precheck turn dir=" + zWalkState.dir);
+          setStatus("前方有墙，转到可走方向 " + zWalkState.dir + "…", "st");
+        } else {
+          zWalkState.tried++;
+          if (idleFly && now - zWalkState.lastIdleFly >= 15000) {
+            zWalkState.lastIdleFly = now;
+            doFly();
+            setStatus("四周不可走，瞬移脱困…", "warn");
+            return;
+          }
+          setStatus("四周不可走，等待下一步…", "st");
+          return; // 不发撞墙包
+        }
+      }
+
       // 当前方向目标点（V2.7.3：直发方向终点 12 格，服务器寻路，不再 pathFindTo 取 5 格小步）
       var dd = dirs[zWalkState.dir];
       var tx = px0 + dd[0] * WALK_RANGE;

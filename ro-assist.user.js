@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.10.1
+// @version      2.10.2
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.10.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.10.2"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -2340,6 +2340,7 @@
     } catch (e) { return -1; }
   }
   var buffActive = {}; // V1.7.5 状态判活表：{状态ID: {on:bool, endAt:ms|Infinity, seenAt:ms}}，由 StatusIcons hook 更新
+  var dshSIState = "pending"; // StatusIcons hook 状态：pending/ok/no-require/no-mod/no-update/err（诊断用）
   function parseBuffs(txt) {
     var out = [];
     var lines = String(txt || "").split(/\r?\n/);
@@ -2407,10 +2408,16 @@
   function hookStatusIcons() {
     try {
       if (window.__dshSIHook) return;
-      window.__dshSIHook = true;
-      var SI = window.require && window.require("UI/Components/StatusIcons/StatusIcons");
-      if (!SI || typeof SI.update !== "function") { window.__dshSIHook = false; return; }
+      if (!window.require) { dshSIState = "no-require"; return; }
+      var SI = null;
+      var cands = ["UI/Components/StatusIcons/StatusIcons", "UI/Components/StatusIcons", "UI/Components/StatusIcons/StatusIcons.js", "UI/Components/StatusIcons.js"];
+      for (var ci = 0; ci < cands.length; ci++) {
+        try { var m = window.require(cands[ci]); if (m && typeof m.update === "function") { SI = m; break; } } catch (e2) {}
+      }
+      if (!SI) { dshSIState = "no-mod"; return; }
       var orig = SI.update;
+      if (typeof orig !== "function") { dshSIState = "no-update"; return; }
+      window.__dshSIHook = true;
       SI.update = function (stId, active, layer, dur) {
         try {
           stId = parseInt(stId, 10);
@@ -2422,12 +2429,36 @@
         } catch (e) {}
         return orig.apply(this, arguments);
       };
-      tlog("statusicons hooked");
-    } catch (e) {}
+      dshSIState = "ok";
+      tlog("statusicons hooked (cand " + (ci || 1) + ")");
+    } catch (e) { dshSIState = "err"; }
   }
   // 状态是否判为目标"在身上"：on && (未过期)；对从未见过的状态（无通知）→ 视为不在身上（触发补）
+  // 状态是否判为目标"在身上"：优先读客户端实体字段（不依赖 hook），实体字段查不到再回落判活表 buffActive（StatusIcons hook）
+  // 实体字段映射：EFST ID → 实体字段判定函数（返回 bool；字段缺失返回 undefined 表示该状态无实体字段，回落判活表）
+  var DSH_ENT_STATE = {
+    12: function (en) { return en.inc_agi === 1 || en.IncAgi === 1 || en.incAgi === 1; },
+    10: function (en) { return en.blessing === 1 || en.Blessing === 1; },
+    1: function (en) { return en.endure === 1 || en.Endure === 1; },
+    86: function (en) { return en.explosion === 1; },
+    87: function (en) { return en.SteelBody === 1 || en.steelbody === 1 || en.steel_body === 1; },
+    149: function (en) { return en.soullink === 1; },
+    107: function (en) { return en.berserk === 1; },
+    27: function (en) { return en.riding === 1 || en.riding_ === 1; },
+    28: function (en) { return en.falcon === 1; },
+    4: function (en) { return en.isHide === true || en.hiding === 1; },
+    5: function (en) { return en.isHide === true || en.hiding === 1; }
+  };
   function buffStateOn(stId) {
     try {
+      stId = parseInt(stId, 10);
+      // 1) 实体字段优先（引擎 Entity 实时字段，权威）
+      var f = DSH_ENT_STATE[stId];
+      if (f) {
+        var en = CLIENT.SS && CLIENT.SS.Entity;
+        if (en) { var v = f(en); if (v !== undefined) return v === true || v === 1; }
+      }
+      // 2) 回落判活表（StatusIcons hook 维护；hook 未挂/无通知时表为空 → 视为不在身，触发补）
       var st = buffActive[stId];
       if (!st) return false;
       if (!st.on) return false;
@@ -2435,7 +2466,6 @@
       return true;
     } catch (e) { return false; }
   }
-  
   // V1.7.7 状态速查弹层按钮：多辅助区「状态速查」→ 打开全屏速查表（可选中复制）
   var stateHelpBtn = $id("dsh-statehelp");
   if (stateHelpBtn) {
@@ -3032,7 +3062,8 @@
       if (!ent || !ent.life) return;
       var now = Date.now();
       var intv = (parseInt($id("dsh-askint").value, 10) || 120) * 1000;
-      var spPct = ent.life.maxsp > 0 ? ent.life.sp / ent.life.maxsp * 100 : 100;
+      var spMax = ent.life.sp_max != null ? ent.life.sp_max : ent.life.maxsp;
+      var spPct = spMax > 0 ? (ent.life.sp != null ? ent.life.sp / spMax * 100 : 100) : 100;
       var spGuard = parseInt($id("dsh-asksp").value, 10) || 30;
       if (spPct < spGuard) return;
       // 修「掉 buff 不及时补」：去掉全局 askLastCast 门禁，改每技能独立 lastAt。
@@ -3046,8 +3077,10 @@
             if (stId < 0) continue; // 状态名未识别，跳过
             var stOn = buffStateOn(stId);
             var need = s.stInv ? stOn : !stOn; // 在身补 / 消失补
-            if (!need) continue;
-            if (s.lastAt && now - s.lastAt < 5000) continue; // 防抖：刚放出去状态未上身不重复
+            if (!need) { s.missCnt = 0; continue; }
+            // 防抖：刚放出去状态未上身不重复；连续 2 次补后仍未上身（hook 未收到/状态实际加不上）→ 退避到全局间隔，避免每 5s 狂补
+            var waitMs = s.missCnt >= 2 ? intv : 5000;
+            if (s.lastAt && now - s.lastAt < waitMs) continue;
           } else {
             if (s.lastAt && now - s.lastAt < intv) continue; // 纯间隔技能
           }
@@ -3058,6 +3091,7 @@
           dshCastMark(s.skid, s.lv, 0, "ask");
           CLIENT.NM.sendPacket(p);
           s.lastAt = now;
+          if (s.st) s.missCnt = (s.missCnt || 0) + 1; // 补了但判活仍缺 → missCnt++（连续2次退避到全局间隔）
           castAny = true;
         } catch (e) {}
       }
@@ -7012,6 +7046,7 @@
         if (st.falcon) ef.push("猎鹰");
       }
       for (var i = 0; i < ef.length; i++) parts.push(ef[i] + "(实体)");
+      parts.push("【判活表 " + Object.keys(buffActive).length + " 条 · hook:" + (typeof dshSIState !== "undefined" ? dshSIState : "?") + "】");
       el.textContent = parts.length ? parts.join(" · ") : "无在身状态";
     } catch (e) {}
   }

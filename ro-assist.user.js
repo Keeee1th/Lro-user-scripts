@@ -1126,15 +1126,18 @@
   // 在面板与悬浮球冒泡阶段 stopPropagation，让助手 UI 成为操作「孤岛」：
   // UI 内事件只作用于 UI，不再冒泡到游戏监听；UI 外操作照常。
   // 注意：必须用冒泡阶段 stopPropagation（捕获阶段会阻断面板内元素事件）。
-  try {
-    var isoEvents = ["mousedown", "mousemove", "mouseup", "click", "dblclick", "wheel", "contextmenu",
-      "touchstart", "touchmove", "touchend", "pointerdown", "pointermove", "pointerup"];
-    function isolateEl(el) {
-      if (!el) return;
-      for (var ie = 0; ie < isoEvents.length; ie++) {
-        el.addEventListener(isoEvents[ie], function (ev) { ev.stopPropagation(); }, false);
-      }
+  var isoEvents = ["mousedown", "mousemove", "mouseup", "click", "dblclick", "wheel", "contextmenu",
+    "touchstart", "touchmove", "touchend", "pointerdown", "pointermove", "pointerup"];
+  function isolateEl(el) {
+    if (!el) return;
+    for (var ie = 0; ie < isoEvents.length; ie++) {
+      el.addEventListener(isoEvents[ie], function (ev) { ev.stopPropagation(); }, false);
     }
+  }
+
+
+  try {
+
     isolateEl(panel);
     // 悬浮球的隔离在 ball 创建后补挂（见 ball 定义处）——此处 ball 尚未创建
     // document 冒泡兜底：万一有事件类型漏网冒泡到 document，且 target 在助手 UI 内，
@@ -1195,14 +1198,15 @@
       });
       document.addEventListener("pointermove", function (ev) {
         try { if (!drag) return; var nx = drag.lx + (ev.clientX - drag.sx), ny = drag.ty + (ev.clientY - drag.sy); win.style.left = nx + "px"; win.style.top = ny + "px"; win.style.transform = "none"; } catch (e) {}
-      });
-      document.addEventListener("pointerup", function () { drag = null; });
+      }, true);
+      document.addEventListener("pointerup", function () { drag = null; }, true);
       bar.appendChild(tt); bar.appendChild(opLab); bar.appendChild(op); bar.appendChild(x);
       win.appendChild(bar); win.appendChild(body);
-      document.documentElement.appendChild(win);
-      isolateEl(win); // 事件隔离：点浮窗不触发游戏移动
+      // 先登记 fwState 再挂载/隔离：任何后续异常都不留下「已挂载未记录」的半成品浮窗（防无限生成）
       if (!fwState[id]) fwState[id] = {};
       fwState[id].win = win; fwState[id].body = body;
+      document.documentElement.appendChild(win);
+      try { isolateEl(win); } catch (e) {} // 事件隔离：点浮窗不触发游戏移动（失败不致命，下次重试）
       // 记住位置（localStorage dsh_ro_fwpos）
       try {
         var pos = JSON.parse(localStorage.getItem("dsh_ro_fwpos") || "{}");

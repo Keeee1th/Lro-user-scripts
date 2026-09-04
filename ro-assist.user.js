@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.8.8
+// @version      2.8.9
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,13 +37,14 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.8.8"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.8.9"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
   var LOGIN_KEYS = ["account", "password", "server", "autoBoot"];
   var PROF_KEY = "dsh_ro_profiles_v2";
   var profiles = loadProfiles();
+  pruneProfiles(); // V2.8.9：启动即归并历史小数垃圾键（无损，只删重复档）
   var activeCharKey = "default";
   var lastCharGid = null; // 已识别的主角色 GID（换角色自动切档）
   function activeProfileKey() { return activeCharKey; }
@@ -51,6 +52,40 @@
   function loadProfiles() { try { return JSON.parse(localStorage.getItem(PROF_KEY)) || {}; } catch (e) { return {}; } }
   function saveProfiles() { try { localStorage.setItem(PROF_KEY, JSON.stringify(profiles)); } catch (e) {} }
   function ensureProfile(k) { if (!profiles[k]) profiles[k] = { name: k, gid: 0, saved: {}, lockList: {}, askList: [], lastAt: 0 }; return profiles[k]; }
+  // V2.8.9：lastro 自身实体 GID 是带随机小数的浮点（引擎自己用 parseInt 比较），
+  // 这里统一取整（Math.floor），非法/非正数返回 0，避免每秒拼出 name_GID.<小数> 的新档键。
+  function gidInt(v) { var n = Math.floor(Number(v)); return (isFinite(n) && n > 0) ? n : 0; }
+  // V2.8.9：归并历史小数垃圾键（角色_2007018.9392906795 → 角色_2007018），同一基键只留 lastAt 最新的一份。
+  function pruneProfiles() {
+    try {
+      var keys = Object.keys(profiles);
+      if (!keys.length) return;
+      var groups = {}, changed = false;
+      for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        var base = String(k).replace(/\.\d+$/, ""); // 剥掉末尾 .<小数>
+        if (base !== k) changed = true;
+        if (!groups[base]) groups[base] = [];
+        groups[base].push(k);
+      }
+      if (!changed) return;
+      var out = {};
+      for (var b in groups) {
+        var list = groups[b];
+        var best = null, bestT = -1;
+        if (profiles[b]) { best = profiles[b]; bestT = (profiles[b].lastAt) || 0; } // 存在整数基键（真实档）优先保留，小数垃圾只作兜底
+        for (var j = 0; j < list.length; j++) {
+          var p = profiles[list[j]];
+          if (p === best) continue;
+          var t = (p && p.lastAt) || 0;
+          if (!best || t > bestT) { bestT = t; best = p; }
+        }
+        out[b] = best || {};
+      }
+      profiles = out;
+      saveProfiles();
+    } catch (e) {}
+  }
   // 首次运行迁移：旧扁平 saved（去登录键）+ 旧锁定/自动技能 → default 档案
   function ensureProfilesInit() {
     if (Object.keys(profiles).length) return;
@@ -1644,7 +1679,7 @@
     try {
       var ent = CLIENT.SS && CLIENT.SS.Entity;
       // V1.7.0：登录后识别角色 → 自动切档并加载上次保存
-      if (ent && ent.GID != null && String(ent.GID) !== String(lastCharGid)) { try { onCharChanged(ent); } catch (e) {} }
+      if (ent && ent.GID != null && gidInt(ent.GID) && gidInt(ent.GID) !== lastCharGid) { try { onCharChanged(ent); } catch (e) {} }
       if (!ent) { sb.querySelector(".nm").textContent = "—"; sb.querySelector(".job").textContent = "未登录"; return; }
       var life = ent.life || {};
       var name = ent.displayName || ent.name || (ent.character && ent.character.name) || "角色";
@@ -1846,9 +1881,10 @@
   function onCharChanged(ent) {
     try {
       var nm = ent.displayName || ent.name || "角色";
-      var gid = String(ent.GID);
+      var gid = gidInt(ent.GID);
+      if (!gid) return;
       var key = (nm + "_" + gid).replace(/[\\\/:"*?<>|]/g, "_");
-      if (activeProfileKey() === key && String(lastCharGid) === gid) return;
+      if (activeProfileKey() === key && lastCharGid === gid) return;
       try { captureAll(); } catch (e) {} // 旧档先落盘
       setActiveProfile(key);
       ensureProfile(key);

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.9.1
+// @version      2.10.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.9.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.10.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -606,11 +606,13 @@
       '<input id="dsh-scanint" type="number" value="0.5" min="0.3" step="0.1" style="flex:0 0 44px"><span style="color:#5a6b7f">s（最低0.3）</span></div>' +
       '<details style="margin:4px 0"><summary style="cursor:pointer;color:#1259b3;font-size:12px">👁 附近怪物（实时 · <span id="dsh-scanst">未启动</span>）— 点开查看</summary>' +
       '<div class="box" style="margin-top:2px"><div id="dsh-scanlist" style="font-size:11px;max-height:120px;overflow:auto">未启动侦查</div></div></details>' +
-      '<div class="sec">怪物锁定目录（只打勾选的怪）</div>' +
+      '<div id="dsh-fw-mlock">' +
+      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">怪物锁定目录（只打勾选的怪）</span><button class="ghost" id="dsh-fw-btn-mlock" data-fw="mlock" style="flex:0 0 auto;padding:0 8px;font-size:11px">⧉ 浮窗</button></div>' +
       '<details style="margin:4px 0"><summary style="cursor:pointer;color:#1259b3;font-size:12px">📌 本图怪物锁定（读当前地图怪物表 · 勾选=锁定）</summary>' +
       '<div class="box" style="margin-top:2px"><div id="dsh-z-maplock" style="font-size:11px;max-height:120px;overflow:auto"><span class="st">读取当前地图怪物表（换图自动刷新）</span></div></div></details>' +
       '<div class="box"><div class="b-hd">已锁定 <button class="ghost" id="dsh-lockclear" style="flex:0 0 auto;padding:0 8px;font-size:11px">清空锁定</button><span class="tag green" id="dsh-lockcount" style="float:right">0 种</span></div><div id="dsh-locklist" style="font-size:11px">未锁定（勾选本图怪物或侦查扫描到的怪）</div>' +
       '<div class="log" style="margin-top:2px">锁定后自动切换目标：优先级=勾选怪 &gt; 最近 &gt; 血最少</div></div>' +
+      '</div>' +
       '<div class="sec">防御与瞬移（助手自实现）</div>' +
       '<div class="row"><span class="lb">非选中怪攻击</span><select id="dsh-z-ona" style="flex:0 0 100px"><option>无视</option><option>瞬移</option><option selected>还击</option></select></div>' +
       '<div class="row"><span class="lb">群殴时</span><span style="color:#5a6b7f">n≥</span><input id="dsh-z-grp" type="number" value="6" min="0" style="flex:0 0 38px"><span style="color:#5a6b7f">只怪（0=关闭）→</span>' +
@@ -643,7 +645,7 @@
       '<span class="lb" style="min-width:26px">追怪</span><input id="dsh-z-chaseint" type="number" value="0.5" min="0.3" step="0.1" style="flex:0 0 44px"><span style="color:#5a6b7f">s（内挂模式助手主动追怪间隔）</span></div>' +
       '<div class="row"><span class="lb">寻怪方式</span><select id="dsh-z-huntmode" style="flex:0 0 118px">' +
       '<option value="self" selected>自研直走寻怪</option><option value="np">内挂机制寻怪</option></select>' +
-      '<span class="st" style="font-size:10px">（内挂发包时机自动控制，无需调节）</span></div>' +
+      '<label class="switch" style="margin-left:2px"><input id="dsh-z-astar" type="checkbox" checked>A*绕障寻路</label><span class="st" style="font-size:10px">（内挂发包时机自动控制，无需调节）</span></div>' +
       '<div class="row"><span class="st" style="font-size:10px">内挂=只有可攻击到的锁定怪（射程内）才停内挂、助手战斗；无怪/锁定怪超出射程→持续内挂寻怪移动靠近</span></div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-follow" type="checkbox" checked>锁定目标跟随追击</label>' +
       '<label class="switch"><input id="dsh-z-next" type="checkbox" checked>打死换下一个</label></div>' +
@@ -663,7 +665,7 @@
       '<button class="ghost" id="dsh-np-eat" style="flex:0 0 auto">🍖 模拟内挂：开自动吃药</button></div>' +
       '<div class="row"><span class="st" id="dsh-np-log" style="font-size:10px">未发送（二转=NOTIFY_UPDATEINFO id34/35/36/38 · 三转=WHISPER NPC:setauto*）</span></div>' +
       '<div class="log">内挂模式=游戏内挂执行（技能配置已并入「战斗」页签 · 内挂子页）。</div></div></details>' +
-      '<details class="drawer-page" data-dname="skill-zhu" style="margin:4px 0" open><summary style="cursor:pointer;color:#1259b3;font-size:12px">🪄 助手模式（技能释放与顺序 · 多辅助 · 自动施放）</summary>' +
+      '<details class="drawer-page" data-dname="skill-zhu" style="margin:4px 0" open><summary style="cursor:pointer;color:#1259b3;font-size:12px">🪄 助手模式（技能释放与顺序 · 多辅助 · 自动施放）<button class="ghost" id="dsh-fw-btn-skill" data-fw="skill" style="flex:0 0 auto;padding:0 8px;font-size:11px;float:right;margin-top:-1px">⧉ 浮窗</button></summary>' +
       '<div style="margin-top:4px"><div class="sec" style="margin-top:0">技能释放与顺序（自动判断释放前置 · 自动补状态）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-prereq" type="checkbox" checked>自动补充释放前置（状态/气弹）</label>' +
       '<span class="tag blue" id="dsh-prereqcnt" style="margin-left:auto">释放需求表: 94技能</span></div>' +
@@ -814,7 +816,8 @@
       '<button class="sub-tab" data-sub="bk-dun">副本</button>' +
       '<button class="sub-tab" data-sub="bk-mvp">BOSS</button></div>' +
       '<div id="dsh-book" style="font-size:11px;max-height:180px;overflow:auto"><div class="st">书本数据读取中…（logsTable 6分类×线路）</div></div>' +
-      '<div class="sec">世界地图传送</div>' +
+      '<div id="dsh-fw-tp">' +
+      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">世界地图传送 + 坐标走路</span><button class="ghost" id="dsh-fw-btn-tp" data-fw="tp" style="flex:0 0 auto;padding:0 8px;font-size:11px">⧉ 浮窗</button></div>' +
       '<div class="row"><span class="lb">世界</span><select id="dsh-world" style="flex:0 0 100px"><option value="黑暗大陆">黑暗大陆</option><option value="次元大陆">次元大陆</option><option value="局部地图01">局部地图01</option><option value="局部地图02">局部地图02</option></select>' +
       '<button id="dsh-tp" style="flex:0 0 auto">传送</button><span class="st" id="dsh-tpmsg"></span></div>' +
       '<div class="row" style="align-items:center;flex-wrap:wrap;gap:7px 7px"><span class="lb" style="min-width:34px;margin:0">地图</span>' +
@@ -831,6 +834,7 @@
       '<div class="row" style="margin-top:6px;gap:7px"><button class="ghost" id="dsh-mvcur" style="flex:0 0 auto">填入当前位置</button>' +
       '<button id="dsh-mvgo" style="flex:0 0 auto">走路过去</button><button class="ghost" id="dsh-mvstop" style="flex:0 0 auto">停止</button>' +
       '<span class="st" id="dsh-mvlog" style="font-size:11px"></span></div>' +
+      '</div>' +
       '<div class="sec">回城清理（半自动）</div>' +
       '<div class="row" style="flex-wrap:wrap;gap:6px"><button id="dsh-tp-town" style="flex:0 0 auto">回城</button><button class="ghost" id="dsh-scan-npc" style="flex:0 0 auto">扫描NPC</button><button class="ghost" id="dsh-go-npc" style="flex:0 0 auto">走到选中</button><button class="ghost" id="dsh-talk-npc" style="flex:0 0 auto">点NPC对话</button><button class="ghost" id="dsh-sell" style="flex:0 0 auto">卖装备</button></div>' +
       '<div class="st" id="dsh-npclist" style="font-size:11px;max-height:96px;overflow:auto">NPC: 未扫描（点「扫描NPC」→ 点条目选中）</div>' +
@@ -1145,6 +1149,133 @@
       }, false);
     }
   } catch (e) {}
+
+  // ---------------- V2.10.0 功能独立透明浮窗（拖动/透明度滑块/×关闭/事件隔离）----------------
+  // 用法：fwReg(id, title, getEl) 注册区块；点「⧉ 浮窗」按钮 fwOpen(id) 弹出，浮窗标题栏 × fwClose(id) 收回原位。
+  // 实现：移动 DOM 节点（appendChild）而非复制 → id 保留，渲染函数与事件监听全部自动跟随；移动前记录 parentNode+nextSibling，收回时 insertBefore 复原。
+  var fwState = {}; // id -> {wrap, title, host, parent, next, open}
+  var fwOpenIds = {};
+  function fwMakeWin(id, title) {
+    try {
+      if (fwState[id] && fwState[id].win && fwState[id].win.parentNode) return fwState[id].win;
+      var win = document.createElement("div");
+      win.id = "dsh-fw-" + id;
+      win.style.cssText = "position:fixed;z-index:2147483646;" + (IS_MN ? "width:88vw;max-width:420px;left:50%;transform:translateX(-50%);top:10vh;" : "width:320px;left:calc(50% + 80px);top:120px;") +
+        "background:rgba(244,247,252,.92);border:1px solid #1f9d4d;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.45);" +
+        "display:flex;flex-direction:column;overflow:hidden;font:12px/1.6 'Microsoft YaHei',system-ui,sans-serif;color:#16202c;";
+      win.setAttribute("data-fw", "1");
+      var bar = document.createElement("div");
+      bar.style.cssText = "display:flex;align-items:center;gap:6px;padding:5px 8px;background:rgba(31,157,77,.14);cursor:move;user-select:none;flex:none;";
+      var tt = document.createElement("span");
+      tt.textContent = title || "浮窗";
+      tt.style.cssText = "flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+      var opLab = document.createElement("span");
+      opLab.textContent = "透明";
+      opLab.style.cssText = "font-size:10px;color:#5a6b7f;";
+      var op = document.createElement("input");
+      op.type = "range"; op.min = "30"; op.max = "100"; op.value = "90";
+      op.style.cssText = "width:56px;height:14px;";
+      op.title = "透明度（30%~100%）";
+      var x = document.createElement("button");
+      x.textContent = "×";
+      x.title = "收回浮窗（回到设置抽屉原位）";
+      x.style.cssText = "flex:0 0 auto;width:22px;height:22px;line-height:20px;text-align:center;border:1px solid #d0a8a8;border-radius:5px;background:#fff;color:#b91c1c;cursor:pointer;font-size:14px;padding:0;";
+      var body = document.createElement("div");
+      body.style.cssText = "overflow:auto;max-height:60vh;padding:4px;";
+      op.addEventListener("input", function () { try { win.style.background = "rgba(244,247,252," + (parseInt(op.value, 10) / 100) + ")"; } catch (e) {} });
+      x.addEventListener("click", function () { fwClose(id); });
+      // 拖动：标题栏 pointerdown → document pointermove/pointerup（浮窗不冒泡到游戏由隔离层保证）
+      var drag = null;
+      bar.addEventListener("pointerdown", function (ev) {
+        try {
+          if (ev.target === x || ev.target === op || ev.target === opLab) return;
+          drag = { sx: ev.clientX, sy: ev.clientY, lx: win.offsetLeft, ty: win.offsetTop };
+          try { ev.preventDefault(); } catch (e) {}
+        } catch (e) {}
+      });
+      document.addEventListener("pointermove", function (ev) {
+        try { if (!drag) return; var nx = drag.lx + (ev.clientX - drag.sx), ny = drag.ty + (ev.clientY - drag.sy); win.style.left = nx + "px"; win.style.top = ny + "px"; win.style.transform = "none"; } catch (e) {}
+      });
+      document.addEventListener("pointerup", function () { drag = null; });
+      bar.appendChild(tt); bar.appendChild(opLab); bar.appendChild(op); bar.appendChild(x);
+      win.appendChild(bar); win.appendChild(body);
+      document.documentElement.appendChild(win);
+      isolateEl(win); // 事件隔离：点浮窗不触发游戏移动
+      if (!fwState[id]) fwState[id] = {};
+      fwState[id].win = win; fwState[id].body = body;
+      // 记住位置（localStorage dsh_ro_fwpos）
+      try {
+        var pos = JSON.parse(localStorage.getItem("dsh_ro_fwpos") || "{}");
+        if (pos[id]) { win.style.left = pos[id].l + "px"; win.style.top = pos[id].t + "px"; win.style.transform = "none"; }
+      } catch (e) {}
+      return win;
+    } catch (e) { return null; }
+  }
+  function fwOpen(id) {
+    try {
+      var st = fwState[id];
+      if (!st || !st.host) return;
+      var win = fwMakeWin(id, st.title);
+      if (!win) return;
+      // 记录原位并移动
+      if (st.host.parentNode) { st.parent = st.host.parentNode; st.next = st.host.nextSibling; }
+      st.body.appendChild(st.host);
+      win.style.display = "flex";
+      fwOpenIds[id] = true;
+      try { var b = document.getElementById("dsh-fw-btn-" + id); if (b) b.textContent = "收回"; } catch (e) {}
+      try { localStorage.setItem("dsh_ro_fwpos", JSON.stringify((function () { var m = {}; for (var k in fwState) { var w = fwState[k].win; if (w) m[k] = { l: w.offsetLeft, t: w.offsetTop }; } return m; })())); } catch (e) {}
+    } catch (e) {}
+  }
+  function fwClose(id) {
+    try {
+      var st = fwState[id];
+      if (!st) return;
+      if (st.parent && st.host) {
+        if (st.next && st.next.parentNode === st.parent) st.parent.insertBefore(st.host, st.next);
+        else st.parent.appendChild(st.host);
+      }
+      var win = st.win;
+      if (win) win.style.display = "none";
+      fwOpenIds[id] = false;
+      try { var b = document.getElementById("dsh-fw-btn-" + id); if (b) b.textContent = "⧉ 浮窗"; } catch (e) {}
+    } catch (e) {}
+  }
+  function fwToggle(id) { try { if (fwOpenIds[id]) fwClose(id); else fwOpen(id); } catch (e) {} }
+  // 注册区块：getEl 返回要浮窗化的容器节点（其父容器为原位）
+  function fwReg(id, title, getEl) {
+    try { if (!fwState[id]) fwState[id] = {}; fwState[id].title = title; fwState[id].getEl = getEl; var el = getEl(); if (el) fwState[id].host = el; } catch (e) {}
+  }
+  // 面板重建后（host 节点已重挂）重新登记 host
+  function fwRefreshHosts() {
+    try { for (var id in fwState) { var st = fwState[id]; if (st.getEl) { var el = st.getEl(); if (el && el !== st.host) { st.host = el; if (fwOpenIds[id] && st.win && st.body) { st.body.appendChild(el); } } } } } catch (e) {}
+  }
+
+  // 三个可浮窗区块注册（V2.10.0）：本图怪物锁定 / 传送功能 / 助手技能设置
+  try {
+    fwReg("mlock", "本图怪物锁定", function () { return document.getElementById("dsh-fw-mlock"); });
+    fwReg("tp", "传送功能", function () { return document.getElementById("dsh-fw-tp"); });
+    fwReg("skill", "助手技能设置", function () { var p = document.getElementById("dsh-ro-panel"); return p ? p.querySelector('[data-dname="skill-zhu"]') : null; });
+    panel.addEventListener("click", function (ev) {
+      try {
+        var b = ev.target && ev.target.closest ? ev.target.closest("[data-fw]") : null;
+        if (b) { fwToggle(b.getAttribute("data-fw")); return; }
+      } catch (e) {}
+    }, false);
+  } catch (e) {}
+
+  // 三个可浮窗区块注册（V2.10.0）：本图怪物锁定 / 传送功能 / 助手技能设置
+  try {
+    fwReg("mlock", "本图怪物锁定", function () { return document.getElementById("dsh-fw-mlock"); });
+    fwReg("tp", "传送功能", function () { return document.getElementById("dsh-fw-tp"); });
+    fwReg("skill", "助手技能设置", function () { var p = document.getElementById("dsh-ro-panel"); return p ? p.querySelector('[data-dname="skill-zhu"]') : null; });
+    document.addEventListener("click", function (ev) {
+      try {
+        var b = ev.target && ev.target.closest ? ev.target.closest("[data-fw]") : null;
+        if (b) { fwToggle(b.getAttribute("data-fw")); return; }
+      } catch (e) {}
+    }, false);
+  } catch (e) {}
+
 
   // 鼠标→触摸模拟层：手机版（r=mn）游戏用 jquery.mobile-events 触摸事件驱动，只认触摸不认鼠标；
   // 外接/蓝牙鼠标的 mousedown 不会变成触摸 → 游戏点不动。此处把「真实鼠标」事件合成为触摸派发到游戏。
@@ -4271,6 +4402,89 @@
     } catch (e) {}
     return [tx, ty];
   }
+  // V2.10.0 客户端 A* 寻路：基于本图全量地形数据（Renderer/Map/Altitude.getGat().cells）
+  // 8 方向、WALKABLE=2 判定、终点吸附可走格；节点上限防卡死，返回路径点数组（不含起点）或 null
+  var dshAStarCache = null; // {w, h, cells, types} 缓存（换图自动失效：地图名变化重建）
+  function dshAStarData() {
+    try {
+      var ALT = window.require && window.require("Renderer/Map/Altitude");
+      if (!ALT || !ALT.getGat || !ALT.TYPE) return null;
+      var g = ALT.getGat();
+      if (!g || !g.cells || !g.width || !g.height) return null;
+      var mapK = ""; try { var MR2 = window.require && window.require("Renderer/MapRenderer"); if (MR2 && MR2.currentMap) mapK = String(MR2.currentMap); } catch (e) {}
+      var mk = mapK + "|" + g.width + "x" + g.height;
+      if (!dshAStarCache || dshAStarCache.k !== mk) dshAStarCache = { k: mk, w: g.width, h: g.height, cells: g.cells, walk: ALT.TYPE.WALKABLE || 2 };
+      return dshAStarCache;
+    } catch (e) { return null; }
+  }
+  function dshWalkable(x, y) {
+    try {
+      var d = dshAStarData();
+      if (!d) return true;
+      if (x < 0 || y < 0 || x >= d.w || y >= d.h) return false;
+      return (d.cells[x + y * d.w] & d.walk) !== 0;
+    } catch (e) { return true; }
+  }
+  function dshFindPath(sx, sy, tx, ty) {
+    try {
+      var d = dshAStarData();
+      if (!d) return null;
+      var s = dshSnapWalk(sx, sy), t = dshSnapWalk(tx, ty);
+      if (!s || !t) return null;
+      var w = d.w, h = d.h;
+      var MAXN = 8000;
+      var open = [s], closed = {}, g = {}, f = {}, came = {}, dirs = [[1,0],[0,1],[-1,0],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+      var k0 = s[0] + "," + s[1];
+      g[k0] = 0; f[k0] = Math.abs(s[0] - t[0]) + Math.abs(s[1] - t[1]);
+      var key = function (x, y) { return x + "," + y; };
+      var step = 0;
+      while (open.length && step < MAXN) {
+        step++;
+        // 取 f 最小
+        var bi = 0;
+        for (var oi = 1; oi < open.length; oi++) { if (f[key(open[oi][0], open[oi][1])] < f[key(open[bi][0], open[bi][1])]) bi = oi; }
+        var cur = open.splice(bi, 1)[0];
+        var ck = key(cur[0], cur[1]);
+        if (cur[0] === t[0] && cur[1] === t[1]) {
+          var path = [];
+          var nk = ck;
+          while (nk != null && nk !== k0) { var pp = nk.split(","); path.unshift([parseInt(pp[0], 10), parseInt(pp[1], 10)]); nk = came[nk] != null ? came[nk] : null; }
+          return path;
+        }
+        if (closed[ck]) continue;
+        closed[ck] = true;
+        for (var di = 0; di < dirs.length; di++) {
+          var nx = cur[0] + dirs[di][0], ny = cur[1] + dirs[di][1];
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          if (!dshWalkable(nx, ny)) continue;
+          var nk2 = key(nx, ny);
+          if (closed[nk2]) continue;
+          var ng = g[ck] + ((di < 4) ? 10 : 14);
+          if (g[nk2] == null || ng < g[nk2]) {
+            g[nk2] = ng; came[nk2] = ck;
+            f[nk2] = ng + Math.abs(nx - t[0]) + Math.abs(ny - t[1]);
+            if (open.indexOf(cur) < 0) { var found = false; for (var oi2 = 0; oi2 < open.length; oi2++) { if (open[oi2][0] === nx && open[oi2][1] === ny) { found = true; break; } } if (!found) open.push([nx, ny]); }
+          }
+        }
+      }
+      return null; // 超限/不可达
+    } catch (e) { return null; }
+  }
+  function dshSnapWalk(x, y) {
+    try {
+      var d = dshAStarData();
+      if (!d) return [x, y];
+      if (dshWalkable(x, y)) return [Math.floor(x), Math.floor(y)];
+      for (var g = 1; g <= 4; g++)
+        for (var e = -g; e <= g; e++)
+          for (var f2 = -g; f2 <= g; f2++) {
+            var nx = x + e, ny = y + f2;
+            if (nx >= 0 && ny >= 0 && nx < d.w && ny < d.h && dshWalkable(nx, ny)) return [nx, ny];
+          }
+      return null;
+    } catch (e) { return [x, y]; }
+  }
+
   function tickMoveXY() {
     if (!moveXY.busy) return;
     try {
@@ -4298,6 +4512,7 @@
   }
   masterTickReg(function () { try { tickMoveXY(); } catch (e) {} });
   var zWalkState = { lastMove: 0, lastChase: 0, dir: 0, noTargetSince: 0, lastIdleFly: 0, lastPos: null, stuckCnt: 0, tried: 0, lastSeenDir: null, lastSeenAt: 0 };
+  var zAStarState = { active: false, tx: 0, ty: 0, since: 0, lastTry: 0, stuckSince: 0, lastPos: null, aim: null }; // V2.10.0 A* 绕障行走状态
   // 状态前置穿插平A计时：zWaitSince = 上次穿插普攻时间（间隔跟随攻击循环，见 zAttack wait 分支）
   var zWaitSince = 0;
   // 补状态节流：距上次补状态技能 <1s 不重复补 → 间隙让普攻穿插（蓄气链不再霸占每轮）
@@ -4488,6 +4703,53 @@
         tlog("walk-stuck turn dir=" + zWalkState.dir);
         setStatus("前方卡住，转向 " + zWalkState.dir, "warn");
       }
+      // V2.10.0 A* 绕障寻路（dsh-z-astar 开关）：方向预检只是直线 12 格，环绕结构图（回字形/迷宫）会原地打转。
+      //   A* 基于本图全量地形（ALT.getGat().cells）找真实可达路径 → 只直发路径终点（服务器寻路一次走通，不逐格发包）。
+      //   进入「A* 行走中」：发目标后 3~5s 不重发（防重置服务器寻路）；坐标推进即续走；2s 无位移重新 A*。
+      var aStarOn = true;
+      try { var aEl = document.getElementById("dsh-z-astar"); aStarOn = aEl ? aEl.checked : true; } catch (e) { aStarOn = true; }
+      if (aStarOn && dshAStarData()) {
+        var done = false;
+        // A* 行走中状态管理
+        if (zAStarState.active) {
+          var movedA = Math.abs(px0 - zAStarState.lastPos[0]) + Math.abs(py0 - zAStarState.lastPos[1]);
+          var nearA = Math.abs(px0 - zAStarState.tx) + Math.abs(py0 - zAStarState.ty) <= 2;
+          if (nearA) { zAStarState.active = false; }
+          else if (movedA < 3) {
+            if (!zAStarState.stuckSince) zAStarState.stuckSince = now;
+            if (now - zAStarState.stuckSince >= 2000) { zAStarState.active = false; tlog("walk-astar stuck re-path"); }
+          } else { zAStarState.stuckSince = 0; }
+          zAStarState.lastPos = [px0, py0];
+          // 行走中：距上次发包 <3.5s 不重发（防重置服务器寻路）
+          if (zAStarState.active) {
+            if (now - zAStarState.lastTry < 3500) return;
+            // 超时仍在走且未卡：重发同目标（幂等续走）
+            if (!zAStarState.stuckSince) { var pmA = new CLIENT.PS.CZ.REQUEST_MOVE(); pmA.dest = [zAStarState.tx, zAStarState.ty]; CLIENT.NM.sendPacket(pmA); zAStarState.lastTry = now; tlog("walk-astar keep -> " + zAStarState.tx + "," + zAStarState.ty); return; }
+          }
+        }
+        // 选目标：方向记忆（10s 内）→ 朝该方向 50 格外；无记忆 → 当前方向延伸
+        if (!zAStarState.active) {
+          var aimD = dirs[zWalkState.dir];
+          if (now - zWalkState.lastSeenAt < 10000 && zWalkState.lastSeenDir != null) aimD = dirs[zWalkState.lastSeenDir];
+          var farT = 50;
+          var atx = Math.round(px0 + aimD[0] * farT), aty = Math.round(py0 + aimD[1] * farT);
+          var pathA = dshFindPath(px0, py0, atx, aty);
+          if (pathA && pathA.length) {
+            var lastP = pathA[pathA.length - 1];
+            var snapA = mvSnapWalkable(lastP[0], lastP[1]);
+            var pmA2 = new CLIENT.PS.CZ.REQUEST_MOVE();
+            pmA2.dest = [snapA[0], snapA[1]];
+            CLIENT.NM.sendPacket(pmA2);
+            zAStarState = { active: true, tx: snapA[0], ty: snapA[1], since: now, lastTry: now, stuckSince: 0, lastPos: [px0, py0], aim: [aimD[0], aimD[1]] };
+            zWalkState.stuckCnt = 0;
+            tlog("walk-astar path " + pathA.length + " -> " + snapA[0] + "," + snapA[1]);
+            setStatus("无目标，A*绕障寻怪（方向" + zWalkState.dir + "）…", "st");
+            return;
+          }
+          // A* 无路径 → 落到下方直线预检 + 12 格直发（原逻辑兜底）
+        }
+      }
+
       // V2.9.1 方向可走预检：用客户端地形（Altitude GAT，同本图大地图数据）先验证方向再发包
       //   当前方向 12 格内任意一格不可走 → 顺时针找第一个可走方向；全不通 → 瞬移兜底/不发撞墙包
       function dirWalkable(dd, steps) {

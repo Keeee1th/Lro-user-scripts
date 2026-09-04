@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.8.9
+// @version      2.9.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.8.9"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.9.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -639,6 +639,8 @@
       '<div class="row"><span class="lb">物理距离</span><input id="dsh-z-pmrange" type="number" value="2" min="1" style="flex:0 0 40px"><span style="color:#5a6b7f">格(普攻/近战)</span>' +
       '<span class="lb" style="min-width:48px">魔法距离</span><input id="dsh-z-mgrange" type="number" value="9" min="1" style="flex:0 0 40px"><span style="color:#5a6b7f">格(远程技能)</span></div>' +
       '<div class="row"><span class="lb">换怪延迟</span><input id="dsh-z-switchdelay" type="number" value="0.3" min="0.1" step="0.1" style="flex:0 0 44px"><span style="color:#5a6b7f">s（打完一只→找下一只的间隔）</span></div>' +
+      '<div class="row"><span class="lb">直走节流</span><input id="dsh-z-walkint" type="number" value="0.5" min="0.3" step="0.1" style="flex:0 0 44px"><span style="color:#5a6b7f">s（无怪直走寻怪间隔）</span>' +
+      '<span class="lb" style="min-width:26px">追怪</span><input id="dsh-z-chaseint" type="number" value="0.5" min="0.3" step="0.1" style="flex:0 0 44px"><span style="color:#5a6b7f">s（内挂模式助手主动追怪间隔）</span></div>' +
       '<div class="row"><span class="lb">寻怪方式</span><select id="dsh-z-huntmode" style="flex:0 0 118px">' +
       '<option value="self" selected>自研直走寻怪</option><option value="np">内挂机制寻怪</option></select>' +
       '<span class="st" style="font-size:10px">（内挂发包时机自动控制，无需调节）</span></div>' +
@@ -1837,7 +1839,7 @@
     ["dsh-z-sit", "c"], ["dsh-z-sithplo", "v"], ["dsh-z-sithphi", "v"], ["dsh-z-sitsplo", "v"], ["dsh-z-sitsphi", "v"],
     ["dsh-z-sitxw", "v"], ["dsh-z-sitback", "c"], ["dsh-z-sitnofight", "c"],
     ["dsh-z-attint", "v"], ["dsh-z-range", "v"], ["dsh-z-pmrange", "v"], ["dsh-z-mgrange", "v"],
-    ["dsh-z-switchdelay", "v"], ["dsh-z-huntmode", "v"], ["dsh-z-follow", "c"], ["dsh-z-next", "c"],
+    ["dsh-z-switchdelay", "v"], ["dsh-z-walkint", "v"], ["dsh-z-chaseint", "v"], ["dsh-z-huntmode", "v"], ["dsh-z-follow", "c"], ["dsh-z-next", "c"],
     ["dsh-autoskill", "v"], ["dsh-autoskilllv", "v"], ["dsh-autoskillpro", "v"],
 
     ["dsh-automatic", "v"], ["dsh-touchskill", "v"], ["dsh-touchskillop", "c"],
@@ -4295,7 +4297,7 @@
     } catch (e) {}
   }
   masterTickReg(function () { try { tickMoveXY(); } catch (e) {} });
-  var zWalkState = { lastMove: 0, lastChase: 0, dir: 0, noTargetSince: 0, lastIdleFly: 0, lastPos: null, stuckCnt: 0, tried: 0 };
+  var zWalkState = { lastMove: 0, lastChase: 0, dir: 0, noTargetSince: 0, lastIdleFly: 0, lastPos: null, stuckCnt: 0, tried: 0, lastSeenDir: null, lastSeenAt: 0 };
   // 状态前置穿插平A计时：zWaitSince = 上次穿插普攻时间（间隔跟随攻击循环，见 zAttack wait 分支）
   var zWaitSince = 0;
   // 补状态节流：距上次补状态技能 <1s 不重复补 → 间隙让普攻穿插（蓄气链不再霸占每轮）
@@ -4391,21 +4393,31 @@
           } catch (e2) {}
         });
       }
+      // V2.9.0 方向记忆：记下最近一次锁定怪相对方位（10s 有效），无怪直走时优先朝该方向
+      try {
+        if (near && ent && ent.position && near.position) {
+          var rdx = near.position[0] - ent.position[0];
+          var rdy = near.position[1] - ent.position[1];
+          zWalkState.lastSeenDir = ((Math.round(Math.atan2(rdy, rdx) / (Math.PI / 4))) % 8 + 8) % 8;
+          zWalkState.lastSeenAt = now;
+        }
+      } catch (e4) {}
+
       if (near) {
-        // 内挂机制寻怪：只有「可攻击到」的锁定怪（dist ≤ atkRange）才停内挂、助手走位追打；
-        // 超出攻击范围的锁定怪 → 不停内挂（由服务器驱动移动靠近）
+        // V2.9.0 内挂模式主动追怪：锁定怪超射程 → 关内挂一次（防拉锯），助手直发移动靠近（服务器寻路）
+        // 完全无锁定怪时才由下方 np 分支重新开内挂兜底
         if (npMode) {
           var atkR0 = calcAtkRange();
           if (nearD > atkR0) {
-            // 只有超出的锁定怪 → 保持内挂寻怪（服务器驱动移动），助手不自己走
-            npEnsureHunt();
-            setStatus("锁定怪超出攻击范围(" + nearD + ">" + atkR0 + ")，内挂移动靠近中…", "st");
-            return;
+            if (npHuntOn) npHuntStop(); // 超射程：关内挂一次（助手接管移动），防每轮 toggle 拉锯
+            setStatus("锁定怪超出攻击范围(" + nearD + ">" + atkR0 + ")，助手主动追怪靠近中…", "ok");
+          } else {
+            if (npHuntOn) npHuntStop();
           }
-          if (npHuntOn) npHuntStop();
         }
-        // V2.7.3：追怪直发怪坐标（服务器寻路，不再 pathFindTo 取 5 格小步），独立 1s 节流
-        if (now - zWalkState.lastChase < 1000) return;
+        // V2.7.3：追怪直发怪坐标（服务器寻路，不再 pathFindTo 取 5 格小步）；V2.9.0 节流读设置
+        var chaseInt = (parseFloat($id("dsh-z-chaseint").value) || 0.5) * 1000;
+        if (now - zWalkState.lastChase < chaseInt) return;
         zWalkState.lastChase = now;
         var cDest = mvSnapWalkable(Math.round(near.position[0]), Math.round(near.position[1]));
         zWalkState.noTargetSince = 0; // 有目标，重置无目标计时
@@ -4449,10 +4461,17 @@
       }
       // 无怪 / 不可达 → 定向直走寻怪：持续朝一个方向走（A* 避障），遇障/卡住才转向
       // V2.7.3：直走 2s 节流（追怪已独立 1s，不占用此门槛）
-      if (!npMode && now - zWalkState.lastMove < 2000) return;
+      // V2.9.0：直走节流读设置（默认 0.5s，可调 0.3~2s）；追怪已独立节流，不占用此门槛
+      var walkInt = Math.max(0.3, Math.min(2, parseFloat($id("dsh-z-walkint").value) || 0.5)) * 1000;
+      if (!npMode && now - zWalkState.lastMove < walkInt) return;
       if (!npMode) zWalkState.lastMove = now;
       // 8 方向（0=右,1=右下,2=下,3=左下,4=左,5=左上,6=上,7=右上）
       var dirs = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+      // V2.9.0 方向记忆：10s 内侦查扫到过锁定怪 → 优先朝该方向走（不再纯 8 方向盲转）
+      if (now - zWalkState.lastSeenAt < 10000 && zWalkState.lastSeenDir != null) {
+        zWalkState.dir = zWalkState.lastSeenDir;
+        zWalkState.stuckCnt = 0;
+      }
       var WALK_RANGE = 12; // 每次向目标方向走 12 格
       var px0 = Math.round(ent.position[0]), py0 = Math.round(ent.position[1]);
       // 卡住检测：本周期坐标与上周期几乎没动 → 计数，连续 2 次卡住就转向
@@ -6470,6 +6489,22 @@
     try { pushStep("close", "", null, getMapName(), (lastTalkNpc && lastTalkNpc.name) || "", (lastTalkNpc && lastTalkNpc.GID != null) ? lastTalkNpc.GID : 0, null); } catch (e) {}
     reconSteps = [];
   }
+  // V2.9.0 任务正文取证：未知 opcode 里含中文的包 → 上报（定位 lastro 自研任务正文包）
+  var rawOpLog = {}, rawOpTotal = 0;
+  function onRawOpcode(bytes, op) {
+    try {
+      if (rawOpTotal >= 200) return; // 总量限流
+      var nw = Date.now();
+      if (rawOpLog[op] && nw - rawOpLog[op] < 10000) return; // 同 opcode 10s 限 1 条
+      if (bytes.byteLength < 8) return;
+      var msg = decodeMenuMsg(new Uint8Array(bytes, 6, bytes.byteLength - 6));
+      if (!msg || !/[一-鿿]/.test(msg)) return; // 只报含中文的（任务正文候选）
+      rawOpLog[op] = nw; rawOpTotal++;
+      var hex = "";
+      try { var arr = new Uint8Array(bytes, 0, Math.min(16, bytes.byteLength)); for (var i = 0; i < arr.length; i++) hex += (arr[i] < 16 ? "0" : "") + arr[i].toString(16); } catch (e3) {}
+      ingest({ type: "raw", opcode: op, hex: hex, map: getMapName(), npcGID: (lastTalkNpc && lastTalkNpc.GID != null) ? lastTalkNpc.GID : 0, npcName: (lastTalkNpc && lastTalkNpc.name) || "", pos: (lastTalkNpc && lastTalkNpc.pos) || null, text: msg.slice(0, 200), stepIdx: reconSteps.length, ts: new Date().toISOString() });
+    } catch (e2) {}
+  }
   function dispatchInbound(bytes) {
     try {
       var dv = new DataView(bytes);
@@ -6477,6 +6512,7 @@
       if (op === 183) onMenuList(bytes);
       else if (op === 180) onSayDialog(bytes);
       else if (op === 182) onCloseDialog();
+      else onRawOpcode(bytes, op);
     } catch (e) {}
   }
   function onReconInbound(data) {

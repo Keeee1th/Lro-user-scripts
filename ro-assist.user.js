@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.8.6
+// @version      2.8.7
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.8.6"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.8.7"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -801,6 +801,7 @@
       '<div class="sec">菜单侦察（对话采集）</div>' +
       '<div class="st" style="font-size:11px;color:#7c2d12">走到任务NPC前点「点NPC对话」→ 下方自动抓菜单项与序号（序号=「选第N项」的N，从0起）。</div>' +
       '<div id="dsh-menu-recon" style="font-size:11px;max-height:140px;overflow:auto;background:#f6f8fa;border:1px solid #dfe5ec;border-radius:4px;padding:6px;white-space:pre-wrap">菜单：未捕获（点NPC对话后自动出现）</div>' +
+      '<div class="st" id="dsh-menu-status" style="font-size:11px">自动上报：待命</div>' +
       '<div class="row" style="margin-top:6px;gap:6px"><button id="dsh-menu-export" style="flex:0 0 auto">导出JSON</button><button class="ghost" id="dsh-menu-copy" style="flex:0 0 auto">复制</button></div>' +
       '<div class="row" style="margin-top:6px;align-items:center;gap:6px"><span class="lb" style="min-width:0;margin:0">选第</span><input id="dsh-menu-num" type="number" min="0" value="0" style="flex:0 0 48px;padding:3px 6px"><span class="lb" style="margin:0">项</span><button id="dsh-menu-choose" style="flex:0 0 auto">发 CHOOSE_MENU</button><button class="ghost" id="dsh-menu-next" style="flex:0 0 auto">下一段</button></div>',
     system: '' +
@@ -6344,6 +6345,31 @@
   function splitMenu(msg) {
     return String(msg).replace(/[\u0000-\u001f\u007f\ufffd]/g, "").split(":").map(function (s) { return s.replace(/^\s+|\s+$/g, ""); }).filter(function (s) { return s.length > 0; });
   }
+  // ---- V2.8.7 任务树采集 + 自动上报（Tailscale → 电脑接收服务）----
+  var reconSteps = [];
+  var ingestOk = 0, ingestFail = 0;
+  var INGEST_URL = "https://node.tail05bb10.ts.net/";
+  function renderIngest() {
+    var el = $id("dsh-menu-status");
+    if (el) el.textContent = "自动上报：成功 " + ingestOk + " 条" + (ingestFail ? "，失败 " + ingestFail + " 条（下次抓到会重试）" : "");
+  }
+  function ingest(payload) {
+    try {
+      if (typeof fetch !== "function") { ingestFail++; renderIngest(); return; }
+      fetch(INGEST_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      }).then(function (r) { if (r && r.ok) ingestOk++; else ingestFail++; renderIngest(); })
+        .catch(function () { ingestFail++; renderIngest(); });
+    } catch (e) { ingestFail++; }
+  }
+  function pushStep(kind, text, menu, map, npcName, gid, pos) {
+    var g = (gid != null) ? gid : ((lastTalkNpc && lastTalkNpc.GID != null) ? lastTalkNpc.GID : 0);
+    var step = { kind: kind, text: text || "", menu: menu || null, map: map || getMapName(), npcName: npcName || "", gid: g, pos: pos || null, ts: Date.now() };
+    reconSteps.push(step);
+    ingest({ type: kind, map: step.map, npcGID: step.gid, npcName: step.npcName, pos: step.pos, text: step.text, menu: step.menu, stepIdx: reconSteps.length - 1, ts: new Date().toISOString() });
+  }
   function renderMenuRecon() {
     var el = $id("dsh-menu-recon");
     if (!el) return;
@@ -6384,15 +6410,44 @@
           });
         }
       } catch (e2) {}
-      menuRecon = { NAID: NAID, msg: msg, items: splitMenu(msg), map: getMapName(), npcName: npcName, pos: pos, time: Date.now() };
+      var items = splitMenu(msg);
+      menuRecon = { NAID: NAID, msg: msg, items: items, map: getMapName(), npcName: npcName, pos: pos, time: Date.now() };
       renderMenuRecon();
+      pushStep("menu", msg, items, menuRecon.map, npcName, (lastTalkNpc && lastTalkNpc.GID != null) ? lastTalkNpc.GID : NAID, pos);
+    } catch (e) {}
+  }
+  function onSayDialog(bytes) {
+    try {
+      if (!bytes || bytes.byteLength < 6) return;
+      var dv = new DataView(bytes);
+      if (dv.getUint16(0, true) !== 180) return; // ZC.SAY_DIALOG（对话正文，任务名/要求在这里）
+      var NAID = dv.getUint32(2, true);
+      var msg = decodeMenuMsg(new Uint8Array(bytes, 6, bytes.byteLength - 6));
+      if (!msg) return;
+      var gid = (lastTalkNpc && lastTalkNpc.GID != null) ? lastTalkNpc.GID : NAID;
+      var nm = (lastTalkNpc && lastTalkNpc.name) || "";
+      var ps = (lastTalkNpc && lastTalkNpc.pos) || null;
+      pushStep("dialog", msg, null, getMapName(), nm, gid, ps);
+    } catch (e) {}
+  }
+  function onCloseDialog() {
+    try { pushStep("close", "", null, getMapName(), (lastTalkNpc && lastTalkNpc.name) || "", (lastTalkNpc && lastTalkNpc.GID != null) ? lastTalkNpc.GID : 0, null); } catch (e) {}
+    reconSteps = [];
+  }
+  function dispatchInbound(bytes) {
+    try {
+      var dv = new DataView(bytes);
+      var op = dv.getUint16(0, true);
+      if (op === 183) onMenuList(bytes);
+      else if (op === 180) onSayDialog(bytes);
+      else if (op === 182) onCloseDialog();
     } catch (e) {}
   }
   function onReconInbound(data) {
     try {
-      if (data instanceof ArrayBuffer) { onMenuList(data); return; }
-      if (data && data.buffer instanceof ArrayBuffer) { onMenuList(data.buffer); return; }
-      if (typeof Blob !== "undefined" && data instanceof Blob && data.arrayBuffer) { data.arrayBuffer().then(onMenuList); }
+      if (data instanceof ArrayBuffer) { dispatchInbound(data); return; }
+      if (data && data.buffer instanceof ArrayBuffer) { dispatchInbound(data.buffer); return; }
+      if (typeof Blob !== "undefined" && data instanceof Blob && data.arrayBuffer) { data.arrayBuffer().then(dispatchInbound); }
     } catch (e) {}
   }
   function hookMenuRecon() {

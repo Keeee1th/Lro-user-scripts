@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.10.7-diag
+// @version      2.10.8
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.10.7-diag"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.10.8"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -3160,6 +3160,36 @@
   // 状态挂钩定时重试：asken 开着但 SI 模块未就绪时持续重试，确保 buffActive 判活表可用（否则状态判活失效）
   setInterval(function () { try { if ($id("dsh-asken") && $id("dsh-asken").checked) hookStatusIcons(); } catch (e) {} }, 3000);
   renderAskList();
+  // V2.10.8 修复：启动时从缓存恢复状态 ID + 改进回写逻辑
+  (function restoreStatusFromCache() {
+    try {
+      var cache = localStorage.getItem('dsh_ro_skill_status_v1');
+      if (!cache) return;
+      var statusMap = JSON.parse(cache);
+      var restored = 0;
+      
+      askList.forEach(function(ask) {
+        // 从缓存恢复状态 ID（不论 ask.st 是否已存在，都用缓存值更新）
+        if (statusMap[ask.skid]) {
+          var oldSt = ask.st;
+          ask.st = statusMap[ask.skid];
+          if (oldSt !== ask.st) {
+            console.log('[LEARN-DIAG] restore: skid=' + ask.skid + ' st ' + oldSt + ' -> ' + ask.st);
+            ask.stInv = false;
+            ask.missCnt = 0;
+            restored++;
+          }
+        }
+      });
+      
+      if (restored > 0) {
+        saveAskList();
+        console.log('[LEARN-DIAG] restored ' + restored + ' status IDs from cache');
+      }
+    } catch (e) {
+      console.error('[LEARN-DIAG] restore failed:', e);
+    }
+  })();
   // V2.1.0 合并多辅助到辅助技能：旧 saved.buffs 文本（技能ID:等级:状态）迁移进 askList
   if (saved.buffs) {
     try {
@@ -6866,166 +6896,6 @@
       renderMenuRecon();
       pushStep("menu", msg, items, menuRecon.map, npcName, (lastTalkNpc && lastTalkNpc.GID != null) ? lastTalkNpc.GID : NAID, pos);
     } catch (e) {}
-  // MVP_TIMER_START: 公告栏剩余时间以接收时刻为基准，关闭窗口不停止计时。
-  var mvpStoreKey = "dsh_mvp_timer_v1_cv_" + pickCv();
-  var mvpRecords = {};
-  try { mvpRecords = JSON.parse(localStorage.getItem(mvpStoreKey) || "{}"); } catch (e) {}
-  if (!mvpRecords || typeof mvpRecords !== "object" || Array.isArray(mvpRecords)) mvpRecords = {};
-  var mvpRecent = {}, mvpTimerBody = null, mvpActionStatus = null;
-  function mvpParse(text, now) {
-    var clean = String(text).replace(/\^[0-9a-f]{6}/gi, "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ");
-    var parts = clean.split(/(?=[(（]\s*Lv\.?\s*\d+\s*[)）])/i), rows = [];
-    parts.forEach(function (part) {
-      var head = part.match(/^[(（]\s*Lv\.?\s*(\d+)\s*[)）]\s*/i);
-      if (!head) return;
-      var rest = part.slice(head[0].length).trim();
-      var dead = rest.match(/^(.+?)\s*被击败\s*[(（]([^()（）]+)后复活[)）]/);
-      if (dead) {
-        var duration = dead[2].replace(/\s/g, ""), ms = 0;
-        var remain = duration.replace(/(\d+)(天|小时|分钟|分|秒钟|秒)/g, function (_, value, unit) {
-          ms += Number(value) * ({天:86400000, 小时:3600000, 分钟:60000, 分:60000, 秒钟:1000, 秒:1000}[unit]); return "";
-        });
-        if (remain || !duration || !isFinite(ms)) return;
-        rows.push({ name: dead[1].trim(), level: Number(head[1]), state: "dead", due: now + ms, seen: now });
-        return;
-      }
-      var alive = rest.match(/^(.+?)\s*位于地图\s*([a-z0-9_]+)(?:\.gat)?/i);
-      if (alive) rows.push({ name: alive[1].trim(), level: Number(head[1]), state: "alive", map: alive[2], seen: now });
-    });
-    return rows;
-  }
-  function mvpReceive(text, force) {
-    var now = Date.now(), rows = mvpParse(text, now);
-    if (!rows.length) return;
-    if (!force && mvpRecent.text === text && now - mvpRecent.at < 1000) return;
-    mvpRecent = { text: text, at: now };
-    rows.forEach(function (row) { mvpRecords[row.level + ":" + row.name] = row; });
-    try { localStorage.setItem(mvpStoreKey, JSON.stringify(mvpRecords)); } catch (e) {}
-    mvpRender();
-  }
-  function mvpClock(ms) {
-    var s = Math.max(0, Math.ceil(ms / 1000));
-    function pad(n) { return n < 10 ? "0" + n : String(n); }
-    return pad(Math.floor(s / 3600)) + ":" + pad(Math.floor(s / 60) % 60) + ":" + pad(s % 60);
-  }
-  // 从可见日志正文读取，兼容连接建立早于脚本以及自定义对话协议。
-  var mvpDomSeen = new Map(), mvpDomQueued = false;
-  function mvpScanDom() {
-    mvpDomQueued = false;
-    var candidates = new Set(), current = new Map();
-    var walker = document.createTreeWalker(document.body, 4), textNode;
-    while ((textNode = walker.nextNode())) {
-      if (!/MVP\s*日志|[(（]\s*Lv\.?\s*\d+/i.test(textNode.nodeValue || "")) continue;
-      var el = textNode.parentElement;
-      if (!el || el.closest("#dsh-mvp-timers,script,style,textarea")) continue;
-      for (var i = 0; el && el !== document.body && i < 7; i++, el = el.parentElement) {
-        if (el.querySelector("#dsh-mvp-timers")) break;
-        candidates.add(el);
-      }
-    }
-    candidates.forEach(function (el) {
-      if (!el.isConnected || !el.getClientRects().length) return;
-      for (var p = el; p && p !== document.body; p = p.parentElement) {
-        var css = getComputedStyle(p);
-        if (css.display === "none" || css.visibility === "hidden" || css.visibility === "collapse") return;
-      }
-      var text = (el.textContent || "").replace(/\s+/g, " ").trim();
-      if (text.length > 60000 || !mvpParse(text, 0).length) return;
-      current.set(el, text);
-    });
-    var selected = new Map(), best = null, bestText = "", bestCount = 0;
-    current.forEach(function (text, el) {
-      var count = mvpParse(text, 0).length;
-      if (count > bestCount || (count === bestCount && (!best || text.length < bestText.length || (text.length === bestText.length && best.contains(el))))) {
-        best = el; bestText = text; bestCount = count;
-      }
-    });
-    if (best) {
-      selected.set(best, bestText);
-      if (mvpDomSeen.get(best) !== bestText) mvpReceive(bestText, true);
-    }
-    mvpDomSeen = selected;
-  }
-  function mvpWatchDom() {
-    function queue() {
-      if (mvpDomQueued) return;
-      mvpDomQueued = true; setTimeout(mvpScanDom, 120);
-    }
-    new MutationObserver(function (changes) {
-      var relevant = changes.some(function (change) {
-        var el = change.target.nodeType === 1 ? change.target : change.target.parentElement;
-        return el && !el.closest("#dsh-mvp-timers");
-      });
-      if (!relevant) return;
-      mvpDomSeen.forEach(function (_, el) {
-        if (!el.isConnected || !el.getClientRects().length || !mvpParse(el.textContent || "", 0).length) mvpDomSeen.delete(el);
-      });
-      queue();
-    }).observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["style", "class", "hidden"] });
-    mvpScanDom(); setInterval(queue, 1500);
-  }
-  function mvpRender() {
-    if (!mvpTimerBody || mvpTimerBody.hidden) return;
-    mvpTimerBody.textContent = "";
-    var rows = Object.keys(mvpRecords).map(function (k) { return mvpRecords[k]; }).filter(function (r) {
-      return r && typeof r.name === "string" && isFinite(r.seen) && (r.state === "alive" || (r.state === "dead" && isFinite(r.due)));
-    });
-    if (!rows.length) { mvpTimerBody.textContent = "暂无记录。请打开公告栏#i1 → 第一个选项（MVP日志）。"; return; }
-    rows.sort(function (a, b) { return (a.due || 0) - (b.due || 0); });
-    rows.forEach(function (r) {
-      var line = document.createElement("div"), info = document.createElement("div");
-      line.style.cssText = "padding:7px 0;border-bottom:1px solid #43506a";
-      var remaining = r.due - Date.now();
-      line.textContent = r.name + " · " + (r.state === "alive" ? "日志显示存活" : remaining > 0 ? mvpClock(remaining) + " 后预计复活" : "计时已到 · 待确认");
-      if (r.map && /^[a-z0-9_]+$/i.test(r.map)) {
-        var link = document.createElement("button");
-        link.textContent = r.map + " ↗";
-        link.title = "传送到 " + r.map;
-        link.style.cssText = "background:transparent;color:#8fdcff;border:0;text-decoration:underline;cursor:pointer;padding:2px 4px;font:inherit";
-        link.onclick = function () { mvpTeleport(r.map); };
-        line.appendChild(link);
-      }
-      info.style.cssText = "font-size:11px;color:#aebed6;margin-top:3px";
-      info.textContent = "校准：" + new Date(r.seen).toLocaleString();
-      line.appendChild(info); mvpTimerBody.appendChild(line);
-    });
-  }
-  var mvpTravel = null;
-  function mvpTeleport(map) {
-    if (!/^[a-z0-9_]{1,15}$/i.test(map)) return;
-    function status(text) { if (mvpActionStatus) mvpActionStatus.textContent = text; }
-    function current() { return String(getMapName() || "").replace(/\.gat$/i, "").toLowerCase(); }
-    if (mvpTravel) { status("正在前往 " + mvpTravel.map + "，请等待结果"); return; }
-    if (!clientReady()) { status("传送失败：客户端未就绪，请先进入游戏"); return; }
-    if (current() === map.toLowerCase()) { status("已在目标地图 " + map); return; }
-    try {
-      var Packet = CLIENT.PS && CLIENT.PS.CZ && CLIENT.PS.CZ.PRIVATE_AIRSHIP_REQUEST;
-      if (typeof Packet !== "function") { status("当前客户端缺少传送接口 PRIVATE_AIRSHIP_REQUEST"); return; }
-      var pkt = new Packet(); pkt.mapname = map; pkt.itemid = 14527;
-      CLIENT.NM.sendPacket(pkt);
-      status("传送请求已发送 → " + map + "，等待游戏确认…");
-      var started = Date.now();
-      mvpTravel = { map: map, timer: setInterval(function () {
-        var arrived = current() === map.toLowerCase();
-        if (!arrived && Date.now() - started < 20000) return;
-        clearInterval(mvpTravel.timer); mvpTravel = null;
-        status(arrived ? "已到达 " + map : "未到达 " + map + "；请查看游戏提示（地图限制或传送条件）");
-      }, 500) };
-    } catch (e) { status("传送失败：" + e.message); }
-  }
-  function mvpInit() {
-    // 面板内嵌版：mvpTimerBody/mvpActionStatus 指向辅助页 ap-mvp 子页内的元素
-    var host = document.getElementById("dsh-mvp-timers");
-    var statusEl = document.getElementById("dsh-mvp-status");
-    console.log("[FW-DIAG] mvpInit called, host=" + (host ? "OK" : "NULL") + " statusEl=" + (statusEl ? "OK" : "NULL"));
-    if (!host) return;
-    mvpTimerBody = host;
-    mvpActionStatus = statusEl || null;
-    // 浮窗按钮已通过 data-fw="mvp" 挂面板统一浮窗分发；这里仅注册区块
-    try { fwReg("mvp", "MVP 计时", function () { return document.getElementById("dsh-mvp-timers"); }); } catch (e2) {}
-    mvpRender(); setInterval(mvpRender, 1000); mvpWatchDom();
-  }
-  // MVP_TIMER_END
 
   }
   function onSayDialog(bytes) {
@@ -7141,6 +7011,16 @@
     } catch (e) { $id("dsh-cleanlog").textContent = "下一段异常: " + e.message; }
   });
   hookMenuRecon();
+
+  // V2.10.8：初始化 MVP 计时器
+  if (typeof mvpInit === 'function') {
+    try {
+      mvpInit();
+      console.log('[RO助手] MVP 计时器已初始化');
+    } catch (e) {
+      console.error('[RO助手] MVP 初始化失败:', e);
+    }
+  }
 
   // ---------------- 快速侦查 ----------------
   var reconSeen = {};
@@ -8065,6 +7945,215 @@
     addPickup: addWl,
     removePickup: removeWl
   };
+
+// MVP_TIMER_START: 公告栏剩余时间以接收时刻为基准，关闭窗口不停止计时。
+  var mvpStoreKey = "dsh_mvp_timer_v1_cv_" + pickCv();
+  var mvpRecords = {};
+  try { mvpRecords = JSON.parse(localStorage.getItem(mvpStoreKey) || "{}"); } catch (e) {}
+  if (!mvpRecords || typeof mvpRecords !== "object" || Array.isArray(mvpRecords)) mvpRecords = {};
+  var mvpRecent = {}, mvpTimerBody = null, mvpActionStatus = null;
+  function mvpParse(text, now) {
+    var clean = String(text).replace(/\^[0-9a-f]{6}/gi, "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ");
+    var parts = clean.split(/(?=[(（]\s*Lv\.?\s*\d+\s*[)）])/i), rows = [];
+    parts.forEach(function (part) {
+      var head = part.match(/^[(（]\s*Lv\.?\s*(\d+)\s*[)）]\s*/i);
+      if (!head) return;
+      var rest = part.slice(head[0].length).trim();
+      var dead = rest.match(/^(.+?)\s*被击败\s*[(（]([^()（）]+)后复活[)）]/);
+      if (dead) {
+        var duration = dead[2].replace(/\s/g, ""), ms = 0;
+        var remain = duration.replace(/(\d+)(天|小时|分钟|分|秒钟|秒)/g, function (_, value, unit) {
+          ms += Number(value) * ({天:86400000, 小时:3600000, 分钟:60000, 分:60000, 秒钟:1000, 秒:1000}[unit]); return "";
+        });
+        if (remain || !duration || !isFinite(ms)) return;
+        rows.push({ name: dead[1].trim(), level: Number(head[1]), state: "dead", due: now + ms, seen: now });
+        return;
+      }
+      var alive = rest.match(/^(.+?)\s*位于地图\s*([a-z0-9_]+)(?:\.gat)?/i);
+      if (alive) rows.push({ name: alive[1].trim(), level: Number(head[1]), state: "alive", map: alive[2], seen: now });
+    });
+    return rows;
+  }
+  function mvpReceive(text, force) {
+    var now = Date.now(), rows = mvpParse(text, now);
+    if (!rows.length) return;
+    // 短时间重复包去重；重新查询即使剩余分钟相同也按新快照校准。
+    if (!force && mvpRecent.text === text && now - mvpRecent.at < 1000) return;
+    mvpRecent = { text: text, at: now };
+    rows.forEach(function (row) { mvpRecords[row.level + ":" + row.name] = row; });
+    try { localStorage.setItem(mvpStoreKey, JSON.stringify(mvpRecords)); } catch (e) {}
+    mvpRender();
+  }
+  function mvpClock(ms) {
+    var s = Math.max(0, Math.ceil(ms / 1000));
+    function pad(n) { return n < 10 ? "0" + n : String(n); }
+    return pad(Math.floor(s / 3600)) + ":" + pad(Math.floor(s / 60) % 60) + ":" + pad(s % 60);
+  }
+  // 从可见日志正文读取，兼容连接建立早于脚本以及自定义对话协议。
+  var mvpDomSeen = new Map(), mvpDomQueued = false;
+  function mvpScanDom() {
+    mvpDomQueued = false;
+    var candidates = new Set(), current = new Map();
+    var walker = document.createTreeWalker(document.body, 4), textNode;
+    while ((textNode = walker.nextNode())) {
+      if (!/MVP\s*日志|[(（]\s*Lv\.?\s*\d+/i.test(textNode.nodeValue || "")) continue;
+      var el = textNode.parentElement;
+      if (!el || el.closest("#dsh-mvp-timers,script,style,textarea")) continue;
+      for (var i = 0; el && el !== document.body && i < 7; i++, el = el.parentElement) {
+        if (el.querySelector("#dsh-mvp-timers")) break;
+        candidates.add(el);
+      }
+    }
+    candidates.forEach(function (el) {
+      if (!el.isConnected || !el.getClientRects().length) return;
+      for (var p = el; p && p !== document.body; p = p.parentElement) {
+        var css = getComputedStyle(p);
+        if (css.display === "none" || css.visibility === "hidden" || css.visibility === "collapse") return;
+      }
+      var text = (el.textContent || "").replace(/\s+/g, " ").trim();
+      if (text.length > 60000 || !mvpParse(text, 0).length) return;
+      current.set(el, text);
+    });
+    // 选包含最多条目的最小正文，避免游戏外层容器的聊天/状态变化触发校准。
+    var selected = new Map(), best = null, bestText = "", bestCount = 0;
+    current.forEach(function (text, el) {
+      var count = mvpParse(text, 0).length;
+      if (count > bestCount || (count === bestCount && (!best || text.length < bestText.length || (text.length === bestText.length && best.contains(el))))) {
+        best = el; bestText = text; bestCount = count;
+      }
+    });
+    if (best) {
+      selected.set(best, bestText);
+      if (mvpDomSeen.get(best) !== bestText) mvpReceive(bestText, true);
+    }
+    mvpDomSeen = selected;
+  }
+  function mvpWatchDom() {
+    function queue() {
+      if (mvpDomQueued) return;
+      mvpDomQueued = true; setTimeout(mvpScanDom, 120);
+    }
+    new MutationObserver(function (changes) {
+      var relevant = changes.some(function (change) {
+        var el = change.target.nodeType === 1 ? change.target : change.target.parentElement;
+        return el && !el.closest("#dsh-mvp-timers");
+      });
+      if (!relevant) return;
+      // 清空/隐藏/移除日志后，即使下次文字相同也允许重新校准。
+      mvpDomSeen.forEach(function (_, el) {
+        if (!el.isConnected || !el.getClientRects().length || !mvpParse(el.textContent || "", 0).length) mvpDomSeen.delete(el);
+      });
+      queue();
+    }).observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["style", "class", "hidden"] });
+    mvpScanDom(); setInterval(queue, 1500);
+  }
+  function mvpRender() {
+    if (!mvpTimerBody || mvpTimerBody.hidden) return;
+    mvpTimerBody.textContent = "";
+    var rows = Object.keys(mvpRecords).map(function (k) { return mvpRecords[k]; }).filter(function (r) {
+      return r && typeof r.name === "string" && isFinite(r.seen) && (r.state === "alive" || (r.state === "dead" && isFinite(r.due)));
+    });
+    if (!rows.length) { mvpTimerBody.textContent = "暂无记录。请打开公告栏#i1 → 第一个选项（MVP日志）。"; return; }
+    rows.sort(function (a, b) { return (a.due || 0) - (b.due || 0); });
+    rows.forEach(function (r) {
+      var line = document.createElement("div"), info = document.createElement("div");
+      line.style.cssText = "padding:7px 0;border-bottom:1px solid #43506a";
+      var remaining = r.due - Date.now();
+      line.textContent = r.name + " · " + (r.state === "alive" ? "日志显示存活" : remaining > 0 ? mvpClock(remaining) + " 后预计复活" : "计时已到 · 待确认");
+      if (r.map && /^[a-z0-9_]+$/i.test(r.map)) {
+        var link = document.createElement("button");
+        link.textContent = r.map + " ↗";
+        link.title = "传送到 " + r.map;
+        link.style.cssText = "background:transparent;color:#8fdcff;border:0;text-decoration:underline;cursor:pointer;padding:2px 4px;font:inherit";
+        link.onclick = function () { mvpTeleport(r.map); };
+        line.appendChild(link);
+      }
+      info.style.cssText = "font-size:11px;color:#aebed6;margin-top:3px";
+      info.textContent = "校准：" + new Date(r.seen).toLocaleString();
+      line.appendChild(info); mvpTimerBody.appendChild(line);
+    });
+  }
+  var mvpTravel = null;
+  function mvpTeleport(map) {
+    if (!/^[a-z0-9_]{1,15}$/i.test(map)) return;
+    function status(text) { if (mvpActionStatus) mvpActionStatus.textContent = text; }
+    function current() { return String(getMapName() || "").replace(/\.gat$/i, "").toLowerCase(); }
+    if (mvpTravel) { status("正在前往 " + mvpTravel.map + "，请等待结果"); return; }
+    if (!clientReady()) { status("传送失败：客户端未就绪，请先进入游戏"); return; }
+    if (current() === map.toLowerCase()) { status("已在目标地图 " + map); return; }
+    try {
+      var Packet = CLIENT.PS && CLIENT.PS.CZ && CLIENT.PS.CZ.PRIVATE_AIRSHIP_REQUEST;
+      if (typeof Packet !== "function") { status("当前客户端缺少传送接口 PRIVATE_AIRSHIP_REQUEST"); return; }
+      // 与本地 Online.js 世界地图确认按钮一致：mapname + itemid=14527，其他字段沿用默认值。
+      var pkt = new Packet(); pkt.mapname = map; pkt.itemid = 14527;
+      CLIENT.NM.sendPacket(pkt);
+      status("传送请求已发送 → " + map + "，等待游戏确认…");
+      var started = Date.now();
+      mvpTravel = { map: map, timer: setInterval(function () {
+        var arrived = current() === map.toLowerCase();
+        if (!arrived && Date.now() - started < 20000) return;
+        clearInterval(mvpTravel.timer); mvpTravel = null;
+        status(arrived ? "已到达 " + map : "未到达 " + map + "；请查看游戏提示（地图限制或传送条件）");
+      }, 500) };
+    } catch (e) { status("传送失败：" + e.message); }
+  }
+  function mvpInit() {
+    var key = "dsh_mvp_window_v3", prefs = {};
+    try { prefs = JSON.parse(localStorage.getItem(key) || "{}") || {}; } catch (e) {}
+    function number(v, fallback, min, max) { return typeof v === "number" && isFinite(v) ? Math.max(min, Math.min(max, v)) : fallback; }
+    var box = document.createElement("div"), header = document.createElement("div"), toggle = document.createElement("button");
+    var width = number(prefs.width, 300, 220, Math.max(220, innerWidth));
+    var height = number(prefs.height, 340, 120, Math.max(120, innerHeight));
+    var alpha = number(prefs.alpha, 0.45, 0, 1), collapsed = !!prefs.collapsed;
+    box.id = "dsh-mvp-timers";
+    box.style.cssText = "position:fixed;z-index:2147483646;box-sizing:border-box;min-width:220px;min-height:40px;max-width:100vw;max-height:100vh;color:#edf4ff;border:1px solid #8298b066;border-radius:8px;padding:8px;font:13px/1.5 sans-serif;display:flex;flex-direction:column;overflow:hidden;text-shadow:0 1px 3px #000";
+    box.style.width = width + "px";
+    box.style.left = number(prefs.left, Math.max(0, innerWidth - width - 12), 0, Math.max(0, innerWidth - width)) + "px";
+    box.style.top = number(prefs.top, 80, 0, Math.max(0, innerHeight - 40)) + "px";
+    function save() {
+      var rect = box.getBoundingClientRect();
+      try { localStorage.setItem(key, JSON.stringify({left:rect.left,top:rect.top,width:rect.width,height:collapsed?height:rect.height,alpha:alpha,collapsed:collapsed})); } catch (e) {}
+    }
+    function clamp() {
+      var r = box.getBoundingClientRect();
+      box.style.left = Math.max(0, Math.min(r.left, innerWidth - r.width)) + "px";
+      box.style.top = Math.max(0, Math.min(r.top, innerHeight - r.height)) + "px";
+    }
+    header.style.cssText = "display:flex;align-items:center;gap:8px;cursor:move;touch-action:none;flex-shrink:0;user-select:none";
+    var title = document.createElement("span"); title.textContent = "MVP 计时 v4 ⠿"; title.style.flex = "1";
+    toggle.style.cssText = "cursor:pointer;background:#30476588;color:white;border:0;border-radius:4px;padding:2px 8px";
+    header.appendChild(title); header.appendChild(toggle);
+    var controls = document.createElement("label"); controls.style.cssText = "display:flex;align-items:center;gap:8px;font-size:11px;flex-shrink:0";
+    controls.textContent = "背景浓度";
+    var slider = document.createElement("input"); slider.type = "range"; slider.min = "0"; slider.max = "100"; slider.value = String(alpha * 100); slider.style.width = "100px";
+    slider.oninput = function () { alpha = Number(slider.value)/100; box.style.background = "rgba(24,34,53," + alpha + ")"; save(); };
+    controls.appendChild(slider); box.style.background = "rgba(24,34,53," + alpha + ")";
+    mvpActionStatus = document.createElement("div"); mvpActionStatus.style.cssText = "font-size:11px;color:#c6def9;flex-shrink:0";
+    mvpActionStatus.textContent = "拖标题移动 · 拖右下角缩放 · 点击地图传送";
+    mvpTimerBody = document.createElement("div"); mvpTimerBody.style.cssText = "flex:1;min-height:0;overflow:auto;margin-top:5px";
+    function layout() {
+      toggle.textContent = collapsed ? "展开" : "收起";
+      mvpTimerBody.hidden = controls.hidden = mvpActionStatus.hidden = collapsed;
+      controls.style.display = collapsed ? "none" : "flex";
+      box.style.height = collapsed ? "40px" : height + "px";
+      box.style.resize = collapsed ? "none" : "both";
+    }
+    toggle.onclick = function () { if (!collapsed) height = box.getBoundingClientRect().height; collapsed = !collapsed; layout(); clamp(); save(); mvpRender(); };
+    var drag = null;
+    header.onpointerdown = function (e) {
+      if (e.target === toggle || e.button !== 0) return;
+      var r = box.getBoundingClientRect(); drag = {x:e.clientX,y:e.clientY,left:r.left,top:r.top};
+      header.setPointerCapture(e.pointerId); e.preventDefault();
+    };
+    header.onpointermove = function (e) { if (!drag) return; box.style.left = drag.left + e.clientX - drag.x + "px"; box.style.top = drag.top + e.clientY - drag.y + "px"; clamp(); };
+    header.onpointerup = header.onpointercancel = function () { drag = null; save(); };
+    box.appendChild(header); box.appendChild(controls); box.appendChild(mvpActionStatus); box.appendChild(mvpTimerBody);
+    document.body.appendChild(box); layout(); clamp();
+    if (typeof ResizeObserver !== "undefined") new ResizeObserver(function () { if (!collapsed) height = box.getBoundingClientRect().height; clamp(); save(); }).observe(box);
+    window.addEventListener("resize", function () { clamp(); save(); });
+    mvpRender(); setInterval(mvpRender, 1000); mvpWatchDom();
+  }
+  // MVP_TIMER_END
 
   init();
 })();

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.10.4
+// @version      2.10.5
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.10.4"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.10.5"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -691,6 +691,10 @@
       '<div style="position:relative;flex:1 1 130px;min-width:100px"><input id="dsh-askdebuff" placeholder="输入Debuff中文/ID（联想）" autocomplete="off" style="width:100%;box-sizing:border-box;padding:3px 6px">' +
       '<div id="dsh-askdebuff-ac" style="display:none;position:absolute;top:calc(100% + 3px);left:0;right:0;z-index:99;background:#fff;border:1px solid #b8c6d4;border-radius:4px;max-height:180px;overflow:auto;box-shadow:0 3px 8px rgba(0,0,0,.18)"></div></div>' +
       '<span style="color:#5a6b7f;font-size:11px;line-height:1.4">选中后=该 Debuff 在身才放（如缓速在身→放加速术）</span></div>' +
+      '<div class="row" style="align-items:center;flex-wrap:wrap;gap:4px 6px"><span class="lb">自身状态</span>' +
+      '<div style="position:relative;flex:1 1 130px;min-width:100px"><input id="dsh-askstatus" placeholder="状态ID/英文（如 12 或 INC_AGI，联想辅助）" autocomplete="off" style="width:100%;box-sizing:border-box;padding:3px 6px;border:1px solid #b8c6d4;border-radius:4px;font-size:12px">' +
+      '<div id="dsh-askstatus-ac" style="display:none;position:absolute;top:calc(100% + 3px);left:0;right:0;z-index:99;background:#fff;border:1px solid #b8c6d4;border-radius:4px;max-height:140px;overflow:auto"></div></div>' +
+      '<span style="color:#5a6b7f;font-size:11px;line-height:1.4">选中后=该状态不在身才补（消失补）· 数字ID或英文EFST直认</span></div>' +
       '<div class="row"><span class="lb">间隔</span><input id="dsh-askint" type="number" value="120" style="flex:0 0 44px"><span style="color:#5a6b7f">s</span>' +
       '<span class="lb" style="min-width:34px">SP≥</span><input id="dsh-asksp" type="number" value="30" style="flex:0 0 40px"><span style="color:#5a6b7f">%</span>' +
       '<label class="switch" style="margin-left:auto"><input id="dsh-asken" type="checkbox">启用自动释放</label></div>' +
@@ -707,6 +711,7 @@
       '<button class="sub-tab active" data-sub="ap-pot">自动吃药/物品</button>' +
       '<button class="sub-tab" data-sub="ap-pet">宠物投喂</button>' +
       '<button class="sub-tab" data-sub="ap-hl">物品标色</button>' +
+      '<button class="sub-tab" data-sub="ap-mvp">MVP计时</button>' +
       '<button class="sub-tab" data-sub="ap-scr">脚本执行</button></div>' +
       '<div class="a-body">' +
       // 子页1：自动吃药 + 使用背包物品 + 自动跟随（默认）
@@ -773,6 +778,13 @@
       '<div class="row"><span class="lb" style="min-width:42px">运行</span><span class="st" id="dsh-scr-state" style="font-size:11px">未运行</span>' +
       '<button class="ghost" id="dsh-scr-stop" style="flex:0 0 auto;color:#b91c1c;border-color:#e5b3b3">停止</button></div>' +
       '<div class="log" id="dsh-scr-log" style="font-size:10px;max-height:64px;overflow:auto">模板动作：teleport 传送 / walk 走路 / battleOn 开自动 / battleOff 关自动 / useItem 用物品 / stopMove 停止 / check 读取状态 / talk 对话NPC；判定：arrive 到达 / waitFor 界面文本 / until 物品数量；HP<25% 自动停手。</div>' +
+      '</div>' +
+            '<div class="sub-page" data-subpage="ap-mvp">' +
+      '<div class="sec">MVP 计时（公告栏 #i1 → MVP 日志自动校准 · 点击地图名传送）</div>' +
+      '<div class="row"><button class="ghost" id="dsh-mvp-open" data-fw="mvp" style="flex:0 0 auto">浮窗</button>' +
+      '<span class="st" id="dsh-mvp-status" style="font-size:10px;margin-left:6px">拖动窗口可移动 · 点击地图名传送</span></div>' +
+      '<div id="dsh-mvp-timers" style="font-size:11px;max-height:220px;overflow:auto;border:1px solid #43506a;border-radius:6px;padding:6px;margin-top:4px"><span class="st">暂无记录。请打开公告栏#i1 → 第一个选项（MVP日志）。</span></div>' +
+      '<div class="log" style="margin-top:4px">打开公告栏的第一个选项（MVP 日志）后自动读取并校准；关闭日志继续计时，刷新保留记录。分钟精度日志只能给出预计复活时间。</div>' +
       '</div>' +
       '</div></div>',
     pickup: '' +
@@ -1259,6 +1271,7 @@
     fwReg("mlock", "本图怪物锁定", function () { return document.getElementById("dsh-fw-mlock"); });
     fwReg("tp", "传送功能", function () { return document.getElementById("dsh-fw-tp"); });
     fwReg("skill", "助手技能设置", function () { var p = document.getElementById("dsh-ro-panel"); return p ? p.querySelector('[data-dname="skill-zhu"]') : null; });
+    setTimeout(function () { try { mvpInit(); } catch (e) {} }, 800); // MVP 计时：面板渲染完成后初始化（内嵌 ap-mvp 子页 + 浮窗注册）
     panel.addEventListener("click", function (ev) {
       try {
         var b = ev.target && ev.target.closest ? ev.target.closest("[data-fw]") : null;
@@ -2425,7 +2438,7 @@
           stId = parseInt(stId, 10);
           if (!isNaN(stId)) {
             var now = Date.now();
-            if (active) buffActive[stId] = { on: true, endAt: dur === 9999 || dur == null ? Infinity : now + (dur || 30000), seenAt: now };
+            if (active) { buffActive[stId] = { on: true, endAt: dur === 9999 || dur == null ? Infinity : now + (dur || 30000), seenAt: now }; try { for (var qi = 0; qi < askList.length; qi++) { var qs = askList[qi]; if (qs && qs.st && buffStId(qs.st) === stId) qs.missCnt = 0; } } catch (qe) {} }
             else if (buffActive[stId]) { buffActive[stId].on = false; buffActive[stId].endAt = 0; buffActive[stId].seenAt = now; }
           }
         } catch (e) {}
@@ -3006,7 +3019,7 @@
     var html = "";
     for (var i = 0; i < askList.length; i++) {
       var s = askList[i];
-      html += '<div class="list-item drag-item' + (i === askPickIdx ? ' active' : '') + '" data-ask-i="' + i + '" data-drag-i="' + i + '" draggable="true" style="cursor:grab" title="拖动调整顺序"><span class="dh">⠿</span><span>' + (i + 1) + '. ' + (s.name || ("技能" + s.skid)) + ' Lv' + s.lv + '</span>' + (s.st ? '<span class="tag blue" style="margin-left:4px">' + (s.stInv ? "在身补" : "消失补") + (/^\d+$/.test(String(s.st)) ? "·状态" + s.st : "") + '</span>' : '') + '</div>';
+      html += '<div class="list-item drag-item' + (i === askPickIdx ? ' active' : '') + '" data-ask-i="' + i + '" data-drag-i="' + i + '" draggable="true" style="cursor:grab" title="拖动调整顺序"><span class="dh">⠿</span><span>' + (i + 1) + '. ' + (s.name || ("技能" + s.skid)) + ' Lv' + s.lv + '</span>' + (s.st ? '<span class="tag blue" style="margin-left:4px">' + (s.stInv ? "在身补" : "消失补") + (/^\d+$/.test(String(s.st)) ? "·状态" + s.st : "") + '</span>' : '<span class="tag gray" style="margin-left:4px;color:#8a97a6">按间隔放（未识别状态）</span>') + '</div>';
     }
     el.innerHTML = html;
     el.querySelectorAll("[data-ask-i]").forEach(function (row) {
@@ -3033,6 +3046,7 @@
   }
   $id("dsh-askskillload").addEventListener("click", loadAskSkills);
   bindStatusAc($id("dsh-askdebuff"), $id("dsh-askdebuff-ac"));
+  bindStatusAc($id("dsh-askstatus"), $id("dsh-askstatus-ac")); // V2.10.5 自身状态输入框联想（内部只认ID/英文，中文仅展示辅助）
   $id("dsh-askskilladd").addEventListener("click", function () {
     var sel = $id("dsh-askskill");
     var skid = parseInt(sel.value, 10);
@@ -3054,7 +3068,15 @@
     // 自动判定条件 → 存数字状态ID（EFST）：判定语句用ID、UI 显示用中文技能名；buffStId 已修复返回 EFST
     var stId = -1;
     var cond = $id("dsh-askcond") ? $id("dsh-askcond").value : "self";
-    if (cond && sname) { stId = buffStId(sname); if (stId < 0) { for (var sk in SKILL_STATUS_SRC) { var arr = SKILL_STATUS_SRC[sk]; for (var ai = 0; ai < arr.length; ai++) { if (arr[ai] === skid) { var tryId = buffStId(sk); if (tryId >= 0) { stId = tryId; } break; } } if (stId >= 0) break; } } }
+    // V2.10.5 状态识别：内部只认数字ID/英文EFST；中文仅用于交互联想展示。自身状态框优先（消失才补），
+    // 填的数字/英文经 statusIdOf 直认；没填才回退旧「技能名→状态」自动识别（兼容旧配置）。
+    var selfSt = $id("dsh-askstatus") ? $id("dsh-askstatus").value.trim() : "";
+    if (cond === "self" && selfSt) {
+      stId = statusIdOf(selfSt);
+      if (stId < 0) { setStatus("未识别状态「" + selfSt + "」：请填数字ID或英文EFST（如 12 / INC_AGI），或从联想表点选", "warn"); return; }
+    } else if (cond && sname) {
+      stId = buffStId(sname); if (stId < 0) { for (var sk in SKILL_STATUS_SRC) { var arr = SKILL_STATUS_SRC[sk]; for (var ai = 0; ai < arr.length; ai++) { if (arr[ai] === skid) { var tryId = buffStId(sk); if (tryId >= 0) { stId = tryId; } break; } } if (stId >= 0) break; } }
+    }
     askList.push({ skid: skid, lv: found ? found.lv : 5, name: sname, st: stId >= 0 ? stId : "", stInv: false });
     saveAskList();
     setStatus("已加入 " + sname + (stId >= 0 ? "（自身状态消失才补·ID" + stId + "）" : (cond === "party" ? "（队友判定待支持，暂按间隔）" : "（未识别状态，按间隔放）")), "ok");
@@ -3094,7 +3116,7 @@
             var need = s.stInv ? stOn : !stOn; // 在身补 / 消失补
             if (!need) { s.missCnt = 0; continue; }
             // 防抖：刚放出去状态未上身不重复；连续 2 次补后仍未上身（hook 未收到/状态实际加不上）→ 退避到全局间隔，避免每 5s 狂补
-            var waitMs = s.missCnt >= 2 ? intv : 5000;
+            var waitMs = s.missCnt >= 2 ? 30000 : 5000; // V2.10.5 退避固定 30s（原 intv 120s 会卡死补状态）；上身通知会清零 missCnt
             if (s.lastAt && now - s.lastAt < waitMs) continue;
           } else {
             if (s.lastAt && now - s.lastAt < intv) continue; // 纯间隔技能
@@ -6822,6 +6844,166 @@
       renderMenuRecon();
       pushStep("menu", msg, items, menuRecon.map, npcName, (lastTalkNpc && lastTalkNpc.GID != null) ? lastTalkNpc.GID : NAID, pos);
     } catch (e) {}
+  // MVP_TIMER_START: 公告栏剩余时间以接收时刻为基准，关闭窗口不停止计时。
+  var mvpStoreKey = "dsh_mvp_timer_v1_cv_" + pickCv();
+  var mvpRecords = {};
+  try { mvpRecords = JSON.parse(localStorage.getItem(mvpStoreKey) || "{}"); } catch (e) {}
+  if (!mvpRecords || typeof mvpRecords !== "object" || Array.isArray(mvpRecords)) mvpRecords = {};
+  var mvpRecent = {}, mvpTimerBody = null, mvpActionStatus = null;
+  function mvpParse(text, now) {
+    var clean = String(text).replace(/\^[0-9a-f]{6}/gi, "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ");
+    var parts = clean.split(/(?=[(（]\s*Lv\.?\s*\d+\s*[)）])/i), rows = [];
+    parts.forEach(function (part) {
+      var head = part.match(/^[(（]\s*Lv\.?\s*(\d+)\s*[)）]\s*/i);
+      if (!head) return;
+      var rest = part.slice(head[0].length).trim();
+      var dead = rest.match(/^(.+?)\s*被击败\s*[(（]([^()（）]+)后复活[)）]/);
+      if (dead) {
+        var duration = dead[2].replace(/\s/g, ""), ms = 0;
+        var remain = duration.replace(/(\d+)(天|小时|分钟|分|秒钟|秒)/g, function (_, value, unit) {
+          ms += Number(value) * ({天:86400000, 小时:3600000, 分钟:60000, 分:60000, 秒钟:1000, 秒:1000}[unit]); return "";
+        });
+        if (remain || !duration || !isFinite(ms)) return;
+        rows.push({ name: dead[1].trim(), level: Number(head[1]), state: "dead", due: now + ms, seen: now });
+        return;
+      }
+      var alive = rest.match(/^(.+?)\s*位于地图\s*([a-z0-9_]+)(?:\.gat)?/i);
+      if (alive) rows.push({ name: alive[1].trim(), level: Number(head[1]), state: "alive", map: alive[2], seen: now });
+    });
+    return rows;
+  }
+  function mvpReceive(text, force) {
+    var now = Date.now(), rows = mvpParse(text, now);
+    if (!rows.length) return;
+    if (!force && mvpRecent.text === text && now - mvpRecent.at < 1000) return;
+    mvpRecent = { text: text, at: now };
+    rows.forEach(function (row) { mvpRecords[row.level + ":" + row.name] = row; });
+    try { localStorage.setItem(mvpStoreKey, JSON.stringify(mvpRecords)); } catch (e) {}
+    mvpRender();
+  }
+  function mvpClock(ms) {
+    var s = Math.max(0, Math.ceil(ms / 1000));
+    function pad(n) { return n < 10 ? "0" + n : String(n); }
+    return pad(Math.floor(s / 3600)) + ":" + pad(Math.floor(s / 60) % 60) + ":" + pad(s % 60);
+  }
+  // 从可见日志正文读取，兼容连接建立早于脚本以及自定义对话协议。
+  var mvpDomSeen = new Map(), mvpDomQueued = false;
+  function mvpScanDom() {
+    mvpDomQueued = false;
+    var candidates = new Set(), current = new Map();
+    var walker = document.createTreeWalker(document.body, 4), textNode;
+    while ((textNode = walker.nextNode())) {
+      if (!/MVP\s*日志|[(（]\s*Lv\.?\s*\d+/i.test(textNode.nodeValue || "")) continue;
+      var el = textNode.parentElement;
+      if (!el || el.closest("#dsh-mvp-timers,script,style,textarea")) continue;
+      for (var i = 0; el && el !== document.body && i < 7; i++, el = el.parentElement) {
+        if (el.querySelector("#dsh-mvp-timers")) break;
+        candidates.add(el);
+      }
+    }
+    candidates.forEach(function (el) {
+      if (!el.isConnected || !el.getClientRects().length) return;
+      for (var p = el; p && p !== document.body; p = p.parentElement) {
+        var css = getComputedStyle(p);
+        if (css.display === "none" || css.visibility === "hidden" || css.visibility === "collapse") return;
+      }
+      var text = (el.textContent || "").replace(/\s+/g, " ").trim();
+      if (text.length > 60000 || !mvpParse(text, 0).length) return;
+      current.set(el, text);
+    });
+    var selected = new Map(), best = null, bestText = "", bestCount = 0;
+    current.forEach(function (text, el) {
+      var count = mvpParse(text, 0).length;
+      if (count > bestCount || (count === bestCount && (!best || text.length < bestText.length || (text.length === bestText.length && best.contains(el))))) {
+        best = el; bestText = text; bestCount = count;
+      }
+    });
+    if (best) {
+      selected.set(best, bestText);
+      if (mvpDomSeen.get(best) !== bestText) mvpReceive(bestText, true);
+    }
+    mvpDomSeen = selected;
+  }
+  function mvpWatchDom() {
+    function queue() {
+      if (mvpDomQueued) return;
+      mvpDomQueued = true; setTimeout(mvpScanDom, 120);
+    }
+    new MutationObserver(function (changes) {
+      var relevant = changes.some(function (change) {
+        var el = change.target.nodeType === 1 ? change.target : change.target.parentElement;
+        return el && !el.closest("#dsh-mvp-timers");
+      });
+      if (!relevant) return;
+      mvpDomSeen.forEach(function (_, el) {
+        if (!el.isConnected || !el.getClientRects().length || !mvpParse(el.textContent || "", 0).length) mvpDomSeen.delete(el);
+      });
+      queue();
+    }).observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["style", "class", "hidden"] });
+    mvpScanDom(); setInterval(queue, 1500);
+  }
+  function mvpRender() {
+    if (!mvpTimerBody || mvpTimerBody.hidden) return;
+    mvpTimerBody.textContent = "";
+    var rows = Object.keys(mvpRecords).map(function (k) { return mvpRecords[k]; }).filter(function (r) {
+      return r && typeof r.name === "string" && isFinite(r.seen) && (r.state === "alive" || (r.state === "dead" && isFinite(r.due)));
+    });
+    if (!rows.length) { mvpTimerBody.textContent = "暂无记录。请打开公告栏#i1 → 第一个选项（MVP日志）。"; return; }
+    rows.sort(function (a, b) { return (a.due || 0) - (b.due || 0); });
+    rows.forEach(function (r) {
+      var line = document.createElement("div"), info = document.createElement("div");
+      line.style.cssText = "padding:7px 0;border-bottom:1px solid #43506a";
+      var remaining = r.due - Date.now();
+      line.textContent = r.name + " · " + (r.state === "alive" ? "日志显示存活" : remaining > 0 ? mvpClock(remaining) + " 后预计复活" : "计时已到 · 待确认");
+      if (r.map && /^[a-z0-9_]+$/i.test(r.map)) {
+        var link = document.createElement("button");
+        link.textContent = r.map + " ↗";
+        link.title = "传送到 " + r.map;
+        link.style.cssText = "background:transparent;color:#8fdcff;border:0;text-decoration:underline;cursor:pointer;padding:2px 4px;font:inherit";
+        link.onclick = function () { mvpTeleport(r.map); };
+        line.appendChild(link);
+      }
+      info.style.cssText = "font-size:11px;color:#aebed6;margin-top:3px";
+      info.textContent = "校准：" + new Date(r.seen).toLocaleString();
+      line.appendChild(info); mvpTimerBody.appendChild(line);
+    });
+  }
+  var mvpTravel = null;
+  function mvpTeleport(map) {
+    if (!/^[a-z0-9_]{1,15}$/i.test(map)) return;
+    function status(text) { if (mvpActionStatus) mvpActionStatus.textContent = text; }
+    function current() { return String(getMapName() || "").replace(/\.gat$/i, "").toLowerCase(); }
+    if (mvpTravel) { status("正在前往 " + mvpTravel.map + "，请等待结果"); return; }
+    if (!clientReady()) { status("传送失败：客户端未就绪，请先进入游戏"); return; }
+    if (current() === map.toLowerCase()) { status("已在目标地图 " + map); return; }
+    try {
+      var Packet = CLIENT.PS && CLIENT.PS.CZ && CLIENT.PS.CZ.PRIVATE_AIRSHIP_REQUEST;
+      if (typeof Packet !== "function") { status("当前客户端缺少传送接口 PRIVATE_AIRSHIP_REQUEST"); return; }
+      var pkt = new Packet(); pkt.mapname = map; pkt.itemid = 14527;
+      CLIENT.NM.sendPacket(pkt);
+      status("传送请求已发送 → " + map + "，等待游戏确认…");
+      var started = Date.now();
+      mvpTravel = { map: map, timer: setInterval(function () {
+        var arrived = current() === map.toLowerCase();
+        if (!arrived && Date.now() - started < 20000) return;
+        clearInterval(mvpTravel.timer); mvpTravel = null;
+        status(arrived ? "已到达 " + map : "未到达 " + map + "；请查看游戏提示（地图限制或传送条件）");
+      }, 500) };
+    } catch (e) { status("传送失败：" + e.message); }
+  }
+  function mvpInit() {
+    // 面板内嵌版：mvpTimerBody/mvpActionStatus 指向辅助页 ap-mvp 子页内的元素
+    var host = document.getElementById("dsh-mvp-timers");
+    var statusEl = document.getElementById("dsh-mvp-status");
+    if (!host) return;
+    mvpTimerBody = host;
+    mvpActionStatus = statusEl || null;
+    // 浮窗按钮已通过 data-fw="mvp" 挂面板统一浮窗分发；这里仅注册区块
+    try { fwReg("mvp", "MVP 计时", function () { return document.getElementById("dsh-mvp-timers"); }); } catch (e2) {}
+    mvpRender(); setInterval(mvpRender, 1000); mvpWatchDom();
+  }
+  // MVP_TIMER_END
+
   }
   function onSayDialog(bytes) {
     try {
@@ -6834,6 +7016,7 @@
       var gid = (lastTalkNpc && lastTalkNpc.GID != null) ? lastTalkNpc.GID : NAID;
       var nm = (lastTalkNpc && lastTalkNpc.name) || "";
       var ps = (lastTalkNpc && lastTalkNpc.pos) || null;
+      mvpReceive(msg); // MVP 计时：对话正文含 MVP 日志时自动校准
       pushStep("dialog", msg, null, getMapName(), nm, gid, ps);
     } catch (e) {}
   }
@@ -7418,11 +7601,11 @@
 
   // 加载提示
   try { console.log("[RO助手] v" + VER + " 已加载（开始停止按钮顶部常驻 + 状态联想 Buff/Debuff 中文模糊 + 地图联想滚动 + 掉buff及时补 + debuff判定 + 状态查看含ID + 拾取页物品搜索 + 后台降帧 + 后台保活 + 侧边抽屉 + 角色档案 + 瞬移术优先 + 技能次数上限 + 锁定清空 + 诊断环 + 状态判活补buff）"); } catch (e) {}
-  var toast = $("div", "", '<span style="font-size:15px">仙境传说 V' + VER + ' · 助手已加载</span>' +
-    '<div style="font-size:12px;color:#a7f3c8;margin-top:2px">后台保活(音频+WebLock) + 防御瞬移分层 + 赏金材料金边已生效（本提示 7 秒后自动消失）</div>');
+  var toast = $("div", "", '仙境传说 V' + VER + ' · 助手已加载<span style="opacity:.65">（点击关闭）</span>');
   toast.style.cssText = "position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2147483647;" +
     "background:#0f2a1a;border:1px solid #2e8b57;border-radius:10px;padding:10px 20px;color:#7ef0a8;" +
-    "font:13px/1.5 'Microsoft YaHei',system-ui,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.55);text-align:center";
+    "font:13px/1.5 'Microsoft YaHei',system-ui,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.55);text-align:center;cursor:pointer";
+  toast.addEventListener("click", function () { try { toast.parentNode.removeChild(toast); } catch (e) {} });
   document.documentElement.appendChild(toast);
   setTimeout(function () { try { toast.parentNode.removeChild(toast); } catch (e) {} }, 7000);
 

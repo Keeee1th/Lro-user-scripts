@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.10.6
+// @version      2.10.7
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.10.6"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.10.7"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -1271,18 +1271,10 @@
     fwReg("mlock", "本图怪物锁定", function () { return document.getElementById("dsh-fw-mlock"); });
     fwReg("tp", "传送功能", function () { return document.getElementById("dsh-fw-tp"); });
     fwReg("skill", "助手技能设置", function () { var p = document.getElementById("dsh-ro-panel"); return p ? p.querySelector('[data-dname="skill-zhu"]') : null; });
-    setTimeout(function () { try { mvpInit(); } catch (e) {} }, 800); // MVP 计时：面板渲染完成后初始化（内嵌 ap-mvp 子页 + 浮窗注册）
-  } catch (e) {}
-
-  // 三个可浮窗区块注册（V2.10.0）：本图怪物锁定 / 传送功能 / 助手技能设置
-  try {
-    fwReg("mlock", "本图怪物锁定", function () { return document.getElementById("dsh-fw-mlock"); });
-    fwReg("tp", "传送功能", function () { return document.getElementById("dsh-fw-tp"); });
-    fwReg("skill", "助手技能设置", function () { var p = document.getElementById("dsh-ro-panel"); return p ? p.querySelector('[data-dname="skill-zhu"]') : null; });
-    document.addEventListener("click", function (ev) {
+    panel.addEventListener("click", function (ev) {
       try {
         var b = ev.target && ev.target.closest ? ev.target.closest("[data-fw]") : null;
-        if (b) { fwToggle(b.getAttribute("data-fw")); return; }
+        if (b) { ev.stopPropagation(); fwToggle(b.getAttribute("data-fw")); return; }
       } catch (e) {}
     }, false);
   } catch (e) {}
@@ -1965,7 +1957,22 @@
     try { window.__dshCast = { skid: skid, lv: lv, target: target || 0, src: src || "zhu", t: Date.now() }; } catch (e) {}
   }
   var DSH_LEARN_KEY = "dsh_ro_skill_status_v1";
-  function dshLearnStatus(stId) { try { var c=window.__dshCast,n=Date.now(); if(!c||n-c.t>2500||!c.skid||c.target)return; var m={}; try{m=JSON.parse(localStorage.getItem(DSH_LEARN_KEY)||"{}");}catch(e){} m[String(c.skid)]=parseInt(stId,10); localStorage.setItem(DSH_LEARN_KEY,JSON.stringify(m)); } catch(e2){} }
+  function dshLearnStatus(stId) {
+    try {
+      var c = window.__dshCast, n = Date.now();
+      if (!c || n - c.t > 8000 || !c.skid || c.target) return;
+      stId = parseInt(stId, 10); if (isNaN(stId)) return;
+      var m = {}; try { m = JSON.parse(localStorage.getItem(DSH_LEARN_KEY) || "{}"); } catch (e) {}
+      m[String(c.skid)] = stId; localStorage.setItem(DSH_LEARN_KEY, JSON.stringify(m));
+      // 学到的自身状态立即回写对应 Buff，后续按状态消失自动重放同一技能。
+      if (typeof askList !== "undefined" && Array.isArray(askList)) {
+        for (var i = 0; i < askList.length; i++) {
+          if (askList[i] && askList[i].skid === c.skid && !askList[i].st) { askList[i].st = stId; askList[i].stInv = false; askList[i].missCnt = 0; saveAskList(); break; }
+        }
+      }
+      tlog("learn-skill-status skid=" + c.skid + " -> st=" + stId);
+    } catch (e2) { try { tlog("learn-skill-status error=" + e2.message); } catch (e3) {} }
+  }
   function dshLearnedStatus(skid) { try { var m=JSON.parse(localStorage.getItem(DSH_LEARN_KEY)||"{}"); var v=parseInt(m[String(skid)],10); return isNaN(v)?-1:v; }catch(e){return -1;} }
   function dshCastSkip(skid, why) {
     dshDiag("cast-skip", { skid: skid, why: why });
@@ -3106,6 +3113,10 @@
       for (var i = 0; i < askList.length; i++) {
         var s = askList[i];
         try {
+          if (!s.st) {
+            var learnedSt = dshLearnedStatus(s.skid);
+            if (learnedSt >= 0) { s.st = learnedSt; s.stInv = false; saveAskList(); }
+          }
           if (s.st) {
             var stId = buffStId(s.st);
             if (stId < 0) continue; // 状态名未识别，跳过
@@ -3127,7 +3138,9 @@
           s.lastAt = now;
           if (s.st) s.missCnt = (s.missCnt || 0) + 1; // 补了但判活仍缺 → missCnt++（连续2次退避到全局间隔）
           castAny = true;
-        } catch (e) {}
+        } catch (e) {
+          try { tlog("ask-cast-error skid=" + (s && s.skid) + " " + (e.message || e)); dshDiag("ask-cast-error", { skid: s && s.skid, error: String(e.message || e) }); } catch (e2) {}
+        }
       }
       if (castAny) {
         dshDiag("ask-cast", { list: askList.length });
@@ -5111,9 +5124,9 @@
     var v = parseInt(o.prob, 10);
     var prob = isNaN(v) ? 100 : Math.max(0, Math.min(100, v));
     var cond = String(o.cond || "").trim();
-    var u = parseInt(o.uses, 10);
-    var tail = (u > 0 || o.lock > 0) ? (":" + u) : "";
-    return o.skid + ":" + (o.lv || 5) + ":" + cond + ":" + prob + tail + (o.lock > 0 ? (":" + o.lock) : "") + (nm ? "  " + nm : "");
+    var u = parseInt(o.uses, 10); if (isNaN(u) || u < 0) u = 0;
+    var lk = parseInt(o.lock, 10); if (isNaN(lk) || lk < 0) lk = 0;
+    return o.skid + ":" + (o.lv || 5) + ":" + cond + ":" + prob + ":" + u + ":" + lk + (nm ? "  " + nm : "");
   }
   function parseSkillOrder(txt) {
     var out = [];
@@ -5372,10 +5385,14 @@
       var neg = c.charAt(0) === "!";
       var cc = neg ? c.substr(1) : c;
       if (neg) continue; // !xxx 是「不需要某状态」，不参与自动补
-      var ms = cc.match(/^球(\d+)$/);
+      var ms = cc.match(/^球(?:([<>]=?|=)\s*)?(\d+)$/);
       if (ms) {
-        var n = parseInt(ms[1], 10);
-        if (n > need.spheres) need.spheres = n;
+        var op = ms[1] || ">=";
+        var n = parseInt(ms[2], 10);
+        // 球N/球>=N：该技能至少需要N个气弹；球< N/球<=N：低于阈值时补到N个。
+        if (op === "<" || op === "<=") {
+          if (n > need.spheres) need.spheres = n;
+        } else if (n > need.spheres) need.spheres = n;
         continue;
       }
       // hp>/sp> 等阈值条件不参与自动补（由战斗逻辑等待）

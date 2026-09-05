@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.11.0
+// @version      2.11.1
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.11.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.11.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -1997,7 +1997,7 @@
       // 学到的自身状态立即回写对应 Buff，后续按状态消失自动重放同一技能。
       if (typeof askList !== "undefined" && Array.isArray(askList)) {
         for (var i = 0; i < askList.length; i++) {
-          if (askList[i] && askList[i].skid === c.skid && !askList[i].st) { askList[i].st = stId; askList[i].stInv = false; askList[i].missCnt = 0; saveAskList(); console.log("[LEARN-DIAG] wrote back to askList[" + i + "] skid=" + askList[i].skid); break; }
+          if (askList[i] && askList[i].skid === c.skid) { askList[i].st = stId; askList[i].stInv = false; askList[i].missCnt = 0; saveAskList(); console.log("[LEARN-DIAG] wrote back to askList[" + i + "] skid=" + askList[i].skid + " st=" + stId); break; }
         }
       }
       tlog("learn-skill-status skid=" + c.skid + " -> st=" + stId);

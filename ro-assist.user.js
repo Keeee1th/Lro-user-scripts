@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.10.8
+// @version      2.10.9
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.10.8"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.10.9"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -1271,6 +1271,14 @@
     fwReg("mlock", "本图怪物锁定", function () { return document.getElementById("dsh-fw-mlock"); });
     fwReg("tp", "传送功能", function () { return document.getElementById("dsh-fw-tp"); });
     fwReg("skill", "助手技能设置", function () { var p = document.getElementById("dsh-ro-panel"); return p ? p.querySelector('[data-dname="skill-zhu"]') : null; });
+    // MVP 计时：不使用标准浮窗，直接控制独立窗口的显示/隐藏
+    fwReg("mvp", "MVP 计时", function () { 
+      var mvpWin = document.getElementById("dsh-mvp-timers");
+      if (mvpWin) {
+        mvpWin.style.display = mvpWin.style.display === "none" ? "flex" : "none";
+      }
+      return null; // 返回 null 表示不创建标准浮窗，只切换显示
+    });
     panel.addEventListener("click", function (ev) {
       try {
         var b = ev.target && ev.target.closest ? ev.target.closest("[data-fw]") : null;
@@ -6909,7 +6917,12 @@
       var gid = (lastTalkNpc && lastTalkNpc.GID != null) ? lastTalkNpc.GID : NAID;
       var nm = (lastTalkNpc && lastTalkNpc.name) || "";
       var ps = (lastTalkNpc && lastTalkNpc.pos) || null;
-      mvpReceive(msg); // MVP 计时：对话正文含 MVP 日志时自动校准
+      // MVP 计时：对话正文含 MVP 日志时自动校准
+      console.log('[MVP-DEBUG] onSayDialog called, msg length:', msg ? msg.length : 0);
+      if (msg && /MVP.*日志/i.test(msg)) {
+        console.log('[MVP-DEBUG] Found MVP log keyword, msg preview:', msg.substring(0, 200));
+      }
+      mvpReceive(msg);
       pushStep("dialog", msg, null, getMapName(), nm, gid, ps);
     } catch (e) {}
   }
@@ -7975,7 +7988,12 @@
     return rows;
   }
   function mvpReceive(text, force) {
+    console.log('[MVP-DEBUG] mvpReceive called, text length:', text ? text.length : 0);
     var now = Date.now(), rows = mvpParse(text, now);
+    console.log('[MVP-DEBUG] mvpParse returned rows:', rows.length);
+    if (rows.length > 0) {
+      console.log('[MVP-DEBUG] First row:', JSON.stringify(rows[0]));
+    }
     if (!rows.length) return;
     // 短时间重复包去重；重新查询即使剩余分钟相同也按新快照校准。
     if (!force && mvpRecent.text === text && now - mvpRecent.at < 1000) return;
@@ -8122,7 +8140,12 @@
     header.style.cssText = "display:flex;align-items:center;gap:8px;cursor:move;touch-action:none;flex-shrink:0;user-select:none";
     var title = document.createElement("span"); title.textContent = "MVP 计时 v4 ⠿"; title.style.flex = "1";
     toggle.style.cssText = "cursor:pointer;background:#30476588;color:white;border:0;border-radius:4px;padding:2px 8px";
-    header.appendChild(title); header.appendChild(toggle);
+    var closeBtn = document.createElement("button");
+    closeBtn.textContent = "×";
+    closeBtn.style.cssText = "cursor:pointer;background:#ef454588;color:white;border:0;border-radius:4px;padding:2px 8px;font-size:16px;line-height:1;width:24px";
+    closeBtn.title = "关闭 MVP 计时";
+    closeBtn.onclick = function () { box.style.display = "none"; save(); };
+    header.appendChild(title); header.appendChild(toggle); header.appendChild(closeBtn);
     var controls = document.createElement("label"); controls.style.cssText = "display:flex;align-items:center;gap:8px;font-size:11px;flex-shrink:0";
     controls.textContent = "背景浓度";
     var slider = document.createElement("input"); slider.type = "range"; slider.min = "0"; slider.max = "100"; slider.value = String(alpha * 100); slider.style.width = "100px";
@@ -8149,6 +8172,15 @@
     header.onpointerup = header.onpointercancel = function () { drag = null; save(); };
     box.appendChild(header); box.appendChild(controls); box.appendChild(mvpActionStatus); box.appendChild(mvpTimerBody);
     document.body.appendChild(box); layout(); clamp();
+    // 恢复显示状态（默认显示，除非用户手动关闭过）
+    if (prefs.hidden) box.style.display = "none";
+    // 修改 save 函数，保存显示状态
+    var originalSave = save;
+    save = function () {
+      originalSave();
+      var rect = box.getBoundingClientRect();
+      try { localStorage.setItem(key, JSON.stringify({left:rect.left,top:rect.top,width:rect.width,height:collapsed?height:rect.height,alpha:alpha,collapsed:collapsed,hidden:box.style.display==="none"})); } catch (e) {}
+    };
     if (typeof ResizeObserver !== "undefined") new ResizeObserver(function () { if (!collapsed) height = box.getBoundingClientRect().height; clamp(); save(); }).observe(box);
     window.addEventListener("resize", function () { clamp(); save(); });
     mvpRender(); setInterval(mvpRender, 1000); mvpWatchDom();

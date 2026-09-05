@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.10.7
+// @version      2.10.7-diag
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.10.7"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.10.7-diag"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -1256,10 +1256,10 @@
       try { var b = document.getElementById("dsh-fw-btn-" + id); if (b) b.textContent = "⧉ 浮窗"; } catch (e) {}
     } catch (e) {}
   }
-  function fwToggle(id) { try { if (fwOpenIds[id]) fwClose(id); else fwOpen(id); } catch (e) {} }
+  function fwToggle(id) { try { console.log("[FW-DIAG] fwToggle id=" + id + " currentlyOpen=" + !!fwOpenIds[id]); if (fwOpenIds[id]) fwClose(id); else fwOpen(id); } catch (e) { console.log("[FW-DIAG] fwToggle error: " + e.message); } }
   // 注册区块：getEl 返回要浮窗化的容器节点（其父容器为原位）
   function fwReg(id, title, getEl) {
-    try { if (!fwState[id]) fwState[id] = {}; fwState[id].title = title; fwState[id].getEl = getEl; var el = getEl(); if (el) fwState[id].host = el; } catch (e) {}
+    try { console.log("[FW-DIAG] fwReg id=" + id + " title=" + title); if (!fwState[id]) fwState[id] = {}; fwState[id].title = title; fwState[id].getEl = getEl; var el = getEl(); if (el) { fwState[id].host = el; console.log("[FW-DIAG] fwReg id=" + id + " host found"); } else { console.log("[FW-DIAG] fwReg id=" + id + " host NOT found"); } } catch (e) { console.log("[FW-DIAG] fwReg error: " + e.message); }
   }
   // 面板重建后（host 节点已重挂）重新登记 host
   function fwRefreshHosts() {
@@ -1274,8 +1274,9 @@
     panel.addEventListener("click", function (ev) {
       try {
         var b = ev.target && ev.target.closest ? ev.target.closest("[data-fw]") : null;
+        console.log("[FW-DIAG] panel click target=" + (ev.target ? ev.target.tagName : "null") + " fw=" + (b ? b.getAttribute("data-fw") : "null"));
         if (b) { ev.stopPropagation(); fwToggle(b.getAttribute("data-fw")); return; }
-      } catch (e) {}
+      } catch (e) { console.log("[FW-DIAG] panel click error: " + e.message); }
     }, false);
   } catch (e) {}
 
@@ -1960,14 +1961,16 @@
   function dshLearnStatus(stId) {
     try {
       var c = window.__dshCast, n = Date.now();
-      if (!c || n - c.t > 8000 || !c.skid || c.target) return;
+      console.log("[LEARN-DIAG] dshLearnStatus called, stId=" + stId + " __dshCast=" + JSON.stringify(c || null));
+      if (!c || n - c.t > 8000 || !c.skid || c.target) { console.log("[LEARN-DIAG] skip: " + (!c ? "no cast" : (n - c.t > 8000 ? "timeout" : (c.target ? "has target" : "no skid")))); return; }
       stId = parseInt(stId, 10); if (isNaN(stId)) return;
       var m = {}; try { m = JSON.parse(localStorage.getItem(DSH_LEARN_KEY) || "{}"); } catch (e) {}
       m[String(c.skid)] = stId; localStorage.setItem(DSH_LEARN_KEY, JSON.stringify(m));
+      console.log("[LEARN-DIAG] learned: skill " + c.skid + " -> status " + stId);
       // 学到的自身状态立即回写对应 Buff，后续按状态消失自动重放同一技能。
       if (typeof askList !== "undefined" && Array.isArray(askList)) {
         for (var i = 0; i < askList.length; i++) {
-          if (askList[i] && askList[i].skid === c.skid && !askList[i].st) { askList[i].st = stId; askList[i].stInv = false; askList[i].missCnt = 0; saveAskList(); break; }
+          if (askList[i] && askList[i].skid === c.skid && !askList[i].st) { askList[i].st = stId; askList[i].stInv = false; askList[i].missCnt = 0; saveAskList(); console.log("[LEARN-DIAG] wrote back to askList[" + i + "] skid=" + askList[i].skid); break; }
         }
       }
       tlog("learn-skill-status skid=" + c.skid + " -> st=" + stId);
@@ -3109,6 +3112,7 @@
       if (spPct < spGuard) return;
       // 修「掉 buff 不及时补」：去掉全局 askLastCast 门禁，改每技能独立 lastAt。
       // 状态判活技能 = 状态消失/在身即补（仅 5s 防抖防重复）；无状态技能 = 按全局间隔放。
+      console.log("[ASK-DIAG] tick start, askList.length=" + askList.length + " en=" + en + " spPct=" + spPct.toFixed(1) + " spGuard=" + spGuard);
       var castAny = false;
       for (var i = 0; i < askList.length; i++) {
         var s = askList[i];
@@ -3119,16 +3123,20 @@
           }
           if (s.st) {
             var stId = buffStId(s.st);
-            if (stId < 0) continue; // 状态名未识别，跳过
+            if (stId < 0) { console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " st=" + s.st + " stId=INVALID"); continue; } // 状态名未识别，跳过
             var stOn = buffStateOn(stId);
             var need = s.stInv ? stOn : !stOn; // 在身补 / 消失补
-            if (!need) { s.missCnt = 0; continue; }
+            if (!need) { s.missCnt = 0; console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " st=" + s.st + " stId=" + stId + " stOn=" + stOn + " need=false"); continue; }
             // 防抖：刚放出去状态未上身不重复；连续 2 次补后仍未上身（hook 未收到/状态实际加不上）→ 退避到全局间隔，避免每 5s 狂补
             var waitMs = s.missCnt >= 2 ? 30000 : 5000; // V2.10.5 退避固定 30s（原 intv 120s 会卡死补状态）；上身通知会清零 missCnt
-            if (s.lastAt && now - s.lastAt < waitMs) continue;
+            if (s.lastAt && now - s.lastAt < waitMs) { console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " WAIT missCnt=" + (s.missCnt || 0) + " elapsed=" + (now - s.lastAt) + " waitMs=" + waitMs); continue; }
+            console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " st=" + s.st + " stId=" + stId + " stOn=" + stOn + " need=true missCnt=" + (s.missCnt || 0));
           } else {
-            if (s.lastAt && now - s.lastAt < intv) continue; // 纯间隔技能
+            var elapsed = s.lastAt ? (now - s.lastAt) : -1;
+            if (s.lastAt && now - s.lastAt < intv) { console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " NO-ST interval wait, elapsed=" + elapsed); continue; } // 纯间隔技能
+            console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " NO-ST will cast, elapsed=" + elapsed);
           }
+          console.log("[ASK-DIAG] CAST skid=" + s.skid + " lv=" + s.lv + " target=0");
           var p = new CLIENT.PS.CZ.USE_SKILL();
           p.SKID = s.skid;
           p.selectedLevel = s.lv;
@@ -7009,6 +7017,7 @@
     // 面板内嵌版：mvpTimerBody/mvpActionStatus 指向辅助页 ap-mvp 子页内的元素
     var host = document.getElementById("dsh-mvp-timers");
     var statusEl = document.getElementById("dsh-mvp-status");
+    console.log("[FW-DIAG] mvpInit called, host=" + (host ? "OK" : "NULL") + " statusEl=" + (statusEl ? "OK" : "NULL"));
     if (!host) return;
     mvpTimerBody = host;
     mvpActionStatus = statusEl || null;

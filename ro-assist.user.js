@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.10.2
+// @version      2.10.3
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.10.2"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.10.3"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -2315,12 +2315,14 @@
           input.value = it.cn;
           try { input.setAttribute("data-sid", it.id); } catch (e) {}
           listEl.style.display = "none";
+          try { input.blur(); } catch (e) {} // 选中后失焦，防止 focus 再弹
         });
         listEl.appendChild(row);
       });
     }
-    input.addEventListener("focus", render);
+    input.addEventListener("focus", function () { if (!(input.getAttribute("data-sid") && input.value.trim())) render(); });
     input.addEventListener("input", render);
+    input.addEventListener("blur", function () { listEl.style.display = "none"; });
     document.addEventListener("mousedown", function (ev) {
       if (listEl.style.display === "block" && ev.target !== input && !listEl.contains(ev.target)) listEl.style.display = "none";
     });
@@ -2437,17 +2439,18 @@
   // 状态是否判为目标"在身上"：优先读客户端实体字段（不依赖 hook），实体字段查不到再回落判活表 buffActive（StatusIcons hook）
   // 实体字段映射：EFST ID → 实体字段判定函数（返回 bool；字段缺失返回 undefined 表示该状态无实体字段，回落判活表）
   var DSH_ENT_STATE = {
-    12: function (en) { return en.inc_agi === 1 || en.IncAgi === 1 || en.incAgi === 1; },
-    10: function (en) { return en.blessing === 1 || en.Blessing === 1; },
-    1: function (en) { return en.endure === 1 || en.Endure === 1; },
-    86: function (en) { return en.explosion === 1; },
-    87: function (en) { return en.SteelBody === 1 || en.steelbody === 1 || en.steel_body === 1; },
-    149: function (en) { return en.soullink === 1; },
-    107: function (en) { return en.berserk === 1; },
-    27: function (en) { return en.riding === 1 || en.riding_ === 1; },
-    28: function (en) { return en.falcon === 1; },
-    4: function (en) { return en.isHide === true || en.hiding === 1; },
-    5: function (en) { return en.isHide === true || en.hiding === 1; }
+    // 字段缺失返回 undefined = 该状态无实体字段，回落判活表；字段存在才返回 true/false
+    12: function (en) { if (en.inc_agi !== undefined) return en.inc_agi === 1; if (en.IncAgi !== undefined) return en.IncAgi === 1; if (en.incAgi !== undefined) return en.incAgi === 1; return undefined; },
+    10: function (en) { if (en.blessing !== undefined) return en.blessing === 1; if (en.Blessing !== undefined) return en.Blessing === 1; return undefined; },
+    1: function (en) { if (en.endure !== undefined) return en.endure === 1; if (en.Endure !== undefined) return en.Endure === 1; return undefined; },
+    86: function (en) { if (en.explosion !== undefined) return en.explosion === 1; return undefined; },
+    87: function (en) { if (en.SteelBody !== undefined) return en.SteelBody === 1; if (en.steelbody !== undefined) return en.steelbody === 1; if (en.steel_body !== undefined) return en.steel_body === 1; return undefined; },
+    149: function (en) { if (en.soullink !== undefined) return en.soullink === 1; return undefined; },
+    107: function (en) { if (en.berserk !== undefined) return en.berserk === 1; return undefined; },
+    27: function (en) { if (en.riding !== undefined) return en.riding === 1; if (en.riding_ !== undefined) return en.riding_ === 1; return undefined; },
+    28: function (en) { if (en.falcon !== undefined) return en.falcon === 1; return undefined; },
+    4: function (en) { if (en.isHide !== undefined) return en.isHide === true; if (en.hiding !== undefined) return en.hiding === 1; return undefined; },
+    5: function (en) { if (en.isHide !== undefined) return en.isHide === true; if (en.hiding !== undefined) return en.hiding === 1; return undefined; }
   };
   function buffStateOn(stId) {
     try {
@@ -2991,7 +2994,7 @@
     var html = "";
     for (var i = 0; i < askList.length; i++) {
       var s = askList[i];
-      html += '<div class="list-item drag-item' + (i === askPickIdx ? ' active' : '') + '" data-ask-i="' + i + '" data-drag-i="' + i + '" draggable="true" style="cursor:grab" title="拖动调整顺序"><span class="dh">⠿</span><span>' + (i + 1) + '. ' + (s.name || ("技能" + s.skid)) + ' Lv' + s.lv + '</span>' + (s.st ? '<span class="tag blue" style="margin-left:4px">' + (s.stInv ? "在身补" : "消失补") + '</span>' : '') + '</div>';
+      html += '<div class="list-item drag-item' + (i === askPickIdx ? ' active' : '') + '" data-ask-i="' + i + '" data-drag-i="' + i + '" draggable="true" style="cursor:grab" title="拖动调整顺序"><span class="dh">⠿</span><span>' + (i + 1) + '. ' + (s.name || ("技能" + s.skid)) + ' Lv' + s.lv + '</span>' + (s.st ? '<span class="tag blue" style="margin-left:4px">' + (s.stInv ? "在身补" : "消失补") + (/^\d+$/.test(String(s.st)) ? "·状态" + s.st : "") + '</span>' : '') + '</div>';
     }
     el.innerHTML = html;
     el.querySelectorAll("[data-ask-i]").forEach(function (row) {
@@ -3039,7 +3042,7 @@
     // 自动判定条件 → 存数字状态ID（EFST）：判定语句用ID、UI 显示用中文技能名；buffStId 已修复返回 EFST
     var stId = -1;
     var cond = $id("dsh-askcond") ? $id("dsh-askcond").value : "self";
-    if (cond && sname) stId = buffStId(sname);
+    if (cond && sname) { stId = buffStId(sname); if (stId < 0) { for (var sk in SKILL_STATUS_SRC) { var arr = SKILL_STATUS_SRC[sk]; for (var ai = 0; ai < arr.length; ai++) { if (arr[ai] === skid) { var tryId = buffStId(sk); if (tryId >= 0) { stId = tryId; } break; } } if (stId >= 0) break; } } }
     askList.push({ skid: skid, lv: found ? found.lv : 5, name: sname, st: stId >= 0 ? stId : "", stInv: false });
     saveAskList();
     setStatus("已加入 " + sname + (stId >= 0 ? "（自身状态消失才补·ID" + stId + "）" : (cond === "party" ? "（队友判定待支持，暂按间隔）" : "（未识别状态，按间隔放）")), "ok");

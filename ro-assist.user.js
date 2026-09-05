@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.10.5
+// @version      2.10.6
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.10.5"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.10.6"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -1272,12 +1272,6 @@
     fwReg("tp", "传送功能", function () { return document.getElementById("dsh-fw-tp"); });
     fwReg("skill", "助手技能设置", function () { var p = document.getElementById("dsh-ro-panel"); return p ? p.querySelector('[data-dname="skill-zhu"]') : null; });
     setTimeout(function () { try { mvpInit(); } catch (e) {} }, 800); // MVP 计时：面板渲染完成后初始化（内嵌 ap-mvp 子页 + 浮窗注册）
-    panel.addEventListener("click", function (ev) {
-      try {
-        var b = ev.target && ev.target.closest ? ev.target.closest("[data-fw]") : null;
-        if (b) { fwToggle(b.getAttribute("data-fw")); return; }
-      } catch (e) {}
-    }, false);
   } catch (e) {}
 
   // 三个可浮窗区块注册（V2.10.0）：本图怪物锁定 / 传送功能 / 助手技能设置
@@ -1970,6 +1964,9 @@
   function dshCastMark(skid, lv, target, src) {
     try { window.__dshCast = { skid: skid, lv: lv, target: target || 0, src: src || "zhu", t: Date.now() }; } catch (e) {}
   }
+  var DSH_LEARN_KEY = "dsh_ro_skill_status_v1";
+  function dshLearnStatus(stId) { try { var c=window.__dshCast,n=Date.now(); if(!c||n-c.t>2500||!c.skid||c.target)return; var m={}; try{m=JSON.parse(localStorage.getItem(DSH_LEARN_KEY)||"{}");}catch(e){} m[String(c.skid)]=parseInt(stId,10); localStorage.setItem(DSH_LEARN_KEY,JSON.stringify(m)); } catch(e2){} }
+  function dshLearnedStatus(skid) { try { var m=JSON.parse(localStorage.getItem(DSH_LEARN_KEY)||"{}"); var v=parseInt(m[String(skid)],10); return isNaN(v)?-1:v; }catch(e){return -1;} }
   function dshCastSkip(skid, why) {
     dshDiag("cast-skip", { skid: skid, why: why });
   }
@@ -2438,7 +2435,7 @@
           stId = parseInt(stId, 10);
           if (!isNaN(stId)) {
             var now = Date.now();
-            if (active) { buffActive[stId] = { on: true, endAt: dur === 9999 || dur == null ? Infinity : now + (dur || 30000), seenAt: now }; try { for (var qi = 0; qi < askList.length; qi++) { var qs = askList[qi]; if (qs && qs.st && buffStId(qs.st) === stId) qs.missCnt = 0; } } catch (qe) {} }
+            if (active) { dshLearnStatus(stId); buffActive[stId] = { on: true, endAt: dur === 9999 || dur == null ? Infinity : now + (dur || 30000), seenAt: now }; try { for (var qi = 0; qi < askList.length; qi++) { var qs = askList[qi]; if (qs && qs.st && buffStId(qs.st) === stId) qs.missCnt = 0; } } catch (qe) {} }
             else if (buffActive[stId]) { buffActive[stId].on = false; buffActive[stId].endAt = 0; buffActive[stId].seenAt = now; }
           }
         } catch (e) {}
@@ -5361,7 +5358,7 @@
     "Sky_Enchant": [5475], "天空附魔": [5475], "SkyEnchant": [5475],
     "First_Faith_Power": [5246], "初信之力": [5246],
     "Second_Judge": [5247], "二阶审判": [5247],
-    "Mystery_Powder": [6509], "神秘之粉": [6509]
+    "Mystery_Powder": [6509], "Assumptio": [361], "ASSUMPTIO": [361], "神秘之粉": [6509]
   };
   var SKILL_SPHERE_SRC = [261, 262];    // 蓄气 / 吸魂（补气弹）
   // 解析状态前置条件 → 需要补的资源 { spheres: 需要的球数, statuses: [缺失才补的状态名…] }

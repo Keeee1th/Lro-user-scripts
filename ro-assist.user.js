@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.10.3
+// @version      2.10.4
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.10.3"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.10.4"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -2837,7 +2837,7 @@
     for (var i = 0; i < itemList.length; i++) {
       var it = itemList[i];
       html += '<div class="list-item drag-item' + (i === itemPickIdx ? ' active' : '') + '" data-item-i="' + i + '" data-drag-i="' + i + '" draggable="true" style="cursor:grab" title="拖动调整顺序"><span class="dh">⠿</span><span>' + (i + 1) + '. ' + (it.name || ("ID" + it.itid)) + ' ×' + (it.count != null ? it.count : "?") + '</span>' +
-        '<span style="color:#5a6b7f;font-size:10px">' + itemCondText(it) + '</span></div>';
+        '<span style="color:#5a6b7f;font-size:10px">' + itemCondText(it) + (it.st ? ' ·状态' + it.st : '') + '</span></div>';
     }
     el.innerHTML = html;
     el.querySelectorAll("[data-item-i]").forEach(function (row) {
@@ -2885,6 +2885,18 @@
   }
   $id("dsh-itempickload").addEventListener("click", loadInvItems);
   bindStatusAc($id("dsh-itemstatus"), $id("dsh-itemstatus-ac"));
+  (function () {
+    var icSel = $id("dsh-itemcond"), isIn = $id("dsh-itemstatus");
+    if (!icSel || !isIn) return;
+    function updateItemStatusHint() {
+      var need = icSel.value === "status" || icSel.value === "statusgone";
+      isIn.style.borderColor = need ? "#e6a23c" : "";
+      isIn.style.background = need ? "#fff7e6" : "";
+      isIn.placeholder = need ? (icSel.value === "status" ? "填状态：在身才用（如中毒ID）" : "填状态：消失才用（如加速ID）") : "状态中文/ID";
+    }
+    icSel.addEventListener("change", updateItemStatusHint);
+    updateItemStatusHint();
+  })();
   $id("dsh-itempickadd").addEventListener("click", function () {
     var sel = $id("dsh-itempick");
     var itid = sel.value;
@@ -7003,7 +7015,8 @@
 
   // V1.7.6 当前状态查看器：buffActive 判活环（服务器通知）+ 实体字段状态，2s 刷新
   var _stNameRev = null;
-  function statusNameById(id) { // 状态ID → 中文别名（buff/debuff 表反查，查不到回英文/数字）
+  var _stNameEnRev = null;
+  function statusNameById(id) { // 状态ID → 中文别名（buff/debuff 表反查，查不到回引擎 StatusConst 英文名，再回数字）
     try {
       if (id == null) return null;
       if (!_stNameRev) {
@@ -7017,7 +7030,16 @@
         scan(BUFF_STATUS_CN);
         scan(BUFF_DEBUFF_CN);
       }
-      return _stNameRev[id] || null;
+      if (_stNameRev[id]) return _stNameRev[id];
+      // 英文名兜底：引擎 StatusConst（{NAME: value} 反向 → value: NAME），懒加载缓存
+      if (!_stNameEnRev) {
+        _stNameEnRev = {};
+        try {
+          var SC = window.require && window.require("DB/Status/StatusConst");
+          if (SC) for (var en in SC) { if (typeof SC[en] === "number" && !_stNameEnRev[SC[en]]) _stNameEnRev[SC[en]] = en; }
+        } catch (e2) {}
+      }
+      return _stNameEnRev[id] || null;
     } catch (e) { return null; }
   }
   function renderStatusView() {

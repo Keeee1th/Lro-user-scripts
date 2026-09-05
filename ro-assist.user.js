@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.10.9
+// @version      2.11.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,11 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.10.9"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.11.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+
+  // V2.11.0：仓库+背包读取全局变量
+  var inventoryReadTimer = null; // 仓库读取定时器
+  var inventoryReadChar = null; // 触发读取时的角色名
 
   // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
@@ -712,6 +716,7 @@
       '<button class="sub-tab" data-sub="ap-pet">宠物投喂</button>' +
       '<button class="sub-tab" data-sub="ap-hl">物品标色</button>' +
       '<button class="sub-tab" data-sub="ap-mvp">MVP计时</button>' +
+      '<button class="sub-tab" data-sub="ap-inv">仓库查询</button>' +
       '<button class="sub-tab" data-sub="ap-scr">脚本执行</button></div>' +
       '<div class="a-body">' +
       // 子页1：自动吃药 + 使用背包物品 + 自动跟随（默认）
@@ -785,6 +790,16 @@
       '<span class="st" id="dsh-mvp-status" style="font-size:10px;margin-left:6px">拖动窗口可移动 · 点击地图名传送</span></div>' +
       '<div id="dsh-mvp-timers" style="font-size:11px;max-height:220px;overflow:auto;border:1px solid #43506a;border-radius:6px;padding:6px;margin-top:4px"><span class="st">暂无记录。请打开公告栏#i1 → 第一个选项（MVP日志）。</span></div>' +
       '<div class="log" style="margin-top:4px">打开公告栏的第一个选项（MVP 日志）后自动读取并校准；关闭日志继续计时，刷新保留记录。分钟精度日志只能给出预计复活时间。</div>' +
+      '</div>' +
+      // 子页6：仓库查询（V2.11.0）
+      '<div class="sub-page" data-subpage="ap-inv">' +
+      '<div class="sec">仓库与背包查询（打开仓库自动读取 · 覆盖旧数据）</div>' +
+      '<div class="row"><input id="dsh-inv-search" type="text" placeholder="输入物品名（模糊）或 ID（精确）搜索" style="flex:1 1 auto;min-width:0"></div>' +
+      '<div class="row"><button id="dsh-inv-read" style="flex:0 0 auto">立即读取</button>' +
+      '<span class="st" id="dsh-inv-msg" style="font-size:10px;margin-left:6px">打开仓库自动读取，或点「立即读取」读背包</span></div>' +
+      '<div id="dsh-inv-results" style="font-size:11px;max-height:320px;overflow:auto;border:1px solid #c7d3e6;border-radius:6px;padding:6px;margin-top:4px;background:#fff"><span class="st">输入关键词搜索，或先打开仓库记录数据。</span></div>' +
+      '<div class="row" style="margin-top:4px"><button class="ghost" id="dsh-inv-clear" style="flex:0 0 auto">清空数据</button>' +
+      '<button class="ghost" id="dsh-inv-export" style="flex:0 0 auto">导出 JSON</button></div>' +
       '</div>' +
       '</div></div>',
     pickup: '' +
@@ -860,6 +875,10 @@
     system: '' +
       '<div class="row"><span class="lb">数据源</span><span id="dsh-datasrc">检测中…</span></div>' +
       '<div class="row"><span class="lb">角色</span><span id="dsh-chr">未登录</span></div>' +
+      '<div class="sec">仓库读取配置</div>' +
+      '<div class="row"><span class="lb">账号名称</span><input id="dsh-inv-account" type="text" placeholder="用于标识仓库数据（如：主号）" style="flex:1 1 auto;min-width:0"></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-inv-auto" type="checkbox" checked>自动读取仓库和背包</label></div>' +
+      '<div class="log">账号名称用于区分不同账号的共享仓库；仓库数据按账号存，背包按角色存，打开仓库时自动读取并覆盖旧数据。</div>' +
       '<div class="sec">保活与重连</div>' +
       
       '<div class="row"><label class="switch"><input id="dsh-bgkeep" type="checkbox" checked>后台保活(音频+WebLock)</label><span class="tag blue">切后台保持吃药/打怪/拾取</span></div>' +
@@ -7035,6 +7054,96 @@
     }
   }
 
+  // ---------------- V2.11.0 仓库+背包读取：事件绑定 ----------------
+  (function () {
+    try {
+      // 账号名称配置
+      var accInput = $id("dsh-inv-account");
+      if (accInput) {
+        try { accInput.value = localStorage.getItem("dsh_ro_inventory_account") || ""; } catch (e) {}
+        accInput.addEventListener("change", function () {
+          try { localStorage.setItem("dsh_ro_inventory_account", accInput.value.trim()); } catch (e) {}
+          setStatus("账号名称已保存", "ok");
+        });
+      }
+      // 自动读取开关
+      var autoCheck = $id("dsh-inv-auto");
+      if (autoCheck) {
+        try { autoCheck.checked = localStorage.getItem("dsh_ro_inventory_auto") !== "false"; } catch (e) {}
+        autoCheck.addEventListener("change", function () {
+          try { localStorage.setItem("dsh_ro_inventory_auto", String(autoCheck.checked)); } catch (e) {}
+        });
+      }
+      // 搜索框实时搜索
+      var searchInput = $id("dsh-inv-search");
+      var resultsEl = $id("dsh-inv-results");
+      if (searchInput && resultsEl) {
+        searchInput.addEventListener("input", function () {
+          var kw = searchInput.value.trim();
+          if (!kw) { resultsEl.innerHTML = '<span class="st">输入关键词搜索，或先打开仓库记录数据。</span>'; return; }
+          var res = searchInventory(kw);
+          resultsEl.innerHTML = renderInventoryResults(res, kw);
+        });
+      }
+      // 立即读取按钮
+      var readBtn = $id("dsh-inv-read");
+      if (readBtn) {
+        readBtn.addEventListener("click", function () {
+          inventoryReadChar = null;
+          readStorageAndInventory();
+        });
+      }
+      // 清空按钮
+      var clearBtn = $id("dsh-inv-clear");
+      if (clearBtn) {
+        clearBtn.addEventListener("click", function () {
+          if (!confirm("确定清空所有仓库和背包数据？")) return;
+          try { localStorage.removeItem("dsh_ro_inventory_v1"); } catch (e) {}
+          if (resultsEl) resultsEl.innerHTML = '<span class="st">已清空。</span>';
+          setStatus("仓库/背包数据已清空", "ok");
+        });
+      }
+      // 导出按钮
+      var exportBtn = $id("dsh-inv-export");
+      if (exportBtn) {
+        exportBtn.addEventListener("click", function () {
+          var raw = null;
+          try { raw = localStorage.getItem("dsh_ro_inventory_v1"); } catch (e) {}
+          if (!raw) { setStatus("暂无数据可导出", "err"); return; }
+          try {
+            var blob = new Blob([raw], { type: "application/json" });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement("a");
+            a.href = url;
+            a.download = "ro-inventory-" + Date.now() + ".json";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+            setStatus("已导出 JSON", "ok");
+          } catch (e) { setStatus("导出失败：" + e.message, "err"); }
+        });
+      }
+      // 监听仓库窗口打开（MutationObserver + 防抖）
+      var storageWinWasOpen = false;
+      var storageObs = new MutationObserver(function () {
+        try {
+          if (localStorage.getItem("dsh_ro_inventory_auto") === "false") return;
+          var win = findStorageWindow();
+          var isOpen = !!win;
+          if (isOpen && !storageWinWasOpen) {
+            console.log("[INV] MutationObserver 检测到仓库窗口打开");
+            onStorageWindowOpen();
+          }
+          storageWinWasOpen = isOpen;
+        } catch (e) {}
+      });
+      storageObs.observe(document.body, { childList: true, subtree: true });
+    } catch (e) {
+      console.error("[INV] 事件绑定失败:", e);
+    }
+  })();
+
   // ---------------- 快速侦查 ----------------
   var reconSeen = {};
   function renderRecon() {
@@ -7660,6 +7769,264 @@
         }
       } catch (e) {}
     }, 5000);
+  }
+
+  // ============ V2.11.0 仓库+背包读取与查询 ============
+  // 获取当前账号名（优先登录信息，其次用户配置，最后 default）
+  function getInventoryAccount() {
+    try {
+      var login = JSON.parse(localStorage.getItem("dsh_ro_login") || "{}");
+      if (login && login.account) return login.account;
+    } catch (e) {}
+    try {
+      var acc = localStorage.getItem("dsh_ro_inventory_account");
+      if (acc && acc.trim()) return acc.trim();
+    } catch (e) {}
+    return "default";
+  }
+
+  // 物品类型 → 分类
+  function categorizeItemType(type) {
+    var map = { 0: "回复", 2: "消耗", 3: "材料", 4: "装备", 5: "装备", 6: "卡片", 7: "其他", 8: "其他", 10: "其他", 11: "消耗", 18: "其他" };
+    return map[type] || "其他";
+  }
+
+  // 物品列表分类统计
+  function categorizeItems(items) {
+    var stats = { total: 0, cats: {} };
+    var list = [];
+    try {
+      for (var i = 0; i < items.length; i++) {
+        var it = items[i] || {};
+        var itid = it.ITID != null ? it.ITID : (it.itemid != null ? it.itemid : null);
+        var cnt = it.count != null ? it.count : (it.amount != null ? it.amount : 0);
+        if (itid == null || Number(cnt) <= 0) continue;
+        var cat = categorizeItemType(it.type != null ? it.type : it.itemType);
+        stats.total++;
+        stats.cats[cat] = (stats.cats[cat] || 0) + 1;
+        list.push({ itid: Number(itid), name: getItemNameS(itid), count: Number(cnt), category: cat });
+      }
+    } catch (e) {}
+    return { stats: stats, items: list };
+  }
+
+  // 查找仓库数据源（类似 findInventory，尝试 Storage 组件 list）
+  function findStorage() {
+    try {
+      if (!CLIENT.UI) CLIENT.UI = window.require && window.require("UI/UIManager");
+      var UM = CLIENT.UI;
+      if (UM) {
+        var cands = ["BasicStorage", "Storage", "KafraStorage", "Warehouse", "StorageUI"];
+        for (var c = 0; c < cands.length; c++) {
+          var inst = null;
+          try { if (typeof UM.get === "function") inst = UM.get(cands[c]); } catch (e) {}
+          if (!inst && UM.components) inst = UM.components[cands[c]] || null;
+          if (!inst && UM.instance && UM.instance.components) inst = UM.instance.components[cands[c]] || null;
+          if (inst && Array.isArray(inst.list) && inst.list.length && inst.list[0] && typeof inst.list[0] === "object" && ("ITID" in inst.list[0] || "itemid" in inst.list[0])) return inst.list;
+        }
+      }
+      // 兜底：SessionStorage 顶层对象里带 storage 数组的
+      if (CLIENT.SS) {
+        var keys = Object.keys(CLIENT.SS);
+        for (var i = 0; i < keys.length; i++) {
+          try {
+            var v = CLIENT.SS[keys[i]];
+            if (v && typeof v === "object" && !Array.isArray(v) && v.storage && Array.isArray(v.storage) && v.storage.length) return v.storage;
+          } catch (e) {}
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  // 读取仓库和背包并保存
+  function readStorageAndInventory() {
+    try {
+      var account = getInventoryAccount();
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      var charName = (ent && (ent.displayName || ent.name || (ent.character && ent.character.name))) || "角色";
+
+      var inv = findInventory();
+      var invResult = inv ? categorizeItems(inv) : null;
+
+      var sto = findStorage();
+      var stoResult = sto ? categorizeItems(sto) : null;
+
+      if (!invResult && !stoResult) {
+        console.log("[INV] 未读取到背包和仓库数据");
+        setStatus("未读取到背包/仓库数据", "err");
+        return;
+      }
+
+      var data = {};
+      try { data = JSON.parse(localStorage.getItem("dsh_ro_inventory_v1") || "{}"); } catch (e) {}
+      if (!data[account] || typeof data[account] !== "object") data[account] = { accountName: account, storage: null, characters: {} };
+
+      if (stoResult) data[account].storage = { lastUpdate: Date.now(), stats: stoResult.stats, items: stoResult.items };
+      if (invResult) data[account].characters[charName] = { lastUpdate: Date.now(), bag: { stats: invResult.stats, items: invResult.items } };
+
+      try { localStorage.setItem("dsh_ro_inventory_v1", JSON.stringify(data)); } catch (e) {}
+
+      var msg = "已记录 " + (stoResult ? ("仓库 " + stoResult.stats.total + " 件") : "仓库未读到") + " · [" + charName + "] 背包 " + (invResult ? invResult.stats.total : 0) + " 件";
+      setStatus(msg, "ok");
+      console.log("[INV] " + msg + "（账号=" + account + "）");
+    } catch (e) {
+      console.error("[INV] 读取失败:", e);
+    }
+  }
+
+  // 轮询检测并读取（返回是否已完成读取）
+  function tryReadStorageAndInventory() {
+    try {
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      var curChar = (ent && (ent.displayName || ent.name || (ent.character && ent.character.name))) || "角色";
+      if (inventoryReadChar && curChar !== inventoryReadChar) {
+        console.log("[INV] 角色已切换（" + inventoryReadChar + "→" + curChar + "），取消读取");
+        return true; // 视为结束，避免继续轮询
+      }
+      var inv = findInventory();
+      if (!inv || !inv.length) return false; // 数据未就绪
+      readStorageAndInventory();
+      return true;
+    } catch (e) { return false; }
+  }
+
+  // 仓库窗口打开事件（200ms 延迟 + 轮询检测 + 5 秒超时）
+  function onStorageWindowOpen() {
+    try {
+      if (inventoryReadTimer) { clearTimeout(inventoryReadTimer); inventoryReadTimer = null; }
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      inventoryReadChar = (ent && (ent.displayName || ent.name || (ent.character && ent.character.name))) || "角色";
+      console.log("[INV] 检测到仓库窗口打开，角色=" + inventoryReadChar);
+
+      inventoryReadTimer = setTimeout(function () {
+        var attempts = 0, maxAttempts = 50; // 5 秒
+        var iv = setInterval(function () {
+          attempts++;
+          var done = false;
+          try { done = tryReadStorageAndInventory(); } catch (e) {}
+          if (done || attempts >= maxAttempts) {
+            clearInterval(iv);
+            inventoryReadTimer = null;
+            if (!done) console.log("[INV] 读取超时或数据未就绪");
+          }
+        }, 100);
+      }, 200);
+    } catch (e) { console.error("[INV] 打开处理失败:", e); }
+  }
+
+  // 查找仓库窗口 DOM（候选 selector）
+  function findStorageWindow() {
+    var sels = [".storage", ".warehouse", ".kafra", "#storage", ".Storage", ".storage-window", ".warehouse-window", ".inventory-storage"];
+    for (var i = 0; i < sels.length; i++) {
+      try {
+        var el = document.querySelector(sels[i]);
+        if (el && el.offsetParent) return el;
+      } catch (e) {}
+    }
+    return null;
+  }
+
+  // 搜索物品（ID 精确 / 名称模糊）
+  function searchInventory(keyword) {
+    var results = {};
+    var data = {};
+    try { data = JSON.parse(localStorage.getItem("dsh_ro_inventory_v1") || "{}"); } catch (e) {}
+    var isId = keyword !== "" && String(parseInt(keyword, 10)) === keyword;
+    var searchId = isId ? parseInt(keyword, 10) : null;
+
+    var accountNames = Object.keys(data);
+    for (var a = 0; a < accountNames.length; a++) {
+      var accountName = accountNames[a];
+      var account = data[accountName] || {};
+      var accountResults = { storage: [], characters: {} };
+
+      if (account.storage && account.storage.items) {
+        for (var s = 0; s < account.storage.items.length; s++) {
+          var sitem = account.storage.items[s];
+          var smatch = isId ? (sitem.itid === searchId) : (sitem.name && sitem.name.indexOf(keyword) >= 0);
+          if (smatch) accountResults.storage.push(sitem);
+        }
+      }
+
+      if (account.characters) {
+        var charNames = Object.keys(account.characters);
+        for (var c = 0; c < charNames.length; c++) {
+          var charName = charNames[c];
+          var charData = account.characters[charName] || {};
+          if (charData.bag && charData.bag.items) {
+            for (var i = 0; i < charData.bag.items.length; i++) {
+              var item = charData.bag.items[i];
+              var match = isId ? (item.itid === searchId) : (item.name && item.name.indexOf(keyword) >= 0);
+              if (match) {
+                if (!accountResults.characters[charName]) accountResults.characters[charName] = [];
+                accountResults.characters[charName].push(item);
+              }
+            }
+          }
+        }
+      }
+
+      if (accountResults.storage.length > 0 || Object.keys(accountResults.characters).length > 0) {
+        results[accountName] = accountResults;
+      }
+    }
+
+    return results;
+  }
+
+  // 高亮关键词（避免正则转义，用 indexOf 循环）
+  function highlightKeyword(text, keyword) {
+    if (!keyword || !text) return text;
+    var low = String(text).toLowerCase(), lowkw = String(keyword).toLowerCase();
+    var parts = [], pos = 0, found;
+    while ((found = low.indexOf(lowkw, pos)) >= 0) {
+      parts.push(String(text).slice(pos, found));
+      parts.push("<mark>" + String(text).slice(found, found + keyword.length) + "</mark>");
+      pos = found + keyword.length;
+    }
+    parts.push(String(text).slice(pos));
+    return parts.join("");
+  }
+
+  // 渲染搜索结果
+  function renderInventoryResults(results, keyword) {
+    var html = "";
+    var totalCount = 0;
+    var accountNames = Object.keys(results);
+
+    if (accountNames.length === 0) {
+      return '<div class="st">未找到匹配物品</div>';
+    }
+
+    for (var a = 0; a < accountNames.length; a++) {
+      var accountName = accountNames[a];
+      var accountData = results[accountName];
+      html += '<div style="margin:4px 0 8px;border-top:1px solid #e5eaf0;padding-top:4px">';
+      html += '<div style="font-weight:bold;color:#1259b3">【' + accountName + '】</div>';
+
+      if (accountData.storage.length > 0) {
+        for (var s = 0; s < accountData.storage.length; s++) {
+          var sitem = accountData.storage[s];
+          html += '<div style="padding:1px 0">仓库：' + highlightKeyword(sitem.name, keyword) + ' x' + sitem.count + '</div>';
+          totalCount += sitem.count;
+        }
+      }
+
+      var charNames = Object.keys(accountData.characters);
+      for (var c = 0; c < charNames.length; c++) {
+        var charName = charNames[c];
+        var items = accountData.characters[charName];
+        for (var i = 0; i < items.length; i++) {
+          html += '<div style="padding:1px 0">' + charName + '：' + highlightKeyword(items[i].name, keyword) + ' x' + items[i].count + '</div>';
+          totalCount += items[i].count;
+        }
+      }
+
+      html += '</div>';
+    }
+
+    return '<div style="font-weight:bold;margin-bottom:4px">共找到 ' + totalCount + ' 件</div>' + html;
   }
 
   function init() {

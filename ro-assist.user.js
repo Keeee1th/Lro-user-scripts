@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.11.3
+// @version      2.12.4
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.11.3"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.12.4"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -1846,7 +1846,7 @@
       if (ent && ent.GID != null && gidInt(ent.GID) && gidInt(ent.GID) !== lastCharGid) { try { onCharChanged(ent); } catch (e) {} }
       if (!ent) { sb.querySelector(".nm").textContent = "—"; sb.querySelector(".job").textContent = "未登录"; return; }
       var life = ent.life || {};
-      var name = ent.displayName || ent.name || (ent.character && ent.character.name) || "角色";
+      var name = (ent.display && ent.display.name) || ent.displayName || ent.name || (ent.character && ent.character.name) || "角色"; // V2.12.3：角色名在 display.name
       sb.querySelector(".nm").textContent = name;
       sb.querySelector(".job").textContent = getJobName(ent.job || (ent.character && ent.character.job)) + " · " + (ent.map ? ent.map : "");
       // 基础/职业等级：优先客户端 BasicInfo DOM（PAR_CHANGE 实时更新）；fallback 实体字段
@@ -1907,7 +1907,7 @@
           if (wvl2 && wvl2.textContent) mwt2 = parseInt(wvl2.textContent, 10);
         } catch (e5) {}
         snap.stat = {
-          name: ent.displayName || ent.name || (ent.character && ent.character.name) || "角色",
+          name: (ent.display && ent.display.name) || ent.displayName || ent.name || (ent.character && ent.character.name) || "角色", // V2.12.3
           job: getJobName(ent.job || (ent.character && ent.character.job)),
           map: ent.map || "",
           lv: blvl2 != null ? blvl2 : (ent.clevel || ent.baseLevel || "?"),
@@ -1957,7 +1957,7 @@
     try {
       var ent = CLIENT.SS && CLIENT.SS.Entity;
       if (ent) {
-        var cn = ent.displayName || ent.name || (ent.character && ent.character.name) || "";
+        var cn = (ent.display && ent.display.name) || ent.displayName || ent.name || (ent.character && ent.character.name) || ""; // V2.12.3
         if (cn) parts.push("角色：" + cn + (ent.GID != null ? "（ID" + ent.GID + "）" : ""));
       }
     } catch (e) {}
@@ -2064,10 +2064,21 @@
   // 角色切换 → 切档 + 自动加载上次保存（第8项）
   function onCharChanged(ent) {
     try {
-      var nm = ent.displayName || ent.name || "角色";
+      // V2.12.3：真实角色名在 ent.display.name；旧占位键「角色_GID」自动迁移到真实角色名键
+      var nm = (ent.display && ent.display.name) || ent.displayName || ent.name || "角色";
       var gid = gidInt(ent.GID);
       if (!gid) return;
       var key = (nm + "_" + gid).replace(/[\\\/:"*?<>|]/g, "_");
+      try {
+        var legacyKey = ("角色_" + gid);
+        if (key !== legacyKey && !profiles[key] && profiles[legacyKey]) {
+          profiles[key] = profiles[legacyKey];
+          profiles[key].name = nm;
+          delete profiles[legacyKey];
+          saveProfiles();
+          console.log("[PROFILE] 档案迁移: " + legacyKey + " → " + key);
+        }
+      } catch (me) {}
       if (activeProfileKey() === key && lastCharGid === gid) return;
       try { captureAll(); } catch (e) {} // 旧档先落盘
       setActiveProfile(key);
@@ -2270,6 +2281,7 @@
     "撒水祈福": "ASPERSIO", "撒水": "ASPERSIO",
     "圣母颂歌": "MAGNIFICAT", "圣母": "MAGNIFICAT",
     "霸邪之阵": "KYRIE", "霸邪": "KYRIE",
+    "圣母之祈福": "ASSUMPTIO", "祈福": "ASSUMPTIO",
     "天使之障壁": "ANGELUS", "障壁": "ANGELUS",
     "能量外套": "ENERGYCOAT",
     "灵魂": "SOULLINK",
@@ -2307,13 +2319,13 @@
     { cn: "能量外套", id: 31 }, { cn: "自动防御", id: 58 }, { cn: "反射盾", id: 59 },
     { cn: "长矛加速", id: 68 }, { cn: "爆气", id: 86 }, { cn: "钢体", id: 87 },
     { cn: "力量增幅", id: 98 }, { cn: "敏捷增幅", id: 99 }, { cn: "光环剑", id: 103 },
-    { cn: "防御架势", id: 104 }, { cn: "狂暴", id: 107 }, { cn: "圣洁祝福", id: 110 },
+    { cn: "防御架势", id: 104 }, { cn: "狂暴", id: 107 }, { cn: "圣洁祝福", id: 473 },
     { cn: "涂毒强化", id: 114 }, { cn: "真视", id: 115 }, { cn: "风之步", id: 116 },
     { cn: "手推车加速", id: 118 }, { cn: "经验保护", id: 130 }, { cn: "灵魂链接", id: 149 },
     { cn: "单剑加速", id: 161 }, { cn: "太阳抚慰", id: 169 }, { cn: "月亮抚慰", id: 170 },
     { cn: "星星抚慰", id: 171 }, { cn: "经验提升", id: 172 }, { cn: "防御提升", id: 179 },
     { cn: "再生术", id: 336 }, { cn: "咏唱辨识", id: 355 }, { cn: "灵感", id: 407 },
-    { cn: "圣礼", id: 472 }, { cn: "圣洁祝福(强化)", id: 473 }, { cn: "再生之光", id: 580 },
+    { cn: "圣礼", id: 472 }, { cn: "圣洁祝福(强化)", id: 473 }, { cn: "圣母之祈福", id: 473 }, { cn: "再生之光", id: 580 },
     { cn: "挑衅", id: 0, deb: 1 }, { cn: "泥沼地", id: 8, deb: 1 }, { cn: "减速术", id: 13, deb: 1 },
     { cn: "减速", id: 180, deb: 1 }, { cn: "血污染", id: 124, deb: 1 }, { cn: "关节破坏", id: 125, deb: 1 },
     { cn: "念力冲击", id: 126, deb: 1 }, { cn: "记忆下降", id: 127, deb: 1 }, { cn: "雾墙", id: 128, deb: 1 },
@@ -2409,6 +2421,185 @@
     }
     return out;
   }
+  // V2.12.4 日志实测补充表：StatusConst 后半段（526-2001）键值快照（服务器 StatusIcons.update 同源 EFST ID，仅 StatusConst 模块不可用时的兜底）
+  var DSH_EFST_EXTRA = {
+    "WIND_CURTAIN_OPTION":526,"WATER_BARRIER":527,"ZEPHYR":528,"SOLID_SKIN":529,"SOLID_SKIN_OPTION":530,
+    "STONE_SHIELD":531,"STONE_SHIELD_OPTION":532,"POWER_OF_GAIA":533,"EL_WAIT":534,"EL_PASSIVE":535,
+    "EL_DEFENSIVE":536,"EL_OFFENSIVE":537,"EL_COST":538,"PYROTECHNIC":539,"PYROTECHNIC_OPTION":540,
+    "HEATER":541,"HEATER_OPTION":542,"TROPIC":543,"TROPIC_OPTION":544,"AQUAPLAY":545,
+    "AQUAPLAY_OPTION":546,"COOLER":547,"COOLER_OPTION":548,"CHILLY_AIR":549,"CHILLY_AIR_OPTION":550,
+    "GUST":551,"GUST_OPTION":552,"BLAST":553,"BLAST_OPTION":554,"WILD_STORM":555,
+    "WILD_STORM_OPTION":556,"PETROLOGY":557,"PETROLOGY_OPTION":558,"CURSED_SOIL":559,"CURSED_SOIL_OPTION":560,
+    "UPHEAVAL":561,"UPHEAVAL_OPTION":562,"TIDAL_WEAPON":563,"TIDAL_WEAPON_OPTION":564,"ROCK_CRUSHER":565,
+    "ROCK_CRUSHER_ATK":566,"FIRE_INSIGNIA":567,"WATER_INSIGNIA":568,"WIND_INSIGNIA":569,"EARTH_INSIGNIA":570,
+    "EQUIPED_FLOOR":571,"GUARDIAN_RECALL":572,"MORA_BUFF":573,"REUSE_LIMIT_G":574,"REUSE_LIMIT_H":575,
+    "NEEDLE_OF_PARALYZE":576,"PAIN_KILLER":577,"G_LIFEPOTION":578,"VITALIZE_POTION":579,"LIGHT_OF_REGENE":580,
+    "OVERED_BOOST":581,"SILENT_BREEZE":582,"ODINS_POWER":583,"STYLE_CHANGE":584,"SONIC_CLAW_POSTDELAY":585,
+    "SILVERVEIN_RUSH_POSTDELAY":596,"MIDNIGHT_FRENZY_POSTDELAY":597,"GOLDENE_FERSE":598,"ANGRIFFS_MODUS":599,"TINDER_BREAKER":600,
+    "TINDER_BREAKER_POSTDELAY":601,"CBC":602,"CBC_POSTDELAY":603,"EQC":604,"MAGMA_FLOW":605,
+    "GRANITIC_ARMOR":606,"PYROCLASTIC":607,"VOLCANIC_ASH":608,"SPIRITS_SAVEINFO1":609,"SPIRITS_SAVEINFO2":610,
+    "MAGIC_CANDY":611,"SEARCH_STORE_INFO":612,"ALL_RIDING":613,"ALL_RIDING_REUSE_LIMIT":614,"MACRO":615,
+    "MACRO_POSTDELAY":616,"BEER_BOTTLE_CAP":617,"OVERLAPEXPUP":618,"PC_IZ_DUN05":619,"CRUSHSTRIKE":620,
+    "MONSTER_TRANSFORM":621,"SIT":622,"ONAIR":623,"MTF_ASPD":624,"MTF_RANGEATK":625,
+    "MTF_MATK":626,"MTF_MLEATKED":627,"MTF_CRIDAMAGE":628,"REUSE_LIMIT_MTF":629,"MACRO_PERMIT":630,
+    "MACRO_PLAY":631,"SKF_CAST":632,"SKF_ASPD":633,"SKF_ATK":634,"SKF_MATK":635,
+    "REWARD_PLUSONLYJOBEXP":636,"HANDICAPSTATE_NORECOVER":637,"SET_NUM_DEF":638,"SET_NUM_MDEF":639,"SET_PER_DEF":640,
+    "SET_PER_MDEF":641,"PARTYBOOKING_SEARCH_DELAY":642,"PARTYBOOKING_REGISTER_DELAY":643,"PERIOD_TIME_CHECK_DETECT_SKILL":644,"KO_JYUMONJIKIRI":645,
+    "MEIKYOUSISUI":646,"ATTHASTE_CASH":647,"EQUIPPED_DIVINE_ARMOR":648,"EQUIPPED_HOLY_ARMOR":649,"RWC2011":650,
+    "KYOUGAKU":651,"IZAYOI":652,"ZENKAI":653,"KG_KAGEHUMI":654,"KYOMU":655,
+    "KAGEMUSYA":656,"ZANGETSU":657,"PHI_DEMON":658,"GENSOU":659,"AKAITSUKI":660,
+    "TETANY":661,"GM_BATTLE":662,"GM_BATTLE2":663,"RWC2011_SCROLL":664,"ACTIVE_MONSTER_TRANSFORM":665,
+    "MYSTICPOWDER":666,"ECLAGE_RECALL":667,"ENTRY_QUEUE_APPLY_DELAY":668,"REUSE_LIMIT_ECL":669,"M_LIFEPOTION":670,
+    "ENTRY_QUEUE_NOTIFY_ADMISSION_TIME_OUT":671,"UNKNOWN_NAME":672,"ON_PUSH_CART":673,"HAT_EFFECT":674,"FLOWER_LEAF":675,
+    "RAY_OF_PROTECTION":676,"GLASTHEIM_ATK":677,"GLASTHEIM_DEF":678,"GLASTHEIM_HEAL":679,"GLASTHEIM_HIDDEN":680,
+    "GLASTHEIM_STATE":681,"GLASTHEIM_ITEMDEF":682,"GLASTHEIM_HPSP":683,"FOLLOWER_NPC_SKILL_POSTDELAY":684,"ALMIGHTY":685,
+    "GVG_GIANT":686,"GVG_GOLEM":687,"GVG_STUN":688,"GVG_STONE":689,"GVG_FREEZ":690,
+    "GVG_SLEEP":691,"GVG_CURSE":692,"GVG_SILENCE":693,"GVG_BLIND":694,"CLIENT_ONLY_EQUIP_ARROW":695,
+    "CLAN_INFO":696,"JP_EVENT01":697,"JP_EVENT02":698,"JP_EVENT03":699,"JP_EVENT04":700,
+    "TELEPORT_FIXEDCASTINGDELAY":701,"GEFFEN_MAGIC1":702,"GEFFEN_MAGIC2":703,"GEFFEN_MAGIC3":704,"QUEST_BUFF1":705,
+    "QUEST_BUFF2":706,"QUEST_BUFF3":707,"REUSE_LIMIT_RECALL":708,"SAVEPOSITION":709,"NPC_ICEEXPLO":710,
+    "FENRIR_CARD":711,"REUSE_LIMIT_ASPD_POTION":712,"MAXPAIN":713,"PC_STOP":714,"FRIGG_SONG":715,
+    "OFFERTORIUM":716,"TELEKINESIS_INTENSE":717,"MOONSTAR":718,"STRANGELIGHTS":719,"FULL_THROTTLE":720,
+    "REBOUND":721,"UNLIMIT":722,"KINGS_GRACE":723,"ITEM_ATKMAX":724,"ITEM_ATKMIN":725,
+    "ITEM_MATKMAX":726,"ITEM_MATKMIN":727,"SUPER_STAR":728,"HIGH_RANKER":729,"DARKCROW":730,
+    "VALENTINE_2013_1":731,"VALENTINE_2013_2":732,"VALENTINE_2013_3":733,"ILLUSIONDOPING":734,"WIDEWEB":735,
+    "CHILL":736,"BURNT":737,"PCCAFE_PLAY_TIME":738,"TWISTED_TIME":739,"FLASHCOMBO":740,
+    "JITTER_BUFF1":741,"JITTER_BUFF2":742,"JITTER_BUFF3":743,"JITTER_BUFF4":744,"JITTER_BUFF5":745,
+    "JITTER_BUFF6":746,"JITTER_BUFF7":747,"JITTER_BUFF8":748,"JITTER_BUFF9":749,"JITTER_BUFF10":750,
+    "CUP_OF_BOZA":751,"B_TRAP":752,"E_CHAIN":753,"E_QD_SHOT_READY":754,"C_MARKER":755,
+    "H_MINE":756,"H_MINE_SPLASH":757,"P_ALTER":758,"HEAT_BARREL":759,"ANTI_M_BLAST":760,
+    "SLUGSHOT":761,"SWORDCLAN":762,"ARCWANDCLAN":763,"GOLDENMACECLAN":764,"CROSSBOWCLAN":765,
+    "PACKING_ENVELOPE1":766,"PACKING_ENVELOPE2":767,"PACKING_ENVELOPE3":768,"PACKING_ENVELOPE4":769,"PACKING_ENVELOPE5":770,
+    "PACKING_ENVELOPE6":771,"PACKING_ENVELOPE7":772,"PACKING_ENVELOPE8":773,"PACKING_ENVELOPE9":774,"PACKING_ENVELOPE10":775,
+    "GLASTHEIM_TRANS":776,"ZONGZI_POUCH_TRANS":777,"HEAT_BARREL_AFTER":778,"DECORATION_OF_MUSIC":779,"OVERSEAEXPUP":780,
+    "CLOWN_N_GYPSY_CARD":781,"OPEN_NPC_MARKET":782,"BEEF_RIB_STEW":783,"PORK_RIB_STEW":784,"CHUSEOK_MONDAY":785,
+    "CHUSEOK_TUESDAY":786,"CHUSEOK_WEDNESDAY":787,"CHUSEOK_THURSDAY":788,"CHUSEOK_FRIDAY":789,"CHUSEOK_WEEKEND":790,
+    "ALL_LIGHTGUARD":791,"ALL_LIGHTGUARD_COOL_TIME":792,"MTF_MHP":793,"MTF_MSP":794,"MTF_PUMPKIN":795,
+    "MTF_HITFLEE":796,"MTF_CRIDAMAGE2":797,"MTF_SPDRAIN":798,"ACUO_MINT_GUM":799,"S_HEALPOTION":800,
+    "REUSE_LIMIT_S_HEAL_POTION":801,"PLAYTIME_STATISTICS":802,"GN_CHANGEMATERIAL_OPERATOR":803,"GN_MIX_COOKING_OPERATOR":804,"GN_MAKEBOMB_OPERATOR":805,
+    "GN_S_PHARMACY_OPERATOR":806,"SO_EL_ANALYSIS_DISASSEMBLY_OPERATOR":807,"SO_EL_ANALYSIS_COMBINATION_OPERATOR":808,"NC_MAGICDECOY_OPERATOR":809,"GUILD_STORAGE":810,
+    "GC_POISONINGWEAPON_OPERATOR":811,"WS_WEAPONREFINE_OPERATOR":812,"BS_REPAIRWEAPON_OPERATOR":813,"UNREADMAIL_CHECK":814,"JUMPINGCLAN":815,
+    "JP_OTP":816,"HANDICAPTOLERANCE_LEVELGAP":817,"MTF_RANGEATK2":818,"MTF_ASPD2":819,"MTF_MATK2":820,
+    "SHOW_NPCHPBAR":821,"FLOWERSMOKE":822,"FSTONE":823,"DAILYSENDMAILCNT":824,"QSCARABA":825,
+    "LJOSALFAR":826,"PAD_READER_KNIGHT":827,"PAD_READER_CRUSADER":828,"PAD_READER_BLACKSMITH":829,"PAD_READER_ALCHEMIST":830,
+    "PAD_READER_ASSASSIN":831,"PAD_READER_ROGUE":832,"PAD_READER_WIZARD":833,"PAD_READER_SAGE":834,"PAD_READER_PRIEST":835,
+    "PAD_READER_MONK":836,"PAD_READER_HUNTER":837,"PAD_READER_BARD":838,"PAD_READER_DANCER":839,"PAD_READER_TAEKWON":840,
+    "PAD_READER_NINJA":841,"PAD_READER_GUNSLINGER":842,"PAD_READER_SUPERNOVICE":843,"ESSENCE_OF_TIME":844,"MINIGAME_ROULETTE":845,
+    "MINIGAME_GOLD_POINT":846,"MINIGAME_SILVER_POINT":847,"MINIGAME_BRONZE_POINT":848,"HAPPINESS_STAR":849,"SUMMEREVENT01":850,
+    "SUMMEREVENT02":851,"SUMMEREVENT03":852,"SUMMEREVENT04":853,"SUMMEREVENT05":854,"MINIGAME_ROULETTE_BONUS_ITEM":855,
+    "DRESS_UP":856,"MAPLE_FALLS":857,"ALL_NIFLHEIM_RECALL":858,"MARKING_USE_CHANGEMONSTER":859,"MTF_MARIONETTE":860,
+    "MTF_LUDE":861,"MTF_CRUISER":862,"MERMAID_LONGING":863,"MAGICAL_FEATHER":864,"DRACULA_CARD":865,
+    "ALL_PRONTERA_RECALL":866,"LIMIT_POWER_BOOSTER":867,"GIFT_OF_SNOW":868,"NPC_HALLUCINATIONWALK":869,"NPC_HALLUCINATIONWALK_POSTDELAY":870,
+    "NPC_XXXWALK":871,"TIME_ACCESSORY":872,"EP16_DEF":873,"NORMAL_ATKED_SP":874,"BODYSTATE_STONECURSE":875,
+    "BODYSTATE_FREEZING":876,"BODYSTATE_STUN":877,"BODYSTATE_SLEEP":878,"BODYSTATE_UNDEAD":879,"BODYSTATE_STONECURSE_ING":880,
+    "BODYSTATE_BURNNING":881,"BODYSTATE_IMPRISON":882,"HEALTHSTATE_POISON":883,"HEALTHSTATE_CURSE":884,"HEALTHSTATE_SILENCE":885,
+    "HEALTHSTATE_CONFUSION":886,"HEALTHSTATE_BLIND":887,"HEALTHSTATE_ANGELUS":888,"HEALTHSTATE_BLOODING":889,"HEALTHSTATE_HEAVYPOISON":890,
+    "HEALTHSTATE_FEAR":891,"CHERRY_BLOSSOM_CAKE":892,"SU_STOOP":893,"CATNIPPOWDER":894,"HEAD_EQUIPMENT_EFFECT":895,
+    "SV_ROOTTWIST":896,"ATTACK_PROPERTY_NOTHING":897,"ATTACK_PROPERTY_WATER":898,"ATTACK_PROPERTY_GROUND":899,"ATTACK_PROPERTY_FIRE":900,
+    "ATTACK_PROPERTY_WIND":901,"ATTACK_PROPERTY_POISON":902,"ATTACK_PROPERTY_SAINT":903,"ATTACK_PROPERTY_DARKNESS":904,"ATTACK_PROPERTY_TELEKINESIS":905,
+    "ATTACK_PROPERTY_UNDEAD":906,"RESIST_PROPERTY_NOTHING":907,"RESIST_PROPERTY_WATER":908,"RESIST_PROPERTY_GROUND":909,"RESIST_PROPERTY_FIRE":910,
+    "RESIST_PROPERTY_WIND":911,"RESIST_PROPERTY_POISON":912,"RESIST_PROPERTY_SAINT":913,"RESIST_PROPERTY_DARKNESS":914,"RESIST_PROPERTY_TELEKINESIS":915,
+    "RESIST_PROPERTY_UNDEAD":916,"BITESCAR":917,"ARCLOUSEDASH":918,"TUNAPARTY":919,"SHRIMP":920,
+    "FRESHSHRIMP":921,"PERIOD_RECEIVEITEM":922,"PERIOD_PLUSEXP":923,"PERIOD_PLUSJOBEXP":924,"RUNEHELM":925,
+    "HELM_VERKANA":926,"HELM_RHYDO":927,"HELM_TURISUS":928,"HELM_HAGALAS":929,"HELM_ISIA":930,
+    "HELM_ASIR":931,"HELM_URJ":932,"SUHIDE":933,"REUSE_LIMIT_MG":934,"DORAM_BUF_01":935,
+    "DORAM_BUF_02":936,"SPRITEMABLE":937,"AID_PERIOD_RECEIVEITEM":938,"AID_PERIOD_PLUSEXP":939,"AID_PERIOD_PLUSJOBEXP":940,
+    "AID_PERIOD_DEADPENALTY":941,"AID_PERIOD_ADDSTOREITEMCOUNT":942,"ALL_GLASTHEIM_RECALL":943,"REUSE_LIMIT_PEPO_MD":944,"ALL_THANATOS_RECALL":945,
+    "KAFRA_STORE":946,"REUSE_ABBYS":947,"MAGICSTONE_OF_GRACE_SET":948,"PRIVATE_AIRPLANE":949,"HISS":950,
+    "HISS_AVOID":951,"NYANGGRASS":952,"CHATTERING":953,"CHATTERING_OPT_ATK_MATK":954,"CHATTERING_OPT_HASTE":955,
+    "SPIRITOFLAND_STEMSPEAR":956,"SPIRITOFLAND_ROOTTWIST":957,"SPIRITOFLAND_POWDERING":958,"SPIRITOFLAND_METEOR":959,"SPIRITOFLAND_NYANGGRASS":960,
+    "GROOMING":961,"PROTECTIONOFSHRIMP":962,"EP16_2_BUFF_SS":963,"EP16_2_BUFF_SC":964,"EP16_2_BUFF_AC":965,
+    "GS_MAGICAL_BULLET":966,"FALLEN_ANGEL":976,"REUSE_LIMIT_MOVEPOINT":977,"MACRO_DETECTOR_ANSWER_WAITING":978,"BLAZE_BEAD":979,
+    "FROZEN_BEAD":980,"BREEZE_BEAD":981,"SOULATTACK":982,"AID_PERIOD_RECEIVEITEM_2ND":983,"AID_PERIOD_PLUSEXP_2ND":984,
+    "AID_PERIOD_PLUSJOBEXP_2ND":985,"PRONTERA_JP":986,"ASSISTANT_VENDING":987,"GLOOM_CARD":988,"PHARAOH_CARD":989,
+    "KIEL_CARD":990,"ASSISTANT_BUYING":991,"CHEERUP":992,"GET_CNT_UNREAD_RODEX_CHARDB":993,"GET_CNT_UNREAD_RODEX_GLOBALDB":994,
+    "S_MANAPOTION":995,"M_DEFSCROLL":996,"OPEN_REFINING_UI":997,"ALL_LIGHTHALZEN_RECALL":998,"SWAP_EQUIPITEM":999,
+    "AS_RAGGED_GOLEM_CARD":1000,"LHZ_DUN_N1":1001,"LHZ_DUN_N2":1002,"LHZ_DUN_N3":1003,"LHZ_DUN_N4":1004,
+    "TAEKWON_MISSION":1005,"SUN_PLACE":1006,"MOON_PLACE":1007,"STAR_PLACE":1008,"SUN_MONSTER":1009,
+    "MOON_MONSTER":1010,"STAR_MONSTER":1011,"AL_WARP_ADDSLOT":1012,"ALL_STAT_DOWN":1013,"GRADUAL_GRAVITY":1014,
+    "DAMAGE_HEAL":1015,"IMMUNE_PROPERTY_NOTHING":1016,"IMMUNE_PROPERTY_WATER":1017,"IMMUNE_PROPERTY_GROUND":1018,"IMMUNE_PROPERTY_FIRE":1019,
+    "IMMUNE_PROPERTY_WIND":1020,"IMMUNE_PROPERTY_POISON":1021,"IMMUNE_PROPERTY_SAINT":1022,"IMMUNE_PROPERTY_DARKNESS":1023,"IMMUNE_PROPERTY_TELEKINESIS":1024,
+    "IMMUNE_PROPERTY_UNDEAD":1025,"REUSE_LIMIT_NP":1026,"SPECIALCOOKIE":1027,"DAMAGE_HEAL2":1028,"DAMAGE_HEAL3":1029,
+    "GLORY_OF_RETURN":1030,"ATK_POPCORN":1031,"MATK_POPCORN":1032,"ASPD_POPCORN":1033,"ULTIMATECOOK":1034,
+    "LIGHTOFMOON":1035,"LIGHTOFSUN":1036,"LIGHTOFSTAR":1037,"LUNARSTANCE":1038,"UNIVERSESTANCE":1039,
+    "SUNSTANCE":1040,"FLASHKICK":1041,"NEWMOON":1042,"STARSTANCE":1043,"DIMENSION":1044,
+    "DIMENSION1":1045,"DIMENSION2":1046,"CREATINGSTAR":1047,"FALLINGSTAR":1048,"NOVAEXPLOSING":1049,
+    "GRAVITYCONTROL":1050,"XXX_WORLDSTORE_ACTIVE":1051,"WORLDSTORE_ITEMMOVEINFO_SENDCOMPLETE":1052,"SOULCOLLECT":1053,"SOULREAPER":1054,
+    "SOULUNITY":1055,"SOULSHADOW":1056,"SOULFAIRY":1057,"SOULFALCON":1058,"SOULGOLEM":1059,
+    "SOULDIVISION":1060,"SOULENERGY":1061,"USE_SKILL_SP_SPA":1062,"USE_SKILL_SP_SHA":1063,"SP_SHA":1064,
+    "INFINITY_DRINK":1065,"ABYSS_001":1066,"ABYSS_002":1067,"ABYSS_003":1068,"ABYSS_004":1069,
+    "ABYSS_005":1070,"ABYSS_006":1071,"ABYSS_007":1072,"ABYSS_008":1073,"REUSE_LIMIT_THM":1075,
+    "REUSE_LIMIT_TLI":1076,"REUSE_LIMIT_TKC":1077,"REUSE_LIMIT_TRP":1078,"REUSE_LIMIT_TBG":1079,"REUSE_LIMIT_TBM":1080,
+    "YGGDRASIL_BLESS":1081,"USE_SKILL_SP_SWHOO":1082,"HUNTING_EVENT":1083,"PERIOD_RECEIVEITEM_2ND":1084,"PERIOD_PLUSEXP_2ND":1085,
+    "EXPDROPUP":1086,"TW_NEWYEAR_EVENT":1087,"ENSEMBLEFATIGUE":1088,"ADAPTATION":1089,"DANCINGLESSON":1090,
+    "MUSICALLESSON":1091,"REUSE_LIMIT_RC":1092,"DANCINGLESSON_EQUIPPED":1093,"MUSICALLESSON_EQUIPPED":1094,"ANCILLA":1095,
+    "REUSE_LIMIT_POTION_A":1096,"REUSE_LIMIT_POTION_B":1097,"REUSE_LIMIT_POTION_C":1098,"REUSE_LIMIT_POTION_D":1099,"REUSE_LIMIT_POTION_E":1100,
+    "REUSE_LIMIT_POTION_F":1101,"BRAVESET":1102,"MACEMASTERY_EQUIPPED":1103,"FESTIVE_ENERGY":1104,"TEST_KR01":1105,
+    "STARFISH_JP":1106,"WEAPONBLOCK_ON":1107,"CRI_DAMAGE":1108,"DEF_POWER":1109,"DEF_IGNORE":1110,
+    "BOW_ATK_POWER":1111,"RED_ORG_POTION":1112,"CAST_TIME":1113,"BLADESTOPREADY":1114,"TELEPORT_BR":1115,
+    "SA_WEAPON_PROPERTY":1116,"LEAPIMPAIRED":1117,"SENDING_ITEMLIST":1118,"EXCLUSIVE_RECEIVEITEM":1119,"EXCLUSIVE_PLUSEXP":1120,
+    "ASSUMPTIO_BUFF":1121,"BASILICA_BUFF":1122,"OVERLAPEXPUP2":1123,"STOPMOVE_IMMEDIATELY":1124,"SOULCURSE":1125,
+    "SOUND_OF_DESTRUCTION":1126,"DF_MANAPLUS":1127,"DF_FULLSWINGK":1128,"NV_BREAKTHROUGH":1129,"HELPANGEL":1130,
+    "NV_TRANSCENDENCE":1131,"SWEETSFAIR_ATK":1132,"SWEETSFAIR_MATK":1133,"REUSE_SKILL":1134,"FLOWER_LEAF2":1135,
+    "FLOWER_LEAF3":1136,"FLOWER_LEAF4":1137,"CHARM_BOOST":1138,"EARTHSHAKER":1139,"PERIOD_USE_WORLDMAP":1140,
+    "MISTY_FROST":1141,"MAGIC_POISON":1142,"KAUTE":1143,"REUSE_JPNONLY_LIMIT_I":1144,"REUSE_JPNONLY_LIMIT_J":1145,
+    "REUSE_JPNONLY_LIMIT_K":1146,"JPNONLY_TACTICS":1147,"PRISON":1148,"MADOGEAR":1149,"DEADLY_DEFEASANCE":1150,
+    "CLIMAX_DES_HU":1151,"CLIMAX":1152,"FEINTBOMB":1153,"LUXANIMA":1154,"BATH_FOAM_A":1155,
+    "BATH_FOAM_B":1156,"BATH_FOAM_C":1157,"AROMA_OIL":1158,"REUSE_LIMIT_LUXANIMA":1159,"POWERFUL_FAITH":1160,
+    "SINCERE_FAITH":1161,"FIRM_FAITH":1162,"AIRSHIP_PIPE":1163,"PIECES_OF_SHADOW":1164,"HELLS_PLANT_ARMOR":1165,
+    "RELIEVE_DAMAGE":1166,"LOCKON_LASER":1167,"GRADE_ENCHANT_UI_OPEN":1168,"REF_T_POTION":1169,"ADD_ATK_DAMAGE":1170,
+    "ADD_MATK_DAMAGE":1171,"SERVANTWEAPON":1172,"SERVANT_SIGN":1173,"CHARGINGPIERCE":1174,"CHARGINGPIERCE_COUNT":1175,
+    "DRAGONIC_AURA":1176,"BIG_SCAR":1177,"VIGOR":1178,"WILL_OF_FAITH":1179,"PRESSURE":1180,
+    "SA_DRAGONOLOGY":1181,"CLIMAX_EARTH":1182,"CLIMAX_BLOOM":1183,"CLIMAX_CRYIMP":1184,"MD_ME_POTION":1185,
+    "MD_MA_POTION":1186,"MD_TA_POTION":1187,"MD_RA_POTION":1188,"REUSE_MEGAPHONE":1189,"HOLY_OIL":1190,
+    "CRYSTAL_IMPACT":1191,"SHADOW_EXCEED":1192,"DANCING_KNIFE":1193,"POTENT_VENOM":1194,"SHADOW_SCAR":1195,
+    "E_SLASH_COUNT":1196,"MEDIALE":1197,"A_VITA":1198,"A_TELUM":1199,"PRE_ACIES":1200,
+    "COMPETENTIA":1201,"GUARD_STANCE":1202,"ATTACK_STANCE":1203,"GUARDIAN_S":1204,"HANDICAPSTATE_DEEPBLIND":1205,
+    "HANDICAPSTATE_DEEPSILENCE":1206,"HANDICAPSTATE_LASSITUDE":1207,"HANDICAPSTATE_FROSTBITE":1208,"HANDICAPSTATE_SWOONING":1209,"HANDICAPSTATE_LIGHTNINGSTRIKE":1210,
+    "HANDICAPSTATE_CRYSTALLIZATION":1211,"HANDICAPSTATE_CONFLAGRATION":1212,"HANDICAPSTATE_MISFORTUNE":1213,"HANDICAPSTATE_DEADLYPOISON":1214,"HANDICAPSTATE_DEPRESSION":1215,
+    "HANDICAPSTATE_HOLYFLAME":1216,"REBOUND_S":1217,"SHIELD_MASTERY":1218,"SPEAR_SWORD_M":1219,"HOLY_S":1220,
+    "ULTIMATE_S":1221,"SPEAR_SCAR":1222,"SHIELD_POWER":1223,"FIDUS_ANIMUS":1224,"MACE_BOOK_M":1225,
+    "SHADOW_WEAPON":1226,"RELIGIO":1227,"BENEDICTUM":1228,"MVPCARD_KIEL":1229,"FIRST_BRAND":1230,
+    "SECOND_BRAND":1231,"SECOND_JUDGE":1232,"THIRD_EXOR_FLAME":1233,"FIRST_FAITH_POWER":1234,"AXE_STOMP":1235,
+    "A_MACHINE":1236,"D_MACHINE":1237,"MT_M_MACHINE_OPERATOR":1238,"TWOAXEDEF":1239,"DAGGER_AND_BOW_M":1240,
+    "MAGIC_SWORD_M":1241,"SHADOW_STRIP":1242,"ABYSS_DAGGER":1243,"ABYSSFORCEWEAPON":1244,"ABYSS_SLAYER":1245,
+    "TWOHANDDEF":1246,"PROTECTSHADOWEQUIP":1247,"RESEARCHREPORT":1248,"BO_HELL_DUSTY":1249,"WINDSIGN":1250,
+    "CRESCIVEBOLT":1251,"CALAMITYGALE":1252,"CRESCIVEBOLT3":1253,"STAGE_MANNER":1254,"RETROSPECTION":1255,
+    "MYSTIC_SYMPHONY":1256,"KVASIR_SONATA":1257,"SOUNDBLEND":1258,"GEF_NOCTURN":1259,"AIN_RHAPSODY":1260,
+    "MUSICAL_INTERLUDE":1261,"JAWAII_SERENADE":1262,"PRON_MARCH":1263,"ROSEBLOSSOM":1264,"BO_BIONIC_PHARMACY_OPERATOR":1265,
+    "ACIDIFIED_ZONE_WATER":1266,"ACIDIFIED_ZONE_GROUND":1267,"ACIDIFIED_ZONE_WIND":1268,"ACIDIFIED_ZONE_FIRE":1269,"MAGIC_BOOK_M":1270,
+    "SPELL_ENCHANTING":1271,"SUMMON_ELEMENTAL_ARDOR":1272,"SUMMON_ELEMENTAL_DILUVIO":1273,"SUMMON_ELEMENTAL_PROCELLA":1274,"SUMMON_ELEMENTAL_TERREMOTUS":1275,
+    "SUMMON_ELEMENTAL_SERPENS":1276,"FLAMETECHNIC":1277,"FLAMETECHNIC_OPTION":1278,"FLAMEARMOR":1279,"FLAMEARMOR_OPTION":1280,
+    "COLD_FORCE":1281,"COLD_FORCE_OPTION":1282,"CRYSTAL_ARMOR":1283,"CRYSTAL_ARMOR_OPTION":1284,"GRACE_BREEZE":1285,
+    "GRACE_BREEZE_OPTION":1286,"EYES_OF_STORM":1287,"EYES_OF_STORM_OPTION":1288,"EARTH_CARE":1289,"EARTH_CARE_OPTION":1290,
+    "STRONG_PROTECTION":1291,"STRONG_PROTECTION_OPTION":1292,"DEEP_POISONING":1293,"DEEP_POISONING_OPTION":1294,"POISON_SHIELD":1295,
+    "POISON_SHIELD_OPTION":1296,"ABR_BATTLE_WARIOR":1297,"ABR_DUAL_CANNON":1298,"ABR_MOTHER_NET":1299,"ABR_INFINITY":1300,
+    "ELEMENTAL_VEIL":1301,"RENOVATIO_EXT":1302,"HOMUN_TIME":1303,"POWER_ACCELERATION":1304,"MAX_HP_SP_AVOID":1305,
+    "ADD_ALL_STATE":1306,"AID_PERIOD_POWER_ACCELERATION":1307,"AID_PERIOD_MAX_HP_SP_AVOID":1308,"AID_PERIOD_ADD_ALL_STATE":1309,"POISON_MIST":1310,
+    "HACKANDSLASHER":1311,"GET_CNT_UNREAD_RETURN_RODEX_CHARDB":1312,"STONE_WALL":1313,"REUSE_LIMIT_I":1314,"OVERBRANDREADY":1315,
+    "SHIELDSPELL":1316,"AUTOSHADOWSPELL_CHECK2":1317,"CLOUD_POISON":1318,"SPORE_EXPLOSION_DEBUFF":1319,"DEFSCROLL":1321,
+    "MASSIVE_F_BLASTER":1326,"NOEQUIPWEAPON2":1330,"NOEQUIPARMOR2":1331,"NOEQUIPSHIELD2":1332,"NOEQUIPSHOES2":1333,
+    "NOEQUIPPENDANT2":1334,"NOEQUIPEARING2":1335,"NOEQUIPFULL2":1336,"CURSE_R_CUBE":1337,"CURSE_B_CUBE":1338,
+    "KILLING_AURA":1339,"TOXIN_OF_MANDARA":1341,"GOLDENE_TONE":1342,"TEMPERING":1343,"NW_P_F_I":1344,
+    "INTENSIVE_AIM":1345,"INTENSIVE_AIM_COUNT":1346,"GRENADE_FRAGMENT_1":1347,"GRENADE_FRAGMENT_2":1348,"GRENADE_FRAGMENT_3":1349,
+    "GRENADE_FRAGMENT_4":1350,"GRENADE_FRAGMENT_5":1351,"GRENADE_FRAGMENT_6":1352,"AUTO_FIRING_LAUNCHEREFST":1353,"HIDDEN_CARD":1354,
+    "NW_GRENADE_MASTERY":1355,"TALISMAN_OF_PROTECTION":1356,"TALISMAN_OF_WARRIOR":1357,"TALISMAN_OF_MAGICIAN":1358,"TALISMAN_OF_FIVE_ELEMENTS":1359,
+    "T_FIRST_GOD":1360,"T_SECOND_GOD":1361,"T_THIRD_GOD":1362,"T_FOURTH_GOD":1363,"T_FIVETH_GOD":1364,
+    "HEAVEN_AND_EARTH":1365,"HOGOGONG":1366,"MARINE_FESTIVAL":1367,"SANDY_FESTIVAL":1368,"KI_SUL_RAMPAGE":1369,
+    "COLORS_OF_HYUN_ROK_1":1370,"COLORS_OF_HYUN_ROK_2":1371,"COLORS_OF_HYUN_ROK_3":1372,"COLORS_OF_HYUN_ROK_4":1373,"COLORS_OF_HYUN_ROK_5":1374,
+    "COLORS_OF_HYUN_ROK_6":1375,"COLORS_OF_HYUN_ROK_BUFF":1376,"TEMPORARY_COMMUNION":1377,"BLESSING_OF_M_CREATURES":1378,"BLESSING_OF_M_C_DEBUFF":1379,
+    "SHIELDCHAINRUSH":1380,"MISTYFROST":1381,"GROUNDGRAVITY":1382,"BREAKINGLIMIT":1383,"RULEBREAK":1384,
+    "RISING_SUN":1385,"NOON_SUN":1386,"SUNSET_SUN":1387,"RISING_MOON":1388,"MIDNIGHT_MOON":1389,
+    "DAWN_MOON":1390,"STAR_BURST":1391,"SKY_ENCHANT":1392,"SHADOW_CLOCK":1393,"SHINKIROU_CALL":1394,
+    "NIGHTMARE":1395,"NOODLE_FES_1":1396,"NOODLE_FES_2":1397,"NOODLE_FES_3":1398,"NOODLE_FES_4":1399,
+    "NOODLE_FES_5":1400,"RUSH_QUAKE1":1402,"RUSH_QUAKE2":1403,"SBUNSHIN":1415,"MTP_W_POTION_100":1418,
+    "CHANGE_SIZE":1420,"CHANGE_SIZE_MONSTER":1421,"SHOW_EFFECT1":1422,"SHOW_EFFECT2":1423,"SHOW_EFFECT3":1424,
+    "VR_SPEED":1425,"VR_ASPD":1426,"VR_MHP":1427,"VR_MSP":1428,"VR_HIT":1429,
+    "VR_DEF":1430,"VR_MDEF":1431,"VR_BOOK001":1432,"VR_BOOK002":1433,"VR_BOOK003":1434,
+    "VR_BOOK004":1435,"REUSE_LIMIT_VR_BOOK":1436,"VR_BOOK005":1439,"VR_BOOK006":1440,"VR_BOOK007":1441,
+    "VR_BOOK008":1442,"VR_BOOK009":1443,"ALL_T_STAT":1444,"P_ATK_PLUS":1445,"S_MATK_PLUS":1446,
+    "C_RATE_PLUS":1447,"RESIST_PLUS":1448,"PVP_DUN_BUFF":1449,"BPOWER":2000,"MAX":2001
+  };
   // 状态键 → 客户端状态ID（StatusConst 常量表；支持 数字/英文SC名/中文别名；查不到返回 -1）
   function buffStId(key) {
     try {
@@ -2418,27 +2609,9 @@
       var cn = BUFF_STATUS_CN[key.toLowerCase()] || BUFF_STATUS_CN[key] ||
         BUFF_DEBUFF_CN[key.toLowerCase()] || BUFF_DEBUFF_CN[key] || "";
       var tryN = cn ? cn.toUpperCase() : up;
-      // V2.2.1 修复「仅天使之障壁识别成功」根因：原实现优先查 StatusConst 的 SC_ 序号，
-      // 而 buffActive 判活表用的是 StatusIcons.update 传来的 EFST 图标ID，两者不同源 → 绝大多数 buff 判活错位。
-      // 改为硬编码 EFST 图标ID 表优先，SC_ 序号仅作未覆盖状态（debuff 等）的兜底。
-      var map = {
-        "INC_AGI": 12, "BLESSING": 10, "ENDURE": 1, "ADRENALINE": 23, "WEAPONPERFECT": 24,
-        "OVERTHRUST": 25, "GLORIA": 21, "SUFFRAGIUM": 16, "ASPERSIO": 17, "MAGNIFICAT": 20,
-        "KYRIE": 19, "ANGELUS": 9, "ENERGYCOAT": 31, "SOULLINK": 149, "EXPLOSIONSPIRITS": 86,
-        "STEELBODY": 87, "LKCONCENTRATION": 105, "TWOHANDQUICKEN": 2, "SPEARQUICKEN": 68,
-        "WINDWALK": 116, "CHASEWALK": 119, "MAXIMIZE": 26, "AUTOGUARD": 58, "REFLECTSHIELD": 59,
-        "AURABLADE": 103, "BERSERK": 107, "ASSUMPTIO": 110, "EDP": 114, "TRUESIGHT": 115,
-        "PARRYING": 104, "CONCENTRATION": 3, "POWERUP": 98, "AGIUP": 99, "STRUP": 145,
-        "RIDING": 27, "FALCON": 28, "GOSPEL": 109, "INSPIRATION": 407, "ADORAMUS": 401,
-        "RENOVATIO": 336, "ORATIO": 330, "LAUDAAGNUS": 331, "LAUDARAMUS": 332, "EPICLESIS": 329,
-        "VENOMIMPRESS": 328, "WEAPONBLOCKING": 337, "ROLLINGCUTTER": 339, "POISONINGWEAPON": 341,
-        "CRESCENTELBOW": 419, "RAISINGDRAGON": 410, "GN_CARTBOOST": 461, "CARTBOOST": 118,
-        "UNLIMIT": 722, "FRIGG_SONG": 715, "KINGS_GRACE": 723, "MOONLIT_SERENADE": 447,
-        "SUN_COMFORT": 169, "MOON_COMFORT": 170, "STAR_COMFORT": 171
-      };
-      var e = map[cn ? cn.toUpperCase() : up];
-      if (e != null) return e;
-      // 兜底：客户端 StatusConst（SC_ 序号，与 EFST 不同源，仅硬编码未覆盖的状态才降级查）
+      // V2.12.4 重构：探查日志证实本服 StatusConst 键=英文状态名、值=EFST 图标ID，与 StatusIcons.update 同源
+      //（实测 ALL_RIDING=613/SIT=622 一一对应）。故 StatusConst 运行时查询优先（权威），
+      // 硬编码表与日志补充表 DSH_EFST_EXTRA 仅作 StatusConst 模块不可用时的兜底。
       try {
         var SC = window.require && window.require("DB/Status/StatusConst");
         if (SC) {
@@ -2450,6 +2623,29 @@
           }
         }
       } catch (e2) {}
+      // 兜底1：日志实测补充表（StatusConst 526-2001 快照，同源值）
+      try {
+        if (typeof DSH_EFST_EXTRA[tryN] === "number") return DSH_EFST_EXTRA[tryN];
+        if (tryN !== up && typeof DSH_EFST_EXTRA[up] === "number") return DSH_EFST_EXTRA[up];
+      } catch (e3) {}
+      // 兜底2：硬编码 EFST 表（rAthena 抄录，已按实测修正 ASSUMPTIO=473 等）
+      var map = {
+        "INC_AGI": 12, "BLESSING": 10, "ENDURE": 1, "ADRENALINE": 23, "WEAPONPERFECT": 24,
+        "OVERTHRUST": 25, "GLORIA": 21, "SUFFRAGIUM": 16, "ASPERSIO": 17, "MAGNIFICAT": 20,
+        "KYRIE": 19, "ANGELUS": 9, "ENERGYCOAT": 31, "SOULLINK": 149, "EXPLOSIONSPIRITS": 86,
+        "STEELBODY": 87, "LKCONCENTRATION": 105, "TWOHANDQUICKEN": 2, "SPEARQUICKEN": 68,
+        "WINDWALK": 116, "CHASEWALK": 119, "MAXIMIZE": 26, "AUTOGUARD": 58, "REFLECTSHIELD": 59,
+        "AURABLADE": 103, "BERSERK": 107, "ASSUMPTIO": 473, "EDP": 114, "TRUESIGHT": 115,
+        "PARRYING": 104, "CONCENTRATION": 3, "POWERUP": 98, "AGIUP": 99, "STRUP": 145,
+        "RIDING": 27, "FALCON": 28, "GOSPEL": 109, "INSPIRATION": 407, "ADORAMUS": 401,
+        "RENOVATIO": 336, "ORATIO": 330, "LAUDAAGNUS": 331, "LAUDARAMUS": 332, "EPICLESIS": 329,
+        "VENOMIMPRESS": 328, "WEAPONBLOCKING": 337, "ROLLINGCUTTER": 339, "POISONINGWEAPON": 341,
+        "CRESCENTELBOW": 419, "RAISINGDRAGON": 410, "GN_CARTBOOST": 461, "CARTBOOST": 118,
+        "UNLIMIT": 722, "FRIGG_SONG": 715, "KINGS_GRACE": 723, "MOONLIT_SERENADE": 447,
+        "SUN_COMFORT": 169, "MOON_COMFORT": 170, "STAR_COMFORT": 171
+      };
+      var e = map[cn ? cn.toUpperCase() : up];
+      if (e != null) return e;
       return -1;
     } catch (e) { return -1; }
   }
@@ -7363,7 +7559,7 @@
     '英文SC名            中文参考          英文SC名            中文参考',
     'MAXIMIZE           武器值最大化      AUTOGUARD           自动防御',
     'REFLECTSHIELD      反射盾            AURABLADE           光环剑',
-    'BERSERK            狂暴              ASSUMPTIO           圣洁祝福',
+    'BERSERK            狂暴              ASSUMPTIO           圣母之祈福',
     'EDP                涂毒强化          TRUESIGHT           真视',
     'PARRYING           防御架势          CONCENTRATION       集中攻击/心神凝聚',
     'POWERUP            力量增幅          AGIUP               敏捷增幅',
@@ -7774,9 +7970,9 @@
   // ============ V2.11.0 仓库+背包读取与查询 ============
   // 获取当前账号名（优先登录信息，其次用户配置，最后 default）
   function getInventoryAccount() {
+    // V2.12.1：优先 saved.account（登录时真实写入）；dsh_ro_login 是废弃键已弃用
     try {
-      var login = JSON.parse(localStorage.getItem("dsh_ro_login") || "{}");
-      if (login && login.account) return login.account;
+      if (saved && saved.account && String(saved.account).trim()) return String(saved.account).trim();
     } catch (e) {}
     try {
       var acc = localStorage.getItem("dsh_ro_inventory_account");
@@ -7785,9 +7981,27 @@
     return "default";
   }
 
+  // V2.12.1：获取当前角色名（优先实体，兜底当前档案名，避免显示占位「角色」）
+  function getCurrentCharName() {
+    try {
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      if (ent) {
+        // V2.12.3：真实角色名在 ent.display.name（displayName/name 是 undefined）
+        var nm = (ent.display && ent.display.name) || ent.displayName || ent.name || (ent.character && ent.character.name);
+        if (nm && String(nm).trim()) return String(nm).trim();
+      }
+    } catch (e) {}
+    try {
+      var pk = activeProfileKey();
+      var p = profiles[pk] || profiles["default"];
+      if (p && p.name && String(p.name).trim()) return String(p.name).trim();
+    } catch (e) {}
+    return "角色";
+  }
+
   // 物品类型 → 分类
   function categorizeItemType(type) {
-    var map = { 0: "回复", 2: "消耗", 3: "材料", 4: "装备", 5: "装备", 6: "卡片", 7: "其他", 8: "其他", 10: "其他", 11: "消耗", 18: "其他" };
+    var map = { 0: "回复", 2: "消耗", 3: "材料", 4: "装备", 5: "装备", 6: "卡片", 7: "其他", 8: "其他", 10: "弹药", 11: "消耗", 18: "其他" };
     return map[type] || "其他";
   }
 
@@ -7812,6 +8026,13 @@
 
   // 查找仓库数据源（类似 findInventory，尝试 Storage 组件 list）
   function findStorage() {
+    // V2.12.0：优先读 hook 缓存（打开仓库时 setItems 已把全量数据深拷贝到 window.__dshStorageCache）
+    try {
+      if (window.__dshStorageCache && Array.isArray(window.__dshStorageCache) && window.__dshStorageCache.length) {
+        return window.__dshStorageCache;
+      }
+    } catch (e) {}
+    // 兜底：尝试组件（理论上不会走到，保留兼容）
     try {
       if (!CLIENT.UI) CLIENT.UI = window.require && window.require("UI/UIManager");
       var UM = CLIENT.UI;
@@ -7822,29 +8043,20 @@
           try { if (typeof UM.get === "function") inst = UM.get(cands[c]); } catch (e) {}
           if (!inst && UM.components) inst = UM.components[cands[c]] || null;
           if (!inst && UM.instance && UM.instance.components) inst = UM.instance.components[cands[c]] || null;
-          if (inst && Array.isArray(inst.list) && inst.list.length && inst.list[0] && typeof inst.list[0] === "object" && ("ITID" in inst.list[0] || "itemid" in inst.list[0])) return inst.list;
-        }
-      }
-      // 兜底：SessionStorage 顶层对象里带 storage 数组的
-      if (CLIENT.SS) {
-        var keys = Object.keys(CLIENT.SS);
-        for (var i = 0; i < keys.length; i++) {
-          try {
-            var v = CLIENT.SS[keys[i]];
-            if (v && typeof v === "object" && !Array.isArray(v) && v.storage && Array.isArray(v.storage) && v.storage.length) return v.storage;
-          } catch (e) {}
+          if (inst && Array.isArray(inst.list) && inst.list.length && inst.list[0] && typeof inst.list[0] === "object" && ("ITID" in inst.list[0] || "itemid" in inst.list[0])) {
+            return inst.list;
+          }
         }
       }
     } catch (e) {}
     return null;
   }
-
   // 读取仓库和背包并保存
   function readStorageAndInventory() {
     try {
       var account = getInventoryAccount();
       var ent = CLIENT.SS && CLIENT.SS.Entity;
-      var charName = (ent && (ent.displayName || ent.name || (ent.character && ent.character.name))) || "角色";
+      var charName = getCurrentCharName();
 
       var inv = findInventory();
       var invResult = inv ? categorizeItems(inv) : null;
@@ -7879,7 +8091,7 @@
   function tryReadStorageAndInventory() {
     try {
       var ent = CLIENT.SS && CLIENT.SS.Entity;
-      var curChar = (ent && (ent.displayName || ent.name || (ent.character && ent.character.name))) || "角色";
+      var curChar = getCurrentCharName();
       if (inventoryReadChar && curChar !== inventoryReadChar) {
         console.log("[INV] 角色已切换（" + inventoryReadChar + "→" + curChar + "），取消读取");
         return true; // 视为结束，避免继续轮询
@@ -7896,7 +8108,7 @@
     try {
       if (inventoryReadTimer) { clearTimeout(inventoryReadTimer); inventoryReadTimer = null; }
       var ent = CLIENT.SS && CLIENT.SS.Entity;
-      inventoryReadChar = (ent && (ent.displayName || ent.name || (ent.character && ent.character.name))) || "角色";
+      inventoryReadChar = getCurrentCharName();
       console.log("[INV] 检测到仓库窗口打开，角色=" + inventoryReadChar);
 
       inventoryReadTimer = setTimeout(function () {
@@ -8312,6 +8524,47 @@
     });
     scrRenderList();
   } catch (e) {}
+  // ---------------- 仓库数据源启动期 hook（V2.11.9-diag）----------------
+  // 游戏加载完 Storage 组件后立刻包装 setItems/addItem 等，打开仓库时能抓到物品数据流入
+  // V2.12.0：hook Storage 组件的 setItems，把仓库全量数据深拷贝到 window.__dshStorageCache
+  function hookStorageEarly() {
+    try {
+      if (!window.__dshStorageHookedEarly) {
+        if (!CLIENT.UI) { try { CLIENT.UI = window.require && window.require("UI/UIManager"); } catch (e) {} }
+        var UM = CLIENT.UI;
+        var inst = null;
+        if (UM) {
+          try { if (typeof UM.get === "function") inst = UM.get("Storage"); } catch (e) {}
+          if (!inst && UM.components) inst = UM.components.Storage || null;
+        }
+        if (!inst || typeof inst.setItems !== "function") return false;
+        window.__dshStorageHookedEarly = true;
+        var _origSetItems = inst.setItems;
+        inst.setItems = function () {
+          try {
+            var arr = arguments[0];
+            if (Array.isArray(arr)) {
+              window.__dshStorageCache = JSON.parse(JSON.stringify(arr));
+              console.log("[STORAGE] 仓库已缓存 " + arr.length + " 件（V" + VER + "）");
+            }
+          } catch (e) {}
+          return _origSetItems.apply(this, arguments);
+        };
+        return true;
+      }
+      return true;
+    } catch (e) { return false; }
+  }
+  (function () {
+    var tries = 0;
+    var timer = setInterval(function () {
+      tries++;
+      var ok = false;
+      try { ok = hookStorageEarly(); } catch (e) {}
+      if (ok || tries > 50) clearInterval(timer);
+    }, 800);
+  })();
+
   // ---------------- 自动化 API ----------------
 
   window.__ROPlugin = {

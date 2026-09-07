@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.12.4
+// @version      2.13.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.12.4"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.13.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -339,6 +339,24 @@
         return nm || cur || "";
       }
       return cur || "";
+    } catch (e) { return ""; }
+  }
+  // V2.13.0：当前地图中文名（显示用；getMapName 保留返回原始 key 供逻辑使用）
+  function getMapNameCn() {
+    try {
+      var raw = getMapName();
+      if (!raw) return "";
+      var key = String(raw).replace(/\.gat$/i, "").toLowerCase();
+      var nm = "";
+      try { if (CLIENT.DB && typeof CLIENT.DB.getMapName === "function") nm = CLIENT.DB.getMapName(key) || ""; } catch (e) {}
+      if (!nm || nm === key) {
+        try {
+          var DB = CLIENT.DB || requireDB("DB/DBManager");
+          var wd = DB && typeof DB.getworldData === "function" ? DB.getworldData(key) : null;
+          if (wd && wd.name) nm = wd.name;
+        } catch (e) {}
+      }
+      return nm || raw;
     } catch (e) { return ""; }
   }
   function getJobName(jobId) {
@@ -654,6 +672,11 @@
       '<div class="row"><label class="switch"><input id="dsh-z-follow" type="checkbox" checked>锁定目标跟随追击</label>' +
       '<label class="switch"><input id="dsh-z-next" type="checkbox" checked>打死换下一个</label></div>' +
       '<div class="log">助手模式=自己发包：侦查 EntityManager 附近MOB（跳过死亡）→ 命中锁定目录 → 锁定模式：选定目标后固定GID持续攻击（不死/不丢失不换，防漂移）→ 按技能顺序施放（释放前置自动补，并行判断）→ 无技能默认普攻（穿插平A开关：技能间隙按攻击间隔补普攻）→ 打死换下一个/锁定跟随追击可开关 → 被非锁定怪攻击时按「非选中怪攻击」处理（无视/瞬移/还击，HP下降3s内触发）→ 无目标寻怪：①自研直走+A*避障（定向直走，撞墙/卡住才转向）；②内挂机制寻怪=只有可攻击到的锁定怪（射程内）才停内挂、助手战斗；无怪或锁定怪超出射程→持续发包让服务器移动靠近（二转 UPDATEINFO id38/34，三转 NPC:setautoattack）。持续N秒无锁定怪→自动瞬移换点(苍蝇/瞬移术Lv1)。</div>' +
+      '<details style="margin:4px 0"><summary style="cursor:pointer;color:#1259b3;font-size:12px">🔍 战斗诊断（V2.12.5-diag · 默认关 · 不改行为）</summary>' +
+      '<div class="row"><label class="switch"><input id="dsh-bt-diag" type="checkbox">启用诊断日志</label></div>' +
+      '<div class="row" style="flex-wrap:wrap;gap:4px"><button class="ghost" id="dsh-bt-snap" style="flex:0 0 auto;padding:0 8px;font-size:11px">快照</button><button class="ghost" id="dsh-bt-mark" style="flex:0 0 auto;padding:0 8px;font-size:11px">标记测试</button><button class="ghost" id="dsh-bt-click" style="flex:0 0 auto;padding:0 8px;font-size:11px">模拟点击</button></div>' +
+      '<div class="row"><span class="st" id="dsh-bt-state" style="font-size:10px">诊断: 关</span></div>' +
+      '<div id="dsh-bt-log" style="font-size:10px;max-height:150px;overflow:auto;background:#f4f6f8;border:1px solid #d8e0e8;border-radius:4px;padding:4px;font-family:monospace;white-space:pre-wrap;line-height:1.5">诊断日志: 关</div></details>' +
       '</div>',
     zhu: '' +
       '<div class="drow"><button class="dbtn" data-drw="battle-zhu" data-title="助手 · 战斗设置">战斗设置</button>' +
@@ -1583,12 +1606,38 @@
   if (saved.collapsed) applyCollapse(true);
 
   // ---------------- 快捷键（V2.8.0 三组 · Switch 单键切换）：面板收起 / 内挂自动战斗 / 助手自动战斗 ----------------
-  // 捕获态 hkTarget：null|panel|np|zhu；三组分别存 saved.hotkey / saved.hotkeyNp / saved.hotkeyZhu（面板键向后兼容旧档案）
+  // 捕获态 hkTarget：null|panel|np|zhu；三组存全局独立 key（V2.13.0 起所有角色共用，刷新/换角色不丢）
   var HK_TARGETS = {
     panel: { key: "hotkey", label: "面板", info: "dsh-hotkey-info", set: "dsh-hotkey-set", clear: "dsh-hotkey-clear" },
     np: { key: "hotkeyNp", label: "内挂自动战斗", info: "dsh-hotkey-info-np", set: "dsh-hotkey-set-np", clear: "dsh-hotkey-clear-np" },
     zhu: { key: "hotkeyZhu", label: "助手自动战斗", info: "dsh-hotkey-info-z", set: "dsh-hotkey-set-z", clear: "dsh-hotkey-clear-z" }
   };
+  // V2.13.0：快捷键全局记忆（独立 key dsh_ro_hotkeys_v1，所有角色共用；首次从旧角色档迁移一次）
+  var HK_KEY = "dsh_ro_hotkeys_v1";
+  var hotkeyCfg = { hotkey: null, hotkeyNp: null, hotkeyZhu: null };
+  function loadHotkeys() {
+    try {
+      var o = JSON.parse(localStorage.getItem(HK_KEY)) || {};
+      return { hotkey: o.hotkey || null, hotkeyNp: o.hotkeyNp || null, hotkeyZhu: o.hotkeyZhu || null };
+    } catch (e) { return { hotkey: null, hotkeyNp: null, hotkeyZhu: null }; }
+  }
+  function saveHotkeys() {
+    try { localStorage.setItem(HK_KEY, JSON.stringify({ hotkey: hotkeyCfg.hotkey || null, hotkeyNp: hotkeyCfg.hotkeyNp || null, hotkeyZhu: hotkeyCfg.hotkeyZhu || null })); } catch (e) {}
+  }
+  hotkeyCfg = loadHotkeys();
+  if (!hotkeyCfg.hotkey && !hotkeyCfg.hotkeyNp && !hotkeyCfg.hotkeyZhu) {
+    try {
+      var _profs = JSON.parse(localStorage.getItem(PROF_KEY)) || {};
+      for (var _pk in _profs) {
+        var _ps = _profs[_pk] && _profs[_pk].saved;
+        if (!_ps) continue;
+        if (!hotkeyCfg.hotkey && _ps.hotkey) hotkeyCfg.hotkey = _ps.hotkey;
+        if (!hotkeyCfg.hotkeyNp && _ps.hotkeyNp) hotkeyCfg.hotkeyNp = _ps.hotkeyNp;
+        if (!hotkeyCfg.hotkeyZhu && _ps.hotkeyZhu) hotkeyCfg.hotkeyZhu = _ps.hotkeyZhu;
+      }
+      if (hotkeyCfg.hotkey || hotkeyCfg.hotkeyNp || hotkeyCfg.hotkeyZhu) saveHotkeys();
+    } catch (e) {}
+  }
   var hkTarget = null;
   function hkLabelName(t) { var d = HK_TARGETS[t]; return d ? d.label : t; }
   function hkAction(t) {
@@ -1636,12 +1685,13 @@
     return !!(a && b && a.key === b.key && !!a.ctrl === !!b.ctrl && !!a.alt === !!b.alt && !!a.shift === !!b.shift && !!a.meta === !!b.meta);
   }
   function hkRender() {
+    if (btDiagOn) { try { btLog('hk-render', 'panel=' + JSON.stringify(hotkeyCfg.hotkey || null) + ' np=' + JSON.stringify(hotkeyCfg.hotkeyNp || null) + ' zhu=' + JSON.stringify(hotkeyCfg.hotkeyZhu || null) + ' global=1'); } catch (e) {} }
     Object.keys(HK_TARGETS).forEach(function (t) {
       var d = HK_TARGETS[t];
       var infoEl = $id(d.info);
-      if (infoEl) infoEl.textContent = hkLabel(saved[d.key]);
+      if (infoEl) infoEl.textContent = hkLabel(hotkeyCfg[d.key]);
       var sb = $id(d.set);
-      if (sb) sb.textContent = hkTarget === t ? "请按组合键…（Esc 取消）" : (saved[d.key] && saved[d.key].key ? "重新设置快捷键" : "设置快捷键");
+      if (sb) sb.textContent = hkTarget === t ? "请按组合键…（Esc 取消）" : (hotkeyCfg[d.key] && hotkeyCfg[d.key].key ? "重新设置快捷键" : "设置快捷键");
     });
   }
   function hkIsTyping(e) {
@@ -1668,12 +1718,12 @@
         var dup = null;
         Object.keys(HK_TARGETS).forEach(function (t2) {
           if (t2 === hkTarget) return;
-          if (hkIsSame(h, saved[HK_TARGETS[t2].key])) dup = t2;
+          if (hkIsSame(h, hotkeyCfg[HK_TARGETS[t2].key])) dup = t2;
         });
         if (dup) { hkRender(); setStatus("此组合已用于「" + hkLabelName(dup) + "」，请换一组", "warn"); return; }
         var curT = hkTarget;
-        saved[HK_TARGETS[curT].key] = h;
-        saveSaved(saved);
+        hotkeyCfg[HK_TARGETS[curT].key] = h;
+        saveHotkeys();
         hkTarget = null;
         hkRender();
         setStatus("「" + hkLabelName(curT) + "」快捷键已设为 " + hkLabel(h), "ok");
@@ -1684,7 +1734,7 @@
       var keys = Object.keys(HK_TARGETS);
       for (var ki = 0; ki < keys.length; ki++) {
         var t = keys[ki];
-        var hh = saved[HK_TARGETS[t].key];
+        var hh = hotkeyCfg[HK_TARGETS[t].key];
         if (!hh || !hh.key) continue;
         var match = (hh.ctrl === (e.ctrlKey || e.metaKey)) && (hh.alt === !!e.altKey) && (hh.shift === !!e.shiftKey) &&
           ((hh.key === (e.code || e.key)) || (hh.key === e.key));
@@ -1706,7 +1756,7 @@
     });
     if (cb) cb.addEventListener("click", function () {
       if (hkTarget === t) hkTarget = null;
-      saved[d.key] = null; saveSaved(saved);
+      hotkeyCfg[d.key] = null; saveHotkeys();
       hkRender();
       setStatus("「" + hkLabelName(t) + "」快捷键已清除", "st");
     });
@@ -1848,7 +1898,7 @@
       var life = ent.life || {};
       var name = (ent.display && ent.display.name) || ent.displayName || ent.name || (ent.character && ent.character.name) || "角色"; // V2.12.3：角色名在 display.name
       sb.querySelector(".nm").textContent = name;
-      sb.querySelector(".job").textContent = getJobName(ent.job || (ent.character && ent.character.job)) + " · " + (ent.map ? ent.map : "");
+      sb.querySelector(".job").textContent = getJobName(ent.job || (ent.character && ent.character.job)) + " · " + (getMapNameCn() || (ent.map ? ent.map : ""));
       // 基础/职业等级：优先客户端 BasicInfo DOM（PAR_CHANGE 实时更新）；fallback 实体字段
       var blvl = null, jlvl = null;
       try {
@@ -1968,6 +2018,126 @@
       pl.textContent = "当前档: " + (profiles[k] && profiles[k].name ? profiles[k].name : k) + "（未登录自动存默认档）";
     }
   }
+  // ---------------- 战斗诊断（V2.12.5-diag：窗口日志+快照+坐标标记+模拟点击 · 默认关不改行为）----------------
+  var btDiagOn = false;
+  var btRing = []; // 最近 60 条诊断
+  function btLog(tag, msg) {
+    try {
+      var line = '[' + tag + '] ' + msg;
+      btRing.push(line); if (btRing.length > 60) btRing.splice(0, btRing.length - 60);
+      var el = $id('dsh-bt-log');
+      if (el) {
+        el.textContent = btRing.join('\n');
+        el.scrollTop = el.scrollHeight;
+      }
+      console.log('[BT-DIAG] ' + line);
+    } catch (e) {}
+  }
+  function btState(t) { try { var el = $id('dsh-bt-state'); if (el) el.textContent = '诊断: ' + (t || (btDiagOn ? '开' : '关')); } catch (e) {} }
+  function btCanvas() {
+    try {
+      var cvs = document.querySelectorAll('canvas');
+      for (var i = 0; i < cvs.length; i++) { if (cvs[i].width > 400) return cvs[i]; }
+    } catch (e) {}
+    return null;
+  }
+  // 渲染坐标(Renderer尺寸) → 页面坐标(dispatchEvent 用 clientX/Y)
+  function btToPage(rx, ry) {
+    try {
+      var R = window.require && window.require('Renderer/Renderer');
+      var cv = btCanvas();
+      if (!R || !cv) return { x: rx, y: ry };
+      var br = cv.getBoundingClientRect();
+      return { x: br.left + rx * (br.width / R.width), y: br.top + ry * (br.height / R.height) };
+    } catch (e) { return { x: rx, y: ry }; }
+  }
+  // 最近的怪实体（优先 zLock 锁定目标，否则最近的一只 objecttype===5）
+  function btFindTarget() {
+    try {
+      if (!window.require) return null;
+      var EM = window.require('Renderer/EntityManager');
+      if (!EM || typeof EM.forEach !== 'function') return null;
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      var best = null, bestD = 1e9;
+      EM.forEach(function (e) {
+        try {
+          if (e.objecttype !== 5 || !e.position) return;
+          if (e.isDeath) return;
+          if (zLock && zLock.gid != null && e.GID === zLock.gid) { best = e; bestD = -1; return; }
+          if (bestD < 0) return;
+          if (ent && ent.position) {
+            var d = Math.abs(e.position[0] - ent.position[0]) + Math.abs(e.position[1] - ent.position[1]);
+            if (d < bestD) { bestD = d; best = e; }
+          } else if (!best) { best = e; }
+        } catch (e2) {}
+      });
+      return best;
+    } catch (e) { return null; }
+  }
+  // 坐标标记测试：在目标怪 boundingRect 中心画红框，验证渲染坐标→页面坐标换算
+  function btMarkTarget() {
+    try {
+      var t = btFindTarget();
+      if (!t) { btLog('mark', '未找到目标怪'); return; }
+      var b = t.boundingRect;
+      if (!b) { btLog('mark', '目标无 boundingRect'); return; }
+      var cx = (b.x1 + b.x2) / 2, cy = (b.y1 + b.y2) / 2;
+      var p = btToPage(cx, cy);
+      var d = document.createElement('div');
+      d.id = 'dsh-bt-mark';
+      d.style.cssText = 'position:fixed;left:' + p.x + 'px;top:' + p.y + 'px;width:16px;height:16px;border:2px solid red;background:rgba(255,0,0,.25);border-radius:50%;z-index:999999;pointer-events:none;transform:translate(-50%,-50%)';
+      var old = document.getElementById('dsh-bt-mark'); if (old) old.remove();
+      document.body.appendChild(d);
+      btLog('mark', 'GID' + t.GID + ' 渲染(' + cx.toFixed(0) + ',' + cy.toFixed(0) + ')→页面(' + p.x.toFixed(0) + ',' + p.y.toFixed(0) + ') 红框已画，看是否罩住怪');
+    } catch (e) { btLog('mark', '异常: ' + e.message); }
+  }
+  // 模拟点击测试：对目标怪派发合成鼠标点击（客户端自己判距/走近/攻击）
+  function btClickTarget() {
+    try {
+      var t = btFindTarget();
+      if (!t) { btLog('click', '未找到目标怪'); return; }
+      var b = t.boundingRect;
+      if (!b) { btLog('click', '目标无 boundingRect'); return; }
+      var cx = (b.x1 + b.x2) / 2, cy = (b.y1 + b.y2) / 2;
+      var p = btToPage(cx, cy);
+      var cv = btCanvas();
+      if (!cv) { btLog('click', '未找到画布'); return; }
+      var opts = { clientX: p.x, clientY: p.y, bubbles: true, cancelable: true, view: window, button: 0, buttons: 1, pointerId: 1, isPrimary: true };
+      ['pointerdown', 'pointermove', 'pointerup', 'mousedown', 'mouseup', 'click'].forEach(function (t2) {
+        try { cv.dispatchEvent(new (t2.indexOf('pointer') === 0 ? PointerEvent : MouseEvent)(t2, opts)); } catch (e) {}
+      });
+      btLog('click', 'GID' + t.GID + ' 页面(' + p.x.toFixed(0) + ',' + p.y.toFixed(0) + ') 已派发合成点击，看角色是否攻击/走近');
+    } catch (e) { btLog('click', '异常: ' + e.message); }
+  }
+  function btSnap() {
+    try {
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      var s = {
+        now: Date.now(), zRunning: !!zRunning, zLock: zLock || null,
+        atkRange: (function () { try { return calcAtkRange(); } catch (e) { return '?'; } })(),
+        pmRange: (function () { try { return parseInt($id('dsh-z-pmrange').value, 10) || 2; } catch (e) { return '?'; } })(),
+        scanMobs: scanMobs ? scanMobs.length : 0,
+        lastFly: lastFly || 0, flyFail: flyFailCount || 0, flyFailUntil: flyFailUntil || 0,
+        lastChase: zWalkState ? zWalkState.lastChase || 0 : 0,
+        lastMove: zWalkState ? zWalkState.lastMove || 0 : 0,
+        moveXYbusy: moveXY ? moveXY.busy : '?'
+      };
+      if (ent && ent.position) {
+        var t = btFindTarget();
+        if (t && t.position) s.targetDist = Math.abs(t.position[0] - ent.position[0]) + Math.abs(t.position[1] - ent.position[1]);
+      }
+      btLog('snap', JSON.stringify(s));
+      return s;
+    } catch (e) { btLog('snap', '异常: ' + e.message); return null; }
+  }
+  try {
+    var diagEl = $id('dsh-bt-diag');
+    if (diagEl) diagEl.addEventListener('change', function () { btDiagOn = this.checked; btState(); btLog('diag', btDiagOn ? '日志已启用' : '日志已关闭'); });
+    var snapB = $id('dsh-bt-snap'); if (snapB) snapB.addEventListener('click', btSnap);
+    var markB = $id('dsh-bt-mark'); if (markB) markB.addEventListener('click', btMarkTarget);
+    var clickB = $id('dsh-bt-click'); if (clickB) clickB.addEventListener('click', btClickTarget);
+    window.__dshBattle = { snap: btSnap, mark: btMarkTarget, click: btClickTarget, log: btLog, on: function (v) { if (v !== undefined) btDiagOn = !!v; return btDiagOn; } };
+  } catch (e) {}
   // ---------------- 诊断事件环（V1.7.1：供探针采集 · 不改任何行为）----------------
   // window.__dshDiag = 最近 80 条助手事件（zhu-start/zhu-stop/np-calibrate/map-change/cast/cast-skip/ask-cast）
   // window.__dshCast = 助手即将发出的 USE_SKILL 标记（探针据此判定「助手指令」而非内挂指令）
@@ -2085,6 +2255,7 @@
       ensureProfile(key);
       profiles[key].name = nm; profiles[key].gid = gid;
       saved = loadSaved();
+      if (btDiagOn) { try { btLog('hk', '切档=' + key + ' hotkey=' + JSON.stringify(hotkeyCfg.hotkey || null) + ' np=' + JSON.stringify(hotkeyCfg.hotkeyNp || null) + ' zhu=' + JSON.stringify(hotkeyCfg.hotkeyZhu || null)); } catch (e) {} }
       lockList = profiles[key].lockList || {};
       askList = profiles[key].askList || [];
       applyProfileUI();
@@ -3369,6 +3540,7 @@
           s.lastAt = now;
           if (s.st) s.missCnt = (s.missCnt || 0) + 1; // 补了但判活仍缺 → missCnt++（连续2次退避到全局间隔）
           castAny = true;
+          if (btDiagOn) btLog('ask-cast', 'skid=' + s.skid + ' st=' + s.st + ' stInv=' + !!s.stInv + ' missCnt=' + (s.missCnt || 0));
         } catch (e) {
           try { tlog("ask-cast-error skid=" + (s && s.skid) + " " + (e.message || e)); dshDiag("ask-cast-error", { skid: s && s.skid, error: String(e.message || e) }); } catch (e2) {}
         }
@@ -4299,6 +4471,7 @@
         } catch (e2) {}
       });
       scanMobs = mobs;
+      if (btDiagOn) { try { var cm = getCurrentMapInfo(); btLog('scan', 'mobs=' + mobs.length + ' map=' + (cm ? cm.name : '?') + ' isCombatMap=' + (defSnap ? defSnap.isCombatMap : '?')); } catch (e) {} }
       var range = parseInt($id("dsh-z-range").value, 10) || 12;
       var html = "";
       for (var i = 0; i < mobs.length; i++) {
@@ -4407,6 +4580,7 @@
       if (now - lastFly < flyInt) return;
       var needFly = false, reason = "";
       var group = parseInt($id("dsh-z-grp").value, 10);
+      if (btDiagOn) btLog('def', 'mobs=' + mobs.length + ' isCombatMap=' + isCombatMap + ' grp=' + group + ' zRunning=' + zRunning);
       if (!group || group < 0) group = 0; // 0 = 群殴处理关闭
       var grpAct = $id("dsh-z-grpact") ? $id("dsh-z-grpact").value : "瞬移";
       if (group > 0 && mobs.length >= group) {
@@ -4467,7 +4641,9 @@
       if (isCombatMap && zRunning && $id("dsh-z-flystuck").checked && zStuckSince && (now - zStuckSince > 10000)) { needFly = true; reason = "卡死10s"; }
       if (needFly) {
         // V1.9.4：doFly 失败计数（无翅膀/无瞬移术/SP不足）——3 次后 10s 冷却防空转
-        if (!doFly()) markFlyFail(); else markFlyOk();
+        var flyOk = doFly();
+        if (btDiagOn) btLog('def-fly', reason + ' -> ' + (flyOk ? '成功' : '失败') + ' (failCnt=' + flyFailCount + ' failUntil=' + (flyFailUntil - now > 0 ? ((flyFailUntil - now) / 1000).toFixed(1) + 's后' : '无') + ')');
+        if (!flyOk) markFlyFail(); else markFlyOk();
         lastFly = now;
         setStatus("瞬移(" + reason + ")", "warn");
       }
@@ -4884,7 +5060,7 @@
     try {
       if (!clientReady() || !gid) return;
       var now = Date.now();
-      if (zAtkLast.gid === gid && now - zAtkLast.at < 1000) return; // 同目标 1s 内不重发（服务器驱动持续攻击）
+      if (zAtkLast.gid === gid && now - zAtkLast.at < 1000) { if (btDiagOn) btLog('atk-throttle', '同目标1s节流命中 gid=' + gid + ' 距上次' + (now - zAtkLast.at) + 'ms'); return; } // 同目标 1s 内不重发（服务器驱动持续攻击）
       var p = new CLIENT.PS.CZ.REQUEST_ACT();
       p.targetGID = gid;
       p.action = npNoCtrlOn() ? 7 : 0; // noctrl 开=7（免ctrl锁定攻击），关=0
@@ -5006,6 +5182,7 @@
       //   - 侦查扫到「可攻击到的锁定怪」（dist ≤ atkRange，非超出）→ 停内挂，助手接管战斗
       //   - 侦查没扫到怪 / 附近只有「超出」的锁定怪 → 持续发包让服务器自动寻怪（内挂移动靠近）
       if (npHuntMode() === "np") {
+        if (btDiagOn) { try { var aR0 = calcAtkRange(); btLog('zWalk-np', 'scanMobs=' + scanMobs.length + ' hasAttackable=' + scanHasAttackableLockedMob(aR0) + ' hasOutOfRange=' + scanHasOutOfRangeLockedMob(aR0) + ' atkRange=' + aR0 + ' scanSt=' + ($id('dsh-scanst') ? $id('dsh-scanst').textContent : '?')); } catch (e) {} }
         if (!scanHasAttackableLockedMob(calcAtkRange())) {
           npEnsureHunt();
           if (scanHasOutOfRangeLockedMob(calcAtkRange())) {
@@ -5317,6 +5494,7 @@
       var attMix = $id("dsh-z-attmix") ? $id("dsh-z-attmix").checked : true;
       var order = parseSkillOrder($id("dsh-skillorder").value);
       var cast = castOrderSkill(order, target);
+      if (btDiagOn) { try { var tD = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]); btLog('zAtk', 'cast=' + cast + ' targetDist=' + tD + ' atkRange=' + atkRange + ' pmRange=' + pmRange + ' npMode=' + npMode); } catch (e) {} }
       if (cast === "walk") {
         zWaitSince = 0; // 走位后穿插普攻立即出手（上次普攻时间重置）
         zMon.action = "追怪（走近施放）";
@@ -5912,6 +6090,7 @@
       }
       // 对怪技能：前置已满足，再看射程——射程内直接放；超射程只记录（继续评估后面的技能，找射程内可放的）
       var need = getSkillRange(o.skid, realLv) + 1; // 客户端 onUseSkill：attackRange+1
+      if (btDiagOn) btLog('range', 'skid=' + o.skid + ' lv=' + realLv + ' need=' + need + ' d=' + d + ' ' + (d > need ? '超射程→走' : '射程内'));
       if (d > need) {
         if (!walkSk) walkSk = o;
         continue;
@@ -8546,6 +8725,16 @@
             if (Array.isArray(arr)) {
               window.__dshStorageCache = JSON.parse(JSON.stringify(arr));
               console.log("[STORAGE] 仓库已缓存 " + arr.length + " 件（V" + VER + "）");
+              // V2.13.0：仓库数据流入即自动读取（不靠 DOM 选择器猜窗口；dsh_ro_inventory_auto=false 可关）
+              try {
+                if (localStorage.getItem("dsh_ro_inventory_auto") !== "false" && typeof onStorageWindowOpen === "function") {
+                  var now = Date.now();
+                  if (!window.__dshStorageLastTrig || now - window.__dshStorageLastTrig > 1500) {
+                    window.__dshStorageLastTrig = now;
+                    onStorageWindowOpen();
+                  }
+                }
+              } catch (e) {}
             }
           } catch (e) {}
           return _origSetItems.apply(this, arguments);

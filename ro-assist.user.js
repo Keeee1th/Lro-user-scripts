@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.1-diag
+// @version      2.15.2
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.1-diag"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.2"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -7481,6 +7481,25 @@
     catch (e) { s = new TextDecoder("utf-8").decode(sub); }
     return s.replace(/[\u0000-\u001f\u007f\ufffd]/g, "");
   }
+  // 2.15.2：完整多段解码。op=180 对话包=提示段+00+空段+00+算式段…，decodeMenuMsg 只取首段会丢算式。
+  // 这里按 00 逐段解码后拼接，供验证识别（capTrigger）与诊断（capDiag）使用；菜单侦察仍用 decodeMenuMsg。
+  function decodeMenuMsgFull(bytes) {
+    var u = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    var parts = [], cur = [];
+    for (var i = 0; i <= u.length; i++) {
+      var b = (i < u.length) ? u[i] : 0;
+      if (b === 0 || i === u.length) {
+        if (cur.length) {
+          var s;
+          try { s = new TextDecoder("gbk").decode(new Uint8Array(cur)); }
+          catch (e) { s = new TextDecoder("utf-8").decode(new Uint8Array(cur)); }
+          parts.push(s.replace(/[\u0000-\u001f\u007f\ufffd]/g, ""));
+        }
+        cur = [];
+      } else { cur.push(b); }
+    }
+    return parts.join("");
+  }
   function splitMenu(msg) {
     return String(msg).replace(/[\u0000-\u001f\u007f\ufffd]/g, "").split(":").map(function (s) { return s.replace(/^\s+|\s+$/g, ""); }).filter(function (s) { return s.length > 0; });
   }
@@ -7573,8 +7592,9 @@
         console.log('[MVP-DEBUG] Found MVP log keyword, msg preview:', msg.substring(0, 200));
       }
       mvpReceive(msg);
-      try { capDiag(bytes, msg); } catch (e) {} // 2.15.1-diag 分段诊断
-      try { capTrigger(msg); } catch (e) {} // V2.14.0 登录验证自动过
+      var msgFull = decodeMenuMsgFull(new Uint8Array(bytes, 6, bytes.byteLength - 6)); // 2.15.2 完整多段（含算式段）
+      try { capDiag(bytes, msgFull); } catch (e) {} // 2.15.1-diag 分段诊断
+      try { capTrigger(msgFull); } catch (e) {} // V2.14.0 登录验证自动过
       pushStep("dialog", msg, null, getMapName(), nm, gid, ps);
     } catch (e) {}
   }
@@ -7704,13 +7724,14 @@
     } catch (e) { capSetState("提交异常: " + e.message); return false; }
   }
   function capDiag(bytes, msg) {
-    // 2.15.1-diag：打印 op=180 数据包分段结构，定位验证算式所在段
+    // 2.15.1-diag：打印 op=180 数据包分段结构，定位验证算式所在段（2.15.2：bytes 为 ArrayBuffer 时先转 Uint8Array，修下标索引异常）
     try {
+      var b8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
       var hex = "";
-      for (var i = 0; i < bytes.byteLength && i < 200; i++) hex += (bytes[i] < 16 ? "0" : "") + bytes[i].toString(16);
-      console.log("[验证-diag] op=180 包 len=" + bytes.byteLength + " hex=" + hex + " decodeMenuMsg=" + JSON.stringify(msg));
+      for (var i = 0; i < b8.byteLength && i < 200; i++) hex += (b8[i] < 16 ? "0" : "") + b8[i].toString(16);
+      console.log("[验证-diag] op=180 包 len=" + b8.byteLength + " hex=" + hex + " decodeMenuMsgFull=" + JSON.stringify(msg));
       // 按 00 分隔逐段解码（验证弹窗=提示段+空段+算式段）
-      var u = new Uint8Array(bytes, 6, bytes.byteLength - 6);
+      var u = new Uint8Array(b8, 6, b8.byteLength - 6);
       var segs = [], cur = [], start = 6;
       for (var j = 0; j <= u.length; j++) {
         var b = (j < u.length) ? u[j] : 0;

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO 登录验证自动过（独立版）
 // @namespace    dsh.ro-captcha-auto
-// @version      1.1.0
+// @version      1.1.1
 // @description  收到 op=180 中文数字算式验证弹窗（登录/换角色随时弹出）自动算出结果：点确认/回车 → 填入输入框 → 等 N 秒 → 点「下面」/确认/回车提交。右下角状态条：单击开关，双击设置等待秒数（默认 10）。也可与 ro-assist 共存（助手内已集成时不装本脚本）。
 // @match        https://post.lastro.cn/*
 // @match        https://post.lastro.cn/ro/api.html*
@@ -102,14 +102,23 @@
   }
 
   // ---------------- 解码 ----------------
+  // 1.1.1：op=180 验证包=提示段+空段+算式段，按 00 逐段解码拼接（旧版只取首段会丢算式）
   function decodeMenuMsg(bytes) {
-    var end = bytes.length;
-    for (var i = 0; i < bytes.length; i++) { if (bytes[i] === 0) { end = i; break; } }
-    var sub = bytes.subarray(0, end);
-    var s;
-    try { s = new TextDecoder("gbk").decode(sub); }
-    catch (e) { s = new TextDecoder("utf-8").decode(sub); }
-    return s.replace(/[\u0000-\u001f\u007f\ufffd]/g, "");
+    var u = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    var parts = [], cur = [];
+    for (var i = 0; i <= u.length; i++) {
+      var b = (i < u.length) ? u[i] : 0;
+      if (b === 0 || i === u.length) {
+        if (cur.length) {
+          var s;
+          try { s = new TextDecoder("gbk").decode(new Uint8Array(cur)); }
+          catch (e) { s = new TextDecoder("utf-8").decode(new Uint8Array(cur)); }
+          parts.push(s.replace(/[\u0000-\u001f\u007f\ufffd]/g, ""));
+        }
+        cur = [];
+      } else { cur.push(b); }
+    }
+    return parts.join("");
   }
 
   // ---------------- DOM 操作 ----------------

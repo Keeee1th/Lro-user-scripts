@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         仙境传说 · 检测插件（ro-detect）
 // @namespace    dsh.ro-detect
-// @version      1.0.3
+// @version      1.0.4
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-detect.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-detect.user.js
-// @description  v1.0.3：检测插件（合并 ro-probe 回传框架 + ro-attack-test 攻击测试）。模块：A验证码/自动验证日志监控 B攻击测试（标记/模拟点击/buff上身诊断） C自动buff状态监控 D防原地走动判定。检测日志自动回传本机接收服务（8899），DSH 直接自取，无需手动复制控制台。
+// @description  v1.0.4：检测插件（合并 ro-probe 回传框架 + ro-attack-test 攻击测试）。模块：A验证码/自动验证日志监控 B攻击测试（标记/模拟点击/buff上身诊断） C自动buff状态监控 D防原地走动判定。抓取 [ASK-DIAG] 自动技能逐项决策日志。检测日志自动回传本机接收服务（8899），DSH 直接自取，无需手动复制控制台。
 // @match        https://post.lastro.cn/*
 // @match        https://post.lastro.cn/ro/api.html*
 // @run-at       document-start
@@ -23,7 +23,7 @@
   var FLUSH_MS = 8000;        // 批量回传间隔
   var SESSION = String(Date.now()).slice(-8) + '-' + Math.floor(Math.random() * 900 + 100); // 本次会话标识
   // console 抓取关键词（ro-assist 等外部脚本打的关键日志）
-  var HOOK_KW = ['[验证-diag]', '[验证自动过]', '[MVP-DEBUG]', 'buff', 'Buff', '补buff', '掉buff', '技能失败', '未上身', '不在身', '原地走动'];
+  var HOOK_KW = ['[验证-diag]', '[验证自动过]', '[MVP-DEBUG]', '[ASK-DIAG]', 'buff', 'Buff', '补buff', '掉buff', '技能失败', '未上身', '不在身', '原地走动'];
   // 模块C 要盯的 buff 状态ID（掉/未上身即记日志；可自行增删）
   var WATCH_BUFFS = [12, 10]; // 12=加速术 10=天赐
   var WATCH_INT = 5000;       // buff 检查间隔 ms

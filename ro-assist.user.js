@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.13.0
+// @version      2.14.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.13.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.14.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -642,6 +642,7 @@
       '<div class="row"><span class="lb">瞬移方式</span><select id="dsh-z-flymode" style="flex:0 0 120px"><option>翅膀→瞬移术</option><option>苍蝇翅膀优先</option><option>瞬移术Lv1</option><option selected>瞬移术→翅膀</option></select>' +
       '<label class="switch"><input id="dsh-z-flyauto" type="checkbox" checked>无翅膀自动瞬移术</label></div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-flystuck" type="checkbox">卡死自动瞬移(助手战斗中·10s)</label></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-z-rein" type="checkbox">寻怪自动上马（缰绳 12622）</label><span style="color:#5a6b7f;font-size:11px">骑乘状态不在身自动用</span></div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-idlefly" type="checkbox">无目标持续自动瞬移</label>' +
       '<span class="lb" style="min-width:34px">超过</span><input id="dsh-z-idleflysec" type="number" value="10" style="flex:0 0 40px"><span style="color:#5a6b7f">s无锁定怪→瞬移</span></div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-bossfly" type="checkbox">BOSS出现瞬移</label>' +
@@ -674,7 +675,7 @@
       '<div class="log">助手模式=自己发包：侦查 EntityManager 附近MOB（跳过死亡）→ 命中锁定目录 → 锁定模式：选定目标后固定GID持续攻击（不死/不丢失不换，防漂移）→ 按技能顺序施放（释放前置自动补，并行判断）→ 无技能默认普攻（穿插平A开关：技能间隙按攻击间隔补普攻）→ 打死换下一个/锁定跟随追击可开关 → 被非锁定怪攻击时按「非选中怪攻击」处理（无视/瞬移/还击，HP下降3s内触发）→ 无目标寻怪：①自研直走+A*避障（定向直走，撞墙/卡住才转向）；②内挂机制寻怪=只有可攻击到的锁定怪（射程内）才停内挂、助手战斗；无怪或锁定怪超出射程→持续发包让服务器移动靠近（二转 UPDATEINFO id38/34，三转 NPC:setautoattack）。持续N秒无锁定怪→自动瞬移换点(苍蝇/瞬移术Lv1)。</div>' +
       '<details style="margin:4px 0"><summary style="cursor:pointer;color:#1259b3;font-size:12px">🔍 战斗诊断（V2.12.5-diag · 默认关 · 不改行为）</summary>' +
       '<div class="row"><label class="switch"><input id="dsh-bt-diag" type="checkbox">启用诊断日志</label></div>' +
-      '<div class="row" style="flex-wrap:wrap;gap:4px"><button class="ghost" id="dsh-bt-snap" style="flex:0 0 auto;padding:0 8px;font-size:11px">快照</button><button class="ghost" id="dsh-bt-mark" style="flex:0 0 auto;padding:0 8px;font-size:11px">标记测试</button><button class="ghost" id="dsh-bt-click" style="flex:0 0 auto;padding:0 8px;font-size:11px">模拟点击</button></div>' +
+      '<div class="row" style="flex-wrap:wrap;gap:4px"><button class="ghost" id="dsh-bt-snap" style="flex:0 0 auto;padding:0 8px;font-size:11px">快照</button><button class="ghost" id="dsh-bt-mark" style="flex:0 0 auto;padding:0 8px;font-size:11px">标记测试</button></div>' +
       '<div class="row"><span class="st" id="dsh-bt-state" style="font-size:10px">诊断: 关</span></div>' +
       '<div id="dsh-bt-log" style="font-size:10px;max-height:150px;overflow:auto;background:#f4f6f8;border:1px solid #d8e0e8;border-radius:4px;padding:4px;font-family:monospace;white-space:pre-wrap;line-height:1.5">诊断日志: 关</div></details>' +
       '</div>',
@@ -925,7 +926,13 @@
       '<div class="row"><span class="lb">助手自动战斗键</span><span class="st" id="dsh-hotkey-info-z" style="min-width:0;word-break:break-all"></span></div>' +
       '<div class="row"><button id="dsh-hotkey-set-z" style="flex:0 0 auto">设置快捷键</button>' +
       '<button class="ghost" id="dsh-hotkey-clear-z" style="flex:0 0 auto">清除</button></div>' +
-      '<div class="log">快捷键均为 Switch 单键切换（每次按下切换一次，不分开/关两键）：面板键=面板收起/展开；内挂自动战斗键=直接 toggle 发包；助手自动战斗键=开始/停止。点击「设置快捷键」后按下组合键（支持 Ctrl/Alt/Shift/Win+键），Esc 取消；相同组合不可重复绑定；未设置时悬浮球/按钮照常工作。</div>'
+      '<div class="log">快捷键均为 Switch 单键切换（每次按下切换一次，不分开/关两键）：面板键=面板收起/展开；内挂自动战斗键=直接 toggle 发包；助手自动战斗键=开始/停止。点击「设置快捷键」后按下组合键（支持 Ctrl/Alt/Shift/Win+键），Esc 取消；相同组合不可重复绑定；未设置时悬浮球/按钮照常工作。</div>' +
+      '<div class="sec">登录验证自动过</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-capauto" type="checkbox" checked>自动过验证</label><span class="st" id="dsh-capstate" style="font-size:10px;margin-left:auto">待命</span></div>' +
+      '<div class="row"><span class="lb">填入后等待</span><input id="dsh-capwait" type="number" value="10" min="0" style="flex:0 0 48px"><span style="color:#5a6b7f">s 再点「下面」（0=立即提交）</span></div>' +
+      '<div class="log">点登录/换角色弹验证时自动读算式算结果，填入输入框，等 N 秒后自动点「下面」提交。</div>' +
+      '<div class="sec">扩展脚本（独立功能包）</div>' +
+      '<div id="dsh-extlist" style="font-size:11px;max-height:130px;overflow:auto"><span class="st">未检测到扩展脚本（安装独立功能包后自动显示）</span></div>'
   };
 
   // ---------------- 构建面板 ----------------
@@ -2018,7 +2025,7 @@
       pl.textContent = "当前档: " + (profiles[k] && profiles[k].name ? profiles[k].name : k) + "（未登录自动存默认档）";
     }
   }
-  // ---------------- 战斗诊断（V2.12.5-diag：窗口日志+快照+坐标标记+模拟点击 · 默认关不改行为）----------------
+  // ---------------- 战斗诊断（V2.12.5-diag：窗口日志+快照+坐标标记 · 默认关不改行为；V2.13.0 起模拟点击已拆出为独立测试包 ro-attack-test）----------------
   var btDiagOn = false;
   var btRing = []; // 最近 60 条诊断
   function btLog(tag, msg) {
@@ -2091,24 +2098,7 @@
       btLog('mark', 'GID' + t.GID + ' 渲染(' + cx.toFixed(0) + ',' + cy.toFixed(0) + ')→页面(' + p.x.toFixed(0) + ',' + p.y.toFixed(0) + ') 红框已画，看是否罩住怪');
     } catch (e) { btLog('mark', '异常: ' + e.message); }
   }
-  // 模拟点击测试：对目标怪派发合成鼠标点击（客户端自己判距/走近/攻击）
-  function btClickTarget() {
-    try {
-      var t = btFindTarget();
-      if (!t) { btLog('click', '未找到目标怪'); return; }
-      var b = t.boundingRect;
-      if (!b) { btLog('click', '目标无 boundingRect'); return; }
-      var cx = (b.x1 + b.x2) / 2, cy = (b.y1 + b.y2) / 2;
-      var p = btToPage(cx, cy);
-      var cv = btCanvas();
-      if (!cv) { btLog('click', '未找到画布'); return; }
-      var opts = { clientX: p.x, clientY: p.y, bubbles: true, cancelable: true, view: window, button: 0, buttons: 1, pointerId: 1, isPrimary: true };
-      ['pointerdown', 'pointermove', 'pointerup', 'mousedown', 'mouseup', 'click'].forEach(function (t2) {
-        try { cv.dispatchEvent(new (t2.indexOf('pointer') === 0 ? PointerEvent : MouseEvent)(t2, opts)); } catch (e) {}
-      });
-      btLog('click', 'GID' + t.GID + ' 页面(' + p.x.toFixed(0) + ',' + p.y.toFixed(0) + ') 已派发合成点击，看角色是否攻击/走近');
-    } catch (e) { btLog('click', '异常: ' + e.message); }
-  }
+
   function btSnap() {
     try {
       var ent = CLIENT.SS && CLIENT.SS.Entity;
@@ -2135,8 +2125,7 @@
     if (diagEl) diagEl.addEventListener('change', function () { btDiagOn = this.checked; btState(); btLog('diag', btDiagOn ? '日志已启用' : '日志已关闭'); });
     var snapB = $id('dsh-bt-snap'); if (snapB) snapB.addEventListener('click', btSnap);
     var markB = $id('dsh-bt-mark'); if (markB) markB.addEventListener('click', btMarkTarget);
-    var clickB = $id('dsh-bt-click'); if (clickB) clickB.addEventListener('click', btClickTarget);
-    window.__dshBattle = { snap: btSnap, mark: btMarkTarget, click: btClickTarget, log: btLog, on: function (v) { if (v !== undefined) btDiagOn = !!v; return btDiagOn; } };
+    window.__dshBattle = { snap: btSnap, mark: btMarkTarget, log: btLog, on: function (v) { if (v !== undefined) btDiagOn = !!v; return btDiagOn; } };
   } catch (e) {}
   // ---------------- 诊断事件环（V1.7.1：供探针采集 · 不改任何行为）----------------
   // window.__dshDiag = 最近 80 条助手事件（zhu-start/zhu-stop/np-calibrate/map-change/cast/cast-skip/ask-cast）
@@ -2205,7 +2194,7 @@
     ["dsh-followtarget", "v"], ["dsh-followdist", "v"], ["dsh-followen", "c"],
     ["dsh-pothealhp", "v"], ["dsh-potsp", "v"], ["dsh-poten", "c"],
     ["dsh-itempick", "v"], ["dsh-itemcond", "v"], ["dsh-itemcondval", "v"], ["dsh-itemen", "c"],
-    ["dsh-lootprob", "v"], ["dsh-openpick", "c"], ["dsh-picken", "c"], ["dsh-pickwalk", "c"], ["dsh-picksafe", "c"], ["dsh-bountyhl", "c"], ["dsh-bgkeep", "c"]
+    ["dsh-lootprob", "v"], ["dsh-openpick", "c"], ["dsh-picken", "c"], ["dsh-pickwalk", "c"], ["dsh-picksafe", "c"], ["dsh-bountyhl", "c"], ["dsh-bgkeep", "c"], ["dsh-capauto", "c"], ["dsh-capwait", "v"], ["dsh-z-rein", "c"]
   ];
   function captureAll() {
     try {
@@ -5033,6 +5022,27 @@
     } catch (e) {}
   }
   masterTickReg(function () { try { tickMoveXY(); } catch (e) {} });
+  // ---------------- V2.14.0 寻怪自动上马（缰绳 12622：骑乘状态不在身即用，1s 防抖，连续失败退避30s）----------------
+  var reinLastUse = 0, reinFailStreak = 0, reinBackoffUntil = 0;
+  function tickRein() {
+    try {
+      var sw = $id("dsh-z-rein");
+      if (!sw || !sw.checked) { reinFailStreak = 0; return; }
+      var now = Date.now();
+      if (now < reinBackoffUntil) return;
+      if (!clientReady()) return;
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      if (!ent || !ent.life) return;
+      try { hookStatusIcons(); } catch (e3) {} // 确保判活表工作（幂等）
+      if (buffStateOn(613) || buffStateOn(27)) { reinFailStreak = 0; return; }
+      if (now - reinLastUse < 1000) return;
+      if (useItemById(12622)) {
+        reinLastUse = now; reinFailStreak++;
+        if (reinFailStreak >= 3) { reinBackoffUntil = now + 30000; reinFailStreak = 0; }
+      }
+    } catch (e) {}
+  }
+  masterTickReg(function () { try { tickRein(); } catch (e) {} });
   var zWalkState = { lastMove: 0, lastChase: 0, dir: 0, noTargetSince: 0, lastIdleFly: 0, lastPos: null, stuckCnt: 0, tried: 0, lastSeenDir: null, lastSeenAt: 0 };
   var zAStarState = { active: false, tx: 0, ty: 0, since: 0, lastTry: 0, stuckSince: 0, lastPos: null, aim: null }; // V2.10.0 A* 绕障行走状态
   // 状态前置穿插平A计时：zWaitSince = 上次穿插普攻时间（间隔跟随攻击循环，见 zAttack wait 分支）
@@ -7317,9 +7327,114 @@
         console.log('[MVP-DEBUG] Found MVP log keyword, msg preview:', msg.substring(0, 200));
       }
       mvpReceive(msg);
+      try { capTrigger(msg); } catch (e) {} // V2.14.0 登录验证自动过
       pushStep("dialog", msg, null, getMapName(), nm, gid, ps);
     } catch (e) {}
   }
+  // ---------------- V2.14.0 登录验证自动过（中文数字算式 → 填输入框 → 等N秒 → 点下面）----------------
+  var CAP_DIG = { "零":0, "一":1, "二":2, "两":2, "三":3, "四":4, "五":5, "六":6, "七":7, "八":8, "九":9 };
+  var CAP_UNIT = { "十":10, "百":100, "千":1000, "万":10000 };
+  function capCnvNum(s) {
+    s = String(s || "").trim(); if (!s) return NaN;
+    var total = 0, seg = 0, cur = 0;
+    for (var i = 0; i < s.length; i++) {
+      var ch = s.charAt(i);
+      if (CAP_DIG[ch] !== undefined) cur = CAP_DIG[ch];
+      else if (CAP_UNIT[ch] !== undefined) {
+        var u = CAP_UNIT[ch];
+        if (u === 10000) { total = (total + (seg + (cur || 1))) * u; seg = 0; cur = 0; }
+        else { seg += (cur || 1) * u; cur = 0; }
+      } else return NaN;
+    }
+    return total + seg + cur;
+  }
+  function capEval(txt) {
+    try {
+      var t = String(txt || "").replace(/[（(]/g, "").replace(/[）)]/g, "").replace(/\s+/g, "");
+      var toks = t.match(/[零一二两三四五六七八九十百千万]+|[加减乘除]+/g);
+      if (!toks || toks.length < 3) return NaN;
+      var nums = [], ops = [];
+      for (var i = 0; i < toks.length; i++) {
+        if (/^[加减乘除]+$/.test(toks[i])) { for (var j = 0; j < toks[i].length; j++) ops.push(toks[i].charAt(j)); }
+        else { var v = capCnvNum(toks[i]); if (isNaN(v)) return NaN; nums.push(v); }
+      }
+      if (nums.length !== ops.length + 1) return NaN;
+      var n2 = [nums[0]], o2 = [];
+      for (var k = 0; k < ops.length; k++) {
+        var o = ops[k], v = nums[k + 1];
+        if (o === "乘") n2[n2.length - 1] = n2[n2.length - 1] * v;
+        else if (o === "除") n2[n2.length - 1] = n2[n2.length - 1] / v;
+        else { n2.push(v); o2.push(o); }
+      }
+      var r = n2[0];
+      for (var m = 0; m < o2.length; m++) r += (o2[m] === "加" ? 1 : -1) * n2[m + 1];
+      return Math.round(r * 1000) / 1000;
+    } catch (e) { return NaN; }
+  }
+  function capEnabled() { try { return !!($id("dsh-capauto") && $id("dsh-capauto").checked); } catch (e) { return false; } }
+  function capWaitSec() { return parseInt(($id("dsh-capwait") && $id("dsh-capwait").value) || "10", 10) || 0; }
+  function capSetState(t) { try { var el = $id("dsh-capstate"); if (el) el.textContent = t; } catch (e) {} }
+  function capTryParse(msg) {
+    var m = String(msg || "").match(/([零一二两三四五六七八九十百千万]+(?:[（(][加减乘除][）)][零一二两三四五六七八九十百千万]+)+)/);
+    if (!m) return null;
+    var result = capEval(m[1]);
+    if (isNaN(result)) return null;
+    return { expr: m[1], result: result };
+  }
+  function capFindInput() {
+    var ins = document.querySelectorAll("input");
+    for (var i = 0; i < ins.length; i++) {
+      var el = ins[i], r = el.getBoundingClientRect();
+      if (r.width === 0 && r.height === 0) continue;
+      var t = (el.type || "").toLowerCase();
+      if (t === "text" || t === "number" || t === "tel" || t === "") return el;
+    }
+    return null;
+  }
+  function capFillInput(val) {
+    try {
+      var el = capFindInput();
+      if (!el) { capSetState("已算出 " + val + "，但未找到输入框"); return false; }
+      el.focus();
+      try { var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value"); if (setter && setter.set) setter.set.call(el, val); else el.value = val; } catch (e2) { el.value = val; }
+      try { el.dispatchEvent(new Event("input", { bubbles: true })); } catch (e3) {}
+      try { el.dispatchEvent(new Event("change", { bubbles: true })); } catch (e4) {}
+      capSetState("已填入 " + val + "，等 " + capWaitSec() + "s 后提交");
+      return true;
+    } catch (e) { capSetState("填写异常: " + e.message); return false; }
+  }
+  function capClickSubmit() {
+    try {
+      var all = document.querySelectorAll("button, div, span, li, a");
+      for (var i = 0; i < all.length; i++) {
+        var el = all[i];
+        var txt = (el.textContent || "").replace(/\s+/g, "");
+        if (txt === "下面" || (txt.indexOf("下面") >= 0 && el.children.length === 0 && txt.length <= 8)) {
+          el.click(); capSetState("已点击「下面」"); return true;
+        }
+      }
+      capSetState("未找到「下面」按钮（结果已填入）"); return false;
+    } catch (e) { capSetState("提交异常: " + e.message); return false; }
+  }
+  var capBusy = false;
+  function capTrigger(msg) {
+    try {
+      if (!capEnabled() || capBusy) return;
+      var p = capTryParse(msg);
+      if (!p) return;
+      capBusy = true;
+      capSetState("识别算式 " + p.expr + " = " + p.result);
+      var wait = capWaitSec() * 1000;
+      setTimeout(function () {
+        try { capFillInput(String(p.result)); } catch (e) {}
+        setTimeout(function () {
+          try { capClickSubmit(); } catch (e) {}
+          setTimeout(function () { capBusy = false; }, 2000);
+        }, wait);
+      }, 300);
+    } catch (e) {}
+  }
+  //（onSayDialog 内调用 capTrigger）
   function onCloseDialog() {
     try { pushStep("close", "", null, getMapName(), (lastTalkNpc && lastTalkNpc.name) || "", (lastTalkNpc && lastTalkNpc.GID != null) ? lastTalkNpc.GID : 0, null); } catch (e) {}
     reconSteps = [];
@@ -7418,6 +7533,42 @@
     } catch (e) { $id("dsh-cleanlog").textContent = "下一段异常: " + e.message; }
   });
   hookMenuRecon();
+  // ---------------- V2.14.0 扩展脚本注册表（独立功能包 register 后系统页自动列出并可开关）----------------
+  var ROExtList = {};
+  function renderExtList() {
+    try {
+      var el = $id("dsh-extlist");
+      if (!el) return;
+      var keys = []; for (var k in ROExtList) keys.push(k);
+      if (!keys.length) { el.innerHTML = '<span class="st">未检测到扩展脚本（安装独立功能包后自动显示）</span>'; return; }
+      var html = '';
+      for (var i = 0; i < keys.length; i++) {
+        var e = ROExtList[keys[i]];
+        html += '<div class="row" style="margin:2px 0"><label class="switch"><input type="checkbox" data-roext="' + keys[i] + '"' + (e.enabled ? ' checked' : '') + '>' + (e.name || keys[i]) + '</label>' + (e.ver ? '<span class="tag blue" style="margin-left:4px">' + e.ver + '</span>' : '') + '</div>';
+        if (e.desc) html += '<div class="log" style="margin:0 0 3px">' + e.desc + '</div>';
+      }
+      el.innerHTML = html;
+      var cbs = el.querySelectorAll("input[data-roext]");
+      for (var j = 0; j < cbs.length; j++) {
+        (function (cb) {
+          cb.addEventListener("change", function () {
+            var e = ROExtList[cb.getAttribute("data-roext")];
+            if (!e) return;
+            e.enabled = cb.checked;
+            try { if (cb.checked) { if (e.onEnable) e.onEnable(); } else { if (e.onDisable) e.onDisable(); } } catch (err) {}
+          });
+        })(cbs[j]);
+      }
+    } catch (e) {}
+  }
+  window.__ROExt = {
+    register: function (ext) { try { if (!ext || !ext.id) return false; ROExtList[ext.id] = ext; renderExtList(); return true; } catch (e) { return false; } },
+    unregister: function (id) { try { delete ROExtList[id]; renderExtList(); } catch (e) {} },
+    list: function () { var a = []; for (var k in ROExtList) a.push(ROExtList[k]); return a; },
+    get: function (id) { return ROExtList[id] || null; }
+  };
+  setInterval(function () { try { renderExtList(); } catch (e) {} }, 2000);
+
 
   // V2.10.8：初始化 MVP 计时器
   if (typeof mvpInit === 'function') {

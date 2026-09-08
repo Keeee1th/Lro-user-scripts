@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         RO 登录验证自动过（独立版）
 // @namespace    dsh.ro-captcha-auto
-// @version      1.0.0
-// @description  收到 op=180 中文数字算式验证弹窗（登录/换角色随时弹出）自动算出结果，填入输入框，等 N 秒后点「下面」提交。右下角状态条：单击开关，双击设置等待秒数（默认 10）。也可与 ro-assist 共存（助手内已集成时不装本脚本）。
+// @version      1.1.0
+// @description  收到 op=180 中文数字算式验证弹窗（登录/换角色随时弹出）自动算出结果：点确认/回车 → 填入输入框 → 等 N 秒 → 点「下面」/确认/回车提交。右下角状态条：单击开关，双击设置等待秒数（默认 10）。也可与 ro-assist 共存（助手内已集成时不装本脚本）。
 // @match        https://post.lastro.cn/*
 // @match        https://post.lastro.cn/ro/api.html*
 // @match        https://post.lastro.cn/ro/api-old.html*
@@ -62,11 +62,43 @@
     } catch (e) { return NaN; }
   }
   function capTryParse(msg) {
-    var m = String(msg || "").match(/([零一二两三四五六七八九十百千万]+(?:[（(][加减乘除][）)][零一二两三四五六七八九十百千万]+)+)/);
+    // 真实弹窗文本形如 " ( 三 （乘） 一百 （加） 二十 四"：先去空格与全角/半角括号再匹配
+    var t = String(msg || "").replace(/[（(]/g, "").replace(/[）)]/g, "").replace(/\s+/g, "");
+    var m = t.match(/([零一二两三四五六七八九十百千万]+(?:[加减乘除][零一二两三四五六七八九十百千万]+)+)/);
     if (!m) return null;
     var result = capEval(m[1]);
     if (isNaN(result)) return null;
     return { expr: m[1], result: result };
+  }
+  function capFindConfirm() {
+    var all = document.querySelectorAll("button, div, span, li, a, input[type=button], input[type=submit]");
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      var r = el.getBoundingClientRect();
+      if (r.width === 0 && r.height === 0) continue;
+      var txt = ((el.textContent || "") + (el.value || "")).replace(/\s+/g, "");
+      if (!txt) continue;
+      if (txt === "确认" || txt === "确定" || txt === "OK" || txt === "好" || txt === "确定!") return el;
+      if ((txt.indexOf("确认") === 0 || txt.indexOf("确定") === 0) && el.children.length === 0 && txt.length <= 8) return el;
+    }
+    return null;
+  }
+  function capConfirm() {
+    try {
+      var el = capFindConfirm();
+      if (el) { el.click(); return true; }
+      return false;
+    } catch (e) { return false; }
+  }
+  function capEnter() {
+    try {
+      var el = document.activeElement || document.body;
+      var opts = { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true };
+      el.dispatchEvent(new KeyboardEvent("keydown", opts));
+      el.dispatchEvent(new KeyboardEvent("keypress", opts));
+      el.dispatchEvent(new KeyboardEvent("keyup", opts));
+      return true;
+    } catch (e) { return false; }
   }
 
   // ---------------- 解码 ----------------
@@ -105,15 +137,22 @@
   }
   function capClickSubmit() {
     try {
+      // 1) 优先点「下面」
       var all = document.querySelectorAll("button, div, span, li, a");
       for (var i = 0; i < all.length; i++) {
         var el = all[i];
+        var r = el.getBoundingClientRect();
+        if (r.width === 0 && r.height === 0) continue;
         var txt = (el.textContent || "").replace(/\s+/g, "");
         if (txt === "下面" || (txt.indexOf("下面") >= 0 && el.children.length === 0 && txt.length <= 8)) {
           el.click(); setState("已点「下面」", false); return true;
         }
       }
-      setState("未找到「下面」按钮（结果已填入）", true);
+      // 2) 其次点「确认/确定」
+      if (capConfirm()) { setState("已点「确认」", false); return true; }
+      // 3) 最后按回车
+      if (capEnter()) { setState("已按回车提交", false); return true; }
+      setState("未找到提交按钮（结果已填入）", true);
       return false;
     } catch (e) { setState("提交异常: " + e.message, true); return false; }
   }
@@ -130,12 +169,26 @@
       console.log("[验证自动过] 识别算式 " + p.expr + " = " + p.result);
       var wait = getWait() * 1000;
       setTimeout(function () {
-        try { capFillInput(String(p.result)); } catch (e) {}
+        // 第一步：输入框若已就绪直接填；否则先点确认/回车（弹窗第一步确认）
+        try {
+          var inp = capFindInput();
+          if (inp) {
+            console.log("[验证自动过] 输入框已就绪，跳过第一步确认");
+          } else {
+            var ok = capConfirm();
+            if (ok) console.log("[验证自动过] 第一步：已点确认按钮");
+            else { capEnter(); console.log("[验证自动过] 第一步：已按回车"); }
+          }
+        } catch (e) {}
         setTimeout(function () {
-          try { capClickSubmit(); } catch (e) {}
-          setTimeout(function () { busy = false; }, 2000);
-        }, wait);
-      }, 300);
+          try { capFillInput(String(p.result)); } catch (e) {}
+          console.log("[验证自动过] 第二步：填入结果 " + p.result);
+          setTimeout(function () {
+            try { capClickSubmit(); } catch (e) {}
+            setTimeout(function () { busy = false; }, 2000);
+          }, wait);
+        }, 600);
+      }, 400);
     } catch (e) {}
   }
 

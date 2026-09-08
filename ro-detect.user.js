@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         仙境传说 · 检测插件（ro-detect）
 // @namespace    dsh.ro-detect
-// @version      1.0.1
+// @version      1.0.2
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-detect.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-detect.user.js
-// @description  v1.0.1：检测插件（合并 ro-probe 回传框架 + ro-attack-test 攻击测试）。模块：A验证码/自动验证日志监控 B攻击测试（标记/模拟点击/buff上身诊断） C自动buff状态监控 D防原地走动判定。检测日志自动回传本机接收服务（8899），DSH 直接自取，无需手动复制控制台。
+// @description  v1.0.2：检测插件（合并 ro-probe 回传框架 + ro-attack-test 攻击测试）。模块：A验证码/自动验证日志监控 B攻击测试（标记/模拟点击/buff上身诊断） C自动buff状态监控 D防原地走动判定。检测日志自动回传本机接收服务（8899），DSH 直接自取，无需手动复制控制台。
 // @match        https://post.lastro.cn/*
 // @match        https://post.lastro.cn/ro/api.html*
 // @run-at       document-start
@@ -124,7 +124,8 @@
   }
   function toPage(rx, ry) {
     try {
-      var R = window.require && window.require('Renderer/Renderer');
+      var W = pageWindow();
+      var R = W.require && W.require('Renderer/Renderer');
       var cv = btCanvas();
       if (!R || !cv) return { x: rx, y: ry };
       var br = cv.getBoundingClientRect();
@@ -132,12 +133,12 @@
     } catch (e) { return { x: rx, y: ry }; }
   }
   function selfEntity() {
-    try { return (window.CLIENT && window.CLIENT.SS && window.CLIENT.SS.Entity) || null; } catch (e) { return null; }
+    try { var W = pageWindow(); return (W.CLIENT && W.CLIENT.SS && W.CLIENT.SS.Entity) || null; } catch (e) { return null; }
   }
   function findTarget() {
     try {
-      if (!window.require) return null;
-      var EM = window.require('Renderer/EntityManager');
+      var W = pageWindow();
+      var EM = (W.CLIENT && W.CLIENT.EM) || (W.require && W.require('Renderer/EntityManager'));
       if (!EM || typeof EM.forEach !== 'function') return null;
       var ent = selfEntity();
       var best = null, bestD = 1e9;
@@ -227,10 +228,11 @@
   var watchBuffs = {}; // {stId: {on, endAt, seen}}
   function hookStatusIcons() {
     try {
-      if (!window.require) return;
+      var W = pageWindow();
+      if (!W.require) return;
       var cands = ['UI/Components/StatusIcons/StatusIcons', 'UI/Components/StatusIcons', 'UI/Components/StatusIcons/StatusIcons.js', 'UI/Components/StatusIcons.js'];
       var SI = null;
-      for (var i = 0; i < cands.length; i++) { try { var m = window.require(cands[i]); if (m && typeof m.update === 'function') { SI = m; break; } } catch (e) {} }
+      for (var i = 0; i < cands.length; i++) { try { var m = W.require(cands[i]); if (m && typeof m.update === 'function') { SI = m; break; } } catch (e) {} }
       if (!SI || SI.__dshDetect) return;
       SI.__dshDetect = true;
       var orig = SI.update;
@@ -275,10 +277,11 @@
   };
   function atkHookStatus() {
     try {
-      if (!window.require) return;
+      var W = pageWindow();
+      if (!W.require) return;
       var cands = ['UI/Components/StatusIcons/StatusIcons', 'UI/Components/StatusIcons', 'UI/Components/StatusIcons/StatusIcons.js', 'UI/Components/StatusIcons.js'];
       var SI = null;
-      for (var i = 0; i < cands.length; i++) { try { var m = window.require(cands[i]); if (m && typeof m.update === 'function') { SI = m; break; } } catch (e) {} }
+      for (var i = 0; i < cands.length; i++) { try { var m = W.require(cands[i]); if (m && typeof m.update === 'function') { SI = m; break; } } catch (e) {} }
       if (!SI || SI.__dshAtkSIHook) return;
       var orig = SI.update;
       SI.__dshAtkSIHook = true;
@@ -355,19 +358,21 @@
   }
   function atkCastSkill() {
     try {
-      if (!window.CLIENT || !CLIENT.NM || !CLIENT.PS) { detLog('攻击测试：放技能 客户端未就绪'); return; }
+      var W = pageWindow();
+      var CL = W.CLIENT;
+      if (!CL || !CL.NM || !CL.PS) { detLog('攻击测试：放技能 客户端未就绪（CLIENT=' + (!!CL) + ' NM=' + (!!(CL && CL.NM)) + ' PS=' + (!!(CL && CL.PS)) + '）'); return; }
       atkHookStatus();
       var skid = parseInt((document.getElementById('dsh-atk-skillid') || {}).value, 10);
       if (isNaN(skid)) { detLog('攻击测试：放技能 技能ID无效'); return; }
       var stid = parseInt((document.getElementById('dsh-atk-stid') || {}).value, 10);
       var lv = 1;
       try {
-        var sl = CLIENT.PS.SkillList || (CLIENT.PS.Skill && CLIENT.PS.Skill.list);
+        var sl = CL.PS.SkillList || (CL.PS.Skill && CL.PS.Skill.list);
         if (sl) { for (var i = 0; i < sl.length; i++) { if (sl[i] && (sl[i].SKID === skid || sl[i].skid === skid)) { lv = sl[i].lv || sl[i].level || 1; break; } } }
       } catch (e) {}
-      var p = new CLIENT.PS.CZ.USE_SKILL();
+      var p = new CL.PS.CZ.USE_SKILL();
       p.SKID = skid; p.selectedLevel = lv; p.targetID = 0;
-      CLIENT.NM.sendPacket(p);
+      CL.NM.sendPacket(p);
       detLog('攻击测试：已发技能' + skid + ' Lv' + lv + '（对自己）');
       setTimeout(function () {
         try {
@@ -390,7 +395,7 @@
     var panel = document.createElement('div');
     panel.style.cssText = 'display:none;margin-top:6px;width:280px;background:#fff;border:1px solid #b8c6d4;border-radius:6px;padding:8px;box-shadow:0 4px 12px rgba(0,0,0,.25)';
     panel.innerHTML =
-      '<div style="font-size:12px;color:#1d4e89;margin-bottom:6px">RO 检测插件（ro-detect v1.0.1）</div>' +
+      '<div style="font-size:12px;color:#1d4e89;margin-bottom:6px">RO 检测插件（ro-detect v1.0.2）</div>' +
       '<div style="font-size:10px;color:#5a6b7f;margin-bottom:6px">日志自动回传本机8899，DSH自取；含验证码/buff/原地走动监控</div>' +
       '<div style="display:flex;gap:6px;margin-bottom:6px">' +
       '<button id="dsh-atk-mark-b" style="flex:1;padding:4px 0;font-size:11px;cursor:pointer">标记测试</button>' +
@@ -414,9 +419,9 @@
     root.appendChild(btn);
     root.appendChild(panel);
     document.body.appendChild(root);
-    detLog('面板就绪（检测插件 v1.0.1，会话 ' + SESSION + '）');
+    detLog('面板就绪（检测插件 v1.0.2，会话 ' + SESSION + '）');
   }
-  // v1.0.1：面板不再等游戏客户端就绪（手机页模式下 CLIENT.SS 结构不同导致一直不显示），页面 body 出现即构建按钮；点击操作内部会容错提示
+  // v1.0.1：面板不再等游戏客户端就绪，页面 body 出现即构建按钮；v1.0.2：页面对象访问全走 pageWindow()（沙箱 window 无 CLIENT/require）
   var tries = 0;
   var iv = setInterval(function () {
     tries++;

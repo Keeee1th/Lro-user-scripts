@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         仙境传说 · 检测插件（ro-detect）
 // @namespace    dsh.ro-detect
-// @version      1.0.4
+// @version      1.0.5
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-detect.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-detect.user.js
-// @description  v1.0.4：检测插件（合并 ro-probe 回传框架 + ro-attack-test 攻击测试）。模块：A验证码/自动验证日志监控 B攻击测试（标记/模拟点击/buff上身诊断） C自动buff状态监控 D防原地走动判定。抓取 [ASK-DIAG] 自动技能逐项决策日志。检测日志自动回传本机接收服务（8899），DSH 直接自取，无需手动复制控制台。
+// @description  v1.0.5：检测插件（合并 ro-probe 回传框架 + ro-attack-test 攻击测试）。模块：A验证码/自动验证日志监控 B攻击测试（标记/模拟点击/buff上身诊断） C自动buff状态监控+自动加buff（状态未常驻自动放技能，面板开关+防抖退避） D防原地走动判定。抓取 [ASK-DIAG] 自动技能逐项决策日志。检测日志自动回传本机接收服务（8899），DSH 直接自取，无需手动复制控制台。
 // @match        https://post.lastro.cn/*
 // @match        https://post.lastro.cn/ro/api.html*
 // @run-at       document-start
@@ -266,6 +266,44 @@
       };
     } catch (e) {}
   }
+  // V1.0.5 自动加buff配置：{stId, skid, lv}（面板 buff 区「状态ID/技能ID」输入 + 「加入自动加buff」按钮维护，存 localStorage）
+  var AUTO_BUFFS = [];
+  try { AUTO_BUFFS = JSON.parse(localStorage.getItem('dsh_detect_autobuffs')) || []; } catch (e) { AUTO_BUFFS = []; }
+  var autoBuffEn = false;   // 面板「自动加buff」开关
+  var autoBuffLast = {};    // {stId: lastCastAt} 每状态独立防抖
+  var autoBuffMiss = {};    // {stId: missCnt} 连续补不上退避
+  function castAutoBuff(stId, skid) {
+    try {
+      var m = pageModules();
+      if (!m || !m.NM || !m.PS || !m.NM.sendPacket) return false;
+      var lv = 1;
+      try {
+        var sl = m.PS.SkillList || (m.PS.Skill && m.PS.Skill.list);
+        if (sl) { for (var i = 0; i < sl.length; i++) { if (sl[i] && (sl[i].SKID === skid || sl[i].skid === skid)) { lv = sl[i].lv || sl[i].level || 1; break; } } }
+      } catch (e) {}
+      var p = new m.PS.CZ.USE_SKILL();
+      p.SKID = skid; p.selectedLevel = lv; p.targetID = 0;
+      m.NM.sendPacket(p);
+      autoBuffLast[stId] = Date.now();
+      autoBuffMiss[stId] = (autoBuffMiss[stId] || 0) + 1;
+      detLog('自动加buff：状态' + stId + '未常驻，已放技能' + skid + ' Lv' + lv + '（missCnt=' + autoBuffMiss[stId] + '）');
+      return true;
+    } catch (e) { return false; }
+  }
+  function setAutoBuffInfo() {
+    try { localStorage.setItem('dsh_detect_autobuffs', JSON.stringify(AUTO_BUFFS)); } catch (e) {}
+    var el = document.getElementById('dsh-atk-autobuff-list');
+    if (!el) return;
+    if (!AUTO_BUFFS.length) { el.innerHTML = '<span style="color:#8a97a6">空（填上方状态ID/技能ID 点「加入」）</span>'; return; }
+    var h = '';
+    for (var i = 0; i < AUTO_BUFFS.length; i++) {
+      var ab = AUTO_BUFFS[i];
+      h += '<div style="display:flex;align-items:center;gap:4px;padding:2px 0">' +
+        '<span style="flex:1;font-size:10px">状态' + ab.stId + ' ← 技能' + ab.skid + '</span>' +
+        '<button data-ab-del="' + i + '" style="padding:0 6px;font-size:10px;cursor:pointer;border:1px solid #ccc;border-radius:3px;background:#fff">删</button></div>';
+    }
+    el.innerHTML = h;
+  }
   function checkBuffs() {
     try {
       hookStatusIcons();
@@ -278,6 +316,20 @@
         } else if (!on && !cur) {
           // 从未见过该状态：登录初期不误报，标记已检查
           watchBuffs[st] = { on: false, endAt: 0, seen: false };
+        }
+      }
+      // V1.0.5 自动加buff：状态未常驻（不在身/从未上身）→ 自动放对应技能；5s 防抖，连续2次补不上退避30s
+      if (autoBuffEn && AUTO_BUFFS.length) {
+        for (var j = 0; j < AUTO_BUFFS.length; j++) {
+          var ab = AUTO_BUFFS[j];
+          if (!ab || !ab.stId) continue;
+          var cur2 = watchBuffs[ab.stId];
+          var on2 = !!(cur2 && cur2.on && cur2.endAt > Date.now());
+          if (on2) { autoBuffMiss[ab.stId] = 0; continue; } // 状态在身，清零
+          var now = Date.now();
+          var waitMs = (autoBuffMiss[ab.stId] || 0) >= 2 ? 30000 : 5000;
+          if (now - (autoBuffLast[ab.stId] || 0) < waitMs) continue;
+          if (castAutoBuff(ab.stId, ab.skid)) { setAutoBuffInfo(); }
         }
       }
     } catch (e) {}
@@ -413,7 +465,7 @@
     var panel = document.createElement('div');
     panel.style.cssText = 'display:none;margin-top:6px;width:280px;background:#fff;border:1px solid #b8c6d4;border-radius:6px;padding:8px;box-shadow:0 4px 12px rgba(0,0,0,.25);pointer-events:auto';
     panel.innerHTML =
-      '<div style="font-size:12px;color:#1d4e89;margin-bottom:6px">RO 检测插件（ro-detect v1.0.3）</div>' +
+      '<div style="font-size:12px;color:#1d4e89;margin-bottom:6px">RO 检测插件（ro-detect v1.0.5）</div>' +
       '<div style="font-size:10px;color:#5a6b7f;margin-bottom:6px">日志自动回传本机8899，DSH自取；含验证码/buff/原地走动监控</div>' +
       '<div style="display:flex;gap:6px;margin-bottom:6px">' +
       '<button id="dsh-atk-mark-b" style="flex:1;padding:4px 0;font-size:11px;cursor:pointer">标记测试</button>' +
@@ -424,7 +476,10 @@
       '<div style="border-top:1px solid #d8e0e8;margin-top:6px;padding-top:4px;font-size:11px;color:#1d4e89">buff 上身诊断</div>' +
       '<div style="display:flex;gap:4px;margin:4px 0"><input id="dsh-atk-stid" type="number" placeholder="状态ID" value="12" style="flex:1;min-width:0;padding:3px 6px;font-size:11px;border:1px solid #ccc;border-radius:3px"><input id="dsh-atk-skillid" type="number" placeholder="技能ID" value="29" style="flex:1;min-width:0;padding:3px 6px;font-size:11px;border:1px solid #ccc;border-radius:3px"></div>' +
       '<div style="display:flex;gap:4px;margin-bottom:4px"><button id="dsh-atk-stcheck" style="flex:1;padding:4px 0;font-size:11px;cursor:pointer">测状态</button><button id="dsh-atk-stcast" style="flex:1;padding:4px 0;font-size:11px;cursor:pointer">放技能看上身</button></div>' +
-      '<div id="dsh-atk-buffinfo" style="font-size:10px;background:#fdf6ec;border:1px solid #eeddbb;border-radius:4px;padding:4px;white-space:pre-wrap;line-height:1.5">输入状态ID（默认12加速术）测状态；输入技能ID放技能看上身。</div>';
+      '<div id="dsh-atk-buffinfo" style="font-size:10px;background:#fdf6ec;border:1px solid #eeddbb;border-radius:4px;padding:4px;white-space:pre-wrap;line-height:1.5">输入状态ID（默认12加速术）测状态；输入技能ID放技能看上身。</div>' +
+      '<div style="border-top:1px solid #d8e0e8;margin-top:6px;padding-top:4px;font-size:11px;color:#1d4e89">自动加buff（状态未常驻自动放技能）</div>' +
+      '<div style="display:flex;align-items:center;gap:6px;margin:4px 0"><label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer"><input id="dsh-atk-autobuff" type="checkbox" style="cursor:pointer">开启</label><button id="dsh-atk-ab-add" style="flex:1;padding:3px 0;font-size:11px;cursor:pointer">加入（用上方 状态ID/技能ID）</button></div>' +
+      '<div id="dsh-atk-autobuff-list" style="font-size:10px;background:#f4f8f4;border:1px solid #d8e0d8;border-radius:4px;padding:4px;line-height:1.5"></div>';
     btn.addEventListener('click', function () { panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; });
     panel.addEventListener('click', function (ev) {
       var id = ev.target && ev.target.id;
@@ -433,11 +488,29 @@
       else if (id === 'dsh-atk-close-b') panel.style.display = 'none';
       else if (id === 'dsh-atk-stcheck') atkCheckState();
       else if (id === 'dsh-atk-stcast') atkCastSkill();
+      else if (id === 'dsh-atk-ab-add') {
+        var aSt = parseInt((document.getElementById('dsh-atk-stid') || {}).value, 10);
+        var aSk = parseInt((document.getElementById('dsh-atk-skillid') || {}).value, 10);
+        if (isNaN(aSt) || isNaN(aSk)) { detLog('自动加buff：状态ID/技能ID 无效'); return; }
+        var dup = false;
+        for (var di = 0; di < AUTO_BUFFS.length; di++) { if (AUTO_BUFFS[di].stId === aSt) { AUTO_BUFFS[di].skid = aSk; dup = true; break; } }
+        if (!dup) AUTO_BUFFS.push({ stId: aSt, skid: aSk });
+        setAutoBuffInfo();
+        detLog('自动加buff：已加入 状态' + aSt + '←技能' + aSk + '（共' + AUTO_BUFFS.length + '项）');
+      }
+      var abDel = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-ab-del');
+      if (abDel != null) {
+        var dIdx = parseInt(abDel, 10);
+        if (!isNaN(dIdx) && dIdx >= 0 && dIdx < AUTO_BUFFS.length) { AUTO_BUFFS.splice(dIdx, 1); setAutoBuffInfo(); }
+      }
     });
     root.appendChild(btn);
     root.appendChild(panel);
+    var abEn = document.getElementById('dsh-atk-autobuff');
+    if (abEn) { abEn.checked = false; abEn.addEventListener('change', function () { autoBuffEn = this.checked; if (this.checked) { hookStatusIcons(); detLog('自动加buff：已开启（' + AUTO_BUFFS.length + '项）'); } else { detLog('自动加buff：已关闭'); } }); }
+    setAutoBuffInfo();
     document.body.appendChild(root);
-    detLog('面板就绪（检测插件 v1.0.3，会话 ' + SESSION + '）');
+    detLog('面板就绪（检测插件 v1.0.5，会话 ' + SESSION + '）');
   }
   // v1.0.1：面板不再等游戏客户端就绪，页面 body 出现即构建按钮；v1.0.2：页面对象访问全走 pageWindow()（沙箱 window 无 CLIENT/require）
   var tries = 0;

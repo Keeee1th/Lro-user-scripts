@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.3
+// @version      2.15.4
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.3"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.4"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -2530,6 +2530,11 @@
     { cn: "失明", id: 887, deb: 1 }, { cn: "流血", id: 889, deb: 1 }, { cn: "剧毒", id: 890, deb: 1 },
     { cn: "恐惧", id: 891, deb: 1 }
   ];
+  // V2.15.4 已查明物品→状态表（来源 ro-wiki/buff_status.json，2026-11 生成，与状态查看器 [ID:N] 同源）
+  // 仅收录能解析出数字 EFST ID 的条目（卷轴/料理等）；物品效果分类名（攻速药水/ATK强化等）无客户端 EFST ID，不收录
+  // 用途：选择物品加入自动使用列表时自动带出状态 ID（第一参考），可手动改；自动学习仍作兜底
+  var DSH_ITEM_STATE = {12215:[10],12216:[12],12217:[17],12218:[18],12219:[116],12220:[23],12235:[10],12280:[18],12290:[10],12291:[12],12350:[10],12405:[10],12414:[12],12645:[17],12858:[19],12860:[18],23259:[10],23261:[9],28023:[1],101394:[12],300451:[18],300453:[31],312799:[18]};
+
   // V2.3.0 状态模糊联想：输入中文子串/ID 即联想（不必完全一致），选中回填中文名并记 data-sid
   function bindStatusAc(input, listEl) {
     if (!input || !listEl) return;
@@ -3341,6 +3346,8 @@
     var cond = $id("dsh-itemcond").value;
     var condval = parseFloat($id("dsh-itemcondval").value) || 0;
     var _isid = $id("dsh-itemstatus") ? statusIdOf($id("dsh-itemstatus").value) : -1;
+    // V2.15.4：未填状态时自动从已查明物品表带出状态ID（第一参考，可手动改）
+    if (_isid < 0) { var stA = DSH_ITEM_STATE[parseInt(itid, 10)]; if (stA && stA.length) { _isid = stA[0]; if ($id("dsh-itemstatus")) { $id("dsh-itemstatus").value = String(stA[0]); try { $id("dsh-itemstatus").setAttribute("data-sid", stA[0]); } catch (e) {} } } }
     var ist = _isid >= 0 ? _isid : "";
     itemList.push({ itid: parseInt(itid, 10), index: found ? found.index : -1, name: nm, cond: cond, condval: condval, st: ist, stInv: cond === "status" });
     saveItemList();
@@ -3362,6 +3369,8 @@
     itp.cond = $id("dsh-itemcond").value;
     itp.condval = parseFloat($id("dsh-itemcondval").value) || 0;
     var _isid2 = $id("dsh-itemstatus") ? statusIdOf($id("dsh-itemstatus").value) : -1;
+    // V2.15.4：未填状态时自动从已查明物品表带出状态ID
+    if (_isid2 < 0) { var stB = DSH_ITEM_STATE[itp.itid]; if (stB && stB.length) { _isid2 = stB[0]; if ($id("dsh-itemstatus")) { $id("dsh-itemstatus").value = String(stB[0]); try { $id("dsh-itemstatus").setAttribute("data-sid", stB[0]); } catch (e) {} } } }
     itp.st = _isid2 >= 0 ? _isid2 : "";
     itp.stInv = itp.cond === "status";
     saveItemList();

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.0
+// @version      2.15.1
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -826,7 +826,7 @@
       '<div class="row" style="margin-top:4px"><button class="ghost" id="dsh-inv-clear" style="flex:0 0 auto">清空数据</button>' +
       '<button class="ghost" id="dsh-inv-export" style="flex:0 0 auto">导出 JSON</button></div>' +
       '</div>' +
-      // 子页7：物品（拾取 + 背包整理，V2.16.0 自拾取页搬入）
+      // 子页7：物品（拾取 + 背包整理，V2.15.1 自拾取页搬入）
       '<div class="sub-page" data-subpage="ap-item">' +
       '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">物品 · 拾取 + 背包整理</span>' +
       '<button class="ghost" id="dsh-fw-btn-item" data-fw="item" style="flex:0 0 auto;padding:0 8px;font-size:11px">⧉ 浮窗</button></div>' +
@@ -1339,7 +1339,7 @@
       }
       return null; // 返回 null 表示不创建标准浮窗，只切换显示
     });
-    // V2.16.0 物品（拾取+背包整理）浮窗：标准浮窗（可拖动/透明/×收回）
+    // V2.15.1 物品（拾取+背包整理）浮窗：标准浮窗（可拖动/透明/×收回）
     fwReg("item", "物品 · 拾取+背包整理", function () { return document.getElementById("dsh-fw-item"); });
     panel.addEventListener("click", function (ev) {
       try {
@@ -6326,7 +6326,7 @@
     } catch (e) { setStatus("导入异常: " + e.message, "err"); }
   });
 
-  // ---------------- V2.16.0 背包整理（自 v4.47 bagClean 移植 · 剥离挑战依赖，独立自动触发）----------------
+  // ---------------- V2.15.1 背包整理（自 v4.47 bagClean 移植 · 剥离挑战依赖，独立自动触发）----------------
   var bagClean = {enabled:false,pending:false,busy:false,rules:{},generation:0,status:null,detail:null,hold:null,error:""};
   function bagCleanInventory() {
     var paths = ['UI/Components/Inventory/Inventory','UI/Components/BasicInventory/BasicInventory'];
@@ -7834,7 +7834,7 @@
     } catch (e) { $id("dsh-cleanlog").textContent = "下一段异常: " + e.message; }
   });
   hookMenuRecon();
-  // V2.16.0 背包整理初始化（物品子页内）
+  // V2.15.1 背包整理初始化（物品子页内）
   try { if (typeof bagCleanInit === "function") { bagCleanInit(); } } catch (e) {}
   // ---------------- V2.14.0 扩展脚本注册表（独立功能包 register 后系统页自动列出并可开关）----------------
   var ROExtList = {};

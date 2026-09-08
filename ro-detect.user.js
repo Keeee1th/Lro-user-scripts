@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         仙境传说 · 检测插件（ro-detect）
 // @namespace    dsh.ro-detect
-// @version      1.0.2
+// @version      1.0.3
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-detect.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-detect.user.js
-// @description  v1.0.2：检测插件（合并 ro-probe 回传框架 + ro-attack-test 攻击测试）。模块：A验证码/自动验证日志监控 B攻击测试（标记/模拟点击/buff上身诊断） C自动buff状态监控 D防原地走动判定。检测日志自动回传本机接收服务（8899），DSH 直接自取，无需手动复制控制台。
+// @description  v1.0.3：检测插件（合并 ro-probe 回传框架 + ro-attack-test 攻击测试）。模块：A验证码/自动验证日志监控 B攻击测试（标记/模拟点击/buff上身诊断） C自动buff状态监控 D防原地走动判定。检测日志自动回传本机接收服务（8899），DSH 直接自取，无需手动复制控制台。
 // @match        https://post.lastro.cn/*
 // @match        https://post.lastro.cn/ro/api.html*
 // @run-at       document-start
@@ -122,23 +122,40 @@
     } catch (e) {}
     return null;
   }
+  // v1.0.3：坐标换算修复——canvas 视口 rect 为 0 时回退原始值；Renderer 宽度取不到时用 canvas 像素宽
   function toPage(rx, ry) {
     try {
       var W = pageWindow();
-      var R = W.require && W.require('Renderer/Renderer');
       var cv = btCanvas();
-      if (!R || !cv) return { x: rx, y: ry };
+      if (!cv) return { x: rx, y: ry };
       var br = cv.getBoundingClientRect();
-      return { x: br.left + rx * (br.width / R.width), y: br.top + ry * (br.height / R.height) };
+      if (!br || br.width <= 0 || br.height <= 0) return { x: rx, y: ry };
+      var R = W.require && W.require('Renderer/Renderer');
+      var rw = (R && R.width) || cv.width || 1;
+      var rh = (R && R.height) || cv.height || 1;
+      return { x: br.left + rx * (br.width / rw), y: br.top + ry * (br.height / rh) };
     } catch (e) { return { x: rx, y: ry }; }
   }
+  // v1.0.3：CLIENT 不是页面全局（ro-assist 内部对象），各模块须从页面 require 拿（Engine/SessionStorage、Network/NetworkManager、Network/PacketStructure、Renderer/EntityManager）
+  function pageModules() {
+    try {
+      var W = pageWindow();
+      if (!W.require) return null;
+      var SS = null, NM = null, PS = null, EM = null;
+      try { SS = W.require('Engine/SessionStorage'); } catch (e) {}
+      try { NM = W.require('Network/NetworkManager'); } catch (e) {}
+      try { PS = W.require('Network/PacketStructure'); } catch (e) {}
+      try { EM = W.require('Renderer/EntityManager'); } catch (e) {}
+      return { SS: SS, NM: NM, PS: PS, EM: EM };
+    } catch (e) { return null; }
+  }
   function selfEntity() {
-    try { var W = pageWindow(); return (W.CLIENT && W.CLIENT.SS && W.CLIENT.SS.Entity) || null; } catch (e) { return null; }
+    try { var m = pageModules(); return (m && m.SS && m.SS.Entity) || null; } catch (e) { return null; }
   }
   function findTarget() {
     try {
-      var W = pageWindow();
-      var EM = (W.CLIENT && W.CLIENT.EM) || (W.require && W.require('Renderer/EntityManager'));
+      var m = pageModules();
+      var EM = m && m.EM;
       if (!EM || typeof EM.forEach !== 'function') return null;
       var ent = selfEntity();
       var best = null, bestD = 1e9;
@@ -318,6 +335,7 @@
       if (!b) { detLog('攻击测试：标记 目标无boundingRect'); return; }
       var cx = (b.x1 + b.x2) / 2, cy = (b.y1 + b.y2) / 2;
       var p = toPage(cx, cy);
+      detLog('攻击测试：标记诊断 b={x1:' + b.x1 + ',x2:' + b.x2 + ',y1:' + b.y1 + ',y2:' + b.y2 + '} 中心(' + cx + ',' + cy + ')→页面(' + p.x + ',' + p.y + ')');
       var d = document.createElement('div');
       d.id = 'dsh-atk-mark';
       d.style.cssText = 'position:fixed;left:' + p.x + 'px;top:' + p.y + 'px;width:16px;height:16px;border:2px solid red;background:rgba(255,0,0,.25);border-radius:50%;z-index:2147483646;pointer-events:none;transform:translate(-50%,-50%)';
@@ -334,6 +352,7 @@
       if (!b) { detLog('攻击测试：点击 目标无boundingRect'); return; }
       var cx = (b.x1 + b.x2) / 2, cy = (b.y1 + b.y2) / 2;
       var p = toPage(cx, cy);
+      detLog('攻击测试：点击诊断 b={x1:' + b.x1 + ',x2:' + b.x2 + ',y1:' + b.y1 + ',y2:' + b.y2 + '} 中心(' + cx + ',' + cy + ')→页面(' + p.x + ',' + p.y + ')');
       var cv = btCanvas();
       if (!cv) { detLog('攻击测试：点击 未找到画布'); return; }
       var opts = { clientX: p.x, clientY: p.y, bubbles: true, cancelable: true, view: window, button: 0, buttons: 1, pointerId: 1, isPrimary: true };
@@ -358,21 +377,20 @@
   }
   function atkCastSkill() {
     try {
-      var W = pageWindow();
-      var CL = W.CLIENT;
-      if (!CL || !CL.NM || !CL.PS) { detLog('攻击测试：放技能 客户端未就绪（CLIENT=' + (!!CL) + ' NM=' + (!!(CL && CL.NM)) + ' PS=' + (!!(CL && CL.PS)) + '）'); return; }
+      var m = pageModules();
+      if (!m || !m.NM || !m.PS || !m.NM.sendPacket) { detLog('攻击测试：放技能 客户端未就绪（SS=' + (!!(m && m.SS)) + ' NM=' + (!!(m && m.NM)) + ' PS=' + (!!(m && m.PS)) + '）'); return; }
       atkHookStatus();
       var skid = parseInt((document.getElementById('dsh-atk-skillid') || {}).value, 10);
       if (isNaN(skid)) { detLog('攻击测试：放技能 技能ID无效'); return; }
       var stid = parseInt((document.getElementById('dsh-atk-stid') || {}).value, 10);
       var lv = 1;
       try {
-        var sl = CL.PS.SkillList || (CL.PS.Skill && CL.PS.Skill.list);
+        var sl = m.PS.SkillList || (m.PS.Skill && m.PS.Skill.list);
         if (sl) { for (var i = 0; i < sl.length; i++) { if (sl[i] && (sl[i].SKID === skid || sl[i].skid === skid)) { lv = sl[i].lv || sl[i].level || 1; break; } } }
       } catch (e) {}
-      var p = new CL.PS.CZ.USE_SKILL();
+      var p = new m.PS.CZ.USE_SKILL();
       p.SKID = skid; p.selectedLevel = lv; p.targetID = 0;
-      CL.NM.sendPacket(p);
+      m.NM.sendPacket(p);
       detLog('攻击测试：已发技能' + skid + ' Lv' + lv + '（对自己）');
       setTimeout(function () {
         try {
@@ -388,14 +406,14 @@
     if (document.getElementById('dsh-atk-root')) return;
     var root = document.createElement('div');
     root.id = 'dsh-atk-root';
-    root.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:2147483646;font-family:sans-serif;user-select:none';
+    root.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:2147483647;font-family:sans-serif;user-select:none;pointer-events:auto';
     var btn = document.createElement('button');
     btn.textContent = '检测';
     btn.style.cssText = 'padding:6px 12px;font-size:12px;cursor:pointer;background:#1d4e89;color:#fff;border:none;border-radius:4px';
     var panel = document.createElement('div');
-    panel.style.cssText = 'display:none;margin-top:6px;width:280px;background:#fff;border:1px solid #b8c6d4;border-radius:6px;padding:8px;box-shadow:0 4px 12px rgba(0,0,0,.25)';
+    panel.style.cssText = 'display:none;margin-top:6px;width:280px;background:#fff;border:1px solid #b8c6d4;border-radius:6px;padding:8px;box-shadow:0 4px 12px rgba(0,0,0,.25);pointer-events:auto';
     panel.innerHTML =
-      '<div style="font-size:12px;color:#1d4e89;margin-bottom:6px">RO 检测插件（ro-detect v1.0.2）</div>' +
+      '<div style="font-size:12px;color:#1d4e89;margin-bottom:6px">RO 检测插件（ro-detect v1.0.3）</div>' +
       '<div style="font-size:10px;color:#5a6b7f;margin-bottom:6px">日志自动回传本机8899，DSH自取；含验证码/buff/原地走动监控</div>' +
       '<div style="display:flex;gap:6px;margin-bottom:6px">' +
       '<button id="dsh-atk-mark-b" style="flex:1;padding:4px 0;font-size:11px;cursor:pointer">标记测试</button>' +
@@ -419,7 +437,7 @@
     root.appendChild(btn);
     root.appendChild(panel);
     document.body.appendChild(root);
-    detLog('面板就绪（检测插件 v1.0.2，会话 ' + SESSION + '）');
+    detLog('面板就绪（检测插件 v1.0.3，会话 ' + SESSION + '）');
   }
   // v1.0.1：面板不再等游戏客户端就绪，页面 body 出现即构建按钮；v1.0.2：页面对象访问全走 pageWindow()（沙箱 window 无 CLIENT/require）
   var tries = 0;

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.14.0
+// @version      2.15.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.14.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -7375,11 +7375,44 @@
   function capWaitSec() { return parseInt(($id("dsh-capwait") && $id("dsh-capwait").value) || "10", 10) || 0; }
   function capSetState(t) { try { var el = $id("dsh-capstate"); if (el) el.textContent = t; } catch (e) {} }
   function capTryParse(msg) {
-    var m = String(msg || "").match(/([零一二两三四五六七八九十百千万]+(?:[（(][加减乘除][）)][零一二两三四五六七八九十百千万]+)+)/);
+    // 真实弹窗文本形如 " ( 三 （乘） 一百 （加） 二十 四"：先去空格与全角/半角括号再匹配
+    var t = String(msg || "").replace(/[（(]/g, "").replace(/[）)]/g, "").replace(/\s+/g, "");
+    var m = t.match(/([零一二两三四五六七八九十百千万]+(?:[加减乘除][零一二两三四五六七八九十百千万]+)+)/);
     if (!m) return null;
     var result = capEval(m[1]);
     if (isNaN(result)) return null;
     return { expr: m[1], result: result };
+  }
+  function capFindConfirm() {
+    // 查找「确认/确定/OK/好」按钮（可见、文字短、无子元素的叶子节点优先）
+    var all = document.querySelectorAll("button, div, span, li, a, input[type=button], input[type=submit]");
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      var r = el.getBoundingClientRect();
+      if (r.width === 0 && r.height === 0) continue;
+      var txt = ((el.textContent || "") + (el.value || "")).replace(/\s+/g, "");
+      if (!txt) continue;
+      if (txt === "确认" || txt === "确定" || txt === "OK" || txt === "好" || txt === "确定!") return el;
+      if ((txt.indexOf("确认") === 0 || txt.indexOf("确定") === 0) && el.children.length === 0 && txt.length <= 8) return el;
+    }
+    return null;
+  }
+  function capConfirm() {
+    try {
+      var el = capFindConfirm();
+      if (el) { el.click(); return true; }
+      return false;
+    } catch (e) { return false; }
+  }
+  function capEnter() {
+    try {
+      var el = document.activeElement || document.body;
+      var opts = { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true };
+      el.dispatchEvent(new KeyboardEvent("keydown", opts));
+      el.dispatchEvent(new KeyboardEvent("keypress", opts));
+      el.dispatchEvent(new KeyboardEvent("keyup", opts));
+      return true;
+    } catch (e) { return false; }
   }
   function capFindInput() {
     var ins = document.querySelectorAll("input");
@@ -7405,15 +7438,22 @@
   }
   function capClickSubmit() {
     try {
+      // 1) 优先点「下面」
       var all = document.querySelectorAll("button, div, span, li, a");
       for (var i = 0; i < all.length; i++) {
         var el = all[i];
+        var r = el.getBoundingClientRect();
+        if (r.width === 0 && r.height === 0) continue;
         var txt = (el.textContent || "").replace(/\s+/g, "");
         if (txt === "下面" || (txt.indexOf("下面") >= 0 && el.children.length === 0 && txt.length <= 8)) {
           el.click(); capSetState("已点击「下面」"); return true;
         }
       }
-      capSetState("未找到「下面」按钮（结果已填入）"); return false;
+      // 2) 其次点「确认/确定」
+      if (capConfirm()) { capSetState("已点击「确认」"); return true; }
+      // 3) 最后按回车
+      if (capEnter()) { capSetState("已按回车提交"); return true; }
+      capSetState("未找到提交按钮（结果已填入）"); return false;
     } catch (e) { capSetState("提交异常: " + e.message); return false; }
   }
   var capBusy = false;
@@ -7424,14 +7464,29 @@
       if (!p) return;
       capBusy = true;
       capSetState("识别算式 " + p.expr + " = " + p.result);
+      console.log("[验证自动过] 识别算式 " + p.expr + " = " + p.result);
       var wait = capWaitSec() * 1000;
       setTimeout(function () {
-        try { capFillInput(String(p.result)); } catch (e) {}
+        // 第一步：输入框若已就绪直接填；否则先点确认/回车（弹窗第一步确认）
+        try {
+          var inp = capFindInput();
+          if (inp) {
+            console.log("[验证自动过] 输入框已就绪，跳过第一步确认");
+          } else {
+            var ok = capConfirm();
+            if (ok) console.log("[验证自动过] 第一步：已点确认按钮");
+            else { capEnter(); console.log("[验证自动过] 第一步：已按回车"); }
+          }
+        } catch (e) {}
         setTimeout(function () {
-          try { capClickSubmit(); } catch (e) {}
-          setTimeout(function () { capBusy = false; }, 2000);
-        }, wait);
-      }, 300);
+          try { capFillInput(String(p.result)); } catch (e) {}
+          console.log("[验证自动过] 第二步：填入结果 " + p.result);
+          setTimeout(function () {
+            try { capClickSubmit(); } catch (e) {}
+            setTimeout(function () { capBusy = false; }, 2000);
+          }, wait);
+        }, 600);
+      }, 400);
     } catch (e) {}
   }
   //（onSayDialog 内调用 capTrigger）

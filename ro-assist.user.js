@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.2
+// @version      2.15.3
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.2"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.3"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -2167,9 +2167,20 @@
       m[String(c.skid)] = stId; localStorage.setItem(DSH_LEARN_KEY, JSON.stringify(m));
       console.log("[LEARN-DIAG] learned: skill " + c.skid + " -> status " + stId);
       // 学到的自身状态立即回写对应 Buff，后续按状态消失自动重放同一技能。
+      // V2.15.3：用户已手动设置 st 时不覆盖（防误学写坏配置）；仅当该技能 st 为空时写回；学到的与手动一致时只清零 missCnt。
       if (typeof askList !== "undefined" && Array.isArray(askList)) {
         for (var i = 0; i < askList.length; i++) {
-          if (askList[i] && askList[i].skid === c.skid) { askList[i].st = stId; askList[i].stInv = false; askList[i].missCnt = 0; saveAskList(); console.log("[LEARN-DIAG] wrote back to askList[" + i + "] skid=" + askList[i].skid + " st=" + stId); break; }
+          if (askList[i] && askList[i].skid === c.skid) {
+            var askSt = askList[i].st;
+            if (!askSt) {
+              askList[i].st = stId; askList[i].stInv = false; askList[i].missCnt = 0; saveAskList();
+              console.log("[LEARN-DIAG] wrote back to askList[" + i + "] skid=" + askList[i].skid + " st=" + stId);
+            } else {
+              try { if (buffStId(askSt) === stId) askList[i].missCnt = 0; } catch (e) {}
+              console.log("[LEARN-DIAG] keep manual st=" + askSt + " (learned " + stId + " skipped)");
+            }
+            break;
+          }
         }
       }
       tlog("learn-skill-status skid=" + c.skid + " -> st=" + stId);
@@ -3565,20 +3576,30 @@
       var statusMap = JSON.parse(cache);
       var restored = 0;
       
+      // V2.15.3：仅当 ask.st 为空时用缓存恢复（不覆盖用户手动设置）；用户已设置且与缓存冲突 → 缓存项视为误学删除并落盘
+      var dropped = 0;
       askList.forEach(function(ask) {
-        // 从缓存恢复状态 ID（不论 ask.st 是否已存在，都用缓存值更新）
-        if (statusMap[ask.skid]) {
-          var oldSt = ask.st;
-          ask.st = statusMap[ask.skid];
-          if (oldSt !== ask.st) {
-            console.log('[LEARN-DIAG] restore: skid=' + ask.skid + ' st ' + oldSt + ' -> ' + ask.st);
-            ask.stInv = false;
-            ask.missCnt = 0;
-            restored++;
-          }
+        if (!statusMap[ask.skid]) return;
+        var cachedSt = statusMap[ask.skid];
+        if (!ask.st) {
+          ask.st = cachedSt;
+          ask.stInv = false;
+          ask.missCnt = 0;
+          restored++;
+          console.log('[LEARN-DIAG] restore: skid=' + ask.skid + ' st -> ' + ask.st);
+        } else {
+          try {
+            if (buffStId(ask.st) !== parseInt(cachedSt, 10)) {
+              delete statusMap[ask.skid];
+              dropped++;
+              console.log('[LEARN-DIAG] drop mislearned cache: skid=' + ask.skid + ' manual st=' + ask.st + ' cached st=' + cachedSt);
+            } else {
+              ask.missCnt = 0;
+            }
+          } catch (e) {}
         }
       });
-      
+      if (dropped > 0) { try { localStorage.setItem('dsh_ro_skill_status_v1', JSON.stringify(statusMap)); } catch (e) {} }
       if (restored > 0) {
         saveAskList();
         console.log('[LEARN-DIAG] restored ' + restored + ' status IDs from cache');

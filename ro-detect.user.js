@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         仙境传说 · 检测插件（ro-detect）
 // @namespace    dsh.ro-detect
-// @version      1.0.0
+// @version      1.0.1
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-detect.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-detect.user.js
-// @description  v1.0.0：检测插件（合并 ro-probe 回传框架 + ro-attack-test 攻击测试）。模块：A验证码/自动验证日志监控 B攻击测试（标记/模拟点击/buff上身诊断） C自动buff状态监控 D防原地走动判定。检测日志自动回传本机接收服务（8899），DSH 直接自取，无需手动复制控制台。
+// @description  v1.0.1：检测插件（合并 ro-probe 回传框架 + ro-attack-test 攻击测试）。模块：A验证码/自动验证日志监控 B攻击测试（标记/模拟点击/buff上身诊断） C自动buff状态监控 D防原地走动判定。检测日志自动回传本机接收服务（8899），DSH 直接自取，无需手动复制控制台。
 // @match        https://post.lastro.cn/*
 // @match        https://post.lastro.cn/ro/api.html*
 // @run-at       document-start
@@ -390,7 +390,7 @@
     var panel = document.createElement('div');
     panel.style.cssText = 'display:none;margin-top:6px;width:280px;background:#fff;border:1px solid #b8c6d4;border-radius:6px;padding:8px;box-shadow:0 4px 12px rgba(0,0,0,.25)';
     panel.innerHTML =
-      '<div style="font-size:12px;color:#1d4e89;margin-bottom:6px">RO 检测插件（ro-detect v1.0.0）</div>' +
+      '<div style="font-size:12px;color:#1d4e89;margin-bottom:6px">RO 检测插件（ro-detect v1.0.1）</div>' +
       '<div style="font-size:10px;color:#5a6b7f;margin-bottom:6px">日志自动回传本机8899，DSH自取；含验证码/buff/原地走动监控</div>' +
       '<div style="display:flex;gap:6px;margin-bottom:6px">' +
       '<button id="dsh-atk-mark-b" style="flex:1;padding:4px 0;font-size:11px;cursor:pointer">标记测试</button>' +
@@ -414,15 +414,13 @@
     root.appendChild(btn);
     root.appendChild(panel);
     document.body.appendChild(root);
-    detLog('面板就绪（检测插件 v1.0.0，会话 ' + SESSION + '）');
+    detLog('面板就绪（检测插件 v1.0.1，会话 ' + SESSION + '）');
   }
-  function ready() {
-    try { return !!(window.CLIENT && window.CLIENT.SS && window.CLIENT.SS.Entity && window.require); } catch (e) { return false; }
-  }
+  // v1.0.1：面板不再等游戏客户端就绪（手机页模式下 CLIENT.SS 结构不同导致一直不显示），页面 body 出现即构建按钮；点击操作内部会容错提示
   var tries = 0;
   var iv = setInterval(function () {
     tries++;
-    if (ready() || tries > 300) { clearInterval(iv); if (ready()) buildPanel(); }
+    if (document.body || tries > 300) { clearInterval(iv); if (document.body) buildPanel(); }
   }, 1000);
 
   /* ==================== 启动 ==================== */

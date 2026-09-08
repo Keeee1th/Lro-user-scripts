@@ -6327,166 +6327,175 @@
   });
 
   // ---------------- V2.16.0 背包整理（自 v4.47 bagClean 移植 · 剥离挑战依赖，独立自动触发）----------------
-  var bagClean={enabled:false,pending:false,busy:false,rules:{},generation:0,status:null,detail:null,hold:null,error:""};
-  function bagCleanInventory(){
-    var paths=['UI/Components/Inventory/Inventory','UI/Components/BasicInventory/BasicInventory'];
-    for(var i=0;i<paths.length;i++){var m=requireDB(paths[i]);if(m&&Array.isArray(m.list))return m.list;}
+  var bagClean = {enabled:false,pending:false,busy:false,rules:{},generation:0,status:null,detail:null,hold:null,error:""};
+  function bagCleanInventory() {
+    var paths = ['UI/Components/Inventory/Inventory','UI/Components/BasicInventory/BasicInventory'];
+    for (var i = 0;i<paths.length;i++){var m = requireDB(paths[i]);if (m&&Array.isArray(m.list))return m.list;}
     return null;
   }
-  function bagCleanWeight(){
-    var a=document.querySelector('.weight_value'),b=document.querySelector('.weight_total');
-    function number(el){return el?Number(el.textContent.replace(/[,，\s]/g,'')):NaN;}
-    var w=number(a),max=number(b),ent=CLIENT.SS&&CLIENT.SS.Entity;
-    if(!(Number.isFinite(w)&&max>0)&&ent){w=Number(ent.weight);max=Number(ent.maxWeight||ent.maxweight);}
+  function bagCleanWeight() {
+    var a = document.querySelector('.weight_value'), b = document.querySelector('.weight_total');
+    function number(el) {return el?Number(el.textContent.replace(/[,，\s]/g,'')):NaN;}
+    var w = number(a), max = number(b), ent = CLIENT.SS&&CLIENT.SS.Entity;
+    if (!(Number.isFinite(w)&&max>0)&&ent){w=Number(ent.weight);max=Number(ent.maxWeight||ent.maxweight);}
     return Number.isFinite(w)&&w>=0&&Number.isFinite(max)&&max>0?w/max*100:null;
   }
-  function bagCleanUnitWeight(id){
+  function bagCleanUnitWeight(id) {
     try{
-      var db=CLIENT.DB||requireDB('DB/DBManager'),info=db&&db.getItemInfo&&db.getItemInfo(id);
-      if(!info)return null;
-      var desc=info.identifiedDescriptionName;
-      var text=(Array.isArray(desc)?desc.join('\n'):String(desc||'')).replace(/\^[0-9a-f]{6}/gi,'').replace(/<[^>]*>/g,' ');
-      var m=text.match(/(?:重量|Weight)\s*[:：]\s*([0-9]+(?:\.[0-9]+)?)/i);
+      var db = CLIENT.DB||requireDB('DB/DBManager'), info = db&&db.getItemInfo&&db.getItemInfo(id);
+      if (!info)return null;
+      var desc = info.identifiedDescriptionName;
+      var text = (Array.isArray(desc)?desc.join('\n'):String(desc||'')).replace(/\^[0-9a-f]{6}/gi,'').replace(/<[^>]*>/g,' ');
+      var m = text.match(/(?:重量|Weight)\s*[:：]\s*([0-9]+(?:\.[0-9]+)?)/i);
       return m&&Number.isFinite(Number(m[1]))?Number(m[1]):null;
     }catch(ignore){return null;}
   }
-  function bagCleanWeightOrder(a,b){
-    var aw=a.unitWeight,bw=b.unitWeight;
-    if(aw==null&&bw!=null)return 1;if(bw==null&&aw!=null)return -1;
+  function bagCleanWeightOrder(a, b) {
+    var aw = a.unitWeight, bw = b.unitWeight;
+    if (aw==null&&bw!=null)return 1;if (bw==null&&aw!=null)return -1;
     return (bw||0)-(aw||0)||Math.max(0,b.total-(bagClean.rules[b.key]||0))-Math.max(0,a.total-(bagClean.rules[a.key]||0))||a.id-b.id||String(a.key).localeCompare(String(b.key));
   }
-  function bagCleanRows(inv){
-    var groups={};
+  function bagCleanRows(inv) {
+    var groups = {};
     (inv||[]).forEach(function(it){
-      if(!it||[0,2,3,4,5,8,10,11,12,18].indexOf(it.type)<0||it.IsEquipped||it.WearState||it.wearState||it.equipped)return;
-      var equipment=[4,5,8,12].indexOf(it.type)>=0;
-      var unidentified=equipment&&(it.IsIdentified===0||it.IsIdentified===false);
-      if(equipment&&(!(it.IsIdentified===1||it.IsIdentified===true||unidentified)||it.RefiningLevel!==0||!it.slot||
+      if (!it||[0,2,3,4,5,8,10,11,12,18].indexOf(it.type)<0||it.IsEquipped||it.WearState||it.wearState||it.equipped)return;
+      var equipment = [4,5,8,12].indexOf(it.type)>=0;
+      var unidentified = equipment&&(it.IsIdentified===0||it.IsIdentified===false);
+      if (equipment&&(!(it.IsIdentified===1||it.IsIdentified===true||unidentified)||it.RefiningLevel!==0||!it.slot||
         ['card1','card2','card3','card4'].some(function(k){return it.slot[k]!==0;})||
         it.refiningLevel||it.nRandomOptionCnt||it.IsDamaged))return;
-      var id=Number(it.ITID),index=Number(it.index),amount=Number(it.count!=null?it.count:(it.amount!=null?it.amount:(equipment?1:NaN)));
-      if(!Number.isInteger(id)||id<=0||!Number.isInteger(index)||index<=0||index>65535||!Number.isInteger(amount)||amount<=0)return;
-      var key=String(id)+(unidentified?':u':'');
-      if(!groups[key])groups[key]={id:id,key:key,unidentified:unidentified,unitWeight:bagCleanUnitWeight(id),total:0,stacks:[]};
+      var id = Number(it.ITID), index = Number(it.index), amount = Number(it.count!=null?it.count:(it.amount!=null?it.amount:(equipment?1:NaN)));
+      if (!Number.isInteger(id)||id<=0||!Number.isInteger(index)||index<=0||index>65535||!Number.isInteger(amount)||amount<=0)return;
+      var key = String(id)+(unidentified?':u':'');
+      if (!groups[key])groups[key]={id:id,key:key,unidentified:unidentified,unitWeight:bagCleanUnitWeight(id),total:0,stacks:[]};
       groups[key].total+=amount;groups[key].stacks.push({index:index,amount:amount});
     });return Object.keys(groups).map(function(k){return groups[k];});
   }
-  function bagCleanFreeSlots(){
-    var used=document.querySelector('#Inventory .titlebar .curamount'),max=document.querySelector('#Inventory .titlebar .maxamount');
-    if(!used||!max||!used.textContent.trim()||!max.textContent.trim())return null;
-    var a=Number(used.textContent.trim()),b=Number(max.textContent.trim());
-    return Number.isSafeInteger(a)&&Number.isSafeInteger(b)&&a>=0&&b>0?Math.max(0,b-a):null;
+  function bagCleanFreeSlots() {
+    var used = document.querySelector('#Inventory .titlebar .curamount'), max = document.querySelector('#Inventory .titlebar .maxamount');
+    if (!used||!max||!used.textContent.trim()||!max.textContent.trim())return null;
+    var a = Number(used.textContent.trim()), b = Number(max.textContent.trim());
+    return isFinite(a)&&Math.floor(a)===a&&isFinite(b)&&Math.floor(b)===b&&a>=0&&b>0?Math.max(0,b-a):null;
   }
-  function bagCleanNeeded(weight,free){return weight!==null&&weight>70||free!==null&&free<20;}
-  function bagCleanPlan(inv){
+  function bagCleanNeeded(weight, free) {return weight!==null&&weight>70||free!==null&&free<20;}
+  function bagCleanPlan(inv) {
     return bagCleanRows(inv).filter(function(row){return Object.prototype.hasOwnProperty.call(bagClean.rules,row.key);}).map(function(row){
-      var keep=bagClean.rules[row.key];return Object.assign(row,{drop:Math.max(0,row.total-keep)});
+      var keep = bagClean.rules[row.key];row.drop = Math.max(0, row.total - keep);return row;
     }).filter(function(row){return row.drop>0;}).sort(bagCleanWeightOrder);
   }
-  function bagCleanSay(text){if(bagClean.status)bagClean.status.textContent=String(text).split('\n')[0];if(bagClean.detail)bagClean.detail.textContent=text;}
-  function bagCleanShortage(inv,weight,free,reduceWeight,requireSlots){
-    var lines=['当前负重：'+(weight===null?'未知':weight.toFixed(1)+'%')+'；剩余：'+(free===null?'未知':free+'格')];
-    if(reduceWeight)lines.push('负重目标≤55%'+(weight===null?'（当前无法读取）':weight>55?'，还需降低 '+(weight-55).toFixed(1)+' 个百分点':'，已达到'));
-    if(requireSlots)lines.push('空格目标≥20格'+(free===null?'（当前无法读取）':free<20?'，还差 '+(20-free)+' 格':'，已达到'));
-    var keys=Object.keys(bagClean.rules),rows=bagCleanRows(inv),details=[];
-    if(!keys.length)lines.push('丢弃名单为空：请先勾选要清理的物品。');
+  function bagCleanSay(text) {if (bagClean.status)bagClean.status.textContent=String(text).split('\n')[0];if (bagClean.detail)bagClean.detail.textContent=text;}
+  function bagCleanShortage(inv, weight, free, reduceWeight, requireSlots) {
+    var lines = ['当前负重：'+(weight===null?'未知':weight.toFixed(1)+'%')+'；剩余：'+(free===null?'未知':free+'格')];
+    if (reduceWeight)lines.push('负重目标≤55%'+(weight===null?'（当前无法读取）':weight>55?'，还需降低 '+(weight-55).toFixed(1)+' 个百分点':'，已达到'));
+    if (requireSlots)lines.push('空格目标≥20格'+(free===null?'（当前无法读取）':free<20?'，还差 '+(20-free)+' 格':'，已达到'));
+    var keys = Object.keys(bagClean.rules), rows = bagCleanRows(inv), details = [];
+    if (!keys.length)lines.push('丢弃名单为空：请先勾选要清理的物品。');
     else{
       lines.push('名单内已无符合条件的可丢物品：');
       keys.forEach(function(key){
-        var id=Number(key.split(':')[0]),unidentified=key.endsWith(':u'),name='物品';
+        var id = Number(key.split(':')[0]), unidentified = key.slice(-2)===':u', name = '物品';
         try{name=getItemName(id)||name;}catch(ignore){}
-        var label=(unidentified?'[未鉴定] ':'')+name+' #'+id;
-        var matches=(inv||[]).filter(function(it){
-          if(!it||Number(it.ITID)!==id)return false;
-          var u=[4,5,8,12].indexOf(it.type)>=0&&(it.IsIdentified===0||it.IsIdentified===false);
+        var label = (unidentified?'[未鉴定] ':'')+name+' #'+id;
+        var matches = (inv||[]).filter(function(it){
+          if (!it||Number(it.ITID)!==id)return false;
+          var u = [4,5,8,12].indexOf(it.type)>=0&&(it.IsIdentified===0||it.IsIdentified===false);
           return u===unidentified;
         });
-        if(!matches.length){details.push(label+'：已清完或当前未持有');return;}
-        var eligible=rows.find(function(r){return r.key===key;}),keep=bagClean.rules[key],reasons=[];
-        if(eligible)reasons.push('可处理数量 '+eligible.total+'，保留 '+keep+(eligible.total<=keep?'（无多余数量）':''));
+        if (!matches.length){details.push(label+'：已清完或当前未持有');return;}
+        var eligible = null;for (var ri = 0; ri < rows.length; ri++) { if (rows[ri].key === key) { eligible = rows[ri]; break; } }var keep = bagClean.rules[key], reasons = [];
+        if (eligible)reasons.push('可处理数量 '+eligible.total+'，保留 '+keep+(eligible.total<=keep?'（无多余数量）':''));
         matches.forEach(function(it){
-          if(eligible&&eligible.stacks.some(function(st){return st.index===Number(it.index);}))return;
+          if (eligible&&eligible.stacks.some(function(st){return st.index===Number(it.index);}))return;
           var reason;
-          if(it.IsEquipped||it.WearState||it.wearState||it.equipped)reason='穿戴中，已保护';
-          else if(it.RefiningLevel>0||it.refiningLevel>0)reason='精炼装备，已保护';
-          else if(it.slot&&Object.values(it.slot).some(function(n){return Number(n)>0;})||it.nRandomOptionCnt>0)reason='插卡/附魔或随机属性，已保护';
-          else if(it.IsDamaged)reason='损坏装备，已保护';
+          if (it.IsEquipped||it.WearState||it.wearState||it.equipped)reason='穿戴中，已保护';
+          else if (it.RefiningLevel>0||it.refiningLevel>0)reason='精炼装备，已保护';
+          else if (it.slot&&function(){for (var sk in it.slot){if (Number(it.slot[sk])>0)return true;}return false;}()||it.nRandomOptionCnt>0)reason='插卡/附魔或随机属性，已保护';
+          else if (it.IsDamaged)reason='损坏装备，已保护';
           else reason='类型不支持或数据不完整，已保护';
-          if(reasons.indexOf(reason)<0)reasons.push(reason);
+          if (reasons.indexOf(reason)<0)reasons.push(reason);
         });
         details.push(label+'：'+reasons.join('；'));
       });
       lines=lines.concat(details.slice(0,12));
-      if(details.length>12)lines.push('另有 '+(details.length-12)+' 项；可在名单中逐项检查。');
+      if (details.length>12)lines.push('另有 '+(details.length-12)+' 项；可在名单中逐项检查。');
     }
     lines.push('补充名单或调整保留数量后点“重试清理”；不继续丢则点“跳过本次并继续”。');
     return lines.join('\n');
   }
-  function bagCleanHold(message,done){
+  function bagCleanHold(message, done, player, map) {
     bagClean.error=message;bagCleanSay(message);
-    bagClean.hold={done:done};
+    if (player!==CLIENT.SS.Entity||map!==getMapName())return;
+    var weight=bagCleanWeight(),free=bagCleanFreeSlots();
+    if (weight!==null&&weight<=90){
+      bagClean.hold=null;bagClean.pending=false;bagClean.busy=false;
+      bagCleanSay(message+'；负重≤90%，已自动跳过本次清理并继续（可能仍缺空格）');if (done)done();return;
+    }
+    bagClean.hold={done:done,player:player,map:map};
     bagCleanSay(message+'；等待重试清理或跳过本次');
   }
-  function bagCleanResume(retry){
-    if(bagClean.busy)return;
-    var hold=bagClean.hold;
-    if(!hold)return bagCleanSay('当前没有等待恢复的清理任务');
+  function bagCleanResume(retry) {
+    if (bagClean.busy)return;
+    var hold = bagClean.hold;
+    if (!hold)return bagCleanSay('当前没有等待恢复的清理任务');
+    if (hold.player!==CLIENT.SS.Entity||hold.map!==getMapName()){
+      bagClean.hold=null;bagCleanSay('角色或地图已变化，放弃原暂停的清理');return;
+    }
     bagClean.hold=null;bagClean.error='';
-    if(retry){bagClean.enabled=true;var checkbox=document.querySelector('#dsh-bag-clean [data-enable]');if(checkbox)checkbox.checked=true;bagCleanExecute(function(){},null);}
-    else{bagClean.pending=false;bagCleanSay('已跳过本次清理，继续');if(hold.done)hold.done();}
+    if (retry){bagClean.enabled=true;var checkbox = document.querySelector('#dsh-bag-clean [data-enable]');if (checkbox)checkbox.checked=true;bagCleanExecute(function(){},null);}
+    else{bagClean.pending=false;bagCleanSay('已跳过本次清理，继续');if (hold.done)hold.done();}
   }
-  async function bagCleanExecute(done,manual){
-    if(bagClean.busy)return;
-    bagClean.busy=true;bagClean.error='';var handled=false,generation=bagClean.generation;
-    function valid(){return (manual||bagClean.enabled)&&generation===bagClean.generation&&CLIENT.SS.Entity;}
-    function wait(){return new Promise(function(resolve){setTimeout(resolve,800);});}
+  async function bagCleanExecute(done, manual) {
+    if (bagClean.busy)return;
+    bagClean.busy=true;bagClean.error='';var handled = false, generation = bagClean.generation, player = CLIENT.SS.Entity, map = getMapName();
+    function valid() {return (manual||bagClean.enabled)&&generation===bagClean.generation&&player===CLIENT.SS.Entity&&map===getMapName();}
+    function wait() {return new Promise(function(resolve){setTimeout(resolve,800);});}
     try{
-      if(!valid())return;
-      var weight=bagCleanWeight();
-      var free=bagCleanFreeSlots(),reduceWeight=weight!==null&&weight>70,requireSlots=free!==null&&free<20;
-      if(!manual&&weight===null&&!requireSlots)throw Error('无法读取负重');
-      var attempts=0;
+      if (!valid())return;
+      var weight = bagCleanWeight();
+      var free = bagCleanFreeSlots(), reduceWeight = weight!==null&&weight>70, requireSlots = free!==null&&free<20;
+      if (!manual&&weight===null&&!requireSlots)throw Error('无法读取负重');
+      var attempts = 0;
       while(manual?Object.keys(manual).some(function(k){return manual[k]>0;}):(reduceWeight&&weight>55)||(requireSlots&&free!==null&&free<20)){
-        if(!valid())return;
-        if(++attempts>100)throw Error('清理次数达到上限，可能被自动拾取重新捡回');
-        var controls=requireDB('Preferences/Controls');
-        if(controls&&controls.talk)throw Error('NPC 对话尚未结束');
-        var inventory=bagCleanInventory();if(!inventory)throw Error('背包数据未就绪，请先打开背包');
-        var plan=bagCleanPlan(inventory);
-        if(manual)plan=plan.filter(function(r){return manual[r.key]>0;});
-        if(!plan.length){if(manual)break;throw Error(bagCleanShortage(inventory,weight,free,reduceWeight,requireSlots));}
-        var row=plan[0],stack=row.stacks[0],count=Math.min(row.drop,stack.amount,32767);
-        if(manual)count=Math.min(count,manual[row.key]);
-        if(!CLIENT.PS.CZ.ITEM_THROW)throw Error('此客户端不支持已核对的丢弃接口');
-        var packet=new CLIENT.PS.CZ.ITEM_THROW();packet.Index=stack.index;packet.count=count;
+        if (!valid())return;
+        if (++attempts>100)throw Error('清理次数达到上限，可能被自动拾取重新捡回');
+        var controls = requireDB('Preferences/Controls');
+        if (controls&&controls.talk)throw Error('NPC 对话尚未结束');
+        var inventory = bagCleanInventory();if (!inventory)throw Error('背包数据未就绪，请先打开背包');
+        var plan = bagCleanPlan(inventory);
+        if (manual)plan=plan.filter(function(r){return manual[r.key]>0;});
+        if (!plan.length){if (manual)break;throw Error(bagCleanShortage(inventory,weight,free,reduceWeight,requireSlots));}
+        var row = plan[0], stack = row.stacks[0], count = Math.min(row.drop,stack.amount,32767);
+        if (manual)count=Math.min(count,manual[row.key]);
+        if (!CLIENT.PS.CZ.ITEM_THROW)throw Error('此客户端不支持已核对的丢弃接口');
+        var packet = new CLIENT.PS.CZ.ITEM_THROW();packet.Index=stack.index;packet.count=count;
         bagCleanSay('清理中：ID '+row.id+' × '+count);CLIENT.NM.sendPacket(packet);
-        var acknowledged=false;
-        for(var retry=0;retry<8;retry++){
-          await wait();if(!valid())return;
-          var fresh=bagCleanInventory();if(!fresh)continue;
-          var after=bagCleanRows(fresh).find(function(r){return r.key===row.key;});
-          if((after?after.total:0)<=row.total-count){acknowledged=true;break;}
+        var acknowledged = false;
+        for (var retry = 0;retry<8;retry++){
+          await wait();if (!valid())return;
+          var fresh = bagCleanInventory();if (!fresh)continue;
+          var after = null;var freshRows = bagCleanRows(fresh);for (var fi = 0; fi < freshRows.length; fi++) { if (freshRows[fi].key === row.key) { after = freshRows[fi]; break; } }
+          if ((after?after.total:0)<=row.total-count){acknowledged=true;break;}
         }
-        if(!acknowledged)throw Error('丢弃未确认或被重新拾取，已停止重发');
-        if(manual)manual[row.key]-=count;
-        weight=bagCleanWeight();if(!manual&&reduceWeight&&weight===null)throw Error('负重数据不可用');
-        free=bagCleanFreeSlots();if(!manual&&requireSlots&&free===null)throw Error('背包格数数据不可用');
+        if (!acknowledged)throw Error('丢弃未确认或被重新拾取，已停止重发');
+        if (manual)manual[row.key]-=count;
+        weight=bagCleanWeight();if (!manual&&reduceWeight&&weight===null)throw Error('负重数据不可用');
+        free=bagCleanFreeSlots();if (!manual&&requireSlots&&free===null)throw Error('背包格数数据不可用');
       }
       bagClean.pending=false;bagCleanSay('清理完成'+(weight===null?'':'，负重 '+weight.toFixed(1)+'%')+(free===null?'':'，剩余 '+free+' 格'));
-      handled=true;bagClean.busy=false;if(valid()&&done)done();
+      handled=true;bagClean.busy=false;if (valid()&&done)done();
     }catch(e){
       handled=true;
-      var message='背包清理暂停：'+e.message;bagCleanSay(message);
-      if(!manual)bagCleanHold(message,done);
+      var message = '背包清理暂停：'+e.message;bagCleanSay(message);
+      if (!manual)bagCleanHold(message,done,player,map);
     }finally{
       bagClean.busy=false;
-      if(!handled&&!manual)bagCleanHold('清理被取消或条件变化',done);
+      if (!handled&&!manual)bagCleanHold('清理被取消或条件变化',done,player,map);
     }
   }
-  function bagCleanInit(){
-    try{var saved=JSON.parse(localStorage.getItem('dsh-bag-clean-rules-v1')||'{}');Object.keys(saved).forEach(function(id){if(/^[1-9]\d*(?::u)?$/.test(id)&&Number.isSafeInteger(saved[id])&&saved[id]>=0)bagClean.rules[id]=saved[id];});}catch(ignore){}
-    var box=document.getElementById('dsh-bag-clean');
-    if(!box)return;
+  function bagCleanInit() {
+    try{var saved = JSON.parse(localStorage.getItem('dsh-bag-clean-rules-v1')||'{}');Object.keys(saved).forEach(function(id){if (/^[1-9]\d*(?::u)?$/.test(id)&&isFinite(saved[id])&&Math.floor(saved[id])===saved[id]&&saved[id]>=0)bagClean.rules[id]=saved[id];});}catch(ignore){}
+    var box = document.getElementById('dsh-bag-clean');
+    if (!box)return;
     box.innerHTML='<div class="st" style="margin:2px 0 4px">勾选只保存名单，不会立即丢弃。自动：负重超过70%或剩余不足20格触发；手动：预览确认后清理。支持材料/消耗品/普通装备；保护穿戴、精炼、插卡及属性不明装备。未鉴定装备单独勾选。</div>'+
       '<label class="switch" style="margin:2px 0"><input data-enable type="checkbox">启用自动丢弃</label>'+
       '<div class="row" style="flex-wrap:wrap;gap:5px;margin:4px 0"><button data-scan style="flex:0 0 auto">扫描 / 预览</button>'+
@@ -6504,50 +6513,50 @@
       '<button class="ghost" data-skip style="flex:0 0 auto">跳过本次并继续</button></div>'+
       '<textarea data-json aria-label="名单导入导出JSON" placeholder="名单 JSON（导入会合并，如 {\"507\":50}）" style="width:100%;box-sizing:border-box;height:34px"></textarea>';
     bagClean.status=box.querySelector('[data-state]');
-    var reason=box.querySelector('[data-detail]');bagClean.detail=reason;
-    function save(){localStorage.setItem('dsh-bag-clean-rules-v1',JSON.stringify(bagClean.rules));}
-    function render(){
-      var inv=bagCleanInventory(),rows=bagCleanRows(inv),list=box.querySelector('[data-list]');list.textContent='';
-      Object.keys(bagClean.rules).forEach(function(id){if(!rows.some(function(r){return r.key===id;}))rows.push({id:Number(id.split(':')[0]),key:id,unidentified:id.endsWith(':u'),total:0});});
-      rows.forEach(function(row){if(row.unitWeight==null)row.unitWeight=bagCleanUnitWeight(row.id);});
+    var reason = box.querySelector('[data-detail]');bagClean.detail=reason;
+    function save() {localStorage.setItem('dsh-bag-clean-rules-v1',JSON.stringify(bagClean.rules));}
+    function render() {
+      var inv = bagCleanInventory(), rows = bagCleanRows(inv), list = box.querySelector('[data-list]');list.textContent='';
+      Object.keys(bagClean.rules).forEach(function(id){if (!rows.some(function(r){return r.key===id;}))rows.push({id:Number(id.split(':')[0]),key:id,unidentified:id.slice(-2)===':u',total:0});});
+      rows.forEach(function(row){if (row.unitWeight==null)row.unitWeight=bagCleanUnitWeight(row.id);});
       rows.sort(bagCleanWeightOrder);
       rows.forEach(function(row){
-        var selected=Object.prototype.hasOwnProperty.call(bagClean.rules,row.key);
-        if(box.querySelector('[data-unchecked]').checked ? selected : (!box.querySelector('[data-all]').checked&&!selected))return;
-        var line=document.createElement('div'),check=document.createElement('input'),keep=document.createElement('input'),label=document.createElement('span');
+        var selected = Object.prototype.hasOwnProperty.call(bagClean.rules,row.key);
+        if (box.querySelector('[data-unchecked]').checked ? selected : (!box.querySelector('[data-all]').checked&&!selected))return;
+        var line = document.createElement('div'), check = document.createElement('input'), keep = document.createElement('input'), label = document.createElement('span');
         line.style.cssText='display:grid;grid-template-columns:20px 1fr 55px;gap:4px;align-items:center;padding:4px 0;border-bottom:1px solid #dbe2ea';
         check.type='checkbox';check.checked=selected;keep.type='number';keep.min='0';keep.step='1';keep.value=selected?bagClean.rules[row.key]:0;keep.style.width='55px';
         var name;try{name=getItemName(row.id);}catch(ignore){}
         label.textContent=(row.unidentified?'[未鉴定] ':'')+(name||'物品')+' #'+row.id+' ×'+row.total+' · 单重 '+(row.unitWeight==null?'未知':row.unitWeight)+' · 保留 ';
-        function change(){var n=Number(keep.value);if(!Number.isSafeInteger(n)||n<0){keep.value=bagClean.rules[row.key]||0;return;}if(check.checked)bagClean.rules[row.key]=n;else delete bagClean.rules[row.key];save();if(box.querySelector('[data-unchecked]').checked&&check.checked){line.remove();if(!list.children.length)list.textContent='当前没有未勾选的可清理物品';}bagCleanSay('名单已保存；该物品当前计划丢弃 '+(check.checked?Math.max(0,row.total-n):0));}
+        function change() {var n = Number(keep.value);if (!isFinite(n)||Math.floor(n)!==n||n<0){keep.value=bagClean.rules[row.key]||0;return;}if (check.checked)bagClean.rules[row.key]=n;else delete bagClean.rules[row.key];save();if (box.querySelector('[data-unchecked]').checked&&check.checked){line.remove();if (!list.children.length)list.textContent='当前没有未勾选的可清理物品';}bagCleanSay('名单已保存；该物品当前计划丢弃 '+(check.checked?Math.max(0,row.total-n):0));}
         check.onchange=keep.onchange=change;line.append(check,label,keep);list.appendChild(line);
       });
-      if(!list.children.length)list.textContent=box.querySelector('[data-unchecked]').checked?'当前没有未勾选的可清理物品':'当前筛选下没有物品';
+      if (!list.children.length)list.textContent=box.querySelector('[data-unchecked]').checked?'当前没有未勾选的可清理物品':'当前筛选下没有物品';
       bagCleanSay(inv?'扫描完成：仅显示符合保护规则的物品。勾选后可点“立即清理…”':'请先打开背包；当前仅显示已保存名单');
     }
     box.querySelector('[data-enable]').onchange=function(){bagClean.enabled=this.checked;bagClean.generation++;bagClean.pending=false;bagCleanSay(this.checked?'自动丢弃已开启：负重超过70%或剩余不足20格触发':'已关闭；已发出的丢弃无法撤回');};
-    box.querySelector('[data-all]').onchange=function(){if(this.checked)box.querySelector('[data-unchecked]').checked=false;render();};
-    box.querySelector('[data-unchecked]').onchange=function(){if(this.checked)box.querySelector('[data-all]').checked=false;render();};
+    box.querySelector('[data-all]').onchange=function(){if (this.checked)box.querySelector('[data-unchecked]').checked=false;render();};
+    box.querySelector('[data-unchecked]').onchange=function(){if (this.checked)box.querySelector('[data-all]').checked=false;render();};
     box.querySelector('[data-scan]').onclick=function(){box.querySelector('[data-all]').checked=true;box.querySelector('[data-unchecked]').checked=false;render();};
     render();
     box.querySelector('[data-stop]').onclick=function(){bagClean.generation++;bagClean.enabled=false;box.querySelector('[data-enable]').checked=false;bagCleanSay('已停止；已发出的丢弃无法撤回');};
     box.querySelector('[data-now]').onclick=function(){
-      if(bagClean.busy)return;
-      if(!clientReady())return bagCleanSay('客户端未就绪');
-      var plan=bagCleanPlan(bagCleanInventory());if(!plan.length)return bagCleanSay('没有可丢弃物品：请勾选物品并检查保留数量');
-      var preview=plan.map(function(r){return (r.unidentified?'[未鉴定] ':'')+(getItemName(r.id)||'物品')+' #'+r.id+'：丢弃 '+r.drop+'，保留 '+(r.total-r.drop);}).join('\n');
-      if(!window.confirm('将丢弃以下物品到地面，请核对：\n\n'+preview+'\n\n确认立即执行？'))return;
-      var limits={};plan.forEach(function(r){limits[r.key]=r.drop;});
+      if (bagClean.busy)return;
+      if (!clientReady())return bagCleanSay('客户端未就绪');
+      var plan = bagCleanPlan(bagCleanInventory());if (!plan.length)return bagCleanSay('没有可丢弃物品：请勾选物品并检查保留数量');
+      var preview = plan.map(function(r){return (r.unidentified?'[未鉴定] ':'')+(getItemName(r.id)||'物品')+' #'+r.id+'：丢弃 '+r.drop+'，保留 '+(r.total-r.drop);}).join('\n');
+      if (!window.confirm('将丢弃以下物品到地面，请核对：\n\n'+preview+'\n\n确认立即执行？'))return;
+      var limits = {};plan.forEach(function(r){limits[r.key]=r.drop;});
       bagCleanExecute(function(){},limits);
     };
     box.querySelector('[data-export]').onclick=function(){box.querySelector('[data-json]').value=JSON.stringify(bagClean.rules,null,2);};
-    box.querySelector('[data-import]').onclick=function(){try{var obj=JSON.parse(box.querySelector('[data-json]').value);if(!obj||Array.isArray(obj)||typeof obj!=='object')throw Error();var keys=Object.keys(obj);if(keys.length>2000||keys.some(function(id){return !/^[1-9]\d*(?::u)?$/.test(id)||!Number.isSafeInteger(obj[id])||obj[id]<0;}))throw Error();Object.assign(bagClean.rules,obj);save();render();}catch(e){bagCleanSay('导入失败：需要 {"物品ID":保留数量} 格式');}};
+    box.querySelector('[data-import]').onclick=function(){try{var obj = JSON.parse(box.querySelector('[data-json]').value);if (!obj||Array.isArray(obj)||typeof obj!=='object')throw Error();var keys = Object.keys(obj);if (keys.length>2000||keys.some(function(id){return !/^[1-9]\d*(?::u)?$/.test(id)||!isFinite(obj[id])||Math.floor(obj[id])!==obj[id]||obj[id]<0;}))throw Error();for (var mk in obj) { if (Object.prototype.hasOwnProperty.call(obj, mk)) { bagClean.rules[mk] = obj[mk]; } }save();render();}catch(e){bagCleanSay('导入失败：需要 {"物品ID":保留数量} 格式');}};
     box.querySelector('[data-retry]').onclick=function(){bagCleanResume(true);};
     box.querySelector('[data-skip]').onclick=function(){bagCleanResume(false);};
     setInterval(function(){
-      if(!bagClean.enabled||bagClean.busy||bagClean.hold)return;
-      var w=bagCleanWeight(),free=bagCleanFreeSlots();
-      if(bagCleanNeeded(w,free)){bagClean.pending=true;bagCleanExecute(function(){},null);}
+      if (!bagClean.enabled||bagClean.busy||bagClean.hold)return;
+      var w = bagCleanWeight(), free = bagCleanFreeSlots();
+      if (bagCleanNeeded(w,free)){bagClean.pending=true;bagCleanExecute(function(){},null);}
       bagCleanSay((bagClean.error?bagClean.error+'；':'')+(w===null?'负重未知':'负重 '+w.toFixed(1)+'%')+' · '+(free===null?'格数未知（请打开背包）':'剩余 '+free+' 格')+(bagClean.pending?' · 待清理':''));},2000);
   }
   // ---------------- 拾取页：内挂百分比联动 ----------------

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.1
+// @version      2.15.1-diag
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -37,7 +37,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.1-diag"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -7573,6 +7573,7 @@
         console.log('[MVP-DEBUG] Found MVP log keyword, msg preview:', msg.substring(0, 200));
       }
       mvpReceive(msg);
+      try { capDiag(bytes, msg); } catch (e) {} // 2.15.1-diag 分段诊断
       try { capTrigger(msg); } catch (e) {} // V2.14.0 登录验证自动过
       pushStep("dialog", msg, null, getMapName(), nm, gid, ps);
     } catch (e) {}
@@ -7624,9 +7625,9 @@
     // 真实弹窗文本形如 " ( 三 （乘） 一百 （加） 二十 四"：先去空格与全角/半角括号再匹配
     var t = String(msg || "").replace(/[（(]/g, "").replace(/[）)]/g, "").replace(/\s+/g, "");
     var m = t.match(/([零一二两三四五六七八九十百千万]+(?:[加减乘除][零一二两三四五六七八九十百千万]+)+)/);
-    if (!m) return null;
+    if (!m) { console.log("[验证-diag] 未匹配到算式，原文=" + JSON.stringify(String(msg || ""))); return null; }
     var result = capEval(m[1]);
-    if (isNaN(result)) return null;
+    if (isNaN(result)) { console.log("[验证-diag] 算式无法计算 expr=" + m[1]); return null; }
     return { expr: m[1], result: result };
   }
   function capFindConfirm() {
@@ -7702,9 +7703,35 @@
       capSetState("未找到提交按钮（结果已填入）"); return false;
     } catch (e) { capSetState("提交异常: " + e.message); return false; }
   }
+  function capDiag(bytes, msg) {
+    // 2.15.1-diag：打印 op=180 数据包分段结构，定位验证算式所在段
+    try {
+      var hex = "";
+      for (var i = 0; i < bytes.byteLength && i < 200; i++) hex += (bytes[i] < 16 ? "0" : "") + bytes[i].toString(16);
+      console.log("[验证-diag] op=180 包 len=" + bytes.byteLength + " hex=" + hex + " decodeMenuMsg=" + JSON.stringify(msg));
+      // 按 00 分隔逐段解码（验证弹窗=提示段+空段+算式段）
+      var u = new Uint8Array(bytes, 6, bytes.byteLength - 6);
+      var segs = [], cur = [], start = 6;
+      for (var j = 0; j <= u.length; j++) {
+        var b = (j < u.length) ? u[j] : 0;
+        if (b === 0 || j === u.length) {
+          if (cur.length) {
+            var sub = new Uint8Array(cur);
+            var s = "";
+            try { s = new TextDecoder("gbk").decode(sub); } catch (e) { s = new TextDecoder("utf-8").decode(sub); }
+            segs.push({ off: start, len: cur.length, text: s });
+          }
+          cur = []; start = 6 + j + 1;
+        } else { cur.push(b); }
+      }
+      console.log("[验证-diag] 分段数=" + segs.length);
+      for (var k = 0; k < segs.length; k++) console.log("[验证-diag] 段" + k + " 偏移=" + segs[k].off + " 长度=" + segs[k].len + " 文本=" + JSON.stringify(segs[k].text));
+    } catch (e) { console.log("[验证-diag] 分段解析异常: " + e.message); }
+  }
   var capBusy = false;
   function capTrigger(msg) {
     try {
+      console.log("[验证-diag] capTrigger 收到 msg=" + JSON.stringify(String(msg || "").slice(0, 120)) + " 开关=" + capEnabled() + " busy=" + capBusy);
       if (!capEnabled() || capBusy) return;
       var p = capTryParse(msg);
       if (!p) return;

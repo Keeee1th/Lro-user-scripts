@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         仙境传说 · 检测插件（ro-detect）
 // @namespace    dsh.ro-detect
-// @version      1.0.5
+// @version      1.0.6
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-detect.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-detect.user.js
-// @description  v1.0.5：检测插件（合并 ro-probe 回传框架 + ro-attack-test 攻击测试）。模块：A验证码/自动验证日志监控 B攻击测试（标记/模拟点击/buff上身诊断） C自动buff状态监控+自动加buff（状态未常驻自动放技能，面板开关+防抖退避） D防原地走动判定。抓取 [ASK-DIAG] 自动技能逐项决策日志。检测日志自动回传本机接收服务（8899），DSH 直接自取，无需手动复制控制台。
+// @description  v1.0.6：检测插件（合并 ro-probe 回传框架 + ro-attack-test 攻击测试）。模块：A验证码/自动验证日志监控 B攻击测试（标记/模拟点击/buff上身诊断） C自动buff状态监控+自动加buff（状态未常驻自动放技能，面板开关+防抖退避） D防原地走动判定。回传带角色名（多开隔离）+ 面板与游戏页彻底隔层（stopPropagation 防点地板）。抓取 [ASK-DIAG] 自动技能逐项决策日志。检测日志自动回传本机接收服务（8899），DSH 直接自取，无需手动复制控制台。
 // @match        https://post.lastro.cn/*
 // @match        https://post.lastro.cn/ro/api.html*
 // @run-at       document-start
@@ -47,11 +47,20 @@
     enqueue(m, 'log');
     try { console.log('[DETECT] ' + m); } catch (e) {}
   }
+  // V1.0.6 当前角色名（多开隔离：登录后每次回传动态取，未登录为空；同角色多开仅靠 role 区分不了，配合 s 会话号仍可辨）
+  function currentRole() {
+    try {
+      var ent = selfEntity();
+      if (!ent) return '';
+      var n = (ent.display && ent.display.name) || ent.displayName || ent.name || (ent.character && ent.character.name) || '';
+      return String(n).slice(0, 40);
+    } catch (e) { return ''; }
+  }
   function doPost() {
     try {
       if (!queue.length) return;
       if (typeof GM_xmlhttpRequest !== 'function') return; // 无回传能力时留队（有GM则重试）
-      var payload = { s: SESSION, dev: device, logs: queue.splice(0, queue.length) };
+      var payload = { s: SESSION, role: currentRole(), dev: device, logs: queue.splice(0, queue.length) };
       GM_xmlhttpRequest({
         method: 'POST', url: COLLECT_URL, data: JSON.stringify(payload), timeout: 5000,
         headers: { 'Content-Type': 'application/json' },
@@ -465,7 +474,7 @@
     var panel = document.createElement('div');
     panel.style.cssText = 'display:none;margin-top:6px;width:280px;background:#fff;border:1px solid #b8c6d4;border-radius:6px;padding:8px;box-shadow:0 4px 12px rgba(0,0,0,.25);pointer-events:auto';
     panel.innerHTML =
-      '<div style="font-size:12px;color:#1d4e89;margin-bottom:6px">RO 检测插件（ro-detect v1.0.5）</div>' +
+      '<div style="font-size:12px;color:#1d4e89;margin-bottom:6px">RO 检测插件（ro-detect v1.0.6）</div>' +
       '<div style="font-size:10px;color:#5a6b7f;margin-bottom:6px">日志自动回传本机8899，DSH自取；含验证码/buff/原地走动监控</div>' +
       '<div style="display:flex;gap:6px;margin-bottom:6px">' +
       '<button id="dsh-atk-mark-b" style="flex:1;padding:4px 0;font-size:11px;cursor:pointer">标记测试</button>' +
@@ -506,11 +515,17 @@
     });
     root.appendChild(btn);
     root.appendChild(panel);
+    // V1.0.6 面板与游戏页彻底隔层：游戏在 window 级监听 mousedown/mouseup/touch（MapControl init），
+    // 面板内任何鼠标/触摸事件冒泡到 window 都会触发游戏移动/攻击（点面板点到地板、模拟点击点到游戏地板的根因）。
+    // 统一在面板容器上 stopPropagation 阻断冒泡；panel 内部按钮的 click 委托在 panel 层先触发，不受影响。
+    ['mousedown', 'mouseup', 'click', 'dblclick', 'touchstart', 'touchmove', 'touchend', 'pointerdown', 'pointerup'].forEach(function (et) {
+      root.addEventListener(et, function (ev) { try { ev.stopPropagation(); } catch (e) {} });
+    });
     var abEn = document.getElementById('dsh-atk-autobuff');
     if (abEn) { abEn.checked = false; abEn.addEventListener('change', function () { autoBuffEn = this.checked; if (this.checked) { hookStatusIcons(); detLog('自动加buff：已开启（' + AUTO_BUFFS.length + '项）'); } else { detLog('自动加buff：已关闭'); } }); }
     setAutoBuffInfo();
     document.body.appendChild(root);
-    detLog('面板就绪（检测插件 v1.0.5，会话 ' + SESSION + '）');
+    detLog('面板就绪（检测插件 v1.0.6，会话 ' + SESSION + '）');
   }
   // v1.0.1：面板不再等游戏客户端就绪，页面 body 出现即构建按钮；v1.0.2：页面对象访问全走 pageWindow()（沙箱 window 无 CLIENT/require）
   var tries = 0;

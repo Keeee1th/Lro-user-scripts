@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         仙境传说 · 检测插件（ro-detect）
 // @namespace    dsh.ro-detect
-// @version      1.0.6
+// @version      1.0.7
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-detect.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-detect.user.js
-// @description  v1.0.6：检测插件（合并 ro-probe 回传框架 + ro-attack-test 攻击测试）。模块：A验证码/自动验证日志监控 B攻击测试（标记/模拟点击/buff上身诊断） C自动buff状态监控+自动加buff（状态未常驻自动放技能，面板开关+防抖退避） D防原地走动判定。回传带角色名（多开隔离）+ 面板与游戏页彻底隔层（stopPropagation 防点地板）。抓取 [ASK-DIAG] 自动技能逐项决策日志。检测日志自动回传本机接收服务（8899），DSH 直接自取，无需手动复制控制台。
+// @description  v1.0.7：检测插件（合并 ro-probe 回传框架 + ro-attack-test 攻击测试）。模块：A验证码/自动验证日志监控 B攻击测试（标记/模拟点击/buff上身诊断） C自动buff状态监控+自动加buff（状态未常驻自动放技能，面板开关+防抖退避） D防原地走动判定。回传带角色名（多开隔离）+ 面板与游戏页彻底隔层（stopPropagation 防点地板）。抓取 [ASK-DIAG] 自动技能逐项决策日志。检测日志自动回传本机接收服务（8899），DSH 直接自取，无需手动复制控制台。
 // @match        https://post.lastro.cn/*
 // @match        https://post.lastro.cn/ro/api.html*
 // @run-at       document-start
@@ -409,18 +409,16 @@
     try {
       var t = findTarget();
       if (!t) { detLog('攻击测试：点击 未找到目标怪'); return; }
-      var b = t.boundingRect;
-      if (!b) { detLog('攻击测试：点击 目标无boundingRect'); return; }
-      var cx = (b.x1 + b.x2) / 2, cy = (b.y1 + b.y2) / 2;
-      var p = toPage(cx, cy);
-      detLog('攻击测试：点击诊断 b={x1:' + b.x1 + ',x2:' + b.x2 + ',y1:' + b.y1 + ',y2:' + b.y2 + '} 中心(' + cx + ',' + cy + ')→页面(' + p.x + ',' + p.y + ')');
-      var cv = btCanvas();
-      if (!cv) { detLog('攻击测试：点击 未找到画布'); return; }
-      var opts = { clientX: p.x, clientY: p.y, bubbles: true, cancelable: true, view: window, button: 0, buttons: 1, pointerId: 1, isPrimary: true };
-      ['pointerdown', 'pointermove', 'pointerup', 'mousedown', 'mouseup', 'click'].forEach(function (t2) {
-        try { cv.dispatchEvent(new (t2.indexOf('pointer') === 0 ? PointerEvent : MouseEvent)(t2, opts)); } catch (e) {}
-      });
-      detLog('攻击测试：点击 GID' + t.GID + ' 已派发合成点击（看角色是否攻击/走近，配合防原地走动判定）');
+      if (typeof t.onFocus !== 'function') { detLog('攻击测试：点击 目标无 onFocus（客户端实体未就绪）'); return; }
+      // V1.0.7：不再合成 DOM 事件——合成事件过不了 MapControl.onMouseDown 的 Mouse.intersect 硬门槛，
+      // 且 Mouse.screen/world 只由渲染帧命中检测+真实鼠标移动更新，合成坐标与 Mouse 状态脱节，点击被直接丢弃。
+      // 改为直接调用目标实体 onFocus() = 游戏「鼠标点击怪」执行的同一函数（MapControl L145-147）：
+      // 锁定箭头→寻路→转身→CHANGE_DIRECTION→REQUEST_ACT 攻击包→超攻击距离自动走近再攻击，等价真实点击。
+      var m = pageModules();
+      var em = m && m.EM;
+      if (em && typeof em.setFocusEntity === 'function') { try { em.setFocusEntity(t); } catch (e2) {} }
+      detLog('攻击测试：点击 GID' + t.GID + ' 已触发 onFocus()（官方攻击路径，看角色是否走近/攻击）');
+      t.onFocus();
     } catch (e) { detLog('攻击测试：点击异常 ' + e.message); }
   }
   function atkCheckState() {
@@ -474,7 +472,7 @@
     var panel = document.createElement('div');
     panel.style.cssText = 'display:none;margin-top:6px;width:280px;background:#fff;border:1px solid #b8c6d4;border-radius:6px;padding:8px;box-shadow:0 4px 12px rgba(0,0,0,.25);pointer-events:auto';
     panel.innerHTML =
-      '<div style="font-size:12px;color:#1d4e89;margin-bottom:6px">RO 检测插件（ro-detect v1.0.6）</div>' +
+      '<div style="font-size:12px;color:#1d4e89;margin-bottom:6px">RO 检测插件（ro-detect v1.0.7）</div>' +
       '<div style="font-size:10px;color:#5a6b7f;margin-bottom:6px">日志自动回传本机8899，DSH自取；含验证码/buff/原地走动监控</div>' +
       '<div style="display:flex;gap:6px;margin-bottom:6px">' +
       '<button id="dsh-atk-mark-b" style="flex:1;padding:4px 0;font-size:11px;cursor:pointer">标记测试</button>' +
@@ -525,7 +523,7 @@
     if (abEn) { abEn.checked = false; abEn.addEventListener('change', function () { autoBuffEn = this.checked; if (this.checked) { hookStatusIcons(); detLog('自动加buff：已开启（' + AUTO_BUFFS.length + '项）'); } else { detLog('自动加buff：已关闭'); } }); }
     setAutoBuffInfo();
     document.body.appendChild(root);
-    detLog('面板就绪（检测插件 v1.0.6，会话 ' + SESSION + '）');
+    detLog('面板就绪（检测插件 v1.0.7，会话 ' + SESSION + '）');
   }
   // v1.0.1：面板不再等游戏客户端就绪，页面 body 出现即构建按钮；v1.0.2：页面对象访问全走 pageWindow()（沙箱 window 无 CLIENT/require）
   var tries = 0;

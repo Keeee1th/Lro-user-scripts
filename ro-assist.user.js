@@ -1,14 +1,16 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.4
+// @version      2.15.5
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
-// @description  在 post.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
+// @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
 // @author       DSH
 // @match        https://post.lastro.cn/*
 // @match        https://post.lastro.cn/ro/api.html*
 // @match        https://post.lastro.cn/ro/api-old.html*
+// @match        https://game.lastro.cn/*
+// @match        https://game.lastro.cn/ro/api.html*
 // @run-at       document-idle
 // @grant        none
 // ==/UserScript==
@@ -37,7 +39,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.4"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.5"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -3541,6 +3543,10 @@
             var stId = buffStId(s.st);
             if (stId < 0) { console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " st=" + s.st + " stId=INVALID"); continue; } // 状态名未识别，跳过
             var stOn = buffStateOn(stId);
+            // V2.15.5：集中攻击(357)特判——lastRO 客户端把 LK_CONCENTRATION 渲染成霸体(ENDURE)图标，
+            // 状态图标 hook 只收到 update(1) 收不到 update(3)，判活改看 状态3(CONCENTRATION) 或 状态1(ENDURE) 任一在身即算命中，
+            // 避免判活永远缺失导致每 5s 空放 + missCnt 退避 30s 循环。
+            if (s.skid === 357 && stId === 3) { stOn = stOn || buffStateOn(1); }
             var need = s.stInv ? stOn : !stOn; // 在身补 / 消失补
             if (!need) { s.missCnt = 0; console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " st=" + s.st + " stId=" + stId + " stOn=" + stOn + " need=false"); continue; }
             // 防抖：刚放出去状态未上身不重复；连续 2 次补后仍未上身（hook 未收到/状态实际加不上）→ 退避到全局间隔，避免每 5s 狂补

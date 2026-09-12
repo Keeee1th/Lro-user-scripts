@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.6
+// @version      2.15.7
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -39,7 +39,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.6"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.7"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -2006,6 +2006,54 @@
       if (!remoteCh) return;
       try { remoteCh.postMessage({ cmd: "snapshot", data: buildRemoteSnapshot() }); } catch (e) {}
     }, 1000);
+  }
+
+  // ---------------- 多账号平台 · 状态上报（P1：每 15s POST 到本机中心 8899）----------------
+  var ACCT_REPORT = true; // 上报开关：false 关闭（总页面看不到本窗口）
+  var ACCT_REPORT_URL = "http://127.0.0.1:8899/api/acct/report";
+  var acctReportTimer = null;
+  function buildAcctTask() {
+    try {
+      if (moveXY && moveXY.busy) return "移动中";
+      if (bagClean && bagClean.busy) return "存仓中";
+      if (npHuntOn) return "挂机中";
+    } catch (e) {}
+    return "空闲";
+  }
+  function buildAcctReport() {
+    var snap = buildRemoteSnapshot(); // 复用弹窗快照字段（账号/角色/地图/HP/SP/负重/zeny）
+    if (!snap || !snap.account) return null; // 未识别账号（未登录/登录页）不报
+    var rep = {
+      account: snap.account,
+      online: !!snap.online,
+      stat: snap.stat || null,
+      line: "",
+      task: buildAcctTask(),
+      ts: Date.now()
+    };
+    try { rep.line = SERVER_NAMES[pickCv()] || ""; } catch (e) {}
+    try {
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      if (ent && ent.position) { rep.x = Math.round(ent.position[0]); rep.y = Math.round(ent.position[1]); }
+    } catch (e) {}
+    return rep;
+  }
+  function acctReportSend() {
+    try {
+      var rep = buildAcctReport();
+      if (!rep) return;
+      if (typeof fetch !== "function") return;
+      fetch(ACCT_REPORT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(rep)
+      }).catch(function () {});
+    } catch (e) {}
+  }
+  function startAcctReport() {
+    if (acctReportTimer || !ACCT_REPORT) return;
+    acctReportTimer = setInterval(acctReportSend, 15000);
+    acctReportSend(); // 启动立即报一次
   }
 
   // ---------------- 当前窗口账号信息（单账号 · saved 为准）----------------
@@ -8980,6 +9028,7 @@
     document.head.appendChild(style);
     tlog("script-loaded url=" + location.href.slice(0, 60));
     waitForReady();
+    startAcctReport(); // P1：每 15s 上报状态到本机中心 8899（多账号平台）
     // 默认页签为战斗（登录页已移除；statbar 默认显示）
     switchPage(tabDefs[0][0]);
     renderWinInfo();

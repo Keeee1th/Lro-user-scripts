@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.5
+// @version      2.15.6
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -39,7 +39,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.5"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.6"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -3651,6 +3651,22 @@
     setStatus("已按新版本要求清空多辅助/自动技能历史列表", "st");
   }
 
+  // ---------------- 标签页标题带账号（V2.15.6）----------------
+  // 登录成功后浏览器标签页标题 = 「仙境的传说 - 账号」；掉线闪烁期间闪「⚠ 掉线了！」，结束恢复带账号标题。
+  // 无专门登录成功事件 → 5s 轻量轮询：客户端就绪且标题不符才设置；闪烁期间跳过避免互相覆盖。
+  var titleFlashing = false;
+  function baseTitle() {
+    var acct = state.account || (saved && saved.account) || "";
+    return acct ? ("仙境的传说 - " + acct) : "仙境的传说";
+  }
+  function applyBaseTitle() {
+    try {
+      if (titleFlashing) return;
+      if (clientReady() && document.title !== baseTitle()) document.title = baseTitle();
+    } catch (e) {}
+  }
+  setInterval(applyBaseTitle, 5000);
+
   // ---------------- 掉线提醒 + 重连 ----------------
   function hookDisconnect() {
     try {
@@ -3673,9 +3689,10 @@
     setStatus("⚠ 已断开连接", "err");
     if (doAlert) {
       var flashes = 0;
+      titleFlashing = true;
       var iv = setInterval(function () {
-        document.title = (flashes++ % 2) ? "⚠ 掉线了！" : "仙境传说";
-        if (flashes > 14) { clearInterval(iv); document.title = "仙境传说"; }
+        document.title = (flashes++ % 2) ? "⚠ 掉线了！" : baseTitle();
+        if (flashes > 14) { clearInterval(iv); titleFlashing = false; applyBaseTitle(); }
       }, 600);
     }
     if (doReload) {

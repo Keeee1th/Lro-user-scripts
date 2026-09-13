@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.18
+// @version      2.15.20
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -39,7 +39,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.18"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.20"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -880,6 +880,7 @@
       '<span style="color:#5a6b7f">秒（从号调小=同步更快，1~120）</span></div>' +
       '<div class="row"><span class="st" id="dsh-sync-state" style="font-size:11px">同步器关闭</span></div>' +
       '<div class="row"><label class="switch"><input id="dsh-savemem" type="checkbox">省内存模式（画质50 + 关特效/雾/光照 · 多开省内存）</label></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-fpslock" type="checkbox">多开帧率限制</label><input id="dsh-fps" type="number" value="15" min="5" max="30" step="5" style="flex:0 0 44px"><span style="color:#5a6b7f">帧（挂机多开锁帧省 CPU，建议 10~15）</span></div>' +
       '<div class="log">主号点地板/点NPC → 中心广播 → 从号自动执行（地图相同才动）。间隔=取回广播的频率：从号设 1~3 秒几乎实时跟随；中心有未执行指令时自动加速到 3 秒。设置按角色自动保存。</div>' +
       '</div>' +
       '</div></div>',
@@ -2306,6 +2307,46 @@
   $id("dsh-sync-mode").addEventListener("change", function () { try { captureAll(); } catch (e) {} renderSyncState(); });
   $id("dsh-sync-int").addEventListener("change", function () { try { captureAll(); } catch (e) {} renderSyncState(); });
   $id("dsh-savemem").addEventListener("change", function () { try { captureAll(); } catch (e) {} savememApply(); });
+  // ---------------- 多开帧率限制（V2.15.20）：包装 Renderer._render 跳帧节流——多开挂机时每窗口满帧渲染拖垮 GPU 进程（整 Chrome 卡），锁帧后渲染成本按比例下降 --------------
+  var fpsLockWrapped = null; // 已包装的渲染函数引用（防重复包装/便于恢复）
+  var fpsLockOrigRender = null;
+  function fpsLockApply() {
+    try {
+      var on = !!(saved.ui && saved.ui["dsh-fpslock"]);
+      var R = requireDB("Renderer/Renderer");
+      if (!R || typeof R._render !== "function") return;
+      if (on) {
+        if (fpsLockWrapped) return; // 已包装，只需更新目标帧率（包装内每次读取输入框）
+        fpsLockOrigRender = R._render;
+        var lastFrame = 0;
+        var wrap = function () {
+          try {
+            var now = Date.now();
+            var fpsEl = $id("dsh-fps");
+            var fps = fpsEl ? (parseInt(fpsEl.value, 10) || 15) : 15;
+            fps = Math.max(5, Math.min(30, fps));
+            var gap = 1000 / fps;
+            if (now - lastFrame < gap) {
+              // 未到渲染点：补一帧空调度（不执行渲染逻辑，省 CPU；RAF 回调本身开销极小）
+              window.requestAnimationFrame(wrap);
+              return;
+            }
+            lastFrame = now;
+            return fpsLockOrigRender.apply(this, arguments); // 原函数内部自会调度下一帧
+          } catch (e) { try { window.requestAnimationFrame(wrap); } catch (e2) {} }
+        };
+        R._render = wrap;
+        fpsLockWrapped = wrap;
+        try { setStatus("多开帧率限制已开：" + ($id("dsh-fps") ? $id("dsh-fps").value : 15) + " 帧/秒", "ok"); } catch (e) {}
+      } else if (fpsLockWrapped) {
+        if (R._render === fpsLockWrapped && fpsLockOrigRender) R._render = fpsLockOrigRender;
+        fpsLockWrapped = null; fpsLockOrigRender = null;
+        try { setStatus("多开帧率限制已关（恢复满帧渲染）", "ok"); } catch (e) {}
+      }
+    } catch (e) {}
+  }
+  $id("dsh-fpslock").addEventListener("change", function () { try { captureAll(); } catch (e) {} fpsLockApply(); });
+  $id("dsh-fps").addEventListener("change", function () { try { captureAll(); } catch (e) {} });
   renderSyncState();
 
   // ---------------- 当前窗口账号信息（单账号 · saved 为准）----------------
@@ -2521,7 +2562,7 @@
     ["dsh-followtarget", "v"], ["dsh-followdist", "v"], ["dsh-followen", "c"],
     ["dsh-pothealhp", "v"], ["dsh-potsp", "v"], ["dsh-poten", "c"],
     ["dsh-itempick", "v"], ["dsh-itemcond", "v"], ["dsh-itemcondval", "v"], ["dsh-itemen", "c"],
-    ["dsh-lootprob", "v"], ["dsh-openpick", "c"], ["dsh-picken", "c"], ["dsh-pickwalk", "c"], ["dsh-picksafe", "c"], ["dsh-bountyhl", "c"], ["dsh-bgkeep", "c"], ["dsh-capauto", "c"], ["dsh-capwait", "v"], ["dsh-z-rein", "c"], ["dsh-sync-en", "c"], ["dsh-savemem", "c"], ["dsh-sync-mode", "v"], ["dsh-sync-int", "v"]
+    ["dsh-lootprob", "v"], ["dsh-openpick", "c"], ["dsh-picken", "c"], ["dsh-pickwalk", "c"], ["dsh-picksafe", "c"], ["dsh-bountyhl", "c"], ["dsh-bgkeep", "c"], ["dsh-capauto", "c"], ["dsh-capwait", "v"], ["dsh-z-rein", "c"], ["dsh-sync-en", "c"], ["dsh-savemem", "c"], ["dsh-fpslock", "c"], ["dsh-fps", "v"], ["dsh-sync-mode", "v"], ["dsh-sync-int", "v"]
   ];
   function captureAll() {
     try {
@@ -8970,6 +9011,7 @@
         state.ready = true;
         setStatus("客户端已就绪", "ok");
         try { savememApply(); } catch (e) {} // V2.15.15：客户端就绪后应用省内存模式（此刻渲染器可用）
+        try { fpsLockApply(); } catch (e) {} // V2.15.20：客户端就绪后应用多开帧率限制（此刻渲染器可用）
         tlog("client-ready");
       }
     });

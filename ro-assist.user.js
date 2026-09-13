@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.13
+// @version      2.15.14
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -39,7 +39,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.13"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.14"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -2024,7 +2024,7 @@
   // 上报：每 15s POST 到本机中心 8899；中心有未执行广播时 hurry → 临时 3s 轮询
   // 同步器：本窗口用户点地板/点 NPC → 捕获 → 上报（syncPending）→ 中心广播给其他账号
   //        本窗口轮询取回其他账号广播（sync）→ 地图相同则执行（moveXY / NPC 对话），执行后确认 seq
-  var ACCT_REPORT = true; // 上报开关：false 关闭（总页面看不到本窗口，同步器也不工作）
+  var ACCT_REPORT = true; // 上报开关：false 关闭（V2.15.14 起上报与同步器解耦——上报始终开启，同步器功能单独受 dsh-sync-en 控制）
   var ACCT_REPORT_URL = "http://127.0.0.1:8899/api/acct/report";
   var acctReportTimer = null;
   // 同步器配置
@@ -2155,6 +2155,7 @@
     } catch (e) { return false; }
   }
   function syncExecute(sync) {
+      if (!syncCfg().en) return; // V2.15.14 同步器关 → 不执行中心广播
     try {
       if (!sync || !sync.op || !sync.seq) return;
       if (sync.seq <= syncAcked) return; // 已执行过
@@ -2253,10 +2254,9 @@
     acctReportTimer = setTimeout(acctReportTick, acctHurry ? 3000 : (syncCfg().interval * 1000));
   }
   function startAcctReport() {
-    if (acctReportTimer || !ACCT_REPORT || !syncCfg().en) return;
-    syncHookCapture(); // 挂主号捕获（点地板/点 NPC）
-    syncBCInit(); // V2.15.11 即时通道监听（同浏览器窗口毫秒级）
-    acctReportTick();  // 启动立即报一次
+    if (acctReportTimer || !ACCT_REPORT) return;
+    if (syncCfg().en) { syncHookCapture(); syncBCInit(); } // V2.15.14 同步器功能仍受 en 控制
+    acctReportTick();  // 启动立即报一次（上报始终开启，与同步器解耦）
   }
   // ---------------- 同步器设置页联动（V2.15.10：默认关 · 按角色存档）----------------
   function renderSyncState() {
@@ -2265,14 +2265,14 @@
       var el = $id("dsh-sync-state");
       if (!el) return;
       var modeTxt = { both: "双向（广播+执行）", master: "只广播（主号）", slave: "只执行（从号）" }[c.mode] || c.mode;
-      el.textContent = c.en ? ("已启用 · " + modeTxt + " · 轮询 " + c.interval + "s" + (acctHurry ? " · 加速中(3s)" : "")) : "同步器关闭（不参与同步、不上报状态）";
+      el.textContent = c.en ? ("已启用 · " + modeTxt + " · 轮询 " + c.interval + "s" + (acctHurry ? " · 加速中(3s)" : "")) : "同步器关闭（不参与同步；状态上报仍进行）";
     } catch (e) {}
   }
   function syncApplyRuntime() {
     try {
       var c = syncCfg();
-      if (c.en) startAcctReport();
-      else if (acctReportTimer) { clearTimeout(acctReportTimer); acctReportTimer = null; }
+      if (c.en) { syncHookCapture(); syncBCInit(); } // 同步器功能：en 开才挂捕获/BC
+      startAcctReport(); // V2.15.14 上报始终开启，与同步器开关解耦
     } catch (e) {}
   }
   $id("dsh-sync-en").addEventListener("change", function () { try { captureAll(); } catch (e) {} syncApplyRuntime(); renderSyncState(); });

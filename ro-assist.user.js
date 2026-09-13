@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.8
+// @version      2.15.9
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -39,7 +39,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.8"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.9"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -597,7 +597,8 @@
       '<span class="lb" style="min-width:26px">Lv</span><input id="dsh-qoautoskilllv" type="number" value="5" style="flex:0 0 38px"></div>' +
       '<div class="row"><span class="lb">影咒技能</span><select id="dsh-autoshadow"><option>- 请选择 -</option></select></div>' +
       '<div class="row"><span class="lb">寻怪模式</span><select id="dsh-searchmode" style="flex:0 0 90px"><option value="">-</option></select>' +
-      '<button class="ghost" id="dsh-readbot" style="flex:0 0 auto">读取内挂</button></div>' +
+      '<button class="ghost" id="dsh-readbot" style="flex:0 0 auto">读取内挂</button>' +
+      '<button class="ghost" id="dsh-probe-neidom" style="flex:0 0 auto">探查内挂DOM</button></div>' +
       '<div class="row"><span class="lb">检测目标</span><span class="st" id="dsh-targets" style="font-size:11px">未读取（打开内挂后点读取）</span></div>' +
       '<div class="row"><span class="lb">攻击距离</span><input id="dsh-distarget" type="number" value="0" style="flex:0 0 46px"><span style="color:#5a6b7f">格</span>' +
       '<span class="lb" style="min-width:44px">被攻击</span><select id="dsh-onlynoattack" style="flex:0 0 80px"><option value="">-</option></select></div>' +
@@ -4264,6 +4265,75 @@
   $id("dsh-readbot").addEventListener("click", function () {
     setStatus("内挂: " + readBot(), "ok");
   });
+  // ---------------- 内挂 DOM 探查（V2.15.9 一次性工具：拿内挂窗口真实控件位置，服务端落盘）----------------
+  // 用法：游戏里打开内挂窗口（任意页）→ 点「探查内挂DOM」→ 自动 POST 到本地 8899 落盘 collect.log / p-*.json
+  var NEI_ANCHOR_SELS = [".startButton", ".setAutokey", ".openattack", ".searchMode", ".onlynoattack", ".disTarget", ".onlyattack_block", ".mobnumMin", ".mobnumMax", ".flytimer", ".MinHpValFly", ".MinSpValFly", ".MinHpVal", ".bossfly", ".opensit", ".AutoUseSit_reHpVal", ".openpick", ".lootProbability", ".setAutoBlock"];
+  function neiFindRoot() {
+    // 从已知内挂锚点向上找「包含最多锚点」的容器（即内挂窗口本体，含隐藏 tab）
+    try {
+      var els = [];
+      for (var i = 0; i < NEI_ANCHOR_SELS.length; i++) {
+        try { var el = document.querySelector(NEI_ANCHOR_SELS[i]); if (el) els.push(el); } catch (e) {}
+      }
+      if (!els.length) return null;
+      var best = null, bestN = 1, n = els[0].parentElement;
+      for (var d = 0; n && d < 20; d++, n = n.parentElement) {
+        var hit = 0;
+        for (var j = 0; j < els.length; j++) { if (n === els[j] || (n.contains && n.contains(els[j]))) hit++; }
+        if (hit > bestN) { bestN = hit; best = n; }
+      }
+      return best || els[0].parentElement;
+    } catch (e) { return null; }
+  }
+  function neiProbe() {
+    var out = [];
+    var items = [];
+    try {
+      var root = neiFindRoot();
+      out.push("### 容器: " + (root ? (root.tagName.toLowerCase() + (root.id ? "#" + root.id : "") + (root.className ? "." + String(root.className).split(" ").slice(0, 3).join(".") : "")) : "未定位(改用全页可见控件)"));
+      var pool = [];
+      if (root) { try { pool = Array.prototype.slice.call(root.querySelectorAll("select, input, button")); } catch (e) {} }
+      if (!pool.length) { try { pool = Array.prototype.slice.call(document.querySelectorAll("select, input, button")).filter(function (el) { return el.offsetParent != null; }); } catch (e) {} }
+      for (var i = 0; i < pool.length && items.length < 300; i++) {
+        var el = pool[i];
+        var cls = (el.className && el.className.baseVal != null ? el.className.baseVal : el.className) || "";
+        var vis = el.offsetParent != null;
+        var val = "";
+        if (el.tagName === "SELECT") {
+          var opts = [];
+          for (var o = 0; o < el.options.length && o < 30; o++) {
+            var op = el.options[o];
+            opts.push((op.textContent || op.text || "").trim().replace(/\s+/g, " ") + "=" + op.value + (op.selected ? "*" : ""));
+          }
+          val = opts.join(" | ");
+        } else if (el.type === "checkbox" || el.type === "radio") {
+          val = el.checked ? "开" : "关";
+        } else if (el.tagName === "BUTTON") {
+          val = (el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 24);
+        } else {
+          val = String(el.value == null ? "" : el.value).slice(0, 30);
+        }
+        items.push((vis ? "" : "[隐藏] ") + el.tagName.toLowerCase() + (el.type ? "[" + el.type + "]" : "") + (el.id ? "#" + el.id : "") + (cls ? "." + String(cls).split(" ")[0] : "") + " = " + val);
+      }
+      out.push("### 控件 " + items.length + " 个（[隐藏]=当前 tab 不可见但仍存在）");
+      out = out.concat(items);
+    } catch (e) { out.push("探查异常: " + e.message); }
+    var txt = out.join("\n");
+    var sent = false;
+    try {
+      fetch("http://127.0.0.1:8899/api/acct/probe", { method: "POST", body: JSON.stringify({ t: "probe-neidom", ts: new Date().toISOString(), url: location.href, dom: txt }) })
+        .then(function () { sent = true; }).catch(function () { sent = false; });
+      sent = true;
+    } catch (e) { sent = false; }
+    setStatus(sent ? "内挂 DOM 探查已发送（" + items.length + " 个控件）" : "探查完成但发送失败（请先启动中心服务 8899）", sent ? "ok" : "err");
+    var ta = document.createElement("textarea");
+    ta.value = txt;
+    ta.style.cssText = "position:fixed;top:8%;left:8%;width:84%;height:76%;z-index:999999;font-size:12px;background:#fff;color:#000;";
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    try { alert(sent ? "探查完成：已发送 " + items.length + " 个控件到本地服务，弹窗内容已全选可复制备用。" : "发送失败（请先启动中心服务 8899）。弹窗内容已全选，请 Ctrl+C 复制发我。"); } catch (e) {}
+  }
+  $id("dsh-probe-neidom").addEventListener("click", function () { neiProbe(); });
   // 内挂开关真实状态：读聊天窗绿色系统字（服务器回执「开启自动战斗/关闭自动战斗」）。
   // 内挂开关是单一 toggle（点一次翻转一次），点击前必须判断真实状态，否则把已开翻成关。
   var CHAT_BATTLE_SELS = ['#chatbox .containers .border', '#chatbox .containers', '#chatbox .border', '#chatbox', '.chatbox .containers .border', '.chatbox .border', '.chatbox'];

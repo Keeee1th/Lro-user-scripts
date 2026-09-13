@@ -15,6 +15,12 @@ var STATE_FILE = path.join(DIR, 'acct-state.json');
 var ONLINE_MS = 60 * 1000;        // 60s 无上报 → 离线
 var CLEAN_MS = 24 * 3600 * 1000;  // 24h 无上报 → 清理出表
 
+// ---------------- 同步广播表（v2.15.8：主号操作 → 其他账号取走执行）----------------
+// SYNC_OPS: fromAccount -> { seq, op, ts }；每个主号只保留最新一条未确认广播
+// 从号上报 syncAcked（已执行的最大 seq）后，中心不再下发 ≤ 该 seq 的广播
+var SYNC_OPS = {};
+var SYNC_SEQ = 0;
+
 // ---------------- 账号状态表（account → 最新快照）----------------
 var ACCOUNTS = {};
 try { ACCOUNTS = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')) || {}; } catch (e) {}
@@ -127,7 +133,27 @@ var server = http.createServer(function (req, res) {
       snap._serverTs = Date.now();
       ACCOUNTS[snap.account] = snap;
       saveState();
-      json(res, 200, { ok: true, ts: snap._serverTs });
+      // 同步器：本窗口是主号时，把待广播操作写入广播表（每个主号保留最新一条）
+      if (Array.isArray(snap.syncPending)) {
+        for (var pi = 0; pi < snap.syncPending.length; pi++) {
+          var pop = snap.syncPending[pi];
+          if (pop && pop.type && (pop.type === 'move' || pop.type === 'npc')) {
+            SYNC_OPS[snap.account] = { seq: ++SYNC_SEQ, op: pop, ts: Date.now() };
+          }
+        }
+      }
+      // 同步器：本窗口是从号时，上报已执行的最大 seq（确认，防重复下发）
+      var acked = (typeof snap.syncAcked === 'number') ? snap.syncAcked : 0;
+      // 取给本账号的最新未确认广播（其他账号发来的，seq > 已确认）
+      var sync = null, keys = Object.keys(SYNC_OPS);
+      for (var si = 0; si < keys.length; si++) {
+        var from = keys[si], b = SYNC_OPS[from];
+        if (from === snap.account) continue; // 自己广播的不回给自己
+        if (!b || !b.op) continue;
+        if (b.seq <= acked) continue;         // 已确认过
+        if (!sync || b.seq > sync.seq) sync = { seq: b.seq, from: from, op: b.op };
+      }
+      json(res, 200, { ok: true, ts: snap._serverTs, sync: sync, hurry: !!sync });
     });
     return;
   }

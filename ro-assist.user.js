@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.7
+// @version      2.15.8
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -39,7 +39,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.7"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.8"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -1219,7 +1219,7 @@
     for (var ie2 = 0; ie2 < isoEvents.length; ie2++) {
       document.addEventListener(isoEvents[ie2], function (ev) {
         try {
-          if (ev.target && ev.target.closest && ev.target.closest("#dsh-ro-panel, #dsh-ball, #dsh-mini")) {
+          if (ev.target && ev.target.closest && ev.target.closest("#dsh-ro-panel, #dsh-ball, #dsh-mini, #dsh-mvp-timers")) {
             ev.stopPropagation();
           }
         } catch (e) {}
@@ -1382,7 +1382,7 @@
         } catch (e) {}
       }
       function simInUi(t) {
-        try { return t && t.closest && t.closest("#dsh-ro-panel, #dsh-ball, #dsh-mini"); } catch (e) { return false; }
+        try { return t && t.closest && t.closest("#dsh-ro-panel, #dsh-ball, #dsh-mini, #dsh-mvp-timers"); } catch (e) { return false; }
       }
       function simDown(e) {
         try {
@@ -2008,10 +2008,20 @@
     }, 1000);
   }
 
-  // ---------------- 多账号平台 · 状态上报（P1：每 15s POST 到本机中心 8899）----------------
-  var ACCT_REPORT = true; // 上报开关：false 关闭（总页面看不到本窗口）
+  // ---------------- 多账号平台 · 状态上报 + 同步器（P1 状态上报 / v2.15.8 同步器）----------------
+  // 上报：每 15s POST 到本机中心 8899；中心有未执行广播时 hurry → 临时 3s 轮询
+  // 同步器：本窗口用户点地板/点 NPC → 捕获 → 上报（syncPending）→ 中心广播给其他账号
+  //        本窗口轮询取回其他账号广播（sync）→ 地图相同则执行（moveXY / NPC 对话），执行后确认 seq
+  var ACCT_REPORT = true; // 上报开关：false 关闭（总页面看不到本窗口，同步器也不工作）
   var ACCT_REPORT_URL = "http://127.0.0.1:8899/api/acct/report";
   var acctReportTimer = null;
+  // 同步器配置
+  var SYNC_ENABLE = true;   // 同步器总开关
+  var SYNC_MODE = "both";   // both=既广播又执行 / master=只广播不执行 / slave=只执行不广播
+  var syncPending = [];     // 待上报的本地捕获操作（主号侧）
+  var syncAcked = 0;        // 本窗口已执行的最大广播 seq（从号侧确认）
+  var acctHurry = false;    // 中心有未执行广播 → 临时 3s 轮询
+  var syncLastMove = 0, syncLastNpc = 0; // 捕获节流
   function buildAcctTask() {
     try {
       if (moveXY && moveXY.busy) return "移动中";
@@ -2019,6 +2029,9 @@
       if (npHuntOn) return "挂机中";
     } catch (e) {}
     return "空闲";
+  }
+  function syncMapKey() {
+    try { return String(getMapName() || "").replace(/\.gat$/i, "").toLowerCase(); } catch (e) { return ""; }
   }
   function buildAcctReport() {
     var snap = buildRemoteSnapshot(); // 复用弹窗快照字段（账号/角色/地图/HP/SP/负重/zeny）
@@ -2029,7 +2042,9 @@
       stat: snap.stat || null,
       line: "",
       task: buildAcctTask(),
-      ts: Date.now()
+      ts: Date.now(),
+      syncPending: syncPending.splice(0, syncPending.length), // 取走并清空本地捕获队列
+      syncAcked: syncAcked
     };
     try { rep.line = SERVER_NAMES[pickCv()] || ""; } catch (e) {}
     try {
@@ -2037,6 +2052,87 @@
       if (ent && ent.position) { rep.x = Math.round(ent.position[0]); rep.y = Math.round(ent.position[1]); }
     } catch (e) {}
     return rep;
+  }
+  // ---- 捕获（主号侧）：包装游戏点击入口，记录点地板/点 NPC ----
+  function syncPush(op) {
+    try {
+      var now = Date.now();
+      if (op.type === "move") { if (now - syncLastMove < 500) return; syncLastMove = now; }
+      else { if (now - syncLastNpc < 200) return; syncLastNpc = now; }
+      syncPending.push(op);
+      if (syncPending.length > 20) syncPending.splice(0, syncPending.length - 20);
+    } catch (e) {}
+  }
+  function syncCapture(ev) {
+    if (!SYNC_ENABLE || SYNC_MODE === "slave") return;
+    var btn = (ev && (ev.which || ev.button)) || 1;
+    if (btn !== 1) return; // 仅左键
+    if (ev.altKey && !ev.ctrlKey && !ev.shiftKey) return; // ALT=佣兵攻击，不同步
+    try {
+      var Mouse = window.require && window.require("Controls/MouseEventHandler");
+      var EM = window.require && window.require("Renderer/EntityManager");
+      var SS = CLIENT.SS;
+      if (!Mouse || !EM || !SS || !SS.Entity) return;
+      if (!Mouse.intersect) return; // 点的是 UI 不是地图
+      var over = (typeof EM.getOverEntity === "function") ? EM.getOverEntity() : null;
+      var map = syncMapKey();
+      if (over && over !== SS.Entity && (over.objecttype === 6 || over.objecttype === 12)) {
+        // 点 NPC（TYPE_NPC=6 / TYPE_NPC2=12）
+        syncPush({ type: "npc", map: map, gid: over.GID });
+      } else if (!over || over === SS.Entity) {
+        // 点地面（无实体 / 点自己）→ 移动同步
+        var wx = Mouse.world && Mouse.world.x, wy = Mouse.world && Mouse.world.y;
+        if (typeof wx === "number" && typeof wy === "number") {
+          syncPush({ type: "move", map: map, x: Math.round(wx), y: Math.round(wy) });
+        }
+      }
+      // 点怪(5)/点物品(2)/点传送门(-1)/点其他玩家(0)：不同步
+    } catch (e) {}
+  }
+  function syncHookCapture() {
+    // 游戏在 window 冒泡阶段监听 mousedown（MapControl 模块级函数绑定）；我们并行挂一个
+    // 监听读状态（Mouse.world / getOverEntity），不干预游戏行为。助手 UI 已隔离不会冒泡到 window。
+    try {
+      if (window.__dshSyncHooked) return;
+      window.__dshSyncHooked = true;
+      window.addEventListener("mousedown", syncCapture, false);
+    } catch (e) {}
+  }
+  // ---- 执行（从号侧）：执行中心广播的指令 ----
+  function syncNpc(gid) {
+    try {
+      var EM = window.require && window.require("Renderer/EntityManager");
+      if (!EM || typeof EM.forEach !== "function") return false;
+      var npc = null;
+      EM.forEach(function (e) { if (!npc && e && e.GID === gid && (e.objecttype === 6 || e.objecttype === 12)) npc = e; });
+      if (!npc || !npc.position) return false;
+      var p = npc.position, SS = CLIENT.SS, self = SS && SS.Entity;
+      function talk() { try { if (npc.onMouseDown) npc.onMouseDown(); } catch (e) {} }
+      if (self && self.position && (Math.abs(self.position[0] - p[0]) + Math.abs(self.position[1] - p[1])) > 3) {
+        walkToXY(p[0], p[1], talk, "dsh-synclog"); // 走近后对话
+      } else {
+        talk();
+      }
+      return true;
+    } catch (e) { return false; }
+  }
+  function syncExecute(sync) {
+    try {
+      if (!sync || !sync.op || !sync.seq) return;
+      if (sync.seq <= syncAcked) return; // 已执行过
+      if (SYNC_MODE === "master") { syncAcked = sync.seq; return; } // 只当主号 → 直接确认跳过
+      var op = sync.op, myMap = syncMapKey(), opMap = String(op.map || "").replace(/\.gat$/i, "").toLowerCase();
+      var ok = false;
+      if (op.type === "move" && opMap === myMap && isFinite(op.x) && isFinite(op.y)) {
+        ok = walkToXY(op.x, op.y, null, "dsh-synclog");
+      } else if (op.type === "npc" && opMap === myMap && op.gid) {
+        ok = syncNpc(op.gid);
+      }
+      if (ok) { syncAcked = Math.max(syncAcked, sync.seq); return; }
+      // 地图不同：永远无法执行 → 直接确认跳过，避免死循环重试
+      if (opMap !== myMap) { syncAcked = Math.max(syncAcked, sync.seq); }
+      // 同地图但执行失败（NPC 不在视野等）→ 不确认，3s 后重试
+    } catch (e) {}
   }
   function acctReportSend() {
     try {
@@ -2047,13 +2143,22 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(rep)
+      }).then(function (r) { return r.json(); }).then(function (j) {
+        try {
+          acctHurry = !!(j && j.hurry);
+          if (j && j.sync) syncExecute(j.sync);
+        } catch (e2) {}
       }).catch(function () {});
     } catch (e) {}
   }
+  function acctReportTick() {
+    acctReportSend();
+    acctReportTimer = setTimeout(acctReportTick, acctHurry ? 3000 : 15000);
+  }
   function startAcctReport() {
     if (acctReportTimer || !ACCT_REPORT) return;
-    acctReportTimer = setInterval(acctReportSend, 15000);
-    acctReportSend(); // 启动立即报一次
+    syncHookCapture(); // 挂主号捕获（点地板/点 NPC）
+    acctReportTick();  // 启动立即报一次
   }
 
   // ---------------- 当前窗口账号信息（单账号 · saved 为准）----------------
@@ -9577,7 +9682,7 @@
     toggle.onclick = function () { if (!collapsed) height = box.getBoundingClientRect().height; collapsed = !collapsed; layout(); clamp(); save(); mvpRender(); };
     var drag = null;
     header.onpointerdown = function (e) {
-      if (e.target === toggle || e.button !== 0) return;
+      if (e.target === toggle || e.target === closeBtn || e.button !== 0) return;
       var r = box.getBoundingClientRect(); drag = {x:e.clientX,y:e.clientY,left:r.left,top:r.top};
       header.setPointerCapture(e.pointerId); e.preventDefault();
     };
@@ -9585,6 +9690,7 @@
     header.onpointerup = header.onpointercancel = function () { drag = null; save(); };
     box.appendChild(header); box.appendChild(controls); box.appendChild(mvpActionStatus); box.appendChild(mvpTimerBody);
     document.body.appendChild(box); layout(); clamp();
+    try { isolateEl(box); } catch (e) {} // V2.15.8：浮窗操作隔层，不再漏到游戏 window 级监听
     // 恢复显示状态（默认显示，除非用户手动关闭过）
     if (prefs.hidden) box.style.display = "none";
     // 修改 save 函数，保存显示状态

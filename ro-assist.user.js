@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.11
+// @version      2.15.12
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -39,7 +39,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.11"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.12"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -2098,7 +2098,8 @@
       var map = syncMapKey();
       if (over && over !== SS.Entity && (over.objecttype === 6 || over.objecttype === 12)) {
         // 点 NPC（TYPE_NPC=6 / TYPE_NPC2=12）
-        syncPush({ type: "npc", map: map, gid: over.GID });
+        var npPos = over.position;
+        syncPush({ type: "npc", map: map, gid: over.GID, x: (npPos && isFinite(npPos[0])) ? Math.round(npPos[0]) : null, y: (npPos && isFinite(npPos[1])) ? Math.round(npPos[1]) : null });
       } else if (!over || over === SS.Entity) {
         // 点地面（无实体 / 点自己）→ 移动同步
         var wx = Mouse.world && Mouse.world.x, wy = Mouse.world && Mouse.world.y;
@@ -2119,21 +2120,38 @@
     } catch (e) {}
   }
   // ---- 执行（从号侧）：执行中心广播的指令 ----
-  function syncNpc(gid) {
+  function syncNpc(gid, nx, ny) {
     try {
       var EM = window.require && window.require("Renderer/EntityManager");
-      if (!EM || typeof EM.forEach !== "function") return false;
       var npc = null;
-      EM.forEach(function (e) { if (!npc && e && e.GID === gid && (e.objecttype === 6 || e.objecttype === 12)) npc = e; });
-      if (!npc || !npc.position) return false;
-      var p = npc.position, SS = CLIENT.SS, self = SS && SS.Entity;
-      function talk() { try { if (npc.onMouseDown) npc.onMouseDown(); } catch (e) {} }
-      if (self && self.position && (Math.abs(self.position[0] - p[0]) + Math.abs(self.position[1] - p[1])) > 3) {
-        walkToXY(p[0], p[1], talk, "dsh-synclog"); // 走近后对话
-      } else {
-        talk();
+      if (EM && typeof EM.forEach === "function") {
+        EM.forEach(function (e) { if (!npc && e && e.GID === gid && (e.objecttype === 6 || e.objecttype === 12)) npc = e; });
       }
-      return true;
+      var SS = CLIENT.SS, self = SS && SS.Entity;
+      function talk(g) { try { if (g && g.onMouseDown) g.onMouseDown(); } catch (e) {} }
+      if (npc && npc.position) {
+        // 视野内找到：近直接对话，远走近再对话
+        var p = npc.position;
+        if (self && self.position && (Math.abs(self.position[0] - p[0]) + Math.abs(self.position[1] - p[1])) > 3) {
+          walkToXY(p[0], p[1], function () { talk(npc); }, "dsh-synclog"); // 走近后对话
+        } else {
+          talk(npc);
+        }
+        return true;
+      }
+      // V2.15.12 跨屏：NPC 不在视野（不同屏）→ 按主号捕获的坐标先走过去，到达后再找（必同屏）
+      if (isFinite(nx) && isFinite(ny)) {
+        walkToXY(nx, ny, function () {
+          try {
+            var EM2 = window.require && window.require("Renderer/EntityManager");
+            var npc2 = null;
+            if (EM2 && EM2.forEach) EM2.forEach(function (e) { if (!npc2 && e && e.GID === gid && (e.objecttype === 6 || e.objecttype === 12)) npc2 = e; });
+            if (npc2) talk(npc2);
+          } catch (e) {}
+        }, "dsh-synclog");
+        return true;
+      }
+      return false;
     } catch (e) { return false; }
   }
   function syncExecute(sync) {
@@ -2149,7 +2167,7 @@
       if (op.type === "move" && opMap === myMap && isFinite(op.x) && isFinite(op.y)) {
         ok = walkToXY(op.x, op.y, null, "dsh-synclog");
       } else if (op.type === "npc" && opMap === myMap && op.gid) {
-        ok = syncNpc(op.gid);
+        ok = syncNpc(op.gid, op.x, op.y);
       }
       if (ok) { syncAcked = Math.max(syncAcked, sync.seq); return; }
       // 地图不同：永远无法执行 → 直接确认跳过，避免死循环重试
@@ -2175,7 +2193,7 @@
       if (op.type === "move" && isFinite(op.x) && isFinite(op.y)) {
         ok = !!walkToXY(op.x, op.y, null, "dsh-synclog");
       } else if (op.type === "npc" && op.gid) {
-        ok = syncNpc(op.gid);
+        ok = syncNpc(op.gid, op.x, op.y);
       }
       if (ok) { try { syncBCLast[syncOpFinger(op)] = Date.now(); } catch (e) {} return true; }
       return false;
@@ -5270,6 +5288,8 @@
   }
   function walkToXY(tx, ty, onArrive, logId) {
     try {
+      // V2.15.12：内挂自动战斗开着时角色移动由服务器控制，客户端走路包会被覆盖 → 先关内挂再走（走完不自动恢复，用户可再开）
+      try { if (npHuntOn) npHuntStop(); } catch (e) {}
       if (!clientReady()) { mvLog("客户端未就绪"); return false; }
       var ent = CLIENT.SS.Entity;
       if (!ent || !ent.position) { mvLog("未获取到角色坐标"); return false; }

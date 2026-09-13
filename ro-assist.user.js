@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.16
+// @version      2.15.17
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -39,7 +39,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.16"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.17"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -5345,10 +5345,20 @@
       var ALT = window.require && window.require("Renderer/Map/Altitude");
       var WALK = ALT && ALT.TYPE && ALT.TYPE.WALKABLE;
       if (!ALT || !ALT.getCellType || !WALK) return [tx, ty];
+      // V2.15.17：目标点边界钳制——越界坐标环形索引/不可走，先拉回界内再找可走格
+      var cw = ALT.width || 0, ch = ALT.height || 0;
+      var cx = tx, cy = ty;
+      if (cw > 0) cx = Math.max(0, Math.min(cw - 1, tx));
+      if (ch > 0) cy = Math.max(0, Math.min(ch - 1, ty));
+      if (ALT.getCellType(cx, cy) & WALK) return [cx, cy];
       for (var g = 0; g <= 1; ++g)
         for (var e = -g; e <= g; ++e)
-          for (var f = -g; f <= g; ++f)
-            if (ALT.getCellType(tx + e, ty + f) & WALK) return [tx + e, ty + f];
+          for (var f = -g; f <= g; ++f) {
+            var nx = cx + e, ny = cy + f;
+            if (nx < 0 || ny < 0 || (cw > 0 && nx >= cw) || (ch > 0 && ny >= ch)) continue;
+            if (ALT.getCellType(nx, ny) & WALK) return [nx, ny];
+          }
+      return [cx, cy]; // 兜底返回钳制后的点（不再返回越界坐标）
     } catch (e) {}
     return [tx, ty];
   }
@@ -5732,7 +5742,10 @@
           var WALK = ALT && ALT.TYPE && ALT.TYPE.WALKABLE;
           if (!ALT || !ALT.getCellType || !WALK || !ALT.width) return true; // 地形未就绪 → 放行（旧逻辑兜底）
           for (var s = 1; s <= steps; s++) {
-            if (!(ALT.getCellType(Math.floor(px0 + dd[0] * s), Math.floor(py0 + dd[1] * s)) & WALK)) return false;
+            var cx2 = Math.floor(px0 + dd[0] * s), cy2 = Math.floor(py0 + dd[1] * s);
+            // V2.15.17：显式边界检查——客户端 getCellType 越界会环形索引到地图另一侧误判可走，导致寻怪走出地图/贴边
+            if (cx2 < 0 || cy2 < 0 || cx2 >= ALT.width || (ALT.height > 0 && cy2 >= ALT.height)) return false;
+            if (!(ALT.getCellType(cx2, cy2) & WALK)) return false;
           }
           return true;
         } catch (e) { return true; }

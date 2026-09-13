@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.9
+// @version      2.15.10
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -39,7 +39,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.9"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.10"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -745,7 +745,8 @@
       '<button class="sub-tab" data-sub="ap-mvp">MVP计时</button>' +
       '<button class="sub-tab" data-sub="ap-inv">仓库查询</button>' +
       '<button class="sub-tab" data-sub="ap-scr">脚本执行</button>' +
-      '<button class="sub-tab" data-sub="ap-item">物品</button></div>' +
+      '<button class="sub-tab" data-sub="ap-item">物品</button>' +
+      '<button class="sub-tab" data-sub="ap-sync">同步器</button></div>' +
       '<div class="a-body">' +
       // 子页1：自动吃药 + 使用背包物品 + 自动跟随（默认）
       '<div class="sub-page active" data-subpage="ap-pot">' +
@@ -869,6 +870,16 @@
       '<div class="row"><span class="st" id="dsh-bag-state" style="font-size:10px">未初始化（登录后自动就绪）</span></div>' +
       '<div id="dsh-bag-clean" style="font-size:11px"></div>' +
       '</div>' +
+      '</div>' +
+      '<div class="sub-page" data-subpage="ap-sync">' +
+      '<div class="sec">同步器（多账号联动 · 默认关）</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-sync-en" type="checkbox">启用同步器（同时开始上报状态到中心）</label></div>' +
+      '<div class="row"><span class="lb">同步模式</span><select id="dsh-sync-mode" style="flex:0 0 132px">' +
+      '<option value="both">双向（广播+执行）</option><option value="master">只广播（主号）</option><option value="slave">只执行（从号）</option></select></div>' +
+      '<div class="row"><span class="lb">轮询间隔</span><input id="dsh-sync-int" type="number" value="15" min="1" max="120" style="flex:0 0 48px">' +
+      '<span style="color:#5a6b7f">秒（从号调小=同步更快，1~120）</span></div>' +
+      '<div class="row"><span class="st" id="dsh-sync-state" style="font-size:11px">同步器关闭</span></div>' +
+      '<div class="log">主号点地板/点NPC → 中心广播 → 从号自动执行（地图相同才动）。间隔=取回广播的频率：从号设 1~3 秒几乎实时跟随；中心有未执行指令时自动加速到 3 秒。设置按角色自动保存。</div>' +
       '</div>' +
       '</div></div>',
     teleport: '' +
@@ -2017,8 +2028,14 @@
   var ACCT_REPORT_URL = "http://127.0.0.1:8899/api/acct/report";
   var acctReportTimer = null;
   // 同步器配置
-  var SYNC_ENABLE = true;   // 同步器总开关
-  var SYNC_MODE = "both";   // both=既广播又执行 / master=只广播不执行 / slave=只执行不广播
+  // 同步器配置（V2.15.10 起从角色档读取 · 默认关）：dsh-sync-en / dsh-sync-mode / dsh-sync-int
+  function syncCfg() {
+    var ui = (saved && saved.ui) || {};
+    var en = ui["dsh-sync-en"];
+    var mode = ui["dsh-sync-mode"] || "both";
+    var intv = parseInt(ui["dsh-sync-int"], 10);
+    return { en: en === undefined ? false : !!en, mode: mode, interval: (intv >= 1 && intv <= 120) ? intv : 15 };
+  }
   var syncPending = [];     // 待上报的本地捕获操作（主号侧）
   var syncAcked = 0;        // 本窗口已执行的最大广播 seq（从号侧确认）
   var acctHurry = false;    // 中心有未执行广播 → 临时 3s 轮询
@@ -2065,7 +2082,7 @@
     } catch (e) {}
   }
   function syncCapture(ev) {
-    if (!SYNC_ENABLE || SYNC_MODE === "slave") return;
+    var cfg0 = syncCfg(); if (!cfg0.en || cfg0.mode === "slave") return;
     var btn = (ev && (ev.which || ev.button)) || 1;
     if (btn !== 1) return; // 仅左键
     if (ev.altKey && !ev.ctrlKey && !ev.shiftKey) return; // ALT=佣兵攻击，不同步
@@ -2121,7 +2138,7 @@
     try {
       if (!sync || !sync.op || !sync.seq) return;
       if (sync.seq <= syncAcked) return; // 已执行过
-      if (SYNC_MODE === "master") { syncAcked = sync.seq; return; } // 只当主号 → 直接确认跳过
+      if (syncCfg().mode === "master") { syncAcked = sync.seq; return; } // 只当主号 → 直接确认跳过
       var op = sync.op, myMap = syncMapKey(), opMap = String(op.map || "").replace(/\.gat$/i, "").toLowerCase();
       var ok = false;
       if (op.type === "move" && opMap === myMap && isFinite(op.x) && isFinite(op.y)) {
@@ -2147,6 +2164,7 @@
       }).then(function (r) { return r.json(); }).then(function (j) {
         try {
           acctHurry = !!(j && j.hurry);
+          try { renderSyncState(); } catch (e) {}
           if (j && j.sync) syncExecute(j.sync);
         } catch (e2) {}
       }).catch(function () {});
@@ -2154,13 +2172,34 @@
   }
   function acctReportTick() {
     acctReportSend();
-    acctReportTimer = setTimeout(acctReportTick, acctHurry ? 3000 : 15000);
+    acctReportTimer = setTimeout(acctReportTick, acctHurry ? 3000 : (syncCfg().interval * 1000));
   }
   function startAcctReport() {
-    if (acctReportTimer || !ACCT_REPORT) return;
+    if (acctReportTimer || !ACCT_REPORT || !syncCfg().en) return;
     syncHookCapture(); // 挂主号捕获（点地板/点 NPC）
     acctReportTick();  // 启动立即报一次
   }
+  // ---------------- 同步器设置页联动（V2.15.10：默认关 · 按角色存档）----------------
+  function renderSyncState() {
+    try {
+      var c = syncCfg();
+      var el = $id("dsh-sync-state");
+      if (!el) return;
+      var modeTxt = { both: "双向（广播+执行）", master: "只广播（主号）", slave: "只执行（从号）" }[c.mode] || c.mode;
+      el.textContent = c.en ? ("已启用 · " + modeTxt + " · 轮询 " + c.interval + "s" + (acctHurry ? " · 加速中(3s)" : "")) : "同步器关闭（不参与同步、不上报状态）";
+    } catch (e) {}
+  }
+  function syncApplyRuntime() {
+    try {
+      var c = syncCfg();
+      if (c.en) startAcctReport();
+      else if (acctReportTimer) { clearTimeout(acctReportTimer); acctReportTimer = null; }
+    } catch (e) {}
+  }
+  $id("dsh-sync-en").addEventListener("change", function () { try { captureAll(); } catch (e) {} syncApplyRuntime(); renderSyncState(); });
+  $id("dsh-sync-mode").addEventListener("change", function () { try { captureAll(); } catch (e) {} renderSyncState(); });
+  $id("dsh-sync-int").addEventListener("change", function () { try { captureAll(); } catch (e) {} renderSyncState(); });
+  renderSyncState();
 
   // ---------------- 当前窗口账号信息（单账号 · saved 为准）----------------
   function getWinAccountInfo() {
@@ -2374,7 +2413,7 @@
     ["dsh-followtarget", "v"], ["dsh-followdist", "v"], ["dsh-followen", "c"],
     ["dsh-pothealhp", "v"], ["dsh-potsp", "v"], ["dsh-poten", "c"],
     ["dsh-itempick", "v"], ["dsh-itemcond", "v"], ["dsh-itemcondval", "v"], ["dsh-itemen", "c"],
-    ["dsh-lootprob", "v"], ["dsh-openpick", "c"], ["dsh-picken", "c"], ["dsh-pickwalk", "c"], ["dsh-picksafe", "c"], ["dsh-bountyhl", "c"], ["dsh-bgkeep", "c"], ["dsh-capauto", "c"], ["dsh-capwait", "v"], ["dsh-z-rein", "c"]
+    ["dsh-lootprob", "v"], ["dsh-openpick", "c"], ["dsh-picken", "c"], ["dsh-pickwalk", "c"], ["dsh-picksafe", "c"], ["dsh-bountyhl", "c"], ["dsh-bgkeep", "c"], ["dsh-capauto", "c"], ["dsh-capwait", "v"], ["dsh-z-rein", "c"], ["dsh-sync-en", "c"], ["dsh-sync-mode", "v"], ["dsh-sync-int", "v"]
   ];
   function captureAll() {
     try {
@@ -2428,6 +2467,7 @@
       lockList = profiles[key].lockList || {};
       askList = profiles[key].askList || [];
       applyProfileUI();
+      try { syncApplyRuntime(); renderSyncState(); } catch (e) {} // V2.15.10：切档后同步器按新档配置启停
       renderWinInfo(); renderLockList(); renderAskList();
       lastCharGid = gid;
       setStatus("已加载角色档 " + nm + "（ID" + gid + "）", "ok");

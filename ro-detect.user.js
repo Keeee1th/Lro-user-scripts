@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         仙境传说 · 检测插件（ro-detect）
 // @namespace    dsh.ro-detect
-// @version      1.0.7
+// @version      1.0.8
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-detect.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-detect.user.js
-// @description  v1.0.7：检测插件（合并 ro-probe 回传框架 + ro-attack-test 攻击测试）。模块：A验证码/自动验证日志监控 B攻击测试（标记/模拟点击/buff上身诊断） C自动buff状态监控+自动加buff（状态未常驻自动放技能，面板开关+防抖退避） D防原地走动判定。回传带角色名（多开隔离）+ 面板与游戏页彻底隔层（stopPropagation 防点地板）。抓取 [ASK-DIAG] 自动技能逐项决策日志。检测日志自动回传本机接收服务（8899），DSH 直接自取，无需手动复制控制台。
+// @description  v1.0.8：检测插件（合并 ro-probe 回传框架 + ro-attack-test 攻击测试）。模块：A验证码/自动验证日志监控 B攻击测试（标记/模拟点击/buff上身诊断） C自动buff状态监控+自动加buff（状态未常驻自动放技能，面板开关+防抖退避） D防原地走动判定。回传带角色名（多开隔离）+ 面板与游戏页彻底隔层（stopPropagation 防点地板）。抓取 [ASK-DIAG] 自动技能逐项决策日志。检测日志自动回传本机接收服务（8899），DSH 直接自取，无需手动复制控制台。
 // @match        https://post.lastro.cn/*
 // @match        https://post.lastro.cn/ro/api.html*
 // @run-at       document-start
@@ -417,7 +417,22 @@
       var m = pageModules();
       var em = m && m.EM;
       if (em && typeof em.setFocusEntity === 'function') { try { em.setFocusEntity(t); } catch (e2) {} }
-      detLog('攻击测试：点击 GID' + t.GID + ' 已触发 onFocus()（官方攻击路径，看角色是否走近/攻击）');
+      // V1.0.8 诊断：定位 onFocus 静默路径（TouchTargeting/autoFollow 开着或寻路失败时 onFocus 不发任何包）
+      var mdRet = false;
+      try { if (typeof t.onMouseDown === "function") mdRet = t.onMouseDown(); } catch (e6) { mdRet = "err:" + e6.message; }
+      try {
+        var SSd = m && m.SS, maind = SSd && SSd.Entity, PFd = null;
+        try { PFd = pageWindow().require("Utils/PathFinding"); } catch (e3) {}
+        var outd = [], pfCount = -1;
+        if (PFd && maind && maind.position && t.position && typeof PFd.search === "function") {
+          try { pfCount = PFd.search(maind.position[0] | 0, maind.position[1] | 0, t.position[0] | 0, t.position[1] | 0, (maind.attack_range || 0) + 1, outd); } catch (e4) { pfCount = -2; }
+        }
+        var selfP = maind && maind.position ? (maind.position[0] + "," + maind.position[1]) : "?";
+        var tgtP = t.position ? (t.position[0] + "," + t.position[1]) : "?";
+        var distD = (maind && maind.position && t.position) ? (Math.abs(maind.position[0] - t.position[0]) + Math.abs(maind.position[1] - t.position[1])) : -1;
+        detLog("攻击测试：诊断 TouchTargeting=" + (SSd ? SSd.TouchTargeting : "?") + " autoFollow=" + (SSd ? SSd.autoFollow : "?") + " attack_range=" + (maind ? maind.attack_range : "?") + " 自己(" + selfP + ") 目标(" + tgtP + ") 距离=" + distD + " 寻路count=" + pfCount);
+      } catch (e5) { detLog("攻击测试：诊断异常 " + e5.message); }
+      detLog("攻击测试：点击 GID" + t.GID + " onMouseDown=" + mdRet + " 已触发 onFocus()（官方攻击路径，看角色是否走近/攻击）");
       t.onFocus();
     } catch (e) { detLog('攻击测试：点击异常 ' + e.message); }
   }
@@ -523,7 +538,7 @@
     if (abEn) { abEn.checked = false; abEn.addEventListener('change', function () { autoBuffEn = this.checked; if (this.checked) { hookStatusIcons(); detLog('自动加buff：已开启（' + AUTO_BUFFS.length + '项）'); } else { detLog('自动加buff：已关闭'); } }); }
     setAutoBuffInfo();
     document.body.appendChild(root);
-    detLog('面板就绪（检测插件 v1.0.7，会话 ' + SESSION + '）');
+    detLog('面板就绪（检测插件 v1.0.8，会话 ' + SESSION + '）');
   }
   // v1.0.1：面板不再等游戏客户端就绪，页面 body 出现即构建按钮；v1.0.2：页面对象访问全走 pageWindow()（沙箱 window 无 CLIENT/require）
   var tries = 0;

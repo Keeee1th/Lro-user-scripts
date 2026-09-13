@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.14
+// @version      2.15.15
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -39,7 +39,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.14"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.15"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -879,6 +879,7 @@
       '<div class="row"><span class="lb">轮询间隔</span><input id="dsh-sync-int" type="number" value="15" min="1" max="120" style="flex:0 0 48px">' +
       '<span style="color:#5a6b7f">秒（从号调小=同步更快，1~120）</span></div>' +
       '<div class="row"><span class="st" id="dsh-sync-state" style="font-size:11px">同步器关闭</span></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-savemem" type="checkbox">省内存模式（画质50 + 关特效/雾/光照 · 多开省内存）</label></div>' +
       '<div class="log">主号点地板/点NPC → 中心广播 → 从号自动执行（地图相同才动）。间隔=取回广播的频率：从号设 1~3 秒几乎实时跟随；中心有未执行指令时自动加速到 3 秒。设置按角色自动保存。</div>' +
       '</div>' +
       '</div></div>',
@@ -2275,9 +2276,36 @@
       startAcctReport(); // V2.15.14 上报始终开启，与同步器开关解耦
     } catch (e) {}
   }
+  // ---------------- 省内存模式（V2.15.15）：降画质 + 关特效/雾/光照，多开省内存 ----------------
+  var savememOld = null; // 开启时记录原画质，关闭时恢复
+  function savememApply() {
+    try {
+      var on = !!(saved.ui && saved.ui["dsh-savemem"]);
+      var GS = requireDB("Preferences/Graphics");
+      var MP = requireDB("Preferences/Map");
+      var CF = requireDB("Core/Configs");
+      if (on) {
+        if (savememOld === null && GS && GS.quality != null) savememOld = GS.quality;
+        if (GS) { GS.quality = 50; try { GS.save(); } catch (e) {} }
+        if (CF) { try { CF.set("quality", 50); } catch (e) {} }
+        if (MP) { MP.effect = false; MP.fog = false; MP.lightmap = false; try { MP.save(); } catch (e) {} }
+        var R1 = requireDB("Renderer/Renderer");
+        if (R1 && R1.resize) { try { R1.resize(); } catch (e) {} }
+        try { setStatus("省内存模式已开：画质50 + 特效/雾/光照关闭", "ok"); } catch (e) {}
+      } else {
+        var q = (savememOld != null) ? savememOld : 100; savememOld = null;
+        if (GS) { GS.quality = q; try { GS.save(); } catch (e) {} }
+        if (CF) { try { CF.set("quality", q); } catch (e) {} }
+        if (MP) { MP.effect = true; MP.fog = true; MP.lightmap = true; try { MP.save(); } catch (e) {} }
+        var R2 = requireDB("Renderer/Renderer");
+        if (R2 && R2.resize) { try { R2.resize(); } catch (e) {} }
+      }
+    } catch (e) {}
+  }
   $id("dsh-sync-en").addEventListener("change", function () { try { captureAll(); } catch (e) {} syncApplyRuntime(); renderSyncState(); });
   $id("dsh-sync-mode").addEventListener("change", function () { try { captureAll(); } catch (e) {} renderSyncState(); });
   $id("dsh-sync-int").addEventListener("change", function () { try { captureAll(); } catch (e) {} renderSyncState(); });
+  $id("dsh-savemem").addEventListener("change", function () { try { captureAll(); } catch (e) {} savememApply(); });
   renderSyncState();
 
   // ---------------- 当前窗口账号信息（单账号 · saved 为准）----------------
@@ -2492,7 +2520,7 @@
     ["dsh-followtarget", "v"], ["dsh-followdist", "v"], ["dsh-followen", "c"],
     ["dsh-pothealhp", "v"], ["dsh-potsp", "v"], ["dsh-poten", "c"],
     ["dsh-itempick", "v"], ["dsh-itemcond", "v"], ["dsh-itemcondval", "v"], ["dsh-itemen", "c"],
-    ["dsh-lootprob", "v"], ["dsh-openpick", "c"], ["dsh-picken", "c"], ["dsh-pickwalk", "c"], ["dsh-picksafe", "c"], ["dsh-bountyhl", "c"], ["dsh-bgkeep", "c"], ["dsh-capauto", "c"], ["dsh-capwait", "v"], ["dsh-z-rein", "c"], ["dsh-sync-en", "c"], ["dsh-sync-mode", "v"], ["dsh-sync-int", "v"]
+    ["dsh-lootprob", "v"], ["dsh-openpick", "c"], ["dsh-picken", "c"], ["dsh-pickwalk", "c"], ["dsh-picksafe", "c"], ["dsh-bountyhl", "c"], ["dsh-bgkeep", "c"], ["dsh-capauto", "c"], ["dsh-capwait", "v"], ["dsh-z-rein", "c"], ["dsh-sync-en", "c"], ["dsh-savemem", "c"], ["dsh-sync-mode", "v"], ["dsh-sync-int", "v"]
   ];
   function captureAll() {
     try {
@@ -2547,6 +2575,7 @@
       askList = profiles[key].askList || [];
       applyProfileUI();
       try { syncApplyRuntime(); renderSyncState(); } catch (e) {} // V2.15.10：切档后同步器按新档配置启停
+      try { savememApply(); } catch (e) {} // V2.15.15：切档后按新档省内存开关生效
       renderWinInfo(); renderLockList(); renderAskList();
       lastCharGid = gid;
       setStatus("已加载角色档 " + nm + "（ID" + gid + "）", "ok");
@@ -8925,6 +8954,7 @@
       if (ev.data === "ready") {
         state.ready = true;
         setStatus("客户端已就绪", "ok");
+        try { savememApply(); } catch (e) {} // V2.15.15：客户端就绪后应用省内存模式（此刻渲染器可用）
         tlog("client-ready");
       }
     });

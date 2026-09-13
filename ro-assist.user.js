@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.15
+// @version      2.15.16
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -39,7 +39,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.15"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.16"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -662,11 +662,11 @@
       '<span class="lb" style="min-width:60px">坐下被锁定</span><select id="dsh-z-sitxw" style="flex:0 0 72px"><option selected>无视</option><option>还击</option><option>瞬移</option><option>逃脱</option></select></div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-sitback" type="checkbox" checked>回满后继续战斗</label>' +
       '<label class="switch"><input id="dsh-z-sitnofight" type="checkbox">战斗状态不坐下</label></div>' +
-      '<div class="row"><span class="lb">攻击间隔</span><input id="dsh-z-attint" type="number" value="0.5" min="0.3" step="0.1" style="flex:0 0 44px"><span style="color:#5a6b7f">s（最低0.3）</span>' +
+      '<div class="row"><span class="lb">攻击间隔</span><input id="dsh-z-attint" type="number" value="0.25" min="0.25" step="0.05" style="flex:0 0 44px"><span style="color:#5a6b7f">s（最低0.25）</span>' +
       '<span class="lb" style="min-width:26px">寻怪</span><input id="dsh-z-range" type="number" value="12" style="flex:0 0 40px"><span style="color:#5a6b7f">格</span></div>' +
       '<div class="row"><span class="lb">物理距离</span><input id="dsh-z-pmrange" type="number" value="2" min="1" style="flex:0 0 40px"><span style="color:#5a6b7f">格(普攻/近战)</span>' +
       '<span class="lb" style="min-width:48px">魔法距离</span><input id="dsh-z-mgrange" type="number" value="9" min="1" style="flex:0 0 40px"><span style="color:#5a6b7f">格(远程技能)</span></div>' +
-      '<div class="row"><span class="lb">换怪延迟</span><input id="dsh-z-switchdelay" type="number" value="0.3" min="0.1" step="0.1" style="flex:0 0 44px"><span style="color:#5a6b7f">s（打完一只→找下一只的间隔）</span></div>' +
+      '<div class="row"><span class="lb">换怪延迟</span><input id="dsh-z-switchdelay" type="number" value="0.25" min="0.1" step="0.1" style="flex:0 0 44px"><span style="color:#5a6b7f">s（打完一只→找下一只的间隔）</span></div>' +
       '<div class="row"><span class="lb">直走节流</span><input id="dsh-z-walkint" type="number" value="0.5" min="0.3" step="0.1" style="flex:0 0 44px"><span style="color:#5a6b7f">s（无怪直走寻怪间隔）</span>' +
       '<span class="lb" style="min-width:26px">追怪</span><input id="dsh-z-chaseint" type="number" value="0.5" min="0.3" step="0.1" style="flex:0 0 44px"><span style="color:#5a6b7f">s（内挂模式助手主动追怪间隔）</span></div>' +
       '<div class="row"><span class="lb">寻怪方式</span><select id="dsh-z-huntmode" style="flex:0 0 118px">' +
@@ -5287,7 +5287,7 @@
       npSyncTargets();
       tlog("zhu-start np-hunt");
     }
-    var sec = Math.max(0.3, parseFloat($id("dsh-z-attint").value) || 0.5);
+    var sec = Math.max(0.25, parseFloat($id("dsh-z-attint").value) || 0.25);
     zAttTimer = setInterval(zAttack, sec * 1000);
     setStatus("助手模式已启动（扫描+攻击）", "ok");
   }
@@ -5543,6 +5543,7 @@
     try {
       if (!clientReady()) return;
       if (moveXY.busy) return; // 手动坐标走路中 → 自动寻怪走位让位
+      if (pendingPick) { try { zMon.action = "拾取物品中"; } catch (e) {} return; } // V2.15.16：有拾取任务在身 → 寻怪让位（防拾取移动包被寻怪覆盖）
       var ent = CLIENT.SS.Entity;
       if (!ent || !ent.position) return;
       var now = Date.now();
@@ -5916,7 +5917,7 @@
         else { target = hitTarget; setStatus("被攻击，还击 " + (hitTarget.display && hitTarget.display.name || ""), "ok"); }
       }
       // 换怪延迟：目标变化时记录延迟点；延迟窗口内不攻击（等设定秒数再出手）
-      var switchDelay = (parseFloat($id("dsh-z-switchdelay").value) || 0.3) * 1000;
+      var switchDelay = (parseFloat($id("dsh-z-switchdelay").value) || 0.25) * 1000;
       if (target) {
         if (zLastTargetGID !== target.GID) {
           zLastTargetGID = target.GID;

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.10
+// @version      2.15.11
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -39,7 +39,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.10"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.11"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -2040,6 +2040,7 @@
   var syncAcked = 0;        // 本窗口已执行的最大广播 seq（从号侧确认）
   var acctHurry = false;    // 中心有未执行广播 → 临时 3s 轮询
   var syncLastMove = 0, syncLastNpc = 0; // 捕获节流
+  var syncBCWin = "", syncBCSeq = 0, syncBCSeen = {}; // V2.15.11 即时通道（BroadcastChannel 同浏览器窗口毫秒级直达）
   function buildAcctTask() {
     try {
       if (moveXY && moveXY.busy) return "移动中";
@@ -2078,6 +2079,7 @@
       if (op.type === "move") { if (now - syncLastMove < 500) return; syncLastMove = now; }
       else { if (now - syncLastNpc < 200) return; syncLastNpc = now; }
       syncPending.push(op);
+      syncBCBroadcast(op); // V2.15.11 即时通道：同浏览器窗口直达（不等轮询）
       if (syncPending.length > 20) syncPending.splice(0, syncPending.length - 20);
     } catch (e) {}
   }
@@ -2138,6 +2140,9 @@
     try {
       if (!sync || !sync.op || !sync.seq) return;
       if (sync.seq <= syncAcked) return; // 已执行过
+      // V2.15.11：BC 即时通道已执行过同一条 → 直接确认跳过（防中心轮询重复执行）
+      var fp0 = syncOpFinger(sync.op);
+      if (fp0 && syncBCLast[fp0] && (Date.now() - syncBCLast[fp0]) < 10000) { syncAcked = Math.max(syncAcked, sync.seq); return; }
       if (syncCfg().mode === "master") { syncAcked = sync.seq; return; } // 只当主号 → 直接确认跳过
       var op = sync.op, myMap = syncMapKey(), opMap = String(op.map || "").replace(/\.gat$/i, "").toLowerCase();
       var ok = false;
@@ -2150,6 +2155,61 @@
       // 地图不同：永远无法执行 → 直接确认跳过，避免死循环重试
       if (opMap !== myMap) { syncAcked = Math.max(syncAcked, sync.seq); }
       // 同地图但执行失败（NPC 不在视野等）→ 不确认，3s 后重试
+    } catch (e) {}
+  }
+  var syncBCLast = {}; // V2.15.11：BC 即时通道已执行指纹 → 中心轮询取回同一条时跳过（防重复执行）
+  function syncOpFinger(op) {
+    try {
+      if (!op) return "";
+      if (op.type === "move") return "m" + (op.map || "") + ":" + op.x + "," + op.y;
+      if (op.type === "npc") return "n" + (op.map || "") + ":" + op.gid;
+    } catch (e) {}
+    return "";
+  }
+  function syncExecOp(op) {
+    try {
+      if (!op) return false;
+      var myMap = syncMapKey(), opMap = String(op.map || "").replace(/\.gat$/i, "").toLowerCase();
+      if (opMap !== myMap) return true; // 地图不同：确认跳过
+      var ok = false;
+      if (op.type === "move" && isFinite(op.x) && isFinite(op.y)) {
+        ok = !!walkToXY(op.x, op.y, null, "dsh-synclog");
+      } else if (op.type === "npc" && op.gid) {
+        ok = syncNpc(op.gid);
+      }
+      if (ok) { try { syncBCLast[syncOpFinger(op)] = Date.now(); } catch (e) {} return true; }
+      return false;
+    } catch (e) { return false; }
+  }
+  // V2.15.11 即时通道：BroadcastChannel 同浏览器窗口毫秒级直达（中心轮询保留为跨浏览器/跨机器兜底）
+  function syncBCInit() {
+    try {
+      if (!("BroadcastChannel" in window)) return;
+      if (syncBCWin) return;
+      syncBCWin = "w" + Math.floor(Math.random() * 1e9).toString(36);
+      try { if (!remoteCh) remoteCh = new BroadcastChannel("dsh_ro_remote"); } catch (e) {}
+      if (remoteCh) remoteCh.onmessage = function (ev) {
+        try {
+          var m = ev && ev.data;
+          if (!m || m.cmd !== "sync" || !m.op) return;
+          if (m.src === syncBCWin) return; // 自己发的
+          var key = m.src + ":" + m.seq;
+          if (syncBCSeen[key]) return;
+          syncBCSeen[key] = 1;
+          var ks = Object.keys(syncBCSeen);
+          if (ks.length > 300) syncBCSeen = {};
+          if (!syncCfg().en) return; // 本窗口同步器已关 → 不执行任何广播
+          if (syncCfg().mode === "master") return; // 只广播不执行
+          syncExecOp(m.op);
+        } catch (e) {}
+      };
+    } catch (e) {}
+  }
+  function syncBCBroadcast(op) {
+    try {
+      if (!remoteCh) return;
+      syncBCSeq++;
+      remoteCh.postMessage({ cmd: "sync", src: syncBCWin, seq: syncBCSeq, op: op });
     } catch (e) {}
   }
   function acctReportSend() {
@@ -2177,6 +2237,7 @@
   function startAcctReport() {
     if (acctReportTimer || !ACCT_REPORT || !syncCfg().en) return;
     syncHookCapture(); // 挂主号捕获（点地板/点 NPC）
+    syncBCInit(); // V2.15.11 即时通道监听（同浏览器窗口毫秒级）
     acctReportTick();  // 启动立即报一次
   }
   // ---------------- 同步器设置页联动（V2.15.10：默认关 · 按角色存档）----------------
@@ -5339,12 +5400,13 @@
         if (cb) { try { cb(); } catch (e) {} }
         return;
       }
-      if (Date.now() - moveXY.since > 30000) { moveXY.busy = false; mvLog("走路超时（30s 未到达）已停止"); return; }
+      if (Date.now() - moveXY.since > 90000) { moveXY.busy = false; mvLog("走路超时（90s 未到达）已停止"); return; }
       if (Date.now() - moveXY.last < 1000) return; // 1s 节流
       moveXY.last = Date.now();
-      // 坐标走路修复：直发终点 REQUEST_MOVE（引擎点地走 onRequestWalk→A() 同款），由服务器寻路；
-      // 不再客户端 A*（pathFindTo）分段发中间点——分段发包与服务器寻路节奏冲突致走路失效
-      var dest = mvSnapWalkable(moveXY.tx, moveXY.ty); // 终点在墙/障碍上时 3×3 就近吸附可走格
+      // 坐标走路修复（V2.15.11）：跟随同款渐进走——pathFindTo 取沿路径约 5 格处中间点发包，
+      // 服务器每次只收到近距离移动请求（直发终点超远被服务器拒收 → 客户端本地预测假到达 → 角色不动却提示已到达）
+      var r = pathFindTo(moveXY.tx, moveXY.ty);
+      var dest = (r && isFinite(r.x) && isFinite(r.y)) ? [r.x, r.y] : mvSnapWalkable(moveXY.tx, moveXY.ty); // 寻路失败回退吸附终点
       var pm = new CLIENT.PS.CZ.REQUEST_MOVE();
       pm.dest = [dest[0], dest[1]];
       CLIENT.NM.sendPacket(pm);

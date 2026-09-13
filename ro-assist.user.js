@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.12
+// @version      2.15.13
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -39,7 +39,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.12"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.13"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -8948,6 +8948,8 @@
     if (!IS_MN) return;
     var HEAL_KEY = 'lro_heal_v269';
     var alive = true;
+    var healCancelled = false; // V2.15.13 用户点 × 关闭 → 取消排队刷新、本次不再自动弹
+    var healReloadTimer = null; // 排队中的自动刷新定时器（× 关闭时取消）
     function log(m) { try { console.log('[RO助手]自愈 ' + m); } catch (e) {} }
     function show(msg, sticky) {
       try {
@@ -8966,12 +8968,29 @@
         retry.textContent = '点击重试(清缓存刷新)';
         retry.onclick = function () { try { sessionStorage.removeItem(HEAL_KEY); } catch (e) {} runHeal(); };
         d.appendChild(retry);
+        var close = document.createElement("div");
+        close.textContent = "×";
+        close.title = "关闭（不清理缓存）";
+        close.style.cssText = "position:absolute;top:2px;right:8px;font-size:18px;line-height:1;color:#8a93a6;cursor:pointer;padding:6px 10px";
+        close.onclick = function () {
+          try { if (d.parentNode) d.parentNode.removeChild(d); } catch (e) {}
+          healCancelled = true;
+          if (healReloadTimer) { clearTimeout(healReloadTimer); healReloadTimer = null; }
+          log("toast closed by user");
+        };
+        d.appendChild(close);
         document.documentElement.appendChild(d);
         if (!sticky) setTimeout(function () { try { d.parentNode.removeChild(d); } catch (e) {} }, 12000);
       } catch (e) {}
     }
     function groupsExist() {
       try { var l = document.querySelector('#ServerBox .list'); return !!(l && l.children && l.children.length > 0); } catch (e) { return false; }
+    }
+    // V2.15.13：游戏加载成功信号 = 服务器列表出现 或 客户端渲染画布出现（引擎已加载）
+    function bootOk() {
+      try { if (groupsExist()) return true; } catch (e) {}
+      try { var cv = document.querySelector("canvas"); if (cv && cv.width > 50 && cv.height > 50) return true; } catch (e) {}
+      return false;
     }
     function clearSWCache() {
       var p = [];
@@ -8994,11 +9013,13 @@
       return Promise.all(p);
     }
     function runHeal() {
+      if (healCancelled) return; // V2.15.13 用户已关闭 → 不再清缓存刷新
       var done = false;
       try { done = sessionStorage.getItem(HEAL_KEY) === '1'; } catch (e) {}
       if (!done) show('检测到加载卡住:正在清除旧缓存并刷新,请稍候(需重新下载约3MB客户端)', true);
       clearSWCache().then(function () {
-        setTimeout(function () {
+        healReloadTimer = setTimeout(function () {
+          if (healCancelled) return; // V2.15.13 已关闭 → 不刷新
           try { if (!done) sessionStorage.setItem(HEAL_KEY, '1'); } catch (e) {}
           log('reload');
           try { location.reload(); } catch (e) {}
@@ -9021,6 +9042,7 @@
     // 2) 捕获 require 超时/脚本错误 = 确定性启动失败,直接清缓存自愈
     window.addEventListener('error', function (ev) {
       try {
+        if (bootOk()) return; // V2.15.13 游戏已进入画面 → 运行期脚本报错不再触发清缓存刷新
         var s = String((ev && ev.message) || ev.error || '').toLowerCase();
         if (/(load timeout|script error|scripterror|timeout for modules)/.test(s)) {
           log('捕获启动错误: ' + String((ev && ev.message) || ev.error).slice(0, 140));
@@ -9033,7 +9055,7 @@
     setInterval(function () {
       try {
         if (!alive) return;
-        if (groupsExist()) { alive = false; return; }
+        if (bootOk()) { alive = false; return; } // V2.15.13 服务器列表或游戏画面出现即正常
         if (Date.now() - t0 > 150000) {
           alive = false;
           var done = false;

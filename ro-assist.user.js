@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.24
+// @version      2.15.25
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -39,7 +39,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.24"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.25"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -5695,6 +5695,17 @@
       zAtkLast.at = now;
     } catch (e) {}
   }
+  // V2.15.25：注入内挂——换目标时发一次锁定（REQUEST_ACT），客户端箭头/内挂跟随助手目标（挂机双轨一致，与走路机制无关）
+  function sendLockInject(gid) {
+    try {
+      if (!clientReady() || !gid) return;
+      var p = new CLIENT.PS.CZ.REQUEST_ACT();
+      p.targetGID = gid;
+      p.action = npNoCtrlOn() ? 7 : 0;
+      CLIENT.NM.sendPacket(p);
+      if (btDiagOn) btLog('lock-inject', 'gid=' + gid + ' action=' + p.action + '（内挂目标跟随）');
+    } catch (e) {}
+  }
   // 客户端 A* 避障寻路：从玩家到目标点，返回沿路径约 5 格处的移动目标点（含路径点数）
   function pathFindTo(tx, ty) {
     try {
@@ -5743,7 +5754,7 @@
       var beingHit = (now - zHpWatch.lastHitAt) < 3000; // 被攻击中
       var onaMode = $id("dsh-z-ona") ? $id("dsh-z-ona").value : "还击";
       var allowHitTarget = beingHit && onaMode === "还击"; // 被攻击且设置为还击 → 非锁定怪也追
-      var near = null, nearD = 1e9;
+      var near = null, nearD = 1e9, nearHp = 1e18; // V2.15.25：nearHp=最近候选绝对剩余HP（血少优先抢尾刀）
       if (EM && EM.forEach) {
         EM.forEach(function (e) {
           try {
@@ -5755,7 +5766,9 @@
             if (anyLock && mid && !lockList[mid] && !allowHitTarget) return;
             if (!ent.position || !e.position) return;
             var d = Math.abs(e.position[0] - ent.position[0]) + Math.abs(e.position[1] - ent.position[1]);
-            if (d < nearD) { nearD = d; near = e; }
+            // V2.15.25：血少优先（绝对剩余HP）→ 血量相同按距离近优先；读不到血量按极大排最后
+            var hpNow = (e.life && e.life.hp != null) ? e.life.hp : 1e18;
+            if (!near || hpNow < nearHp || (hpNow === nearHp && d < nearD)) { near = e; nearD = d; nearHp = hpNow; }
           } catch (e2) {}
         });
       }
@@ -6030,7 +6043,7 @@
       }
       var zFollow = !$id("dsh-z-follow") || $id("dsh-z-follow").checked; // 锁定目标跟随追击
       var zNext = !$id("dsh-z-next") || $id("dsh-z-next").checked;       // 打死换下一个
-      var target = null, best = 1e9;
+      var target = null, best = 1e9, bestHp = 1e18; // V2.15.25：bestHp=当前选中怪的绝对剩余HP（血少优先抢尾刀）
       var hitTarget = null, hitBest = 1e9;
       // 锁定模式：已锁定目标 → 只认锁定目标（固定 GID 持续攻击，防目标漂移），不重新扫描选最近
       var lockAliveOutside = false; // V2.7.2：锁定怪仍在但超攻击距离（np 模式下不解锁）
@@ -6077,7 +6090,11 @@
             var d = Math.abs(e.position[0] - ent.position[0]) + Math.abs(e.position[1] - ent.position[1]);
             if (inLock) {
               // 锁定怪：攻击距离内直接打（atkRange）；超出但寻怪范围内 → 由 zWalk 追击
-              if (d <= atkRange && d < best) { best = d; target = e; }
+              // V2.15.25：血少优先（绝对剩余HP，抢尾刀）→ 血量相同按距离近优先；读不到血量按极大排最后
+              if (d <= atkRange) {
+                var hpNow = (e.life && e.life.hp != null) ? e.life.hp : 1e18;
+                if (!target || hpNow < bestHp || (hpNow === bestHp && d < best)) { target = e; best = d; bestHp = hpNow; }
+              }
             } else {
               // 非锁定怪：仅用于「还击」候选（攻击距离内最近的）
               if (d <= atkRange && d < hitBest) { hitBest = d; hitTarget = e; }
@@ -6090,6 +6107,7 @@
           zLock.name = (target.display && target.display.name) || String(target._job != null ? target._job : target.GID);
           zLock.dist = best;
           zLock.reactive = false;
+          if (btDiagOn) { try { var pH = (target.life && target.life.hp != null) ? target.life.hp : -1; btLog('pick', '锁定 ' + zLock.name + ' gid=' + target.GID + ' hp=' + pH + ' d=' + best); } catch (e3) {} }
         }
       }
       // V2.15.23：坐下被攻击应对（dsh-z-sitxw：无视/还击/瞬移/逃脱）——需要坐下且被打（锁定+非锁定怪都算）→ 优先于非选中怪/锁定判断
@@ -6142,6 +6160,9 @@
           zTargetSwitchAt = now + switchDelay;
           zLockCounts = {}; // V1.7.5 换目标 → 锁定次数清零重计
           zCastIdx = 0;     // V1.7.5 换目标 → 轮换游标从头开始
+          // V2.15.25：注入内挂——换目标时发一次锁定让客户端/内挂跟随助手目标；注入即锁定，普攻节流让位防双包
+          sendLockInject(target.GID);
+          zAtkLast.gid = target.GID; zAtkLast.at = now;
         }
         if (now < zTargetSwitchAt) { zMon.action = "换怪延迟"; return; } // 延迟窗口内等待（换怪延迟）
       } else {

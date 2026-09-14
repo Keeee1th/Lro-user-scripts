@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.26
+// @version      2.15.27
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -39,7 +39,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.26"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.27"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -775,6 +775,10 @@
       '<div class="sec">自动装箭矢（V2.15.26：箭矢耗尽自动补）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-arrowen" type="checkbox">箭矢耗尽时用魔法箭袋(2000030)放箭并装上装备栏</label></div>' +
       '<div class="row"><span class="st" id="dsh-arrowlog" style="font-size:10px">未启用</span></div>' +
+      '<div class="sec">背包快照定期上报（V2.15.27）</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-invshot" type="checkbox" checked>开启定期上报</label>' +
+      '<span class="lb" style="margin-left:8px">间隔</span><input id="dsh-invshotint" type="number" value="120" style="flex:0 0 44px"><span style="color:#5a6b7f">秒</span></div>' +
+      '<div class="row"><span class="st" id="dsh-invshotlog" style="font-size:10px"></span></div>' +
       '<div class="sec">辅助对象 · 自动跟随玩家</div>' +
       '<div class="row"><span class="lb">跟随目标</span><select id="dsh-followtarget" style="flex:0 0 auto;max-width:140px"><option value="">选择玩家…（侦测）</option></select>' +
       '<button class="ghost" id="dsh-followscan" style="flex:0 0 auto">🔄 刷新</button></div>' +
@@ -2400,6 +2404,15 @@
         el.scrollTop = el.scrollHeight;
       }
       console.log('[BT-DIAG] ' + line);
+      // V2.15.27：诊断行自动上报接收服务（同 tag 5s 限 1 条防刷）
+      try {
+        var t5 = Date.now();
+        if (!btLog._t) btLog._t = {};
+        if (!btLog._t[tag] || t5 - btLog._t[tag] > 5000) {
+          btLog._t[tag] = t5;
+          ingest({ type: "diag", tag: tag, msg: msg, map: (typeof getMapName === "function") ? getMapName() : "", ts: new Date().toISOString() });
+        }
+      } catch (e2) {}
     } catch (e) {}
   }
   function btState(t) { try { var el = $id('dsh-bt-state'); if (el) el.textContent = '诊断: ' + (t || (btDiagOn ? '开' : '关')); } catch (e) {} }
@@ -2555,7 +2568,7 @@
     ["dsh-z-sitxw", "v"], ["dsh-z-sitback", "c"], ["dsh-z-sitnofight", "c"],
     ["dsh-z-attint", "v"], ["dsh-z-range", "v"], ["dsh-z-pmrange", "v"], ["dsh-z-mgrange", "v"],
     ["dsh-z-switchdelay", "v"], ["dsh-z-walkint", "v"], ["dsh-z-chaseint", "v"], ["dsh-z-huntmode", "v"], ["dsh-z-follow", "c"], ["dsh-z-next", "c"],
-    ["dsh-arrowen", "c"],
+    ["dsh-arrowen", "c"], ["dsh-invshot", "c"], ["dsh-invshotint", "v"],
     ["dsh-autoskill", "v"], ["dsh-autoskilllv", "v"], ["dsh-autoskillpro", "v"],
 
     ["dsh-automatic", "v"], ["dsh-touchskill", "v"], ["dsh-touchskillop", "c"],
@@ -3854,6 +3867,38 @@
   }
   masterTickReg(function () { try { tickArrow(); } catch (e) {} });
   if (saved.arrowEn) { var ae = $id("dsh-arrowen"); if (ae) ae.checked = true; }
+
+  // ---------------- 背包快照定期上报（V2.15.27：复用仓库查询读取，到点上报道本机采集服务）----------------
+  var invShotLast = 0, invShotSent = 0, invShotFail = 0;
+  function renderInvShot() {
+    try { var el = $id("dsh-invshotlog"); if (el) el.textContent = "已上报 " + invShotSent + " 次" + (invShotFail ? "，失败 " + invShotFail + " 次" : ""); } catch (e) {}
+  }
+  function tickInvShot() {
+    try {
+      if (!clientReady()) return;
+      var en = $id("dsh-invshot"); if (!en || !en.checked) return;
+      var int = parseInt($id("dsh-invshotint") ? $id("dsh-invshotint").value : "120", 10);
+      if (!(int > 0)) int = 120;
+      var now = Date.now();
+      if (now - invShotLast < int * 1000) return;
+      invShotLast = now;
+      try { readStorageAndInventory(); } catch (e) {} // 复用仓库查询读取（背包必有，仓库需开窗）
+      var data = {};
+      try { data = JSON.parse(localStorage.getItem("dsh_ro_inventory_v1") || "{}"); } catch (e) {}
+      var account = (typeof getInventoryAccount === "function") ? getInventoryAccount() : "";
+      var charName = (typeof getCurrentCharName === "function") ? getCurrentCharName() : "";
+      var acc = (data[account] || {}), ch = (acc.characters || {})[charName] || {};
+      var bag = ch.bag || null, sto = acc.storage || null;
+      if (!bag && !sto) return;
+      if (typeof fetch !== "function") return;
+      fetch(INGEST_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "invshot", account: account, charName: charName, bag: bag, storage: sto, ts: new Date().toISOString() }) })
+        .then(function (r) { if (r && r.ok) invShotSent++; else invShotFail++; renderInvShot(); })
+        .catch(function () { invShotFail++; renderInvShot(); });
+    } catch (e) {}
+  }
+  masterTickReg(function () { try { tickInvShot(); } catch (e) {} });
+  try { renderInvShot(); } catch (e) {}
+  if (saved.invshot === false) { var iv = $id("dsh-invshot"); if (iv) iv.checked = false; }
 
   // ---------------- B5：自动使用技能（点选技能栏主动辅助 · 调序）----------------
   var askList = (function () {
@@ -8260,10 +8305,19 @@
   // ---- V2.8.7 任务树采集 + 自动上报（Tailscale → 电脑接收服务）----
   var reconSteps = [];
   var ingestOk = 0, ingestFail = 0;
-  var INGEST_URL = "https://node.tail05bb10.ts.net/";
+  var INGEST_URL = "http://127.0.0.1:8974/"; // V2.15.27：PC 网页版直连本机接收服务（ro-collect.cjs 空闲自退随脚本生命周期；旧手机端曾用 Tailscale 域名）
+  var collectOnline = null;
+  function probeCollect() {
+    try {
+      if (typeof fetch !== "function") return;
+      fetch(INGEST_URL).then(function (r) { collectOnline = !!(r && r.ok); renderIngest(); }).catch(function () { collectOnline = false; renderIngest(); });
+    } catch (e) {}
+  }
   function renderIngest() {
     var el = $id("dsh-menu-status");
-    if (el) el.textContent = "自动上报：成功 " + ingestOk + " 条" + (ingestFail ? "，失败 " + ingestFail + " 条（下次抓到会重试）" : "");
+    if (!el) return;
+    var st = collectOnline === true ? "服务在线" : (collectOnline === false ? "采集服务未运行" : "检测中");
+    el.textContent = "采集" + st + " · 上报成功 " + ingestOk + " 条" + (ingestFail ? "，失败 " + ingestFail + " 条" : "");
   }
   function ingest(payload) {
     try {
@@ -8276,6 +8330,9 @@
         .catch(function () { ingestFail++; renderIngest(); });
     } catch (e) { ingestFail++; }
   }
+  // V2.15.27：采集服务心跳（20s 探测，维持服务活跃并显示在线状态）
+  setInterval(function () { try { probeCollect(); } catch (e) {} }, 20000);
+  try { probeCollect(); } catch (e) {}
   function pushStep(kind, text, menu, map, npcName, gid, pos) {
     var g = (gid != null) ? gid : ((lastTalkNpc && lastTalkNpc.GID != null) ? lastTalkNpc.GID : 0);
     var step = { kind: kind, text: text || "", menu: menu || null, map: map || getMapName(), npcName: npcName || "", gid: g, pos: pos || null, ts: Date.now() };

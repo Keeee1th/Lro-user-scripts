@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.23
+// @version      2.15.24
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -39,7 +39,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.23"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.24"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -5664,6 +5664,9 @@
   var zPrepAt = 0;
   // 技能释放最小间隔：放完一次技能（含补状态）后 800ms 内不再放 → 转 wait 穿插普攻（避免技能链霸占每轮）
   var zLastCastAt = 0;
+  var zLastCastSkid = 0; // V2.15.24：最近一次释放的技能ID（配合 skillDelay 用真实后摇等待）
+  var skillDelay = {};   // V2.15.24：服务器下发真实后摇表 ZC.SKILL_POSTDELAY 0x43d / _LIST 0x43e（SKID→延迟ms）
+  try { window.__dshSkillDelay = skillDelay; } catch (e) {} // 供控制台/探针查看
   // 被攻击检测：HP 下降窗口 → 触发「非选中怪攻击」处理（无视/瞬移/还击）
   var zHpWatch = { hp: null, lastHitAt: 0 };
   // ---------- V2.7.3 平A断续修复：NOCTRL 模式发包 ----------
@@ -6678,9 +6681,13 @@
     if (!target || !target.position) return "wait";
     var ent = CLIENT.SS.Entity;
     if (!ent || !ent.position) return "wait";
-    // 技能释放最小间隔：上次释放（含补状态）后 800ms 内技能层不动作 → 返回 "wait-cd"（技能冷却窗口），
+    // 技能释放最小间隔：默认上次释放（含补状态）后 800ms 内技能层不动作 → 返回 "wait-cd"（技能冷却窗口），
     // 由外层「穿插平A」开关决定是否普攻——技能释放冷却只约束技能层，不影响普攻层
-    if (Date.now() - zLastCastAt < 800) return "wait-cd";
+    // V2.15.24：服务器下发过该技能真实后摇（skillDelay）则按真实值等（最低保底 800ms 防霸占轮次）；
+    // 查不到表退回原 800ms——一次一发、等满后摇，消除无效补发点击 → 缓解服务器点击限制
+    var pdl = skillDelay[zLastCastSkid] || 0;
+    var cdWait = pdl > 0 ? Math.max(pdl, 800) : 800;
+    if (Date.now() - zLastCastAt < cdWait) return "wait-cd";
     var d = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]);
     var prereqEn = $id("dsh-prereq") ? $id("dsh-prereq").checked : true;
     var blocked = null; // 第一个前置不满足的技能（{o, condStr}，合流阶段才补它的前置）
@@ -6746,6 +6753,7 @@
           dshCastMark(o.skid, realLv, ent.GID || 0, "zhu");
           CLIENT.NM.sendPacket(ps);
           zLastCastAt = Date.now(); // 记录技能释放时间（触发最小间隔 → 间隙穿插普攻）
+          zLastCastSkid = o.skid; // V2.15.24：记本次技能 → 下轮按真实后摇等待
           zUseCounts[o.skid] = (zUseCounts[o.skid] || 0) + 1; // V1.7.0 maxUses 计数
           zLockCounts[o.skid] = (zLockCounts[o.skid] || 0) + 1; // V1.7.5 锁定次数计数
           zCastIdx = (i + 1) % orderLen; // V1.7.5 轮换游标：下轮从本技能之后开始扫
@@ -6769,6 +6777,7 @@
         dshCastMark(o.skid, realLv, target.GID, "zhu");
         CLIENT.NM.sendPacket(p);
         zLastCastAt = Date.now(); // 记录技能释放时间（触发最小间隔 → 间隙穿插普攻）
+        zLastCastSkid = o.skid; // V2.15.24：记本次技能 → 下轮按真实后摇等待
         zUseCounts[o.skid] = (zUseCounts[o.skid] || 0) + 1; // V1.7.0 maxUses 计数
         zLockCounts[o.skid] = (zLockCounts[o.skid] || 0) + 1; // V1.7.5 锁定次数计数
         zCastIdx = (i + 1) % orderLen; // V1.7.5 轮换游标：下轮从本技能之后开始扫
@@ -6780,7 +6789,7 @@
     // 合流：无射程内可放技能 → 超射程的走近再放 > 补第一个被挡技能的前置 > 等（外层普攻穿插）
     if (walkSk) return "walk";
     if (blocked) {
-      if (castStatusPrep(blocked.condStr, order)) { zLastCastAt = Date.now(); return true; }
+      if (castStatusPrep(blocked.condStr, order)) { zLastCastAt = Date.now(); zLastCastSkid = 0; return true; } // V2.15.24：补状态技能ID未知 → 退回 800ms 兜底
     }
     // 全部技能被状态前置挡住且补状态节流/不可用 → 等（外层 wait 分支穿插普攻）
     return "wait";
@@ -8454,7 +8463,32 @@
       if (op === 183) onMenuList(bytes);
       else if (op === 180) onSayDialog(bytes);
       else if (op === 182) onCloseDialog();
+      else if (op === 0x43d || op === 0x43e) onSkillPostDelay(bytes, op);
       else onRawOpcode(bytes, op);
+    } catch (e) {}
+  }
+  // V2.15.24：拦截服务器下发的技能真实后摇（ZC.SKILL_POSTDELAY 0x43d 单技能 / 0x43e 批量列表）
+  // 存 skillDelay[SKID]=延迟ms → 攻击循环按真实后摇一次一发（消除无效补发点击 → 缓解服务器点击限制）
+  function onSkillPostDelay(bytes, op) {
+    try {
+      var dv = new DataView(bytes);
+      var msg;
+      if (op === 0x43d) {
+        var skid = dv.getUint16(2, true);
+        var dly = dv.getUint32(4, true);
+        skillDelay[skid] = dly;
+        msg = 'skid=' + skid + ' delay=' + dly + 'ms';
+      } else {
+        // 0x43e：无长度字段，按 (包长-2)/6 逐条解析（每条 SKID ushort + DelayTM ulong）
+        var cnt = Math.floor((bytes.byteLength - 2) / 6);
+        for (var i = 0; i < cnt; i++) {
+          var o = 2 + i * 6;
+          skillDelay[dv.getUint16(o, true)] = dv.getUint32(o + 2, true);
+        }
+        msg = 'list=' + cnt + ' 条（累计 ' + Object.keys(skillDelay).length + ' 个技能）';
+      }
+      console.log('[POSTDELAY] ' + msg);
+      if (btDiagOn) btLog('post-delay', msg);
     } catch (e) {}
   }
   function onReconInbound(data) {

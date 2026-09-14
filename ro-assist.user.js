@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.22
+// @version      2.15.23
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -39,7 +39,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.22"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.23"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -5102,6 +5102,45 @@
       }
     } catch (e) {}
   }
+  // V2.15.23：逃脱=直接移动避开怪（往远离最近怪的方向走，A* 避障；4s 内不重复发；逃脱中 zWalk 让位）
+  function walkEscape(att) {
+    try {
+      var nowE = Date.now();
+      if (zEscape.until > nowE) return; // 已在逃脱中（上次移动未完）
+      var entE = CLIENT.SS && CLIENT.SS.Entity;
+      if (!entE || !entE.position) return;
+      if (!att) {
+        // 攻击者未知 → 扫 EM 最近的怪当方向参照
+        try {
+          var EM2 = window.require("Renderer/EntityManager");
+          var bestE = 1e9;
+          EM2.forEach(function (e2) {
+            try {
+              if (e2.objecttype !== 5 || e2.isDeath || !e2.position) return;
+              if (e2.ACTION && e2.action != null && e2.action === e2.ACTION.DIE) return;
+              var d2 = Math.abs(e2.position[0] - entE.position[0]) + Math.abs(e2.position[1] - entE.position[1]);
+              if (d2 < bestE) { bestE = d2; att = e2; }
+            } catch (e3) {}
+          });
+        } catch (e3) {}
+      }
+      if (!att || !att.position) return;
+      var dx = entE.position[0] - att.position[0];
+      var dy = entE.position[1] - att.position[1];
+      var adx = Math.abs(dx), ady = Math.abs(dy);
+      var sx = dx > 0 ? 1 : (dx < 0 ? -1 : 0);
+      var sy = dy > 0 ? 1 : (dy < 0 ? -1 : 0);
+      var tx = entE.position[0] + (adx >= ady ? sx * 8 : 0);
+      var ty = entE.position[1] + (adx >= ady ? 0 : sy * 8);
+      var dest = pathFindTo(tx, ty) || [tx, ty];
+      var pmE = new CLIENT.PS.CZ.REQUEST_MOVE();
+      pmE.dest = [dest[0], dest[1]];
+      CLIENT.NM.sendPacket(pmE);
+      zEscape.until = nowE + 4000;
+      zWalkState.lastPos = null; zWalkState.stuckCnt = 0; zWalkState.tried = 0;
+      tlog("escape-walk 远离怪 " + (att._job != null ? att._job : att.GID) + " -> " + dest[0] + "," + dest[1]);
+    } catch (e) {}
+  }
   function lockAct(act, ms) {
     try {
       var now = Date.now();
@@ -5617,6 +5656,7 @@
   }
   masterTickReg(function () { try { tickRein(); } catch (e) {} });
   var zWalkState = { lastMove: 0, lastChase: 0, dir: 0, noTargetSince: 0, lastIdleFly: 0, lastPos: null, stuckCnt: 0, tried: 0, lastSeenDir: null, lastSeenAt: 0 };
+  var zEscape = { until: 0 };                 // V2.15.23：逃脱状态（坐下被打→移动避开怪，期间不寻怪不打怪）
   var zAStarState = { active: false, tx: 0, ty: 0, since: 0, lastTry: 0, stuckSince: 0, lastPos: null, aim: null }; // V2.10.0 A* 绕障行走状态
   // 状态前置穿插平A计时：zWaitSince = 上次穿插普攻时间（间隔跟随攻击循环，见 zAttack wait 分支）
   var zWaitSince = 0;
@@ -5676,6 +5716,7 @@
     try {
       if (!clientReady()) return;
       if (moveXY.busy) return; // 手动坐标走路中 → 自动寻怪走位让位
+      if (zEscape.until > Date.now()) return; // V2.15.23：逃脱中（移动避开怪）→ 不寻怪不打怪
       if (pendingPick) { try { zMon.action = "拾取物品中"; } catch (e) {} return; } // V2.15.16：有拾取任务在身 → 寻怪让位（防拾取移动包被寻怪覆盖）
       var ent = CLIENT.SS.Entity;
       if (!ent || !ent.position) return;
@@ -6046,6 +6087,29 @@
           zLock.name = (target.display && target.display.name) || String(target._job != null ? target._job : target.GID);
           zLock.dist = best;
           zLock.reactive = false;
+        }
+      }
+      // V2.15.23：坐下被攻击应对（dsh-z-sitxw：无视/还击/瞬移/逃脱）——需要坐下且被打（锁定+非锁定怪都算）→ 优先于非选中怪/锁定判断
+      if (needSitNow() && beingHit) {
+        var sitxwMode = ($id("dsh-z-sitxw") && $id("dsh-z-sitxw").value) || "无视";
+        if (sitxwMode === "瞬移" && !($id("dsh-z-flykill") && !$id("dsh-z-flykill").checked)) {
+          doFly(); zMon.action = "坐下被打，瞬移脱离"; setStatus("坐下被打，瞬移脱离…", "warn"); return;
+        }
+        else if (sitxwMode === "逃脱") {
+          walkEscape(hitTarget || target);
+          zMon.action = "坐下被打，移动逃脱";
+          setStatus("坐下被打，移动避开…", "warn");
+          return;
+        }
+        else if (sitxwMode === "还击") {
+          if (!target && hitTarget) {
+            target = hitTarget;
+            zLock.gid = hitTarget.GID;
+            zLock.name = (hitTarget.display && hitTarget.display.name) || String(hitTarget._job != null ? hitTarget._job : hitTarget.GID);
+            zLock.dist = hitBest;
+            zLock.reactive = true;
+          }
+          // 有锁定攻击者(target) → 直接打；无视 → 不理会继续循环（zWalk 会尝试再坐）
         }
       }
       // 被攻击处理（非选中怪攻击）：有锁定目标 → 正常打锁定；无锁定目标但被攻击 → 按设置处理

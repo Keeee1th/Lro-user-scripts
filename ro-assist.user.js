@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.20
+// @version      2.15.21
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -39,7 +39,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.20"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.21"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -642,6 +642,8 @@
       '<div class="row"><span class="lb">非选中怪攻击</span><select id="dsh-z-ona" style="flex:0 0 100px"><option>无视</option><option>瞬移</option><option selected>还击</option></select></div>' +
       '<div class="row"><span class="lb">群殴时</span><span style="color:#5a6b7f">n≥</span><input id="dsh-z-grp" type="number" value="6" min="0" style="flex:0 0 38px"><span style="color:#5a6b7f">只怪（0=关闭）→</span>' +
       '<select id="dsh-z-grpact" style="flex:0 0 88px"><option>解围技能</option><option selected>瞬移</option></select></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-z-flygrp" type="checkbox">群殴自动瞬移</label>' +
+      '<label class="switch"><input id="dsh-z-flykill" type="checkbox" checked>防御瞬移总开关</label></div>' +
       '<div class="row"><span class="lb">瞬移方式</span><select id="dsh-z-flymode" style="flex:0 0 120px"><option>翅膀→瞬移术</option><option>苍蝇翅膀优先</option><option>瞬移术Lv1</option><option selected>瞬移术→翅膀</option></select>' +
       '<label class="switch"><input id="dsh-z-flyauto" type="checkbox" checked>无翅膀自动瞬移术</label></div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-flystuck" type="checkbox">卡死自动瞬移(助手战斗中·10s)</label></div>' +
@@ -2544,6 +2546,7 @@
     ["dsh-z-ona", "v"], ["dsh-z-grp", "v"], ["dsh-z-grpact", "v"],
     ["dsh-z-flymode", "v"], ["dsh-z-flyauto", "c"], ["dsh-z-flystuck", "c"],
     ["dsh-z-idlefly", "c"], ["dsh-z-idleflysec", "v"], ["dsh-z-bossfly", "c"], ["dsh-z-flyint", "v"],
+    ["dsh-z-flygrp", "c"], ["dsh-z-flykill", "c"],
     ["dsh-z-hpfly", "v"], ["dsh-z-spfly", "v"], ["dsh-z-hpout", "v"], ["dsh-z-keep", "v"],
     ["dsh-z-sit", "c"], ["dsh-z-sithplo", "v"], ["dsh-z-sithphi", "v"], ["dsh-z-sitsplo", "v"], ["dsh-z-sitsphi", "v"],
     ["dsh-z-sitxw", "v"], ["dsh-z-sitback", "c"], ["dsh-z-sitnofight", "c"],
@@ -5077,8 +5080,8 @@
             return; // 已施放解围，本轮不做其他防御
           }
         }
-        // V1.9.4：群殴瞬移取消独立开关（dsh-z-flygrp 已删）——grp>0 且 grpact=「瞬移」即启用
-        if (grpAct === "瞬移" && isCombatMap) {
+        // V2.16.0：群殴自动瞬移恢复独立开关（dsh-z-flygrp，默认关）——grp>0 且 grpact=「瞬移」且勾选才启用
+        if (grpAct === "瞬移" && isCombatMap && $id("dsh-z-flygrp") && $id("dsh-z-flygrp").checked) {
           needFly = true;
           reason = "群殴(" + mobs.length + "只)";
         }
@@ -5107,6 +5110,8 @@
         }
       }
       if (isCombatMap && zRunning && $id("dsh-z-flystuck").checked && zStuckSince && (now - zStuckSince > 10000)) { needFly = true; reason = "卡死10s"; }
+      // V2.16.0：防御瞬移总开关（dsh-z-flykill，默认开）——关掉后群殴/BOSS/低血/SP/被围/卡死/坐下看门狗全部不再瞬移，坐下回血不受影响
+      if ($id("dsh-z-flykill") && !$id("dsh-z-flykill").checked) needFly = false;
       if (needFly) {
         // V1.9.4：doFly 失败计数（无翅膀/无瞬移术/SP不足）——3 次后 10s 冷却防空转
         var flyOk = doFly();
@@ -5669,7 +5674,8 @@
         return;
       }
       // 无锁定怪持续 N 秒 → 自动瞬移换位置（苍蝇/瞬移术）
-      var idleFly = $id("dsh-z-idlefly") && $id("dsh-z-idlefly").checked;
+      // V2.16.0：防御瞬移总开关关 → 无目标持续自动瞬移停用
+      var idleFly = $id("dsh-z-idlefly") && $id("dsh-z-idlefly").checked && !($id("dsh-z-flykill") && !$id("dsh-z-flykill").checked);
       if (idleFly) {
         if (!zWalkState.noTargetSince) zWalkState.noTargetSince = now;
         var idleSec = (parseInt($id("dsh-z-idleflysec").value, 10) || 10) * 1000;
@@ -5962,7 +5968,7 @@
       }
       // 被攻击处理（非选中怪攻击）：有锁定目标 → 正常打锁定；无锁定目标但被攻击 → 按设置处理
       if (!target && beingHit && hitTarget) {
-        if (onaMode === "无视") { /* 不反击，继续寻怪 */ }
+        if (onaMode === "无视" || (onaMode === "瞬移" && $id("dsh-z-flykill") && !$id("dsh-z-flykill").checked)) { /* 不反击，继续寻怪（总开关关：瞬移按无视处理） */ }
         else if (onaMode === "瞬移") {
           doFly();
           zMon.action = "瞬移脱离";

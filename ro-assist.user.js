@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.21
+// @version      2.15.22
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -39,7 +39,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.21"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.22"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -4994,6 +4994,114 @@
   var potNoPotion = false;                // 喝水无药标记（瀑布：低血无药被围 → 升级瞬移）
   var flyFailCount = 0, flyFailUntil = 0; // 瞬移连续失败冷却（3 次 → 10s 不重试）
   var sitSince = 0, sitHpAt = -1;         // 坐下看门狗（30s 血未回升 → 站起并入瞬移链）
+  var sitSendAt = 0;                      // V2.15.22：坐/立发包节流（1.5s，防多路重复发）
+  var sitStandAt = 0;                     // V2.15.22：被打站起冷却（站起后 5s 内不立刻坐下，防坐-站抖动）
+  // V2.15.22：坐/立直发包（CZ.REQUEST_ACT 2坐/3站，与客户端 /sit 同路径，不依赖界面按钮；按钮仅兜底）
+  function sendSit(down) {
+    try {
+      var nowS = Date.now();
+      if (nowS - sitSendAt < 1500) return;
+      sitSendAt = nowS;
+      try {
+        var p = new CLIENT.PS.CZ.REQUEST_ACT();
+        p.action = down ? 2 : 3;
+        CLIENT.NM.sendPacket(p);
+        tlog("sit-" + (down ? "down" : "up") + "-pkt");
+      } catch (e) {
+        try { var b = document.querySelector(down ? ".sitButton, .btn.sit button" : ".standButton"); if (b) b.click(); } catch (e2) {}
+      }
+    } catch (e) {}
+  }
+  // V2.15.22：游戏窗口(pt-page 弹层)打开判断（弹层打开期间不点坐/站）
+  function isWinOpen() {
+    try {
+      var pgsW = (document.getElementById("vbk") || document).querySelectorAll("[class*='pt-page']");
+      for (var piW = 0; piW < pgsW.length; piW++) {
+        var pstW = getComputedStyle(pgsW[piW]);
+        if (pstW.display === "none") continue;
+        var prW = pgsW[piW].getBoundingClientRect();
+        if (prW.width > 100 && prW.height > 100) return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+  // V2.15.22：当前是否需要坐下（HP/SP 低于坐下阈值且坐开关开）——供无目标瞬移/SP 瞬移让位判断
+  function needSitNow() {
+    try {
+      if (!$id("dsh-z-sit") || !$id("dsh-z-sit").checked) return false;
+      var entN = CLIENT.SS && CLIENT.SS.Entity;
+      var lfN = entN && entN.life;
+      if (!lfN || !lfN.maxhp || !lfN.maxsp) return false;
+      var hpN = lfN.hp / lfN.maxhp * 100;
+      var spN = lfN.sp / lfN.maxsp * 100;
+      var loN = parseInt($id("dsh-z-sithplo").value, 10) || 40;
+      var sLoN = parseInt($id("dsh-z-sitsplo").value, 10) || 30;
+      return hpN < loN || spN < sLoN;
+    } catch (e) { return false; }
+  }
+  // V2.15.22：坐下状态维护——坐下期间被打/回满/30s 看门狗 → 自动站起（无需手动）
+  function sitMaintain() {
+    try {
+      if (!$id("dsh-z-sit") || !$id("dsh-z-sit").checked) return;
+      if (!isSitting()) return;
+      var nowM = Date.now();
+      var entM = CLIENT.SS && CLIENT.SS.Entity;
+      var lifeM = entM && entM.life;
+      if (!lifeM) return;
+      var hpM = lifeM.maxhp > 0 ? lifeM.hp / lifeM.maxhp * 100 : 100;
+      var spM = lifeM.maxsp > 0 ? lifeM.sp / lifeM.maxsp * 100 : 100;
+      var hiM = parseInt($id("dsh-z-sithphi").value, 10) || 80;
+      var sHiM = parseInt($id("dsh-z-sitsphi").value, 10) || 70;
+      var hitM = (nowM - zHpWatch.lastHitAt) < 3000;
+      var winM = isWinOpen();
+      // 被打 → 立刻站起逃生（自动）
+      if (hitM) {
+        sendSit(false);
+        sitSince = 0; sitHpAt = -1;
+        if (actLock.act === "sit") actLock.act = null;
+        sitStandAt = nowM;
+        setStatus("坐下被打，自动站起应战…", "warn");
+        return;
+      }
+      // 回满 → 站起继续
+      if (hpM > hiM && spM > sHiM && !winM) {
+        sendSit(false);
+        sitSince = 0; sitHpAt = -1;
+        if (actLock.act === "sit") actLock.act = null;
+        return;
+      }
+      // 看门狗：坐下 30s 血未回升（坐不住）→ 站起
+      if (sitSince && (nowM - sitSince > 30000) && !winM && hpM <= (sitHpAt >= 0 ? sitHpAt + 2 : hpM)) {
+        sendSit(false);
+        sitSince = 0; sitHpAt = -1;
+        if (actLock.act === "sit") actLock.act = null;
+      }
+    } catch (e) {}
+  }
+  // V2.15.22：坐下周期（战斗循环挂点，不依赖侦查扫描）——无目标时安全才坐；坐下后由 sitMaintain 自动站起
+  function doSitCycle(mobs) {
+    try {
+      sitMaintain();
+      if (isSitting()) return;
+      if (!$id("dsh-z-sit") || !$id("dsh-z-sit").checked) return;
+      if (zLock.gid) return; // 有锁定目标（战斗/还击中）→ 不坐下
+      var entD = CLIENT.SS && CLIENT.SS.Entity;
+      var lifeD = entD && entD.life;
+      if (!lifeD) return;
+      var nowD = Date.now();
+      var hpD = lifeD.maxhp > 0 ? lifeD.hp / lifeD.maxhp * 100 : 100;
+      var spD = lifeD.maxsp > 0 ? lifeD.sp / lifeD.maxsp * 100 : 100;
+      var loD = parseInt($id("dsh-z-sithplo").value, 10) || 40;
+      var sLoD = parseInt($id("dsh-z-sitsplo").value, 10) || 30;
+      var shouldSitD = (hpD < loD || spD < sLoD) && !($id("dsh-z-sitnofight").checked && mobs && mobs.length > 0) && !pendingPick;
+      if (shouldSitD && (nowD - zHpWatch.lastHitAt) >= 3000 && !isWinOpen() && (nowD - sitStandAt > 5000) && isActFreeOnline("sit")) {
+        sendSit(true);
+        sitSince = Date.now(); sitHpAt = hpD;
+        lockAct("sit", 60000);
+        setStatus("HP/SP 低，自动坐下回血(" + Math.round(hpD) + "%/" + Math.round(spD) + "%)…", "st");
+      }
+    } catch (e) {}
+  }
   function lockAct(act, ms) {
     try {
       var now = Date.now();
@@ -5112,6 +5220,11 @@
       if (isCombatMap && zRunning && $id("dsh-z-flystuck").checked && zStuckSince && (now - zStuckSince > 10000)) { needFly = true; reason = "卡死10s"; }
       // V2.16.0：防御瞬移总开关（dsh-z-flykill，默认开）——关掉后群殴/BOSS/低血/SP/被围/卡死/坐下看门狗全部不再瞬移，坐下回血不受影响
       if ($id("dsh-z-flykill") && !$id("dsh-z-flykill").checked) needFly = false;
+      // V2.15.22：SP 低瞬移让位——坐下条件满足且未被围、HP 未到危险线时，SP 瞬移让位给坐下回蓝
+      if (needFly && /^SP/.test(reason) && needSitNow() && mobs.length < 3 && life && life.maxhp > 0 && (life.hp / life.maxhp * 100) >= (parseInt($id("dsh-z-hpfly").value, 10) || 20)) {
+        needFly = false;
+        reason = "";
+      }
       if (needFly) {
         // V1.9.4：doFly 失败计数（无翅膀/无瞬移术/SP不足）——3 次后 10s 冷却防空转
         var flyOk = doFly();
@@ -5120,45 +5233,8 @@
         lastFly = now;
         setStatus("瞬移(" + reason + ")", "warn");
       }
-      // 坐下（V1.9.4：唯一一套=战斗页；与走路/拾取动作互斥 + 30s 血未回升看门狗→站起入瞬移链）
-      if ($id("dsh-z-sit").checked && life) {
-        var hpPct2 = life.maxhp > 0 ? life.hp / life.maxhp * 100 : 100;
-        var spPct2 = life.maxsp > 0 ? life.sp / life.maxsp * 100 : 100;
-        var lo = parseInt($id("dsh-z-sithplo").value, 10) || 40;
-        var hi = parseInt($id("dsh-z-sithphi").value, 10) || 80;
-        var sLo = parseInt($id("dsh-z-sitsplo").value, 10) || 30;
-        var sHi = parseInt($id("dsh-z-sitsphi").value, 10) || 70;
-        var shouldSit = (hpPct2 < lo || spPct2 < sLo) && !($id("dsh-z-sitnofight").checked && mobs.length > 0) && !pendingPick;
-        var winOpen = false; // V2.8.3：游戏窗口(pt-page 弹层)打开期间不点坐/站——防引擎"点外部关窗"把窗口关掉
-        try {
-          var pgs = (document.getElementById("vbk") || document).querySelectorAll("[class*='pt-page']");
-          for (var pi = 0; pi < pgs.length; pi++) {
-            var pst = getComputedStyle(pgs[pi]);
-            if (pst.display === "none") continue;
-            var pr = pgs[pi].getBoundingClientRect();
-            if (pr.width > 100 && pr.height > 100) { winOpen = true; break; }
-          }
-        } catch (e2) {}
-        var sitBtn = document.querySelector(".sitButton, .btn.sit button");
-        var standBtn = document.querySelector(".standButton");
-        if (shouldSit && sitBtn && !defSnap.sitting && isActFreeOnline("sit") && !winOpen) {
-          try { sitBtn.click(); } catch (e) {}
-          sitSince = Date.now(); sitHpAt = hpPct2;
-          lockAct("sit", 60000);
-        }
-        else if (!shouldSit && defSnap.sitting && standBtn && hpPct2 > hi && spPct2 > sHi && !winOpen) {
-          try { standBtn.click(); } catch (e) {}
-          sitSince = 0; sitHpAt = -1;
-          if (actLock.act === "sit") actLock.act = null;
-        }
-        // 看门狗：坐下 30s 血未回升（坐不住）→ 站起；战斗图被围 → 下周期并入瞬移链
-        if (defSnap.sitting && sitSince && (now - sitSince > 30000) && !winOpen && hpPct2 <= (sitHpAt >= 0 ? sitHpAt + 2 : hpPct2)) {
-          try { if (standBtn) standBtn.click(); } catch (e) {}
-          sitSince = 0; sitHpAt = -1;
-          if (actLock.act === "sit") actLock.act = null;
-          if (isCombatMap && mobs.length > 0 && !needFly) { needFly = true; reason = "坐下不回血避战"; }
-        }
-      }
+      // V2.15.22：坐下周期（战斗循环挂点，不依赖侦查扫描）——无目标时安全才坐；坐下期间被打/回满/看门狗自动站起
+      doSitCycle(mobs);
       // V1.9.4 面板防御状态行
       var dsEl = $id("dsh-defstate");
       if (dsEl) {
@@ -5603,6 +5679,7 @@
       if (pendingPick) { try { zMon.action = "拾取物品中"; } catch (e) {} return; } // V2.15.16：有拾取任务在身 → 寻怪让位（防拾取移动包被寻怪覆盖）
       var ent = CLIENT.SS.Entity;
       if (!ent || !ent.position) return;
+      doSitCycle(scanMobs || []); // V2.15.22：坐下周期（无目标时间；安全才坐，坐下被打自动站起）
       var now = Date.now();
       // 坐下时不启动自动寻怪（内挂发包 + 自研直走都不做）——回血/回蓝期间保持静止
       // 客户端实证：Entity.ACTION.SIT=2，实体字段 ent.action === ent.ACTION.SIT
@@ -5675,7 +5752,8 @@
       }
       // 无锁定怪持续 N 秒 → 自动瞬移换位置（苍蝇/瞬移术）
       // V2.16.0：防御瞬移总开关关 → 无目标持续自动瞬移停用
-      var idleFly = $id("dsh-z-idlefly") && $id("dsh-z-idlefly").checked && !($id("dsh-z-flykill") && !$id("dsh-z-flykill").checked);
+      // V2.15.22：需要坐下时（HP/SP 低于坐下阈值）→ 无目标持续自动瞬移让位，先坐不飞
+      var idleFly = $id("dsh-z-idlefly") && $id("dsh-z-idlefly").checked && !($id("dsh-z-flykill") && !$id("dsh-z-flykill").checked) && !needSitNow();
       if (idleFly) {
         if (!zWalkState.noTargetSince) zWalkState.noTargetSince = now;
         var idleSec = (parseInt($id("dsh-z-idleflysec").value, 10) || 10) * 1000;
@@ -5865,7 +5943,7 @@
   var zLastTargetGID = null, zTargetSwitchAt = 0;
   // 锁定模式（内挂式锁定）：固定一个目标持续攻击，防目标漂移（每轮不再选「最近的」导致打一下换一只）
   //   gid=锁定目标GID；name=显示名；dist=距离；done=「打死换下一个=关」时击杀后停手标志
-  var zLock = { gid: null, name: "", dist: null, done: false };
+  var zLock = { gid: null, name: "", dist: null, done: false, reactive: false };
   // 战斗监控：zAttack 各分支写入当前动作，主循环渲染到游戏正上方浮层 #dsh-ro-z-hud（锁定/动作/HP·SP）
   var zMon = { action: "未启动" };
   // 被攻击检测（轮询）：HP 比上次记录下降 ≥1 → 认为被攻击（记录命中时间）
@@ -5888,6 +5966,7 @@
       //   不解锁、交内挂移动靠近），杜绝「npHuntStop 关内挂⇄zWalk npEnsureHunt 开内挂」每轮拉锯站桩
       var npMode = npHuntMode() === "np";
       updateHpWatch(ent);
+      sitMaintain(); // V2.15.22：坐下期间被打自动站起逃生（战斗循环每 tick，不依赖侦查扫描）
       var EM = window.require("Renderer/EntityManager");
       var range = parseInt($id("dsh-z-range").value, 10) || 12; // 寻怪范围（触发目标考虑）
       // 攻击距离：物理/魔法按技能射程自动选择（普攻=物理距离；技能=技能射程与对应距离取大）
@@ -5931,7 +6010,9 @@
           zMon.action = "锁定怪超出射程（内挂靠近）";
         } else {
           // 目标死亡/丢失 → 解锁；next=关 时击杀后停手（done），否则重新扫描换下一个
-          zLock.done = !zNext;
+          // V2.15.22：还击锁定的怪（reactive）打死必继续寻怪，不套用「打死换下一个=关」
+          zLock.done = !zNext && !zLock.reactive;
+          zLock.reactive = false;
           zLock.gid = null;
           zLockCounts = {}; // V1.7.5 解锁 → 锁定次数清零（重新锁定重计）
           tlog("lock-release done=" + zLock.done);
@@ -5964,6 +6045,7 @@
           zLock.gid = target.GID;
           zLock.name = (target.display && target.display.name) || String(target._job != null ? target._job : target.GID);
           zLock.dist = best;
+          zLock.reactive = false;
         }
       }
       // 被攻击处理（非选中怪攻击）：有锁定目标 → 正常打锁定；无锁定目标但被攻击 → 按设置处理
@@ -5975,7 +6057,15 @@
           setStatus("被非目标怪攻击，瞬移脱离…", "warn");
           return;
         }
-        else { target = hitTarget; setStatus("被攻击，还击 " + (hitTarget.display && hitTarget.display.name || ""), "ok"); }
+        else {
+          target = hitTarget;
+          // V2.15.22：还击锁定攻击者——持续打到死再继续寻怪（不再只打一下；还击怪打死必继续，不套「打死换下一个=关」）
+          zLock.gid = hitTarget.GID;
+          zLock.name = (hitTarget.display && hitTarget.display.name) || String(hitTarget._job != null ? hitTarget._job : hitTarget.GID);
+          zLock.dist = hitBest;
+          zLock.reactive = true;
+          setStatus("被攻击，还击 " + (hitTarget.display && hitTarget.display.name || ""), "ok");
+        }
       }
       // 换怪延迟：目标变化时记录延迟点；延迟窗口内不攻击（等设定秒数再出手）
       var switchDelay = (parseFloat($id("dsh-z-switchdelay").value) || 0.25) * 1000;

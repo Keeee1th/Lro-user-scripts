@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.25
+// @version      2.15.26
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -39,7 +39,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.25"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.26"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -772,6 +772,9 @@
       '<button class="ghost" id="dsh-itemdown" style="flex:0 0 auto">↓下移</button>' +
       '<button class="ghost" id="dsh-itemdel" style="flex:0 0 auto">删除选中</button>' +
       '<label class="switch" style="margin-left:auto"><input id="dsh-itemen" type="checkbox">启用自动使用</label></div></div>' +
+      '<div class="sec">自动装箭矢（V2.15.26：箭矢耗尽自动补）</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-arrowen" type="checkbox">箭矢耗尽时用魔法箭袋(2000030)放箭并装上装备栏</label></div>' +
+      '<div class="row"><span class="st" id="dsh-arrowlog" style="font-size:10px">未启用</span></div>' +
       '<div class="sec">辅助对象 · 自动跟随玩家</div>' +
       '<div class="row"><span class="lb">跟随目标</span><select id="dsh-followtarget" style="flex:0 0 auto;max-width:140px"><option value="">选择玩家…（侦测）</option></select>' +
       '<button class="ghost" id="dsh-followscan" style="flex:0 0 auto">🔄 刷新</button></div>' +
@@ -2552,6 +2555,7 @@
     ["dsh-z-sitxw", "v"], ["dsh-z-sitback", "c"], ["dsh-z-sitnofight", "c"],
     ["dsh-z-attint", "v"], ["dsh-z-range", "v"], ["dsh-z-pmrange", "v"], ["dsh-z-mgrange", "v"],
     ["dsh-z-switchdelay", "v"], ["dsh-z-walkint", "v"], ["dsh-z-chaseint", "v"], ["dsh-z-huntmode", "v"], ["dsh-z-follow", "c"], ["dsh-z-next", "c"],
+    ["dsh-arrowen", "c"],
     ["dsh-autoskill", "v"], ["dsh-autoskilllv", "v"], ["dsh-autoskillpro", "v"],
 
     ["dsh-automatic", "v"], ["dsh-touchskill", "v"], ["dsh-touchskillop", "c"],
@@ -3773,6 +3777,83 @@
   masterTickReg(function () { try { tickItems(); } catch (e) {} });
   if (saved.itemEn) { $id("dsh-itemen").checked = true; hookStatusIcons(); }
   renderItemList();
+
+  // ---------------- 自动装箭矢（V2.15.26）：箭矢耗尽 → 用魔法箭袋(2000030)放箭 → 装到装备栏 ----------------
+  var zArrow = { lastBag: 0, lastEquip: 0, lastLog: "", failBag: 0 };
+  function setArrowLog(msg) {
+    try {
+      if (msg === zArrow.lastLog) return; // 内容不变不重写（防闪）
+      zArrow.lastLog = msg;
+      var el = $id("dsh-arrowlog"); if (el) el.textContent = msg;
+    } catch (e) {}
+  }
+  function readEquippedAmmo() {
+    try {
+      var eq = null;
+      try { eq = window.require && window.require("UI/Components/Equipment/Equipment"); } catch (e1) {}
+      if (!eq && window.requireDB) { try { eq = window.requireDB("UI/Components/Equipment/Equipment"); } catch (e2) {} }
+      var slot = eq && eq.ui && eq.ui.find('.ammo .item[data-index]');
+      var index = slot && slot.length ? Number(slot.attr('data-index')) : null;
+      if (index == null || isNaN(index)) return null; // 空槽/无箭矢槽
+      var item = (eq.getItemByIndex && eq.getItemByIndex(index)) || null;
+      if (!item) return null;
+      var cnt = item.count != null ? item.count : (item.amount != null ? item.amount : 0);
+      return { index: index, count: cnt, itid: item.ITID != null ? item.ITID : item.itemid };
+    } catch (e) { return null; }
+  }
+  function readBagArrows() {
+    var out = [];
+    try {
+      var inv = findInventory();
+      if (!inv) return out;
+      for (var i = 0; i < inv.length; i++) {
+        var it = inv[i] || {};
+        if (it.type !== 10) continue; // 10=箭矢
+        var cnt = it.count != null ? it.count : (it.amount != null ? it.amount : 0);
+        if (Number(cnt) <= 0) continue;
+        out.push({ index: it.index != null ? it.index : i, itid: it.ITID != null ? it.ITID : it.itemid, count: Number(cnt) });
+      }
+    } catch (e) {}
+    return out;
+  }
+  function equipArrow(index) {
+    try {
+      if (!clientReady() || index == null) return false;
+      var p = new CLIENT.PS.CZ.REQ_WEAR_EQUIP();
+      p.index = index;
+      p.wearLocation = 32768; // 箭矢槽（参考 ro-v4-extras MVP 换箭同款机制）
+      CLIENT.NM.sendPacket(p);
+      return true;
+    } catch (e) { return false; }
+  }
+  function tickArrow() {
+    try {
+      if (!clientReady()) return;
+      var en = $id("dsh-arrowen");
+      if (!en || !en.checked) { setArrowLog("未启用"); return; }
+      var now = Date.now();
+      var ammo = readEquippedAmmo();
+      var arrows = readBagArrows();
+      var bagN = arrows.reduce(function (a, b) { return a + b.count; }, 0);
+      // 已装箭矢且未耗尽 → 正常，仅刷新状态
+      if (ammo && ammo.count > 0) { setArrowLog("当前箭矢 ×" + ammo.count + (bagN > 0 ? "，背包箭矢 " + bagN + " 支" : "，背包无箭矢")); return; }
+      // 耗尽：背包有箭矢 → 直接装上
+      if (arrows.length) {
+        if (now - zArrow.lastEquip < 3000) return; // 3s 节流防反复
+        if (equipArrow(arrows[0].index)) { zArrow.lastEquip = now; setArrowLog("箭矢耗尽，已请求装上背包箭矢（余 " + bagN + " 支）"); }
+        return;
+      }
+      // 背包无箭矢 → 用魔法箭袋(2000030)放箭
+      if (now - zArrow.lastBag < 2000) return; // 2s 节流
+      if (useItemById(2000030)) { zArrow.lastBag = now; zArrow.failBag = 0; setArrowLog("箭矢耗尽且背包无箭，使用魔法箭袋(2000030)…"); }
+      else {
+        zArrow.failBag++;
+        setArrowLog(zArrow.failBag >= 3 ? "背包无箭矢且无魔法箭袋(2000030)，请准备箭袋" : "背包无箭矢，魔法箭袋(2000030)未找到");
+      }
+    } catch (e) {}
+  }
+  masterTickReg(function () { try { tickArrow(); } catch (e) {} });
+  if (saved.arrowEn) { var ae = $id("dsh-arrowen"); if (ae) ae.checked = true; }
 
   // ---------------- B5：自动使用技能（点选技能栏主动辅助 · 调序）----------------
   var askList = (function () {

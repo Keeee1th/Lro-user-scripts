@@ -6960,7 +6960,7 @@
     // 合流：无射程内可放技能 → 超射程的走近再放 > 补第一个被挡技能的前置 > 等（外层普攻穿插）
     if (walkSk) return "walk";
     if (blocked) {
-      if (castStatusPrep(blocked.condStr, order)) { zLastCastAt = Date.now(); zLastCastSkid = 0; return true; } // V2.15.24：补状态技能ID未知 → 退回 800ms 兜底
+      if (castStatusPrep(blocked.condStr, order)) { zLastCastAt = Date.now(); zLastCastSkid = 0; return true; } // V2.15.28：补状态技能已在内部记 skillNextAt 独立 CD（zLastCast* 仅兼容旧引用）
     }
     // 全部技能被状态前置挡住且补状态节流/不可用 → 等（外层 wait 分支穿插普攻）
     return "wait";

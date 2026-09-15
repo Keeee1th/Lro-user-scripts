@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.27
+// @version      2.15.28
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -39,7 +39,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.27"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.28"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -712,8 +712,8 @@
       '<div class="row" style="margin-top:2px"><button class="ghost" id="dsh-skillclear" style="flex:0 0 auto">清空</button>' +
       '<button class="ghost" id="dsh-skillimp" style="flex:0 0 auto">导入已学技能</button></div></div>' +
       '<details style="margin:4px 0"><summary style="cursor:pointer;color:#1259b3;font-size:12px">📝 手动编辑技能顺序/条件（默认折叠 · 高级用法）</summary>' +
-      '<textarea id="dsh-skillorder" rows="3" placeholder="技能顺序：每行 技能ID:等级:条件:释放%:次数:锁定次数&#10;例：271  :5   :球5,爆气:80 :20 :3&#10;   技能ID :等级:条件    :概率:次数:锁定次数&#10;条件=释放前置，须全满足，可空；释放%=0-100（省略=100）&#10;次数=整轮最多放N次（0=不限，重开重置）；锁定次数=每只怪最多放N次（0=不限，换怪重置）&#10;等级超已学自动降级、未学自动跳过；只填ID也能用"></textarea>' +
-      '<div class="log" style="margin-top:2px">字段说明：技能ID:等级:条件:释放%:次数:锁定次数。条件=释放前置（如阿修罗需球5,爆气，自动补状态）；释放%=0-100（省略=100）；次数=整轮上限（OpenKore maxUses，重开自动战斗重置）；锁定次数=每只怪上限（换目标/解锁清零重计）。点选/拖拽生成的行只填前2段，无需手写。例：271:5:球5,爆气:80:20:3 = 阿修罗5级，需5球+爆气，80%概率，整轮最多20次，每只怪最多3次。</div>' +
+      '<textarea id="dsh-skillorder" rows="3" placeholder="技能顺序：每行 技能ID:等级:条件:释放%:次数:锁定次数:冷却秒&#10;例：271  :5   :球5,爆气:80 :20 :3:2&#10;   技能ID :等级:条件    :概率:次数:锁定次数:冷却秒&#10;条件=释放前置，须全满足，可空；释放%=0-100（省略=100）&#10;次数=整轮最多放N次（0=不限，重开重置）；锁定次数=每只怪最多放N次（0=不限，换怪重置）&#10;冷却秒=该技能间隔兜底秒数（0/省略=自动跟随服务器2842真实后摇，无数据默认800ms）&#10;等级超已学自动降级、未学自动跳过；只填ID也能用"></textarea>' +
+      '<div class="log" style="margin-top:2px">字段说明：技能ID:等级:条件:释放%:次数:锁定次数:冷却秒。条件=释放前置（如阿修罗需球5,爆气，自动补状态）；释放%=0-100（省略=100）；次数=整轮上限（OpenKore maxUses，重开自动战斗重置）；锁定次数=每只怪上限（换目标/解锁清零重计）；冷却秒=该技能释放间隔兜底（0/省略=自动跟随服务器2842真实后摇[动态]，无数据默认800ms）。技能按各自冷却独立释放，不再按攻击轮次重复发包。点选/拖拽生成的行只填前2段，无需手写。例：271:5:球5,爆气:80:20:3:2 = 阿修罗5级，需5球+爆气，80%概率，整轮最多20次，每只怪最多3次，间隔兜底2秒。</div>' +
       '</details>' +
       '<div class="row" style="margin:0 0 4px"><span class="sec" style="margin:0">辅助技能（选技能自动加判定条件 · 按间隔施放）</span><button class="ghost" id="dsh-statehelp" style="flex:0 0 auto;margin-left:auto">状态速查</button></div>' +
       '<div class="row"><span class="lb">技能</span><select id="dsh-askskill" style="flex:0 0 auto;max-width:130px"><option value="">选择技能…</option></select>' +
@@ -775,6 +775,7 @@
       '<div class="sec">自动装箭矢（V2.15.26：箭矢耗尽自动补）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-arrowen" type="checkbox">箭矢耗尽时用魔法箭袋(2000030)放箭并装上装备栏</label></div>' +
       '<div class="row"><span class="st" id="dsh-arrowlog" style="font-size:10px">未启用</span></div>' +
+      '<div class="sec">技能按独立 CD 释放（V2.15.28：服务器2842真实后摇动态计时，不再按攻击轮次重复发包）</div>' +
       '<div class="sec">背包快照定期上报（V2.15.27）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-invshot" type="checkbox" checked>开启定期上报</label>' +
       '<span class="lb" style="margin-left:8px">间隔</span><input id="dsh-invshotint" type="number" value="120" style="flex:0 0 44px"><span style="color:#5a6b7f">秒</span></div>' +
@@ -5791,8 +5792,10 @@
   // 技能释放最小间隔：放完一次技能（含补状态）后 800ms 内不再放 → 转 wait 穿插普攻（避免技能链霸占每轮）
   var zLastCastAt = 0;
   var zLastCastSkid = 0; // V2.15.24：最近一次释放的技能ID（配合 skillDelay 用真实后摇等待）
-  var skillDelay = {};   // V2.15.24：服务器下发真实后摇表 ZC.SKILL_POSTDELAY 0x43d / _LIST 0x43e（SKID→延迟ms）
+  var skillDelay = {};   // V2.15.24+：服务器下发真实延迟表（0x43d/0x43e POSTDELAY + 0xb1a USESKILL_ACK3 动态覆盖）SKID→延迟ms
+  var skillNextAt = {};  // V2.15.28：每技能独立 CD 计时（skillNextAt[SKID]=下次可释放时间戳），到点才发，不再按攻击轮次全局窗口
   try { window.__dshSkillDelay = skillDelay; } catch (e) {} // 供控制台/探针查看
+  try { window.__dshSkillNext = skillNextAt; } catch (e) {} // 供控制台/探针查看
   // 被攻击检测：HP 下降窗口 → 触发「非选中怪攻击」处理（无视/瞬移/还击）
   var zHpWatch = { hp: null, lastHitAt: 0 };
   // ---------- V2.7.3 平A断续修复：NOCTRL 模式发包 ----------
@@ -6381,7 +6384,8 @@
     var cond = String(o.cond || "").trim();
     var u = parseInt(o.uses, 10); if (isNaN(u) || u < 0) u = 0;
     var lk = parseInt(o.lock, 10); if (isNaN(lk) || lk < 0) lk = 0;
-    return o.skid + ":" + (o.lv || 5) + ":" + cond + ":" + prob + ":" + u + ":" + lk + (nm ? "  " + nm : "");
+    var cd = parseInt(o.cd, 10); if (isNaN(cd) || cd < 0) cd = 0; // V2.15.28：第7段 冷却秒数（0=服务器2842动态后摇/默认800ms）
+    return o.skid + ":" + (o.lv || 5) + ":" + cond + ":" + prob + ":" + u + ":" + lk + ":" + cd + (nm ? "  " + nm : "");
   }
   function parseSkillOrder(txt) {
     var out = [];
@@ -6394,7 +6398,7 @@
       if (isNaN(skid)) continue;
       // 每段取「空格前」有效值（空格后为技能名注释垃圾，如 "100  螺旋击刺" 取 "100"）
       var seg = function (s) { return String(s || "").split(/\s+/)[0] || ""; };
-      var lv = 5, cond = "", prob = 100, uses = 0, lock = 0;
+      var lv = 5, cond = "", prob = 100, uses = 0, lock = 0, cd = 0; // V2.15.28：第7段 冷却秒数
       // 段1：等级（纯数字）；非数字则视为无等级（skid:cond[:prob] 老格式）
       if (parts.length >= 2) { var s1 = seg(parts[1]); if (/^\d+$/.test(s1)) lv = parseInt(s1, 10); }
       // 段2：cond（可为空）；纯数字 = prob 误放 cond 位（旧 3 段 skid:lv:prob 或污染行）
@@ -6409,12 +6413,14 @@
       if (parts.length >= 5) { var s4 = seg(parts[4]); if (/^\d+$/.test(s4)) uses = parseInt(s4, 10); }
       // 段5：lock 每次锁定释放次数（V1.7.5 · 锁定一个目标期间最多放N次，换目标清零；0/省略=不限）
       if (parts.length >= 6) { var s5 = seg(parts[5]); if (/^\d+$/.test(s5)) lock = parseInt(s5, 10); }
+      // 段6：cd 该技能冷却秒数（V2.15.28 · 兜底用；0/省略=服务器2842动态后摇或默认800ms）
+      if (parts.length >= 7) { var s6 = seg(parts[6]); if (/^\d+$/.test(s6)) cd = parseInt(s6, 10); }
       if (isNaN(prob)) prob = 100;
       if (prob < 0) prob = 0;
       if (prob > 100) prob = 100;
       if (uses < 0) uses = 0;
       if (lock < 0) lock = 0;
-      out.push({ skid: skid, lv: lv, cond: cond, prob: prob, uses: uses, lock: lock });
+      out.push({ skid: skid, lv: lv, cond: cond, prob: prob, uses: uses, lock: lock, cd: cd });
     }
     return out;
   }
@@ -6750,6 +6756,18 @@
   // 自动补状态：技能前置条件不满足时，解析缺失需求 → 施放能达成前置的技能（如阿修罗→补爆气/蓄气）
   // 基于 condStr（手写或自动推导皆可）通用判断：任何技能只要前置被挡住，就补对应状态技能
   // 返回 true=已施放补状态技能（本周期不再放主技能）
+  // V2.15.28：单个技能释放间隔（ms）——服务器 2842 真实后摇优先（skillDelay[SKID]，动态），
+  // 其次技能行第7段配置 cd 秒数，兜底 800ms（最低保底防霸占轮次）
+  function skillCdMs(o) {
+    try {
+      if (!o) return 800;
+      var srv = skillDelay[o.skid] || 0;
+      if (srv > 0) return Math.max(srv, 800);
+      var cfg = parseInt(o.cd, 10);
+      if (!isNaN(cfg) && cfg > 0) return cfg * 1000;
+      return 800;
+    } catch (e) { return 800; }
+  }
   function castStatusPrep(condStr, order) {
     try {
       var ent = CLIENT.SS && CLIENT.SS.Entity;
@@ -6774,6 +6792,7 @@
             ps.targetID = ent.GID || 0;
             CLIENT.NM.sendPacket(ps);
             zPrepAt = Date.now(); // 补状态节流：1s 内不再补，间隙穿插普攻
+            skillNextAt[sid] = Date.now() + skillCdMs({ skid: sid, cd: 0 }); // V2.15.28：补球技能独立 CD
             tlog("cast-prep sphere " + sid + " lv" + lv + " (now " + st.spheres + "/" + need.spheres + ")");
             setStatus("气弹不足(" + st.spheres + "/" + need.spheres + ")，自动蓄气补球…", "st");
             return true;
@@ -6801,6 +6820,7 @@
             ps2.targetID = ent.GID || 0;
             CLIENT.NM.sendPacket(ps2);
             zPrepAt = Date.now(); // 补状态节流：1s 内不再补，间隙穿插普攻
+            skillNextAt[sid2] = Date.now() + skillCdMs({ skid: sid2, cd: 0 }); // V2.15.28：补状态技能独立 CD
             tlog("cast-prep status " + sid2 + " lv" + lv2 + " -> " + stName);
             setStatus("缺" + statusNameToCond(stName) + "，自动补状态技能(" + (getSkillNameById(sid2) || sid2) + ")…", "st");
             return true;
@@ -6828,13 +6848,9 @@
     if (!target || !target.position) return "wait";
     var ent = CLIENT.SS.Entity;
     if (!ent || !ent.position) return "wait";
-    // 技能释放最小间隔：默认上次释放（含补状态）后 800ms 内技能层不动作 → 返回 "wait-cd"（技能冷却窗口），
-    // 由外层「穿插平A」开关决定是否普攻——技能释放冷却只约束技能层，不影响普攻层
-    // V2.15.24：服务器下发过该技能真实后摇（skillDelay）则按真实值等（最低保底 800ms 防霸占轮次）；
-    // 查不到表退回原 800ms——一次一发、等满后摇，消除无效补发点击 → 缓解服务器点击限制
-    var pdl = skillDelay[zLastCastSkid] || 0;
-    var cdWait = pdl > 0 ? Math.max(pdl, 800) : 800;
-    if (Date.now() - zLastCastAt < cdWait) return "wait-cd";
+    // V2.15.28 每技能独立 CD：每个技能记录自己的 skillNextAt[SKID]（上次释放 + 该技能真实间隔），到点才发。
+    //   间隔来源：服务器 2842(0xb1a USESKILL_ACK3) 动态下发的真实后摇 skillDelay[SKID]（随等级/装备/状态变动）
+    //   > 技能行第7段配置 cd 秒数 > 默认 800ms。不再用攻击轮次全局窗口（轮次驱动会重复发包 → 服务器点击限制弹窗）。
     var d = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]);
     var prereqEn = $id("dsh-prereq") ? $id("dsh-prereq").checked : true;
     var blocked = null; // 第一个前置不满足的技能（{o, condStr}，合流阶段才补它的前置）
@@ -6851,6 +6867,12 @@
       if (realLv <= 0) {
         dshCastSkip(o.skid, "未学");
         tlog("cast-sk " + o.skid + " 未学，跳过");
+        continue;
+      }
+      // V2.15.28 每技能独立 CD：未到下次可释放时间 → 跳过（不卡整条链，其他技能照常评估）
+      if (skillNextAt[o.skid] && Date.now() < skillNextAt[o.skid]) {
+        dshCastSkip(o.skid, "冷却" + Math.ceil((skillNextAt[o.skid] - Date.now()) / 1000) + "s");
+        tlog("cast-sk " + o.skid + " 独立冷却中，跳过");
         continue;
       }
       // 释放次数上限（V1.7.0 · OpenKore maxUses）：uses>0 且本轮已释放≥上限 → 本轮跳过
@@ -6899,8 +6921,9 @@
           ps.targetID = ent.GID || 0;
           dshCastMark(o.skid, realLv, ent.GID || 0, "zhu");
           CLIENT.NM.sendPacket(ps);
-          zLastCastAt = Date.now(); // 记录技能释放时间（触发最小间隔 → 间隙穿插普攻）
-          zLastCastSkid = o.skid; // V2.15.24：记本次技能 → 下轮按真实后摇等待
+          zLastCastAt = Date.now(); // 记录技能释放时间（兼容旧引用）
+          zLastCastSkid = o.skid; // V2.15.24：记本次技能（兼容旧引用）
+          skillNextAt[o.skid] = Date.now() + skillCdMs(o); // V2.15.28：本技能独立 CD（服务器2842真实后摇>配置cd>800ms）
           zUseCounts[o.skid] = (zUseCounts[o.skid] || 0) + 1; // V1.7.0 maxUses 计数
           zLockCounts[o.skid] = (zLockCounts[o.skid] || 0) + 1; // V1.7.5 锁定次数计数
           zCastIdx = (i + 1) % orderLen; // V1.7.5 轮换游标：下轮从本技能之后开始扫
@@ -6923,8 +6946,9 @@
         p.targetID = target.GID;
         dshCastMark(o.skid, realLv, target.GID, "zhu");
         CLIENT.NM.sendPacket(p);
-        zLastCastAt = Date.now(); // 记录技能释放时间（触发最小间隔 → 间隙穿插普攻）
-        zLastCastSkid = o.skid; // V2.15.24：记本次技能 → 下轮按真实后摇等待
+        zLastCastAt = Date.now(); // 记录技能释放时间（兼容旧引用）
+        zLastCastSkid = o.skid; // V2.15.24：记本次技能（兼容旧引用）
+        skillNextAt[o.skid] = Date.now() + skillCdMs(o); // V2.15.28：本技能独立 CD（服务器2842真实后摇>配置cd>800ms）
         zUseCounts[o.skid] = (zUseCounts[o.skid] || 0) + 1; // V1.7.0 maxUses 计数
         zLockCounts[o.skid] = (zLockCounts[o.skid] || 0) + 1; // V1.7.5 锁定次数计数
         zCastIdx = (i + 1) % orderLen; // V1.7.5 轮换游标：下轮从本技能之后开始扫
@@ -8623,6 +8647,7 @@
       else if (op === 180) onSayDialog(bytes);
       else if (op === 182) onCloseDialog();
       else if (op === 0x43d || op === 0x43e) onSkillPostDelay(bytes, op);
+      else if (op === 0xb1a) onSkillAck3(bytes); // V2.15.28：2842 USESKILL_ACK3 动态技能延迟
       else onRawOpcode(bytes, op);
     } catch (e) {}
   }
@@ -8648,6 +8673,20 @@
       }
       console.log('[POSTDELAY] ' + msg);
       if (btDiagOn) btLog('post-delay', msg);
+    } catch (e) {}
+  }
+  // V2.15.28：拦截 2842 (0xb1a) ZC.USESKILL_ACK3——服务器每次施法后下发真实技能延迟（动态，随等级/装备/状态变动）
+  // 结构（29B 定长，Ragna PacketStructure L15523 + cap6 实测）：op2 + AID4@2 + targetID4@6 + x2@10 + y2@12 + SKID2@14 + property4@16 + delayTime4@20 + disposable1@24 + attackMT4@25
+  // 动态覆盖 skillDelay[SKID] → 每技能按服务器真实后摇到点释放（v2.15.24 的 0x43d/0x43e 服务器不下发，实际数据源是 2842）
+  function onSkillAck3(bytes) {
+    try {
+      if (bytes.byteLength < 26) return;
+      var dv = new DataView(bytes);
+      var skid = dv.getUint16(14, true);
+      var dly = dv.getUint32(20, true);
+      if (skid > 0) skillDelay[skid] = dly;
+      console.log('[ACK3-DELAY] skid=' + skid + ' delay=' + dly + 'ms');
+      if (btDiagOn) btLog('post-delay', 'ACK3 skid=' + skid + ' delay=' + dly + 'ms');
     } catch (e) {}
   }
   function onReconInbound(data) {

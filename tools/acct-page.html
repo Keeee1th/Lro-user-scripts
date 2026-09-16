@@ -3,33 +3,39 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>多账号状态总览</title>
+<title>多账号监控（服务端在线验证）</title>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; padding: 20px; background: #10151c; color: #dbe4ee; font: 13px/1.6 "Microsoft YaHei", system-ui, sans-serif; }
   h1 { font-size: 18px; margin: 0 0 4px; color: #7fd1ff; }
   .sub { color: #7a8794; font-size: 12px; margin-bottom: 16px; }
   .wrap { overflow-x: auto; background: #171e27; border: 1px solid #26313d; border-radius: 8px; }
-  table { border-collapse: collapse; width: 100%; min-width: 980px; }
-  th, td { padding: 7px 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid #222c37; }
+  table { border-collapse: collapse; width: 100%; min-width: 1080px; }
+  th, td { padding: 6px 9px; text-align: left; white-space: nowrap; border-bottom: 1px solid #222c37; }
   th { background: #1c2530; color: #9fb3c8; font-weight: 600; position: sticky; top: 0; }
   tr:last-child td { border-bottom: none; }
-  .off td { color: #5d6875; opacity: .75; }
   .tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; margin-right: 6px; }
   .tag.on { background: #12351f; color: #5fd68a; }
   .tag.off { background: #2b3138; color: #7d8894; }
+  .tag.err { background: #3a1d1d; color: #e08080; }
+  .tag.none { background: #262b31; color: #8a939c; }
+  .tag.win { background: #1c2c3a; color: #6fa8d6; }
+  .dim { color: #5d6875; }
   .ts { color: #5d6875; font-size: 11px; }
   .empty { padding: 30px; text-align: center; color: #5d6875; }
   .foot { margin-top: 10px; color: #5d6875; font-size: 11px; }
+  .st { color: #7fd1ff; }
 </style>
 </head>
 <body>
-<h1>多账号状态总览</h1>
-<div class="sub">各游戏窗口每 15s 自动上报 · 60s 无上报显示离线 · 24h 无上报自动清理</div>
-<div class="wrap"><div class="empty" id="box">等待节点上报…</div></div>
+<h1>多账号监控</h1>
+<div class="sub">在线 = 服务器官方查询结果（每 60 秒验证一次，服务端真值）· 窗口 = 本地游戏窗口心跳（仅参考）· 账号仅作标识，核心为该账号的在线角色信息</div>
+<div class="wrap"><div class="empty" id="box">正在查询服务器在线状态…</div></div>
 <div class="foot" id="foot"></div>
 <script>
 var ONLINE_MS = 60000;
+var JOB = {0:"初学者",1:"剑士",2:"魔法师",3:"弓箭手",4:"服事",5:"商人",6:"盗贼",7:"骑士",8:"牧师",9:"巫师",10:"铁匠",11:"猎人",12:"刺客",13:"骑士",14:"十字军",15:"武僧",16:"贤者",17:"流氓",18:"炼金术士",19:"诗人",20:"舞者",21:"Crusader",23:"超初",24:"快枪手",25:"忍者",4001:"进阶初学者",4002:"进阶剑士",4003:"进阶魔法师",4004:"进阶弓箭手",4005:"进阶服事",4006:"进阶商人",4007:"进阶盗贼",4008:"骑士领主",4009:"神官",4010:"超魔导师",4011:"神工匠",4012:"神射手",4013:"十字刺客",4014:"",4015:"圣殿十字军",4016:"武术宗师",4017:"智者",4018:"神行太保",4019:"创造者",4020:"搞笑艺人",4021:"冷艳舞姬",4022:"圣殿十字军",4023:"初心者(宝宝)",4024:"剑士(宝宝)",4025:"魔法师(宝宝)",4026:"弓箭手(宝宝)",4027:"服事(宝宝)",4028:"商人(宝宝)",4029:"盗贼(宝宝)",4030:"骑士(宝宝)",4031:"牧师(宝宝)",4032:"巫师(宝宝)",4033:"铁匠(宝宝)",4034:"猎人(宝宝)",4035:"刺客(宝宝)",4036:"骑士(宝宝)",4037:"十字军(宝宝)",4038:"武僧(宝宝)",4039:"贤者(宝宝)",4040:"流氓(宝宝)",4041:"炼金术士(宝宝)",4042:"诗人(宝宝)",4043:"舞娘(宝宝)",4044:"十字军(宝宝)",4045:"超级初心者(宝宝)",4046:"跆拳道",4047:"拳圣",4048:"拳圣",4049:"灵媒",4050:"妖道",4051:"死灵骑士",4052:"黑暗搜集者",4054:"符文骑士",4055:"大法师",4056:"游侠",4057:"大主教",4058:"机匠",4059:"十字切割者",4060:"符文骑士",4061:"大法师",4062:"游侠",4063:"大主教",4064:"机匠",4065:"十字切割者",4066:"皇家卫士",4067:"元素使",4068:"宫廷乐师",4069:"漫游舞者",4070:"修罗",4071:"基因学者",4072:"逐影",4073:"皇家卫士",4074:"元素使",4075:"宫廷乐师",4076:"漫游舞者",4077:"修罗",4078:"基因学者",4079:"逐影",4080:"符文骑士",4081:"符文骑士",4082:"皇家卫士",4083:"皇家卫士",4084:"游侠",4085:"游侠",4086:"机匠",4087:"机匠",4096:"符文骑士(宝宝)",4097:"大法师(宝宝)",4098:"游侠(宝宝)",4099:"大主教(宝宝)",4100:"机匠(宝宝)",4101:"十字切割者(宝宝)",4102:"皇家卫士(宝宝)",4103:"元素使(宝宝)",4104:"宫廷乐师(宝宝)",4105:"漫游舞者(宝宝)",4106:"修罗(宝宝)",4107:"基因学者(宝宝)",4108:"逐影(宝宝)",4109:"符文骑士(宝宝)",4110:"皇家卫士(宝宝)",4111:"游侠(宝宝)",4112:"机匠(宝宝)",4190:"超级初心者",4191:"超级初心者(宝宝)",4211:"影狼",4212:"胧",4215:"Rebellion",4218:"召唤师"};
+var LINE = {3: "V6-Online", 4: "线路4", 5: "V6-Eden"};
 function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
     return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
@@ -41,50 +47,76 @@ function fmtTime(ts) {
   function p(n) { return (n < 10 ? "0" : "") + n; }
   return p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
 }
+function jobName(id) {
+  if (id == null) return "—";
+  return JOB[id] || String(id);
+}
 function weightPct(w, mw) {
   if (w == null || !mw) return "—";
-  return Math.round(w / mw * 100) + "% (" + w + "/" + mw + ")";
+  return Math.round(w / mw * 100) + "%";
+}
+function svTag(sv) {
+  if (!sv) return '<span class="tag none">待查</span>';
+  if (sv.online) return '<span class="tag on">在线</span>';
+  if (sv.err === "离线") return '<span class="tag off">离线</span>';
+  if (sv.err === "密码错") return '<span class="tag err">密码错</span>';
+  return '<span class="tag err">' + esc(sv.err || "异常") + "</span>";
+}
+function onoff(v) {
+  if (v == null) return "—";
+  return (v === 48 || v === 0) ? "否" : "是";
 }
 function load() {
-  fetch("/api/acct/state").then(function (r) { return r.json(); }).then(function (data) {
+  Promise.all([
+    fetch("/api/acct/state").then(function (r) { return r.json(); }),
+    fetch("/api/acct/accounts").then(function (r) { return r.json(); }).catch(function () { return { accounts: [] }; })
+  ]).then(function (res) {
+    var data = res[0], accConf = res[1].accounts || [];
     var now = Date.now();
-    var list = (data && data.accounts) || [];
+    var nodes = {};  // 节点上报 by userid
+    (data.accounts || []).forEach(function (a) { nodes[a.account] = a; });
+    var sv = data.serverOnline || {};
+    var keys = [];
+    accConf.forEach(function (a) { if (a.userid && keys.indexOf(a.userid) < 0) keys.push(a.userid); });
+    Object.keys(nodes).forEach(function (k) { if (keys.indexOf(k) < 0) keys.push(k); });
     var box = document.getElementById("box");
-    if (!list.length) {
+    if (!keys.length) {
       box.className = "empty";
-      box.textContent = "暂无账号上报 —— 请确认游戏窗口已登录且助手已开启";
+      box.textContent = "暂无账号 —— 请在 diag-collect/acct-accounts.json 中填写账号（后续提供设置窗口）";
       document.getElementById("foot").textContent = "";
       return;
     }
-    list.sort(function (a, b) {
-      var oa = now - (a._serverTs || 0) <= ONLINE_MS ? 0 : 1;
-      var ob = now - (b._serverTs || 0) <= ONLINE_MS ? 0 : 1;
-      if (oa !== ob) return oa - ob;
-      return String(a.account).localeCompare(String(b.account));
-    });
-    var rows = list.map(function (a) {
-      var online = now - (a._serverTs || 0) <= ONLINE_MS;
-      var st = a.stat || {};
-      return '<tr class="' + (online ? "on" : "off") + '">' +
-        '<td><span class="tag ' + (online ? "on" : "off") + '">' + (online ? "在线" : "离线") + "</span>" + esc(a.account) + "</td>" +
-        "<td>" + esc(st.name || "—") + "</td>" +
-        "<td>" + esc(st.job || "—") + "</td>" +
-        "<td>" + esc(st.map || "—") + "</td>" +
-        "<td>" + ((a.x != null && a.y != null) ? (a.x + "," + a.y) : "—") + "</td>" +
-        "<td>" + ((st.lv != null) ? st.lv : "—") + "</td>" +
-        "<td>" + ((st.hp != null) ? (st.hp + "/" + (st.maxhp != null ? st.maxhp : "?")) : "—") + "</td>" +
-        "<td>" + ((st.sp != null) ? (st.sp + "/" + (st.maxsp != null ? st.maxsp : "?")) : "—") + "</td>" +
-        "<td>" + weightPct(st.weight, st.maxWeight) + "</td>" +
-        "<td>" + esc(a.line || "—") + "</td>" +
-        "<td>" + esc(a.task || "—") + "</td>" +
-        '<td class="ts">' + fmtTime(a._serverTs) + "</td>" +
+    keys.sort();
+    var rows = keys.map(function (uid) {
+      var s = sv[uid] || null;
+      var node = nodes[uid] || null;
+      var win = node && (now - (node._serverTs || 0) <= ONLINE_MS);
+      var st = (node && node.stat) || {};
+      var up = s && s._ts ? s._ts : (node ? node._serverTs : null);
+      return "<tr>" +
+        "<td>" + svTag(s) + esc(uid) + "</td>" +
+        "<td>" + (s && s.online ? esc(s.name) : '<span class="dim">—</span>') + "</td>" +
+        "<td>" + (s && s.online ? esc(jobName(s.class)) : '<span class="dim">' + esc(st.job || "—") + "</span>") + "</td>" +
+        "<td>" + (s && s.online ? (s.base_level + "/" + s.job_level) : '<span class="dim">' + ((st.lv != null) ? st.lv : "—") + "</span>") + "</td>" +
+        "<td>" + (s && s.online ? esc(s.last_map || "—") : '<span class="dim">' + esc(st.map || "—") + "</span>") + "</td>" +
+        "<td>" + (s && s.online ? (s.hp + "/" + s.max_hp) : '<span class="dim">' + ((st.hp != null) ? st.hp + "/" + (st.maxhp != null ? st.maxhp : "?") : "—") + "</span>") + "</td>" +
+        "<td>" + (s && s.online ? weightPct(s.weight, s.maxweight) : '<span class="dim">' + weightPct(st.weight, st.maxWeight) + "</span>") + "</td>" +
+        "<td>" + (s && s.online ? ("战" + onoff(s.autoattack) + " 拾" + onoff(s.autoloot) + " 药" + onoff(s.autopots)) : '<span class="dim">—</span>') + "</td>" +
+        "<td>" + (s && s.online ? esc(s.inminute || "—") : '<span class="dim">—</span>') + "</td>" +
+        "<td>" + (win ? '<span class="tag win">窗口在</span>' : '<span class="tag off">窗口离</span>') + "</td>" +
+        '<td class="ts">' + fmtTime(up) + "</td>" +
         "</tr>";
     }).join("");
     box.className = "";
-    box.innerHTML = '<table><thead><tr><th>账号</th><th>角色</th><th>职业</th><th>地图</th><th>坐标</th><th>等级</th><th>HP</th><th>SP</th><th>负重</th><th>线路</th><th>当前任务</th><th>上报时间</th></tr></thead><tbody>' + rows + "</tbody></table>";
-    var on = list.filter(function (a) { return now - (a._serverTs || 0) <= ONLINE_MS; }).length;
-    document.getElementById("foot").textContent = "共 " + list.length + " 个账号 · 在线 " + on + " · 刷新于 " + fmtTime(now);
-  }).catch(function () {});
+    box.innerHTML = '<table><thead><tr><th>账号</th><th>在线角色</th><th>职业</th><th>等级</th><th>地图</th><th>HP/SP</th><th>负重</th><th>挂机</th><th>在线时长</th><th>窗口</th><th>验证时间</th></tr></thead><tbody>' + rows + "</tbody></table>";
+    var on = keys.filter(function (k) { return sv[k] && sv[k].online; }).length;
+    var off = keys.filter(function (k) { return sv[k] && !sv[k].online; }).length;
+    document.getElementById("foot").textContent = "共 " + keys.length + " 个账号 · 服务端在线 " + on + " · 服务端离线 " + off + " · 刷新于 " + fmtTime(now) + "（服务端每 60 秒自动验证）";
+  }).catch(function (e) {
+    var box = document.getElementById("box");
+    box.className = "empty";
+    box.textContent = "加载失败: " + e.message + " —— 请确认中心服务(8899)已启动";
+  });
 }
 load();
 setInterval(load, 5000);

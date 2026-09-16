@@ -2,7 +2,9 @@
 // 用法: node tools/diag-collect-server.js （监听 8899）
 // 多账号平台路由：
 //   POST /api/acct/report  节点(ro-assist)上报角色状态+同步操作 → 更新状态表并落盘，响应带回待执行广播
-//   GET  /api/acct/state   总页面轮询读取全表（在线=60s 内有上报；24h 无上报自动清理）
+//   GET  /api/acct/state   总页面轮询读取全表（附加服务端在线验证 serverOnline；在线=60s 内有上报；24h 无上报自动清理）
+//   GET  /api/acct/server-online  服务端在线验证结果（mn/search 官方接口，直读调试用）
+//   GET  /api/acct/accounts       账号配置列表（本机 accounts 文件，密码掩码）
 //   GET  /acct             总页面（只读总览，页面在 tools/acct-page.html）
 var http = require('http');
 var fs = require('fs');
@@ -14,6 +16,78 @@ try { fs.mkdirSync(DIR, { recursive: true }); } catch (e) {}
 var STATE_FILE = path.join(DIR, 'acct-state.json');
 var ONLINE_MS = 60 * 1000;        // 60s 无上报 → 离线
 var CLEAN_MS = 24 * 3600 * 1000;  // 24h 无上报 → 清理出表
+
+// ---------------- 账号配置（本机 accounts 文件：谁填自己的号，不写代码里）----------------
+var ACCOUNTS_FILE = path.join(DIR, 'acct-accounts.json');
+var ACCOUNT_LIST = [];   // [{userid, passwd, note, nid, enabled}]
+try { ACCOUNT_LIST = JSON.parse(fs.readFileSync(ACCOUNTS_FILE, 'utf8')) || []; } catch (e) {}
+function saveAccounts() {
+  try { fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify(ACCOUNT_LIST)); } catch (e) {}
+}
+// ---------------- 服务端在线验证（lastRO 官方接口 mn/search）----------------
+// SERVER_ONLINE: userid -> { online:bool, name, class, base_level, job_level, last_map, hp, max_hp, sp, max_sp,
+//                           weight, maxweight, inminute, updatetime, autoattack/autoloot/autopots, err }
+var SERVER_ONLINE = {};
+var SERVER_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1';
+// 线路 nid → 账号字段前缀（实测：nid5 V6-Eden=Login_debug / nid3 V6-Online=Login_cn2 / nid4=Login_ts）
+function mnPrefix(nid) {
+  if (nid === 3) return 'Login_cn2';
+  if (nid === 4) return 'Login_ts';
+  return 'Login_debug';
+}
+function mnSearch(userid, passwd, nid) {
+  var prefix = mnPrefix(nid || 5);
+  return fetch('https://post.lastro.cn/?r=pc/index', {
+    headers: { 'User-Agent': SERVER_UA }, signal: AbortSignal.timeout(20000)
+  }).then(function (r) { return r.text(); }).then(function (t) {
+    var m = t.match(/id="_csrf" value="([^"]+)"/);
+    var token = m ? m[1] : '';
+    var form = new URLSearchParams();
+    form.set('_csrf', token);
+    form.set(prefix + '[userid]', userid);
+    form.set(prefix + '[user_pass]', passwd);
+    return fetch('https://post.lastro.cn/?r=mn/search&nid=' + (nid || 5), {
+      method: 'POST',
+      headers: { 'User-Agent': SERVER_UA, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form.toString(),
+      signal: AbortSignal.timeout(20000)
+    }).then(function (r) { return r.text(); });
+  }).then(function (body) {
+    var j;
+    try { j = JSON.parse(body); } catch (e) { return { online: false, err: 'bad-resp:' + body.slice(0, 40) }; }
+    if (j && typeof j === 'object' && j.name) {
+      return {
+        online: true, name: j.name, class: j.class,
+        base_level: j.base_level, job_level: j.job_level, last_map: j.last_map,
+        hp: j.hp, max_hp: j.max_hp, sp: j.sp, max_sp: j.max_sp,
+        weight: j.weight, maxweight: j.maxweight,
+        inminute: j.inminute, updatetime: j.updatetime,
+        autoattack: j.autoattack, autoloot: j.autoloot, autopots: j.autopots,
+        hppotion: j.hppotion, sppotion: j.sppotion, bpower: j.bpower,
+        base_exp: j.base_exp, job_exp: j.job_exp
+      };
+    }
+    if (j === 1) return { online: false, err: '密码错' };
+    if (j === 2) return { online: false, err: '离线' };
+    return { online: false, err: '未知:' + String(j).slice(0, 30) };
+  }).catch(function (e) { return { online: false, err: 'net:' + e.message.slice(0, 50) }; });
+}
+// 轮询所有启用账号（错开 1.5s/个，避免同时请求）
+function refreshServerOnline() {
+  var list = ACCOUNT_LIST.filter(function (a) { return a && a.userid && a.enabled !== false; });
+  var i = 0;
+  function next() {
+    if (i >= list.length) { setTimeout(refreshServerOnline, 60000); return; }
+    var a = list[i++];
+    mnSearch(a.userid, a.passwd, a.nid).then(function (r) {
+      SERVER_ONLINE[a.userid] = r;
+      r._ts = Date.now();
+      setTimeout(next, 1500);
+    });
+  }
+  next();
+}
+setTimeout(refreshServerOnline, 2000); // 启动 2s 后开始首轮
 
 // ---------------- 同步广播表（主号操作 → 其他账号取走执行）----------------
 // SYNC_OPS: fromAccount -> { seq, op, ts }；每个主号只保留最新一条未确认广播
@@ -101,7 +175,27 @@ var server = http.createServer(function (req, res) {
       list.push(a);
     }
     if (changed) saveState();
-    json(res, 200, { ts: now, accounts: list });
+    var sv = {};
+    for (var si2 = 0; si2 < ACCOUNT_LIST.length; si2++) {
+      var acc = ACCOUNT_LIST[si2];
+      if (acc && acc.userid) sv[acc.userid] = SERVER_ONLINE[acc.userid] || null;
+    }
+    json(res, 200, { ts: now, accounts: list, serverOnline: sv });
+    return;
+  }
+
+  // 服务端在线验证结果（直读）：GET /api/acct/server-online
+  if (url === '/api/acct/server-online') {
+    json(res, 200, { ts: Date.now(), online: SERVER_ONLINE });
+    return;
+  }
+
+  // 账号配置列表（掩码密码）：GET /api/acct/accounts
+  if (url === '/api/acct/accounts') {
+    var masked = ACCOUNT_LIST.map(function (a) {
+      return { userid: a.userid, note: a.note || '', nid: a.nid || 5, enabled: a.enabled !== false, hasPass: !!(a.passwd && a.passwd.length) };
+    });
+    json(res, 200, { accounts: masked });
     return;
   }
 

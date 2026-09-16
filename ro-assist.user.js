@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.28
+// @version      2.15.29
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -39,7 +39,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.28"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.29"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -775,7 +775,7 @@
       '<div class="sec">自动装箭矢（V2.15.26：箭矢耗尽自动补）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-arrowen" type="checkbox">箭矢耗尽时用魔法箭袋(2000030)放箭并装上装备栏</label></div>' +
       '<div class="row"><span class="st" id="dsh-arrowlog" style="font-size:10px">未启用</span></div>' +
-      '<div class="sec">技能按独立 CD 释放（V2.15.28：服务器2842真实后摇动态计时，不再按攻击轮次重复发包）</div>' +
+      '<div class="sec">平A改用系统noctrl自动连击（V2.15.29：锁定目标后不再连续补发平A包，仅换目标/重进射程补发，消除连击间断）</div>' +
       '<div class="sec">背包快照定期上报（V2.15.27）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-invshot" type="checkbox" checked>开启定期上报</label>' +
       '<span class="lb" style="margin-left:8px">间隔</span><input id="dsh-invshotint" type="number" value="120" style="flex:0 0 44px"><span style="color:#5a6b7f">秒</span></div>' +
@@ -5810,18 +5810,22 @@
     } catch (e) {}
     return true; // 读不到默认 noctrl 开（该服默认开启）
   }
-  var zAtkLast = { gid: null, at: 0 }; // 平A 1s 节流：最近一次 REQUEST_ACT 的目标
+  var zAtkLast = { gid: null, at: 0, outOfRange: false }; // V2.15.29 平A锁定状态：gid=已锁定目标；outOfRange=目标曾出射程（追怪回来需重新锁定）
   function sendNormalAtk(gid) {
     try {
       if (!clientReady() || !gid) return;
       var now = Date.now();
-      if (zAtkLast.gid === gid && now - zAtkLast.at < 1000) { if (btDiagOn) btLog('atk-throttle', '同目标1s节流命中 gid=' + gid + ' 距上次' + (now - zAtkLast.at) + 'ms'); return; } // 同目标 1s 内不重发（服务器驱动持续攻击）
+      // V2.15.29：noctrl 系统自动连击——发一次 REQUEST_ACT(action=7) 后游戏自动持续平A，
+      //   同目标锁定期间不再补发（连续补发会打断自动连击，导致平A中间出现间断）；
+      //   仅换目标（gid 变化）或目标曾出射程重进（outOfRange）才补发一次锁定。
+      if (zAtkLast.gid === gid && !zAtkLast.outOfRange) { if (btDiagOn) btLog('atk-skip', '同目标noctrl连击中不重发 gid=' + gid); return; }
       var p = new CLIENT.PS.CZ.REQUEST_ACT();
       p.targetGID = gid;
       p.action = npNoCtrlOn() ? 7 : 0; // noctrl 开=7（免ctrl锁定攻击），关=0
       CLIENT.NM.sendPacket(p);
       zAtkLast.gid = gid;
       zAtkLast.at = now;
+      zAtkLast.outOfRange = false;
     } catch (e) {}
   }
   // V2.15.25：注入内挂——换目标时发一次锁定（REQUEST_ACT），客户端箭头/内挂跟随助手目标（挂机双轨一致，与走路机制无关）
@@ -6291,7 +6295,7 @@
           zCastIdx = 0;     // V1.7.5 换目标 → 轮换游标从头开始
           // V2.15.25：注入内挂——换目标时发一次锁定让客户端/内挂跟随助手目标；注入即锁定，普攻节流让位防双包
           sendLockInject(target.GID);
-          zAtkLast.gid = target.GID; zAtkLast.at = now;
+          zAtkLast.gid = target.GID; zAtkLast.at = now; zAtkLast.outOfRange = false; // V2.15.29：新目标复位射程标记
         }
         if (now < zTargetSwitchAt) { zMon.action = "换怪延迟"; return; } // 延迟窗口内等待（换怪延迟）
       } else {
@@ -6316,6 +6320,7 @@
       if (btDiagOn) { try { var tD = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]); btLog('zAtk', 'cast=' + cast + ' targetDist=' + tD + ' atkRange=' + atkRange + ' pmRange=' + pmRange + ' npMode=' + npMode); } catch (e) {} }
       if (cast === "walk") {
         zWaitSince = 0; // 走位后穿插普攻立即出手（上次普攻时间重置）
+        zAtkLast.outOfRange = true; // V2.15.29：走位追怪会打断系统连击 → 回来后需重新锁定
         zMon.action = "追怪（走近施放）";
         // 技能前置满足但超射程 → 走位靠近后再打（客户端同款：先 REQUEST_MOVE 走近）
         zWalk();
@@ -6330,11 +6335,12 @@
         }
         var distCd = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]);
         if (distCd <= pmRange) {
-          sendNormalAtk(target.GID); // V2.7.3 NOCTRL 平A（action 跟随 noctrl；同目标 1s 节流，服务器驱动连击）
+          sendNormalAtk(target.GID); // V2.15.29 NOCTRL 平A（同目标锁定不重发，仅换目标/重进射程补发）
           zMon.action = "穿插平A(冷却)";
           setStatus("技能冷却，穿插平A…", "st");
           return;
         }
+        zAtkLast.outOfRange = true; // V2.15.29：目标出射程追怪 → 回来需重新锁定（系统连击在移动中已断）
         zMon.action = "追怪（普攻射程外）";
         zWalk();
         return;
@@ -6349,11 +6355,12 @@
         // 默认锁定普攻：对锁定目标 REQUEST_ACT（间隔=攻击循环本身，每轮一击，无需额外判断）
         var distToT2 = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]);
         if (distToT2 <= pmRange) {
-          sendNormalAtk(target.GID); // V2.7.3 NOCTRL 平A
+          sendNormalAtk(target.GID); // V2.15.29 NOCTRL 平A
           zMon.action = "穿插平A(锁定)";
           setStatus("前置未就绪，锁定普攻…", "st");
           return;
         }
+        zAtkLast.outOfRange = true; // V2.15.29：目标出射程追怪 → 回来需重新锁定
         zMon.action = "追怪（普攻射程外）";
         zWalk();
         return;
@@ -6367,8 +6374,8 @@
           return;
         }
         var distToT = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]);
-        if (distToT > pmRange) { zMon.action = "追怪（普攻射程外）"; zWalk(); return; }
-        sendNormalAtk(target.GID); // V2.7.3 NOCTRL 平A
+        if (distToT > pmRange) { zAtkLast.outOfRange = true; zMon.action = "追怪（普攻射程外）"; zWalk(); return; } // V2.15.29：出射程追怪 → 回来重新锁定
+        sendNormalAtk(target.GID); // V2.15.29 NOCTRL 平A
         zMon.action = "普攻(锁定)";
       } else {
         zMon.action = "施放技能";

@@ -190,12 +190,54 @@ var server = http.createServer(function (req, res) {
     return;
   }
 
-  // 账号配置列表（掩码密码）：GET /api/acct/accounts
+  // 账号配置：GET 列表（掩码密码）/ POST 保存（密码留空=保留原密码）
   if (url === '/api/acct/accounts') {
-    var masked = ACCOUNT_LIST.map(function (a) {
-      return { userid: a.userid, note: a.note || '', nid: a.nid || 5, enabled: a.enabled !== false, hasPass: !!(a.passwd && a.passwd.length) };
-    });
-    json(res, 200, { accounts: masked });
+    if (req.method === 'GET') {
+      var masked = ACCOUNT_LIST.map(function (a) {
+        return { userid: a.userid, note: a.note || '', nid: a.nid || 5, enabled: a.enabled !== false, hasPass: !!(a.passwd && a.passwd.length) };
+      });
+      json(res, 200, { accounts: masked });
+      return;
+    }
+    if (req.method === 'POST') {
+      readBody(req, function (body) {
+        var data = null;
+        try { data = JSON.parse(body); } catch (e) { json(res, 400, { ok: false, err: 'bad json' }); return; }
+        var list = Array.isArray(data) ? data : (data && Array.isArray(data.accounts) ? data.accounts : null);
+        if (!list) { json(res, 400, { ok: false, err: 'need accounts array' }); return; }
+        var seen = {}, out = [];
+        for (var ai = 0; ai < list.length; ai++) {
+          var a = list[ai];
+          var uid = a && typeof a.userid === 'string' ? a.userid.trim() : '';
+          if (!uid || seen[uid]) continue;              // 去空去重
+          seen[uid] = true;
+          var old = null;
+          for (var oi = 0; oi < ACCOUNT_LIST.length; oi++) { if (ACCOUNT_LIST[oi].userid === uid) { old = ACCOUNT_LIST[oi]; break; } }
+          var pwd = typeof a.passwd === 'string' ? a.passwd : '';
+          if (!pwd && old && old.passwd) pwd = old.passwd;   // 留空保留原密码
+          if (!pwd && !old) continue;                          // 新行必须带密码
+          out.push({
+            userid: uid,
+            passwd: pwd,
+            note: (a && a.note) || (old && old.note) || '',
+            nid: (a && a.nid) || (old && old.nid) || 5,
+            enabled: a ? (a.enabled !== false) : true
+          });
+        }
+        ACCOUNT_LIST = out;
+        saveAccounts();
+        // 立即刷新这些账号的服务端在线验证（并清理已删除账号的缓存）
+        var nowKeys = {};
+        out.forEach(function (x) { nowKeys[x.userid] = true; });
+        Object.keys(SERVER_ONLINE).forEach(function (k) { if (!nowKeys[k]) delete SERVER_ONLINE[k]; });
+        out.filter(function (x) { return x.enabled; }).forEach(function (x) {
+          mnSearch(x.userid, x.passwd, x.nid).then(function (r) { SERVER_ONLINE[x.userid] = r; r._ts = Date.now(); });
+        });
+        json(res, 200, { ok: true, count: out.length });
+      });
+      return;
+    }
+    json(res, 405, { ok: false, err: 'method' });
     return;
   }
 

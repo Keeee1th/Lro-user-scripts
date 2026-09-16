@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.15.29
+// @version      2.15.30
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -39,7 +39,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.15.29"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.15.30"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -702,7 +702,7 @@
       '<div style="margin-top:4px"><div class="sec" style="margin-top:0">技能释放与顺序（自动判断释放前置 · 自动补状态）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-prereq" type="checkbox" checked>自动补充释放前置（状态/气弹）</label>' +
       '<span class="tag blue" id="dsh-prereqcnt" style="margin-left:auto">释放需求表: 94技能</span></div>' +
-      '<div class="row"><label class="switch"><input id="dsh-z-attmix" type="checkbox" checked>穿插平A（锁定普攻：技能放不出/冷却/无技能时补普攻）</label>' +
+      '<div class="row"><label class="switch"><input id="dsh-z-attmix" type="checkbox">穿插平A（锁定普攻：技能放不出/冷却/无技能时补普攻）</label>' + // V2.15.30 默认不勾选=纯技能流
       '<span class="st" style="font-size:10px">关=纯技能流不普攻（法师等可关）</span></div>' +
       '<details id="dsh-skillpickbox" style="margin:4px 0"><summary style="cursor:pointer;color:#1259b3;font-size:12px">🖱 点选技能释放（展开/收缩）</summary>' +
       '<div class="box"><div class="b-hd">点选已学主动技能 → 自动生成技能顺序（拖拽排序 · 可收缩本栏）</div>' +
@@ -2838,8 +2838,8 @@
     "灵魂": "SOULLINK",
     "爆气": "EXPLOSIONSPIRITS",
     "钢体": "STEELBODY",
-    "集中攻击": "CONCENTRATION", "集中": "CONCENTRATION",
-    "心神凝聚": "LKCONCENTRATION", "心神": "LKCONCENTRATION",
+    "集中攻击": "LKCONCENTRATION", "集中": "LKCONCENTRATION", // V2.15.30 修正：骑士集中攻击=LKCONCENTRATION(105)
+    "心神凝聚": "CONCENTRATION", "心神": "CONCENTRATION", // V2.15.30 修正：猎人心神凝聚=CONCENTRATION(3)
     "双手剑加速": "TWOHANDQUICKEN",
     "长矛加速": "SPEARQUICKEN",
     "风之步": "WINDWALK",
@@ -2862,7 +2862,7 @@
   // V2.3.0 状态联想表（Buff/Debuff 中文 => EFST 图标ID，与 status_cn_table.txt 一致）
   // deb:1=负面(在身才放)；供「物品状态输入」与「辅助技能 Debuff 判定」模糊联想
   var STATUS_ID_TABLE = [
-    { cn: "霸体", id: 1 }, { cn: "双手剑加速", id: 2 }, { cn: "集中攻击", id: 3 },
+    { cn: "霸体", id: 1 }, { cn: "双手剑加速", id: 2 }, { cn: "集中攻击", id: 105 }, { cn: "心神凝聚", id: 3 }, // V2.15.30：集中攻击=105 心神凝聚=3
     { cn: "天使之障壁", id: 9 }, { cn: "赐福", id: 10 }, { cn: "加速术", id: 12 },
     { cn: "牺牲祈福", id: 16 }, { cn: "撒水祈福", id: 17 }, { cn: "圣之祝福", id: 18 },
     { cn: "霸邪之阵", id: 19 }, { cn: "圣母颂歌", id: 20 }, { cn: "神威", id: 21 },
@@ -3242,10 +3242,10 @@
     12: function (en) { if (en.inc_agi !== undefined) return en.inc_agi === 1; if (en.IncAgi !== undefined) return en.IncAgi === 1; if (en.incAgi !== undefined) return en.incAgi === 1; return undefined; },
     10: function (en) { if (en.blessing !== undefined) return en.blessing === 1; if (en.Blessing !== undefined) return en.Blessing === 1; return undefined; },
     1: function (en) { if (en.endure !== undefined) return en.endure === 1; if (en.Endure !== undefined) return en.Endure === 1; return undefined; },
-    86: function (en) { if (en.explosion !== undefined) return en.explosion === 1; return undefined; },
+    86: function (en) { if (en.getOpt3) { try { return !!en.getOpt3(86); } catch (e) {} } if (en.explosion !== undefined) return en.explosion === 1; return undefined; }, // V2.15.30 爆气读 virtue 位
     87: function (en) { if (en.SteelBody !== undefined) return en.SteelBody === 1; if (en.steelbody !== undefined) return en.steelbody === 1; if (en.steel_body !== undefined) return en.steel_body === 1; return undefined; },
-    149: function (en) { if (en.soullink !== undefined) return en.soullink === 1; return undefined; },
-    107: function (en) { if (en.berserk !== undefined) return en.berserk === 1; return undefined; },
+    149: function (en) { if (en.getOpt3) { try { return !!en.getOpt3(149); } catch (e) {} } if (en.soullink !== undefined) return en.soullink === 1; return undefined; }, // V2.15.30 灵魂读 virtue 位
+    107: function (en) { if (en.getOpt3) { try { return !!en.getOpt3(107); } catch (e) {} } if (en.berserk !== undefined) return en.berserk === 1; return undefined; }, // V2.15.30 狂暴读 virtue 位
     27: function (en) { if (en.riding !== undefined) return en.riding === 1; if (en.riding_ !== undefined) return en.riding_ === 1; return undefined; },
     28: function (en) { if (en.falcon !== undefined) return en.falcon === 1; return undefined; },
     4: function (en) { if (en.isHide !== undefined) return en.isHide === true; if (en.hiding !== undefined) return en.hiding === 1; return undefined; },
@@ -4015,18 +4015,25 @@
           }
           if (s.st) {
             var stId = buffStId(s.st);
-            if (stId < 0) { if (askDiagOn) console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " st=" + s.st + " stId=INVALID"); continue; } // 状态名未识别，跳过
-            var stOn = buffStateOn(stId);
-            // V2.15.5：集中攻击(357)特判——lastRO 客户端把 LK_CONCENTRATION 渲染成霸体(ENDURE)图标，
-            // 状态图标 hook 只收到 update(1) 收不到 update(3)，判活改看 状态3(CONCENTRATION) 或 状态1(ENDURE) 任一在身即算命中，
-            // 避免判活永远缺失导致每 5s 空放 + missCnt 退避 30s 循环。
-            if (s.skid === 357 && stId === 3) { stOn = stOn || buffStateOn(1); }
-            var need = s.stInv ? stOn : !stOn; // 在身补 / 消失补
-            if (!need) { s.missCnt = 0; if (askDiagOn) console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " st=" + s.st + " stId=" + stId + " stOn=" + stOn + " need=false"); continue; }
-            // 防抖：刚放出去状态未上身不重复；连续 2 次补后仍未上身（hook 未收到/状态实际加不上）→ 退避到全局间隔，避免每 5s 狂补
-            var waitMs = s.missCnt >= 2 ? 30000 : 5000; // V2.10.5 退避固定 30s（原 intv 120s 会卡死补状态）；上身通知会清零 missCnt
-            if (s.lastAt && now - s.lastAt < waitMs) { if (askDiagOn) console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " WAIT missCnt=" + (s.missCnt || 0) + " elapsed=" + (now - s.lastAt) + " waitMs=" + waitMs); continue; }
-            if (askDiagOn) console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " st=" + s.st + " stId=" + stId + " stOn=" + stOn + " need=true missCnt=" + (s.missCnt || 0));
+            if (stId < 0) {
+              // V2.15.30：状态名未识别不再静默跳过（否则该 buff 永不补，看起来只补第一个）——按全局间隔放兜底，并提示一次
+              if (!s.stWarned) { s.stWarned = true; setStatus("自动技能状态未识别：" + s.name + "（st=" + s.st + "），按间隔放兜底，建议填数字状态ID", "warn"); }
+              var elInv = s.lastAt ? (now - s.lastAt) : -1;
+              if (s.lastAt && now - s.lastAt < intv) { if (askDiagOn) console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " st=INVALID interval wait, elapsed=" + elInv); continue; }
+              if (askDiagOn) console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " st=INVALID will cast (interval fallback), elapsed=" + elInv);
+            } else {
+              var stOn = buffStateOn(stId);
+              // V2.15.5：集中攻击(357)特判——lastRO 客户端把 LK_CONCENTRATION(105) 渲染成霸体(ENDURE)图标，
+              // 状态图标 hook 只收到 update(1) 收不到 update(105)，判活改看 状态1(ENDURE) 兜底命中，
+              // 避免判活永远缺失导致每 5s 空放 + missCnt 退避 30s 循环。V2.15.30 适配新映射(stId=105)。
+              if (s.skid === 357 && (stId === 105 || stId === 3)) { stOn = stOn || buffStateOn(1); }
+              var need = s.stInv ? stOn : !stOn; // 在身补 / 消失补
+              if (!need) { s.missCnt = 0; if (askDiagOn) console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " st=" + s.st + " stId=" + stId + " stOn=" + stOn + " need=false"); continue; }
+              // 防抖：刚放出去状态未上身不重复；连续 2 次补后仍未上身（hook 未收到/状态实际加不上）→ 退避到全局间隔，避免每 5s 狂补
+              var waitMs = s.missCnt >= 2 ? 30000 : 5000; // V2.10.5 退避固定 30s（原 intv 120s 会卡死补状态）；上身通知会清零 missCnt
+              if (s.lastAt && now - s.lastAt < waitMs) { if (askDiagOn) console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " WAIT missCnt=" + (s.missCnt || 0) + " elapsed=" + (now - s.lastAt) + " waitMs=" + waitMs); continue; }
+              if (askDiagOn) console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " st=" + s.st + " stId=" + stId + " stOn=" + stOn + " need=true missCnt=" + (s.missCnt || 0));
+            }
           } else {
             var elapsed = s.lastAt ? (now - s.lastAt) : -1;
             if (s.lastAt && now - s.lastAt < intv) { if (askDiagOn) console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " NO-ST interval wait, elapsed=" + elapsed); continue; } // 纯间隔技能
@@ -4096,6 +4103,20 @@
     } catch (e) {
       console.error('[LEARN-DIAG] restore failed:', e);
     }
+  })();
+  // V2.15.30：旧配置迁移——此前 BUFF_STATUS_CN 把 集中攻击(LKCONCENTRATION=105)/心神凝聚(CONCENTRATION=3) 写反，
+  // askList 已存 st 值也随之反了（集中攻击存 3、心神凝聚存 105）。按技能ID精确迁移互换，一次性标记防重复。
+  (function migrateConcentrationStatus() {
+    try {
+      if (localStorage.getItem('dsh_ro_st_migrate_v21530')) return;
+      var moved = 0;
+      askList.forEach(function (ask) {
+        if (ask.skid === 357 && parseInt(ask.st, 10) === 3) { ask.st = 105; moved++; }        // 旧集中攻击 st=3 → 105
+        else if (ask.skid === 45 && parseInt(ask.st, 10) === 105) { ask.st = 3; moved++; }    // 旧心神凝聚 st=105 → 3
+      });
+      if (moved > 0) { saveAskList(); console.log('[PROFILE] 集中攻击/心神凝聚 状态ID迁移 ' + moved + ' 项'); }
+      localStorage.setItem('dsh_ro_st_migrate_v21530', '1');
+    } catch (e) {}
   })();
   // V2.1.0 合并多辅助到辅助技能：旧 saved.buffs 文本（技能ID:等级:状态）迁移进 askList
   if (saved.buffs) {
@@ -5283,6 +5304,9 @@
     try {
       var st = CLIENT && CLIENT.SS && CLIENT.SS.Entity;
       if (!st) return false;
+      // V2.15.30：引擎坐姿=动画状态 st.action===ACTION.SIT(=2)（EntityAction L148 实证；st.sit 字段不存在恒 false 导致坐下判活全失效）
+      if (st.action != null && st.ACTION && st.ACTION.SIT != null) return st.action === st.ACTION.SIT;
+      if (st.action != null) return st.action === 2;
       if (st.sit != null) return !!st.sit;
       if (st.basic_status && st.basic_status.sit != null) return !!st.basic_status.sit;
       return false;
@@ -5832,6 +5856,9 @@
   function sendLockInject(gid) {
     try {
       if (!clientReady() || !gid) return;
+      // V2.15.30：纯技能流（穿插平A关）完全不发平A锁定包——sendLockInject 也是平A包，受同一开关控制
+      var mixEl = $id("dsh-z-attmix");
+      if (mixEl && !mixEl.checked) return;
       var p = new CLIENT.PS.CZ.REQUEST_ACT();
       p.targetGID = gid;
       p.action = npNoCtrlOn() ? 7 : 0;
@@ -6314,7 +6341,7 @@
       //   锁定普攻开关）：REQUEST_ACT 固定 target.GID（内挂锁定模式动作），目标死亡/丢失才由
       //   zLock 解锁换目标。锁定普攻只作兜底，从不阻塞技能层判断；每轮只发一个动作包（技能优先）。
       // 「穿插平A」开=技能放不出/冷却/无技能时一律普攻兜底；关=纯技能流（法师等不摸怪）。
-      var attMix = $id("dsh-z-attmix") ? $id("dsh-z-attmix").checked : true;
+      var attMix = $id("dsh-z-attmix") ? $id("dsh-z-attmix").checked : false; // V2.15.30 默认纯技能流
       var order = parseSkillOrder($id("dsh-skillorder").value);
       var cast = castOrderSkill(order, target);
       if (btDiagOn) { try { var tD = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]); btLog('zAtk', 'cast=' + cast + ' targetDist=' + tD + ' atkRange=' + atkRange + ' pmRange=' + pmRange + ' npMode=' + npMode); } catch (e) {} }
@@ -6451,9 +6478,9 @@
     return {
       ent: ent,
       spheres: spheres,            // 气球/气弹数 0~5
-      explosion: ent.explosion ? 1 : 0, // 爆气
-      berserk: ent.berserk ? 1 : 0,     // 狂暴
-      soullink: ent.soullink ? 1 : 0,   // 灵魂
+      explosion: (ent.getOpt3 && ent.getOpt3(86)) ? 1 : (ent.explosion ? 1 : 0), // V2.15.30 爆气：读实体 virtue 位（原 ent.explosion 字段不存在恒 false）
+      berserk: (ent.getOpt3 && ent.getOpt3(107)) ? 1 : (ent.berserk ? 1 : 0),       // V2.15.30 狂暴：读 virtue 位
+      soullink: (ent.getOpt3 && ent.getOpt3(149)) ? 1 : (ent.soullink ? 1 : 0),     // V2.15.30 灵魂：读 virtue 位
       riding: ent.riding || ent.riding_ ? 1 : 0,
       falcon: ent.falcon ? 1 : 0,
       cart: ent.cart ? 1 : 0,
@@ -9109,8 +9136,8 @@
     '灵魂                    SOULLINK            灵魂链接',
     '爆气                    EXPLOSIONSPIRITS    武术家前置',
     '钢体                    STEELBODY           DEF大幅提升',
-    '集中攻击 / 集中          CONCENTRATION       命中提升(骑士:集中攻击;弓手:心神凝聚)',
-    '心神凝聚 / 心神          LKCONCENTRATION     命中暴击提升',
+    '集中攻击 / 集中          LKCONCENTRATION     命中提升(骑士)',
+    '心神凝聚 / 心神          CONCENTRATION       命中暴击提升(弓手)',
     '双手剑加速              TWOHANDQUICKEN      双手剑攻速',
     '长矛加速                SPEARQUICKEN        长矛攻速',
     '风之步                  WINDWALK            回避提升',
@@ -9124,7 +9151,8 @@
     'REFLECTSHIELD      反射盾            AURABLADE           光环剑',
     'BERSERK            狂暴              ASSUMPTIO           圣母之祈福',
     'EDP                涂毒强化          TRUESIGHT           真视',
-    'PARRYING           防御架势          CONCENTRATION       集中攻击/心神凝聚',
+    'PARRYING           防御架势          CONCENTRATION       心神凝聚(弓手)',
+    'LKCONCENTRATION    集中攻击(骑士)    TWOHANDQUICKEN      双手剑加速',
     'POWERUP            力量增幅          AGIUP               敏捷增幅',
     'STRUP              力量提升          RIDING              骑乘',
     'FALCON             猎鹰              GOSPEL              福音',
@@ -9264,6 +9292,11 @@
   setInterval(function () {
     try {
       if (clientReady()) {
+        // V2.15.30：角色切档检测独立于 UI 渲染——后台标签（UI_BG）也执行，切换角色/重登必然切到该角色专属档
+        try {
+          var _pEnt = CLIENT.SS && CLIENT.SS.Entity;
+          if (_pEnt && _pEnt.GID != null && gidInt(_pEnt.GID) && gidInt(_pEnt.GID) !== lastCharGid) { try { onCharChanged(_pEnt); } catch (e2) {} }
+        } catch (e3) {}
         // 登录角色后自动读取内挂配置（一次性，延迟等内挂窗口渲染，读不到重试）
         if (!autoReadBotDone) {
           autoReadBotDone = true;

@@ -3,31 +3,84 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>多账号监控（服务端在线验证）</title>
+<title>多账号监控</title>
 <style>
   * { box-sizing: border-box; }
-  body { margin: 0; padding: 20px; background: #10151c; color: #dbe4ee; font: 13px/1.6 "Microsoft YaHei", system-ui, sans-serif; }
-  h1 { font-size: 18px; margin: 0 0 4px; color: #7fd1ff; }
-  .sub { color: #7a8794; font-size: 12px; margin-bottom: 16px; }
-  .wrap { overflow-x: auto; background: #171e27; border: 1px solid #26313d; border-radius: 8px; }
-  table { border-collapse: collapse; width: 100%; min-width: 1080px; }
-  th, td { padding: 6px 9px; text-align: left; white-space: nowrap; border-bottom: 1px solid #222c37; }
-  th { background: #1c2530; color: #9fb3c8; font-weight: 600; position: sticky; top: 0; }
-  tr:last-child td { border-bottom: none; }
-  .tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; margin-right: 6px; }
-  .tag.on { background: #12351f; color: #5fd68a; }
-  .tag.off { background: #2b3138; color: #7d8894; }
-  .tag.err { background: #3a1d1d; color: #e08080; }
-  .tag.none { background: #262b31; color: #8a939c; }
-  .tag.win { background: #1c2c3a; color: #6fa8d6; }
-  .dim { color: #5d6875; }
-  .ts { color: #5d6875; font-size: 11px; }
-  .empty { padding: 30px; text-align: center; color: #5d6875; }
-  .foot { margin-top: 10px; color: #5d6875; font-size: 11px; }
-  .st { color: #7fd1ff; }
-  .hd { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-  #btnSet { background: #1c6ea8; color: #fff; border: 0; border-radius: 6px; padding: 7px 16px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+  body { margin: 0; padding: 20px; background: #0e1319; color: #dbe4ee; font: 13px/1.6 "Microsoft YaHei", system-ui, sans-serif; }
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  .ttl { font-size: 19px; color: #e8f1fa; margin: 0; }
+  .sub { color: #7a8794; font-size: 12px; margin-top: 2px; }
+  .topbtns { display: flex; align-items: center; gap: 10px; }
+  #btnSet { background: #1c6ea8; color: #fff; border: 0; border-radius: 8px; padding: 8px 18px; font-size: 13px; cursor: pointer; }
   #btnSet:hover { background: #2382c4; }
+  .now { color: #5d6875; font-size: 12px; }
+
+  /* 概览统计条 */
+  .statbar { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .stat { background: #151c25; border: 1px solid #232e3a; border-radius: 10px; padding: 8px 16px; min-width: 90px; text-align: center; }
+  .stat .n { font-size: 20px; font-weight: 700; line-height: 1.2; }
+  .stat .l { font-size: 11px; color: #7a8794; }
+  .stat.on .n { color: #4cd787; }
+  .stat.off .n { color: #6f7d8a; }
+  .stat.err .n { color: #e07c7c; }
+  .stat.all .n { color: #8fb8e8; }
+
+  /* 账号卡片网格 */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; }
+  .card { background: #161d26; border: 1px solid #24303c; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
+  .card.st-on { border-left: 4px solid #2fbf71; }
+  .card.st-off { border-left: 4px solid #4b5864; }
+  .card.st-err { border-left: 4px solid #d9534f; }
+  .card.st-none { border-left: 4px solid #55606b; }
+
+  .chead { display: flex; align-items: center; gap: 8px; padding: 10px 14px 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .st-on .dot { background: #2fbf71; box-shadow: 0 0 6px #2fbf7188; }
+  .st-off .dot { background: #4b5864; }
+  .st-err .dot { background: #d9534f; }
+  .st-none .dot { background: #55606b; }
+  .acct { color: #8b98a5; font-size: 12px; font-family: Consolas, monospace; }
+  .sname { margin-left: auto; font-size: 11px; color: #5d6875; }
+  .sname .p { display: inline-block; padding: 1px 8px; border-radius: 9px; font-size: 11px; }
+  .sname .p.on { background: #12351f; color: #4cd787; }
+  .sname .p.off { background: #242b31; color: #7d8894; }
+  .sname .p.err { background: #3a1d1d; color: #e08080; }
+  .sname .p.none { background: #232a31; color: #8a939c; }
+
+  .role { padding: 2px 14px 8px; display: flex; align-items: baseline; gap: 8px; }
+  .role .rn { font-size: 17px; font-weight: 700; color: #eef4fa; }
+  .role .rd { color: #7a8794; font-size: 12px; }
+  .role .offtxt { font-size: 15px; color: #6f7d8a; }
+
+  .body { padding: 0 14px 10px; display: flex; flex-direction: column; gap: 7px; flex: 1; }
+  .kv { display: flex; gap: 14px; flex-wrap: wrap; color: #aab6c2; font-size: 12px; }
+  .kv b { color: #dbe4ee; font-weight: 600; }
+  .mapp { color: #8fb8e8; font-family: Consolas, monospace; }
+
+  .bar { display: flex; align-items: center; gap: 8px; }
+  .bar .bl { width: 40px; flex: none; color: #7a8794; font-size: 11px; }
+  .bar .bt { flex: 1; height: 8px; background: #0e141b; border-radius: 4px; overflow: hidden; }
+  .bar .bf { height: 100%; border-radius: 4px; transition: width .6s; }
+  .bar.hp .bf { background: linear-gradient(90deg,#c0392b,#e74c3c); }
+  .bar.sp .bf { background: linear-gradient(90deg,#2471a3,#3498db); }
+  .bar.wt .bf { background: linear-gradient(90deg,#b9770e,#f39c12); }
+  .bar .bv { width: 96px; flex: none; text-align: right; color: #c8d3dd; font-size: 11px; font-family: Consolas, monospace; }
+
+  .foot { display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-top: 1px solid #212c37; color: #7a8794; font-size: 11px; flex-wrap: wrap; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 8px; background: #1a232d; border: 1px solid #26313d; color: #aab6c2; }
+  .chip i { font-style: normal; width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+  .chip .y { background: #2fbf71; }
+  .chip .n { background: #4b5864; }
+  .win { margin-left: auto; color: #7a8794; }
+  .win .wp { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 4px; }
+  .win .wp.y { background: #5dade2; }
+  .win .wp.n { background: #4b5864; }
+
+  .empty { grid-column: 1 / -1; padding: 40px; text-align: center; color: #5d6875; background: #151c25; border: 1px dashed #26313d; border-radius: 12px; }
+  .loading { grid-column: 1 / -1; padding: 40px; text-align: center; color: #5d6875; }
+  .errbox { grid-column: 1 / -1; padding: 30px; text-align: center; color: #e08080; background: #1a1016; border: 1px solid #3a1d1d; border-radius: 12px; }
+
+  /* 设置弹窗 */
   .mask { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: center; justify-content: center; z-index: 50; }
   .mask.show { display: flex; }
   .modal { background: #1a222c; border: 1px solid #2c3947; border-radius: 10px; width: min(720px, 94vw); max-height: 86vh; display: flex; flex-direction: column; }
@@ -52,15 +105,19 @@
 </style>
 </head>
 <body>
-<div class="hd">
+<div class="top">
   <div>
-    <h1>多账号监控</h1>
-    <div class="sub">在线 = 服务器官方查询结果（每 60 秒验证一次，服务端真值）· 窗口 = 本地游戏窗口心跳（仅参考）· 账号仅作标识，核心为该账号的在线角色信息</div>
+    <h1 class="ttl">多账号监控</h1>
+    <div class="sub">在线 = 服务器官方查询结果（每 60 秒验证）· 窗口 = 本地游戏窗口心跳（仅参考）</div>
   </div>
-  <button id="btnSet" type="button">设置账号</button>
+  <div class="topbtns">
+    <span class="now" id="now"></span>
+    <button id="btnSet" type="button">设置账号</button>
+  </div>
 </div>
-<div class="wrap"><div class="empty" id="box">正在查询服务器在线状态…</div></div>
-<div class="foot" id="foot"></div>
+<div class="statbar" id="statbar"></div>
+<div class="grid" id="grid"><div class="loading">正在查询服务器在线状态…</div></div>
+
 <div class="mask" id="mask">
   <div class="modal">
     <h3>设置账号</h3>
@@ -80,6 +137,7 @@
     </div>
   </div>
 </div>
+
 <script>
 var ONLINE_MS = 60000;
 var JOB = {0:"初学者",1:"剑士",2:"魔法师",3:"弓箭手",4:"服事",5:"商人",6:"盗贼",7:"骑士",8:"牧师",9:"巫师",10:"铁匠",11:"猎人",12:"刺客",13:"骑士",14:"十字军",15:"武僧",16:"贤者",17:"流氓",18:"炼金术士",19:"诗人",20:"舞者",21:"Crusader",23:"超初",24:"快枪手",25:"忍者",4001:"进阶初学者",4002:"进阶剑士",4003:"进阶魔法师",4004:"进阶弓箭手",4005:"进阶服事",4006:"进阶商人",4007:"进阶盗贼",4008:"骑士领主",4009:"神官",4010:"超魔导师",4011:"神工匠",4012:"神射手",4013:"十字刺客",4014:"",4015:"圣殿十字军",4016:"武术宗师",4017:"智者",4018:"神行太保",4019:"创造者",4020:"搞笑艺人",4021:"冷艳舞姬",4022:"圣殿十字军",4023:"初心者(宝宝)",4024:"剑士(宝宝)",4025:"魔法师(宝宝)",4026:"弓箭手(宝宝)",4027:"服事(宝宝)",4028:"商人(宝宝)",4029:"盗贼(宝宝)",4030:"骑士(宝宝)",4031:"牧师(宝宝)",4032:"巫师(宝宝)",4033:"铁匠(宝宝)",4034:"猎人(宝宝)",4035:"刺客(宝宝)",4036:"骑士(宝宝)",4037:"十字军(宝宝)",4038:"武僧(宝宝)",4039:"贤者(宝宝)",4040:"流氓(宝宝)",4041:"炼金术士(宝宝)",4042:"诗人(宝宝)",4043:"舞娘(宝宝)",4044:"十字军(宝宝)",4045:"超级初心者(宝宝)",4046:"跆拳道",4047:"拳圣",4048:"拳圣",4049:"灵媒",4050:"妖道",4051:"死灵骑士",4052:"黑暗搜集者",4054:"符文骑士",4055:"大法师",4056:"游侠",4057:"大主教",4058:"机匠",4059:"十字切割者",4060:"符文骑士",4061:"大法师",4062:"游侠",4063:"大主教",4064:"机匠",4065:"十字切割者",4066:"皇家卫士",4067:"元素使",4068:"宫廷乐师",4069:"漫游舞者",4070:"修罗",4071:"基因学者",4072:"逐影",4073:"皇家卫士",4074:"元素使",4075:"宫廷乐师",4076:"漫游舞者",4077:"修罗",4078:"基因学者",4079:"逐影",4080:"符文骑士",4081:"符文骑士",4082:"皇家卫士",4083:"皇家卫士",4084:"游侠",4085:"游侠",4086:"机匠",4087:"机匠",4096:"符文骑士(宝宝)",4097:"大法师(宝宝)",4098:"游侠(宝宝)",4099:"大主教(宝宝)",4100:"机匠(宝宝)",4101:"十字切割者(宝宝)",4102:"皇家卫士(宝宝)",4103:"元素使(宝宝)",4104:"宫廷乐师(宝宝)",4105:"漫游舞者(宝宝)",4106:"修罗(宝宝)",4107:"基因学者(宝宝)",4108:"逐影(宝宝)",4109:"符文骑士(宝宝)",4110:"皇家卫士(宝宝)",4111:"游侠(宝宝)",4112:"机匠(宝宝)",4190:"超级初心者",4191:"超级初心者(宝宝)",4211:"影狼",4212:"胧",4215:"Rebellion",4218:"召唤师"};
@@ -99,20 +157,69 @@ function jobName(id) {
   if (id == null) return "—";
   return JOB[id] || String(id);
 }
-function weightPct(w, mw) {
-  if (w == null || !mw) return "—";
-  return Math.round(w / mw * 100) + "%";
-}
-function svTag(sv) {
-  if (!sv) return '<span class="tag none">待查</span>';
-  if (sv.online) return '<span class="tag on">在线</span>';
-  if (sv.err === "离线") return '<span class="tag off">离线</span>';
-  if (sv.err === "密码错") return '<span class="tag err">密码错</span>';
-  return '<span class="tag err">' + esc(sv.err || "异常") + "</span>";
-}
 function onoff(v) {
-  if (v == null) return "—";
-  return (v === 48 || v === 0) ? "否" : "是";
+  return (v == null) ? "—" : ((v === 48 || v === 0) ? "n" : "y");
+}
+function bar(bl, pct, bv) {
+  var w = Math.max(0, Math.min(100, pct));
+  return '<div class="bar ' + bl + '"><span class="bl">' + { hp: "HP", sp: "SP", wt: "负重" }[bl] + '</span>' +
+    '<span class="bt"><span class="bf" style="width:' + w + '%"></span></span>' +
+    '<span class="bv">' + bv + "</span></div>";
+}
+function card(uid, s, node) {
+  var now = Date.now();
+  var win = node && (now - (node._serverTs || 0) <= ONLINE_MS);
+  var st = (node && node.stat) || {};
+  var cls = s ? (s.online ? "st-on" : (s.err === "离线" ? "st-off" : "st-err")) : "st-none";
+  var pcls = s ? (s.online ? "on" : (s.err === "离线" ? "off" : "err")) : "none";
+  var ptxt = s ? (s.online ? "在线" : (s.err === "离线" ? "离线" : (s.err || "异常"))) : "待查";
+  var up = s && s._ts ? s._ts : (node ? node._serverTs : null);
+
+  var roleHtml;
+  if (s && s.online) {
+    roleHtml = '<div class="role"><span class="rn">' + esc(s.name) + '</span>' +
+      '<span class="rd">' + esc(jobName(s.class)) + " · Lv " + s.base_level + "/" + s.job_level + "</span></div>";
+  } else {
+    var nodeTxt = st.job ? (esc(st.job) + (st.lv != null ? " · Lv " + st.lv : "")) : "";
+    roleHtml = '<div class="role"><span class="offtxt">' + (s && s.err === "密码错" ? "密码错误" : (s && s.err === "离线" ? "没有角色在线" : "待查询")) + '</span>' +
+      (nodeTxt ? '<span class="rd">' + nodeTxt + "</span>" : "") + "</div>";
+  }
+
+  var bodyHtml = "";
+  if (s && s.online) {
+    bodyHtml =
+      '<div class="kv"><span>职业 <b>' + esc(jobName(s.class)) + "</b></span>" +
+      '<span>等级 <b>' + s.base_level + "/" + s.job_level + "</b></span>" +
+      '<span>线路 <b>' + (LINE[s.nid] || "—") + "</b></span></div>" +
+      '<div class="kv">地图 <span class="mapp">' + esc(s.last_map || "—") + "</span></div>" +
+      bar("hp", s.hp / Math.max(1, s.max_hp) * 100, s.hp + " / " + s.max_hp) +
+      bar("sp", s.sp / Math.max(1, s.max_sp) * 100, s.sp + " / " + s.max_sp) +
+      bar("wt", s.weight / Math.max(1, s.maxweight) * 100, Math.round(s.weight / 10) + " / " + Math.round(s.maxweight / 10));
+  } else if (node && (st.hp != null)) {
+    bodyHtml =
+      '<div class="kv">' + (st.job ? "职业 <b>" + esc(st.job) + "</b>" : "") + (st.lv != null ? "等级 <b>" + st.lv + "</b>" : "") + "</div>" +
+      (st.map ? '<div class="kv">地图 <span class="mapp">' + esc(st.map) + "</span></div>" : "") +
+      (st.hp != null ? bar("hp", st.hp / Math.max(1, st.maxhp || 1) * 100, st.hp + " / " + (st.maxhp || "?")) : "");
+  } else {
+    bodyHtml = '<div class="kv" style="color:#5d6875">（该账号尚未在游戏中，无角色数据）</div>';
+  }
+
+  var chips = "";
+  if (s && s.online) {
+    chips = '<span class="chip">战<i class="' + onoff(s.autoattack) + '"></i></span>' +
+      '<span class="chip">拾<i class="' + onoff(s.autoloot) + '"></i></span>' +
+      '<span class="chip">药<i class="' + onoff(s.autopots) + '"></i></span>';
+    if (s.inminute) chips += '<span class="chip">在线 ' + esc(s.inminute) + "</span>";
+  }
+  var winHtml = '<span class="win"><span class="wp ' + (win ? "y" : "n") + '"></span>窗口' + (win ? "在" : "离") + "</span>";
+
+  return '<div class="card ' + cls + '">' +
+    '<div class="chead"><span class="dot"></span><span class="acct">' + esc(uid) + "</span>" +
+    '<span class="sname"><span class="p ' + pcls + '">' + ptxt + "</span></span></div>" +
+    roleHtml +
+    '<div class="body">' + bodyHtml + "</div>" +
+    '<div class="foot">' + chips + winHtml + '<span class="ts">' + fmtTime(up) + "</span></div>" +
+    "</div>";
 }
 function load() {
   Promise.all([
@@ -121,49 +228,37 @@ function load() {
   ]).then(function (res) {
     var data = res[0], accConf = res[1].accounts || [];
     var now = Date.now();
-    var nodes = {};  // 节点上报 by userid
+    var nodes = {};
     (data.accounts || []).forEach(function (a) { nodes[a.account] = a; });
     var sv = data.serverOnline || {};
     var keys = [];
     accConf.forEach(function (a) { if (a.userid && keys.indexOf(a.userid) < 0) keys.push(a.userid); });
     Object.keys(nodes).forEach(function (k) { if (keys.indexOf(k) < 0) keys.push(k); });
-    var box = document.getElementById("box");
+    keys.sort();
+    var grid = document.getElementById("grid"), statbar = document.getElementById("statbar");
+    document.getElementById("now").textContent = fmtTime(now);
     if (!keys.length) {
-      box.className = "empty";
-      box.textContent = "暂无账号 —— 请在 diag-collect/acct-accounts.json 中填写账号（后续提供设置窗口）";
-      document.getElementById("foot").textContent = "";
+      grid.innerHTML = '<div class="empty">还没有账号 —— 点右上「设置账号」开始填写</div>';
+      statbar.innerHTML = "";
       return;
     }
-    keys.sort();
-    var rows = keys.map(function (uid) {
-      var s = sv[uid] || null;
-      var node = nodes[uid] || null;
-      var win = node && (now - (node._serverTs || 0) <= ONLINE_MS);
-      var st = (node && node.stat) || {};
-      var up = s && s._ts ? s._ts : (node ? node._serverTs : null);
-      return "<tr>" +
-        "<td>" + svTag(s) + esc(uid) + "</td>" +
-        "<td>" + (s && s.online ? esc(s.name) : '<span class="dim">—</span>') + "</td>" +
-        "<td>" + (s && s.online ? esc(jobName(s.class)) : '<span class="dim">' + esc(st.job || "—") + "</span>") + "</td>" +
-        "<td>" + (s && s.online ? (s.base_level + "/" + s.job_level) : '<span class="dim">' + ((st.lv != null) ? st.lv : "—") + "</span>") + "</td>" +
-        "<td>" + (s && s.online ? esc(s.last_map || "—") : '<span class="dim">' + esc(st.map || "—") + "</span>") + "</td>" +
-        "<td>" + (s && s.online ? (s.hp + "/" + s.max_hp) : '<span class="dim">' + ((st.hp != null) ? st.hp + "/" + (st.maxhp != null ? st.maxhp : "?") : "—") + "</span>") + "</td>" +
-        "<td>" + (s && s.online ? weightPct(s.weight, s.maxweight) : '<span class="dim">' + weightPct(st.weight, st.maxWeight) + "</span>") + "</td>" +
-        "<td>" + (s && s.online ? ("战" + onoff(s.autoattack) + " 拾" + onoff(s.autoloot) + " 药" + onoff(s.autopots)) : '<span class="dim">—</span>') + "</td>" +
-        "<td>" + (s && s.online ? esc(s.inminute || "—") : '<span class="dim">—</span>') + "</td>" +
-        "<td>" + (win ? '<span class="tag win">窗口在</span>' : '<span class="tag off">窗口离</span>') + "</td>" +
-        '<td class="ts">' + fmtTime(up) + "</td>" +
-        "</tr>";
-    }).join("");
-    box.className = "";
-    box.innerHTML = '<table><thead><tr><th>账号</th><th>在线角色</th><th>职业</th><th>等级</th><th>地图</th><th>HP/SP</th><th>负重</th><th>挂机</th><th>在线时长</th><th>窗口</th><th>验证时间</th></tr></thead><tbody>' + rows + "</tbody></table>";
-    var on = keys.filter(function (k) { return sv[k] && sv[k].online; }).length;
-    var off = keys.filter(function (k) { return sv[k] && !sv[k].online; }).length;
-    document.getElementById("foot").textContent = "共 " + keys.length + " 个账号 · 服务端在线 " + on + " · 服务端离线 " + off + " · 刷新于 " + fmtTime(now) + "（服务端每 60 秒自动验证）";
+    var on = 0, off = 0, err = 0;
+    keys.forEach(function (k) {
+      var s = sv[k];
+      if (s && s.online) on++;
+      else if (s && s.err === "离线") off++;
+      else if (s && s.err) err++;
+    });
+    statbar.innerHTML =
+      '<div class="stat all"><div class="n">' + keys.length + '</div><div class="l">全部账号</div></div>' +
+      '<div class="stat on"><div class="n">' + on + '</div><div class="l">在线</div></div>' +
+      '<div class="stat off"><div class="n">' + off + '</div><div class="l">离线</div></div>' +
+      '<div class="stat err"><div class="n">' + err + '</div><div class="l">异常</div></div>';
+    grid.innerHTML = keys.map(function (k) { return card(k, sv[k] || null, nodes[k] || null); }).join("");
   }).catch(function (e) {
-    var box = document.getElementById("box");
-    box.className = "empty";
-    box.textContent = "加载失败: " + e.message + " —— 请确认中心服务(8899)已启动";
+    document.getElementById("grid").innerHTML = '<div class="errbox">加载失败: ' + esc(e.message) +
+      " —— 中心服务(8899)未运行。双击 tools\start-diag-collect.vbs 启动，或重启电脑后自动启动。</div>";
+    document.getElementById("statbar").innerHTML = "";
   });
 }
 load();
@@ -174,7 +269,6 @@ var mask = document.getElementById("mask");
 var setBody = document.getElementById("setBody");
 var setMsg = document.getElementById("setMsg");
 var curList = [];
-
 function rowHtml(a) {
   var tr = document.createElement("tr");
   tr.innerHTML =

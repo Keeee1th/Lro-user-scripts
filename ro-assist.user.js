@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.2
+// @version      2.16.3
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.2"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.16.3"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -2834,7 +2834,8 @@
     "加速武器": "ADRENALINE", "速度激发": "ADRENALINE",
     "武器值最大化": "WEAPONPERFECT", "武器增加值": "WEAPONPERFECT",
     "凶砍": "OVERTHRUST",
-    "神威": "GLORIA",
+    "神威": "IMPOSITIO", "神威祈福": "IMPOSITIO", // V2.16.3 修正：神威祈福=IMPOSITIO（21），非 GLORIA
+    "幸运颂歌": "GLORIA", // V2.16.3 补：幸运颂歌=GLORIA（46，+LUK）
     "牺牲祈福": "SUFFRAGIUM", "牺牲": "SUFFRAGIUM",
     "撒水祈福": "ASPERSIO", "撒水": "ASPERSIO",
     "圣母颂歌": "MAGNIFICAT", "圣母": "MAGNIFICAT",
@@ -2872,7 +2873,7 @@
     { cn: "霸体", id: 1 }, { cn: "双手剑加速", id: 2 }, { cn: "集中攻击", id: 105 }, { cn: "心神凝聚", id: 3 }, // V2.15.30：集中攻击=105 心神凝聚=3
     { cn: "天使之障壁", id: 9 }, { cn: "赐福", id: 10 }, { cn: "加速术", id: 12 },
     { cn: "牺牲祈福", id: 16 }, { cn: "撒水祈福", id: 17 }, { cn: "圣之祝福", id: 18 },
-    { cn: "霸邪之阵", id: 19 }, { cn: "圣母颂歌", id: 20 }, { cn: "神威", id: 21 },
+    { cn: "霸邪之阵", id: 19 }, { cn: "圣母颂歌", id: 20 }, { cn: "神威", id: 21 }, { cn: "幸运颂歌", id: 46 }, // V2.16.3 补：幸运颂歌=GLORIA(46)
     { cn: "加速武器", id: 23 }, { cn: "武器值最大化", id: 24 }, { cn: "凶砍", id: 25 },
     { cn: "能量外套", id: 31 }, { cn: "自动防御", id: 58 }, { cn: "反射盾", id: 59 },
     { cn: "长矛加速", id: 68 }, { cn: "爆气", id: 86 }, { cn: "钢体", id: 87 },
@@ -3194,7 +3195,7 @@
       // 兜底2：硬编码 EFST 表（rAthena 抄录，已按实测修正 ASSUMPTIO=473 等）
       var map = {
         "INC_AGI": 12, "BLESSING": 10, "ENDURE": 1, "ADRENALINE": 23, "WEAPONPERFECT": 24,
-        "OVERTHRUST": 25, "GLORIA": 21, "SUFFRAGIUM": 16, "ASPERSIO": 17, "MAGNIFICAT": 20,
+        "OVERTHRUST": 25, "IMPOSITIO": 21, "GLORIA": 46, "SUFFRAGIUM": 16, "ASPERSIO": 17, "MAGNIFICAT": 20, // V2.16.3 修正：神威=IMPOSITIO(21) 幸运颂歌=GLORIA(46)，旧值 GLORIA:21 张冠李戴
         "KYRIE": 19, "ANGELUS": 9, "ENERGYCOAT": 31, "SOULLINK": 149, "EXPLOSIONSPIRITS": 86,
         "STEELBODY": 87, "LKCONCENTRATION": 105, "TWOHANDQUICKEN": 2, "SPEARQUICKEN": 68,
         "WINDWALK": 116, "CHASEWALK": 119, "MAXIMIZE": 26, "AUTOGUARD": 58, "REFLECTSHIELD": 59,
@@ -5871,20 +5872,23 @@
       var t = zAtkHpTrack[gid];
       if (!t) return false;
       if (hp < t.hp) { t.hp = hp; t.at = Date.now(); return false; }
-      return (Date.now() - t.at >= 2500) && (Date.now() - zAtkRelockAt >= 3000);
+      // V2.16.3：判定窗口 2.5s→1.5s（更快发现断连），补锁间隔 3s→2s（防刷包但恢复更快）
+      return (Date.now() - t.at >= 1500) && (Date.now() - zAtkRelockAt >= 2000);
     } catch (e) { return false; }
   }
   function zAtkRelockPoint(ent) {
     try {
       zAtkRelockAt = Date.now();
-      var EM = window.require && window.require("Renderer/EntityManager");
-      if (EM && typeof EM.setFocusEntity === "function") { try { EM.setFocusEntity(ent); } catch (e) {} }
-      if (ent && typeof ent.onMouseDown === "function") { try { ent.onMouseDown(); } catch (e) {} }
-      if (ent && typeof ent.onFocus === "function") { try { ent.onFocus(); } catch (e) {} }
-      zAtkLast.gid = ent.GID; zAtkLast.at = Date.now(); zAtkLast.outOfRange = false; // 补锁已含锁定+攻击，保持锁定状态让官方连击跑，不再重发
+      // V2.16.3：弃用 onFocus 官方点击路径（自带寻路→走近→转身→再攻击，就是「模拟点选迟钝」同款慢路径），
+      //   改直接重发 noctrl 锁定包（REQUEST_ACT action=7）——轻量直达服务器、无寻路无转身，1s 内恢复连击
+      var p = new CLIENT.PS.CZ.REQUEST_ACT();
+      p.targetGID = ent.GID;
+      p.action = npNoCtrlOn() ? 7 : 0;
+      CLIENT.NM.sendPacket(p);
+      zAtkLast.gid = ent.GID; zAtkLast.at = Date.now(); zAtkLast.outOfRange = false; // 重发锁定包后保持锁定状态，让服务器连击跑
       zAtkHpTrack[ent.GID] = { hp: (ent.life && ent.life.hp) || 0, at: Date.now() };
-      tlog("atk-relock 点选补锁定 gid=" + ent.GID);
-      setStatus("平A断连，点选补锁定…", "warn");
+      tlog("atk-relock 重发锁定包 gid=" + ent.GID);
+      setStatus("平A断连，重发锁定…", "warn");
       return true;
     } catch (e) { return false; }
   }
@@ -5986,8 +5990,12 @@
       var anyLock = Object.keys(lockList).length > 0;
       var beingHit = (now - zHpWatch.lastHitAt) < 3000; // 被攻击中
       var onaMode = $id("dsh-z-ona") ? $id("dsh-z-ona").value : "还击";
-      var allowHitTarget = beingHit && onaMode === "还击"; // 被攻击且设置为还击 → 非锁定怪也追
+      var allowHitTarget = beingHit && onaMode === "还击"; // 被攻击且设置为还击 → 无锁定怪时非锁定怪也追
+      // V2.16.3：追怪候选分两池——锁定怪候选（lockNear）永远优先；还击候选（hitNear）仅当没有任何锁定怪候选时才兜底。
+      //   旧实现把还击怪混入同一候选并按「血少优先」排序，快死的非锁定怪会抢走锁定怪目标（来回转向/追怪中断）。
       var near = null, nearD = 1e9, nearHp = 1e18; // V2.15.25：nearHp=最近候选绝对剩余HP（血少优先抢尾刀）
+      var lockNear = null, lockNearD = 1e9, lockNearHp = 1e18; // 锁定怪候选（优先）
+      var hitNear = null, hitNearD = 1e9, hitNearHp = 1e18;    // 还击候选（兜底）
       if (EM && EM.forEach) {
         EM.forEach(function (e) {
           try {
@@ -5996,14 +6004,22 @@
             if (e.ACTION && e.action != null && e.action === e.ACTION.DIE) return;
             if (e.remove_tick) return;
             var mid = e._job != null ? String(e._job) : (e.job != null ? String(e.job) : null);
-            if (anyLock && mid && !lockList[mid] && !allowHitTarget) return;
+            var inLockN = !anyLock || (mid && lockList[mid]);
+            if (!inLockN && !allowHitTarget) return;
             if (!ent.position || !e.position) return;
             var d = Math.abs(e.position[0] - ent.position[0]) + Math.abs(e.position[1] - ent.position[1]);
             // V2.15.25：血少优先（绝对剩余HP）→ 血量相同按距离近优先；读不到血量按极大排最后
             var hpNow = (e.life && e.life.hp != null) ? e.life.hp : 1e18;
-            if (!near || hpNow < nearHp || (hpNow === nearHp && d < nearD)) { near = e; nearD = d; nearHp = hpNow; }
+            if (inLockN) {
+              if (!lockNear || hpNow < lockNearHp || (hpNow === lockNearHp && d < lockNearD)) { lockNear = e; lockNearD = d; lockNearHp = hpNow; }
+            } else {
+              if (!hitNear || hpNow < hitNearHp || (hpNow === hitNearHp && d < hitNearD)) { hitNear = e; hitNearD = d; hitNearHp = hpNow; }
+            }
           } catch (e2) {}
         });
+        // 锁定怪候选优先；确无锁定怪才用还击候选
+        if (lockNear) { near = lockNear; nearD = lockNearD; nearHp = lockNearHp; }
+        else if (hitNear) { near = hitNear; nearD = hitNearD; nearHp = hitNearHp; }
       }
       // V2.9.0 方向记忆：记下最近一次锁定怪相对方位（10s 有效），无怪直走时优先朝该方向
       try {
@@ -6367,7 +6383,9 @@
         }
       }
       // 被攻击处理（非选中怪攻击）：有锁定目标 → 正常打锁定；无锁定目标但被攻击 → 按设置处理
-      if (!target && beingHit && hitTarget) {
+      // V2.16.3：还击加保护——zLock.gid 还挂着（正在追/打锁定怪，即使锁定怪当前超射程）→ 被非锁定怪打不还击，
+      //   防止还击把 zLock 目标换成非锁定怪导致追怪中断/来回转向（还击只在确无锁定目标时才触发）
+      if (!target && !zLock.gid && beingHit && hitTarget) {
         if (onaMode === "无视" || (onaMode === "瞬移" && $id("dsh-z-flykill") && !$id("dsh-z-flykill").checked)) { /* 不反击，继续寻怪（总开关关：瞬移按无视处理） */ }
         else if (onaMode === "瞬移") {
           doFly();
@@ -9213,7 +9231,7 @@
     '加速武器 / 速度激发      ADRENALINE          攻速提升(铁匠)',
     '武器值最大化 / 武器增加值 WEAPONPERFECT       武器效果强化',
     '凶砍                    OVERTHRUST          武器破坏',
-    '神威                    GLORIA              对魔增伤',
+    '神威                    IMPOSITIO           对魔增伤', // V2.16.3 修正：神威=IMPOSITIO
     '牺牲祈福 / 牺牲          SUFFRAGIUM          咏唱加速',
     '撒水祈福 / 撒水          ASPERSIO            圣属性附加',
     '圣母颂歌 / 圣母          MAGNIFICAT          SP恢复',

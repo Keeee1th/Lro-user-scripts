@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.1
+// @version      2.16.2
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.16.2"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -647,6 +647,8 @@
       '<div class="row"><span class="lb">非选中怪攻击</span><select id="dsh-z-ona" style="flex:0 0 100px"><option>无视</option><option>瞬移</option><option selected>还击</option></select></div>' +
       '<div class="row"><span class="lb">群殴时</span><span style="color:#5a6b7f">n≥</span><input id="dsh-z-grp" type="number" value="6" min="0" style="flex:0 0 38px"><span style="color:#5a6b7f">只怪（0=关闭）→</span>' +
       '<select id="dsh-z-grpact" style="flex:0 0 88px"><option>解围技能</option><option selected>瞬移</option></select></div>' +
+      '<div class="row"><span class="lb">解围技能</span><select id="dsh-z-qoaskill"><option value="">- 请选择 -</option></select>' +
+      '<span class="lb" style="min-width:26px">Lv</span><input id="dsh-z-qoaskilllv" type="number" value="5" min="1" max="10" style="flex:0 0 38px"></div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-flygrp" type="checkbox">群殴自动瞬移</label>' +
       '<label class="switch"><input id="dsh-z-flykill" type="checkbox" checked>防御瞬移总开关</label></div>' +
       '<div class="row"><span class="lb">瞬移方式</span><select id="dsh-z-flymode" style="flex:0 0 120px"><option>翅膀→瞬移术</option><option>苍蝇翅膀优先</option><option>瞬移术Lv1</option><option selected>瞬移术→翅膀</option></select>' +
@@ -2565,7 +2567,7 @@
     ["dsh-askint", "v"], ["dsh-asksp", "v"], ["dsh-asken", "c"],
     ["dsh-prereq", "c"], ["dsh-z-attmix", "c"],
     ["dsh-scanen", "c"], ["dsh-scanint", "v"],
-    ["dsh-z-ona", "v"], ["dsh-z-grp", "v"], ["dsh-z-grpact", "v"],
+    ["dsh-z-ona", "v"], ["dsh-z-grp", "v"], ["dsh-z-grpact", "v"], ["dsh-z-qoaskill", "v"], ["dsh-z-qoaskilllv", "v"],
     ["dsh-z-flymode", "v"], ["dsh-z-flyauto", "c"], ["dsh-z-flystuck", "c"],
     ["dsh-z-idlefly", "c"], ["dsh-z-idleflysec", "v"], ["dsh-z-bossfly", "c"], ["dsh-z-flyint", "v"],
     ["dsh-z-flygrp", "c"], ["dsh-z-flykill", "c"],
@@ -4363,7 +4365,7 @@
         if (s && s.level > 0 && !isPassiveSkill(s.SKID != null ? s.SKID : k)) learned[s.SKID != null ? s.SKID : k] = s;
       });
       var ids = Object.keys(learned);
-      var map = { "dsh-autoskill": ids, "dsh-automatic": ids, "dsh-touchskill": ids, "dsh-qoautoskill": ids, "dsh-autoshadow": ids };
+      var map = { "dsh-autoskill": ids, "dsh-automatic": ids, "dsh-touchskill": ids, "dsh-qoautoskill": ids, "dsh-autoshadow": ids, "dsh-z-qoaskill": ids };
       Object.keys(map).forEach(function (sid) {
         var sel = $id(sid);
         if (!sel) return;
@@ -5359,7 +5361,11 @@
       var grpAct = $id("dsh-z-grpact") ? $id("dsh-z-grpact").value : "瞬移";
       if (group > 0 && mobs.length >= group) {
         if (grpAct === "解围技能") {
-          // 群殴 → 解围技能：用技能顺序第一个技能打最近怪（目标在攻击距离内）
+          // 群殴 → 解围技能：优先用独立解围技能（dsh-z-qoaskill），未设置回退技能顺序第一个（目标在攻击距离内）
+          var qoSkid = $id("dsh-z-qoaskill") ? parseInt($id("dsh-z-qoaskill").value, 10) : 0;
+          var qoLv = $id("dsh-z-qoaskilllv") ? parseInt($id("dsh-z-qoaskilllv").value, 10) : 0;
+          if (isNaN(qoSkid)) qoSkid = 0; if (isNaN(qoLv)) qoLv = 0;
+          var qoSkill = qoSkid > 0 ? { skid: qoSkid, lv: qoLv > 0 ? qoLv : 1 } : null;
           var orderG = parseSkillOrder($id("dsh-skillorder").value);
           var entG = CLIENT.SS && CLIENT.SS.Entity;
           var tgG = null, tdG = 1e9, atkG = 3;
@@ -5370,15 +5376,16 @@
               if (mmG && mmG.dist >= 0 && mmG.dist < tdG && mmG.dist <= atkG) { tdG = mmG.dist; tgG = mmG; }
             }
           } catch (e5) {}
-          if (tgG && orderG.length && tgG.GID) {
+          var qoUse = qoSkill || (orderG.length ? orderG[0] : null);
+          if (tgG && qoUse && tgG.GID) {
             try {
               var pg = new CLIENT.PS.CZ.USE_SKILL();
-              pg.SKID = orderG[0].skid;
-              pg.selectedLevel = orderG[0].lv;
+              pg.SKID = qoUse.skid;
+              pg.selectedLevel = qoUse.lv;
               pg.targetID = tgG.GID;
               CLIENT.NM.sendPacket(pg);
-              setStatus("群殴(" + mobs.length + "只)，解围技能 " + getSkillNameById(orderG[0].skid), "warn");
-              tlog("defense-qo skill=" + orderG[0].skid);
+              setStatus("群殴(" + mobs.length + "只)，解围技能 " + getSkillNameById(qoUse.skid), "warn");
+              tlog("defense-qo skill=" + qoUse.skid);
             } catch (e6) {}
             return; // 已施放解围，本轮不做其他防御
           }
@@ -5840,14 +5847,73 @@
     return true; // 读不到默认 noctrl 开（该服默认开启）
   }
   var zAtkLast = { gid: null, at: 0, outOfRange: false }; // V2.15.29 平A锁定状态：gid=已锁定目标；outOfRange=目标曾出射程（追怪回来需重新锁定）
+  // V2.16.2：平A断连检测 + 点选补锁定——noctrl 系统连击偶发中断（目标稍动/状态重置/服务器判定丢失），
+  //   脚本静默不补发就一直停。方案：锁定目标后追踪其 HP，怪还活着但 HP 超 2.5s 未下降 = 连击已断 →
+  //   用点选补一次锁定（官方点击路径 onMouseDown+onFocus 重新锁定+触发连击），3s 最小间隔防刷包。
+  var zAtkHpTrack = {};   // gid -> { hp, at } 追踪锁定目标 HP 下降情况
+  var zAtkRelockAt = 0;   // 上次点选补锁时间
+  function zAtkTrackHp(gid, ent) {
+    try {
+      if (!ent || !ent.life) return;
+      var hp = ent.life.hp;
+      if (hp == null) return;
+      var now = Date.now();
+      var t = zAtkHpTrack[gid];
+      if (!t) { zAtkHpTrack[gid] = { hp: hp, at: now }; return; }
+      if (hp < t.hp) { t.hp = hp; t.at = now; } // HP 下降 = 连击在打
+    } catch (e) {}
+  }
+  function zAtkNeedRelock(gid, ent) {
+    try {
+      if (!ent || !ent.life) return false;
+      var hp = ent.life.hp;
+      if (hp == null) return false;
+      var t = zAtkHpTrack[gid];
+      if (!t) return false;
+      if (hp < t.hp) { t.hp = hp; t.at = Date.now(); return false; }
+      return (Date.now() - t.at >= 2500) && (Date.now() - zAtkRelockAt >= 3000);
+    } catch (e) { return false; }
+  }
+  function zAtkRelockPoint(ent) {
+    try {
+      zAtkRelockAt = Date.now();
+      var EM = window.require && window.require("Renderer/EntityManager");
+      if (EM && typeof EM.setFocusEntity === "function") { try { EM.setFocusEntity(ent); } catch (e) {} }
+      if (ent && typeof ent.onMouseDown === "function") { try { ent.onMouseDown(); } catch (e) {} }
+      if (ent && typeof ent.onFocus === "function") { try { ent.onFocus(); } catch (e) {} }
+      zAtkLast.gid = ent.GID; zAtkLast.at = Date.now(); zAtkLast.outOfRange = false; // 补锁已含锁定+攻击，保持锁定状态让官方连击跑，不再重发
+      zAtkHpTrack[ent.GID] = { hp: (ent.life && ent.life.hp) || 0, at: Date.now() };
+      tlog("atk-relock 点选补锁定 gid=" + ent.GID);
+      setStatus("平A断连，点选补锁定…", "warn");
+      return true;
+    } catch (e) { return false; }
+  }
   function sendNormalAtk(gid) {
     try {
       if (!clientReady() || !gid) return;
       var now = Date.now();
-      // V2.15.29：noctrl 系统自动连击——发一次 REQUEST_ACT(action=7) 后游戏自动持续平A，
-      //   同目标锁定期间不再补发（连续补发会打断自动连击，导致平A中间出现间断）；
-      //   仅换目标（gid 变化）或目标曾出射程重进（outOfRange）才补发一次锁定。
-      if (zAtkLast.gid === gid && !zAtkLast.outOfRange) { if (btDiagOn) btLog('atk-skip', '同目标noctrl连击中不重发 gid=' + gid); return; }
+      // V2.16.2：断连检测——锁定怪还活着但 HP 超 2.5s 未下降 → 点选补锁定（官方点击路径重新锁定）
+      if (zAtkLast.gid === gid && now - zAtkLast.at >= 1500) {
+        var entT = null;
+        try {
+          var EM2 = window.require && window.require("Renderer/EntityManager");
+          if (EM2 && typeof EM2.forEach === "function") {
+            EM2.forEach(function (e) { if (e && e.GID === gid) entT = e; });
+          }
+        } catch (e) {}
+        if (entT && zAtkNeedRelock(gid, entT)) { if (zAtkRelockPoint(entT)) return; }
+      }
+      if (zAtkLast.gid === gid && !zAtkLast.outOfRange) {
+        // 正常连击中：只追踪 HP（不进点选路径），不重发包
+        try {
+          var EM3 = window.require && window.require("Renderer/EntityManager");
+          if (EM3 && typeof EM3.forEach === "function") {
+            EM3.forEach(function (e) { if (e && e.GID === gid) zAtkTrackHp(gid, e); });
+          }
+        } catch (e) {}
+        if (btDiagOn) btLog('atk-skip', '同目标noctrl连击中不重发 gid=' + gid);
+        return;
+      }
       var p = new CLIENT.PS.CZ.REQUEST_ACT();
       p.targetGID = gid;
       p.action = npNoCtrlOn() ? 7 : 0; // noctrl 开=7（免ctrl锁定攻击），关=0
@@ -5855,6 +5921,8 @@
       zAtkLast.gid = gid;
       zAtkLast.at = now;
       zAtkLast.outOfRange = false;
+      zAtkHpTrack[gid] = { hp: 1e18, at: now }; // 重置追踪：新锁定从满血起点算（避免沿用旧怪血量）
+      if (btDiagOn) btLog('atk-send', 'noctrl 锁定 gid=' + gid + ' action=' + p.action);
     } catch (e) {}
   }
   // V2.15.25：注入内挂——换目标时发一次锁定（REQUEST_ACT），客户端箭头/内挂跟随助手目标（挂机双轨一致，与走路机制无关）
@@ -8882,14 +8950,28 @@
         readBtn.addEventListener("click", function () {
           inventoryReadChar = null;
           readStorageAndInventory();
+          invSyncPull(getInventoryAccount(), function () { // V2.16.2：读完顺手拉一次远端合并
+            try {
+              var kw = searchInput ? searchInput.value.trim() : "";
+              if (kw) { var res = searchInventory(kw); resultsEl.innerHTML = renderInventoryResults(res, kw); }
+            } catch (e) {}
+          });
         });
       }
+      // V2.16.2：页面加载时拉取一次该账号的远端仓库数据（跨端口互通）
+      invSyncPull(getInventoryAccount(), null);
       // 清空按钮
       var clearBtn = $id("dsh-inv-clear");
       if (clearBtn) {
         clearBtn.addEventListener("click", function () {
           if (!confirm("确定清空所有仓库和背包数据？")) return;
           try { localStorage.removeItem("dsh_ro_inventory_v1"); } catch (e) {}
+          try { // V2.16.2：远端 8899 一并清空，防拉取回旧数据
+            if (typeof fetch === "function") {
+              var accC = getInventoryAccount();
+              if (accC) fetch(INV_SYNC_URL + "/clear", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ account: accC }) }).catch(function () {});
+            }
+          } catch (e2) {}
           if (resultsEl) resultsEl.innerHTML = '<span class="st">已清空。</span>';
           setStatus("仓库/背包数据已清空", "ok");
         });
@@ -9677,6 +9759,48 @@
     return null;
   }
   // 读取仓库和背包并保存
+  // V2.16.2：仓库跨端口同步（本机 8899 中转——不同端口页面的 localStorage 相互隔离，经服务端中转互通）
+  var INV_SYNC_URL = "http://127.0.0.1:8899/api/inv";
+  function invSyncPush(account, accData) {
+    try {
+      if (typeof fetch !== "function" || !account || !accData) return;
+      fetch(INV_SYNC_URL + "/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account: account, storage: accData.storage || null, characters: accData.characters || {} })
+      }).catch(function () {});
+    } catch (e) {}
+  }
+  function invSyncPull(account, after) {
+    try {
+      if (typeof fetch !== "function" || !account) { if (after) after(); return; }
+      fetch(INV_SYNC_URL + "/get?account=" + encodeURIComponent(account))
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (!j || !j.ok || !j.data) { if (after) after(); return; }
+          var data = {};
+          try { data = JSON.parse(localStorage.getItem("dsh_ro_inventory_v1") || "{}"); } catch (e) {}
+          var loc = data[account] || { accountName: account, storage: null, characters: {} };
+          var rem = j.data;
+          if (rem.storage && rem.storage.lastUpdate) {
+            if (!loc.storage || rem.storage.lastUpdate >= loc.storage.lastUpdate) loc.storage = rem.storage;
+          }
+          if (rem.characters && typeof rem.characters === "object") {
+            loc.characters = loc.characters || {};
+            Object.keys(rem.characters).forEach(function (cn) {
+              var rc = rem.characters[cn];
+              if (rc && rc.lastUpdate) {
+                var lc = loc.characters[cn];
+                if (!lc || rc.lastUpdate >= lc.lastUpdate) loc.characters[cn] = rc;
+              }
+            });
+          }
+          data[account] = loc;
+          try { localStorage.setItem("dsh_ro_inventory_v1", JSON.stringify(data)); } catch (e) {}
+          if (after) after();
+        }).catch(function () { if (after) after(); });
+    } catch (e) { if (after) after(); }
+  }
   function readStorageAndInventory() {
     try {
       var account = getInventoryAccount();
@@ -9703,6 +9827,7 @@
       if (invResult) data[account].characters[charName] = { lastUpdate: Date.now(), bag: { stats: invResult.stats, items: invResult.items } };
 
       try { localStorage.setItem("dsh_ro_inventory_v1", JSON.stringify(data)); } catch (e) {}
+      invSyncPush(account, data[account]); // V2.16.2：跨端口同步——上传到本机 8899 中转，其他端口的页面可拉取
 
       var msg = "已记录 " + (stoResult ? ("仓库 " + stoResult.stats.total + " 件") : "仓库未读到") + " · [" + charName + "] 背包 " + (invResult ? invResult.stats.total : 0) + " 件";
       setStatus(msg, "ok");

@@ -241,6 +241,57 @@ var server = http.createServer(function (req, res) {
     return;
   }
 
+  // 仓库跨端口同步（V2.16.2）：POST /api/inv/save 按账号保存仓库+背包，GET /api/inv/get?account= 拉取
+  // 数据落盘 diag-collect/inv-sync.json：{ account: { accountName, storage, characters, _ts } }
+  var INV_FILE = path.join(DIR, 'inv-sync.json');
+  function loadInvSync() { try { return JSON.parse(fs.readFileSync(INV_FILE, 'utf8')) || {}; } catch (e) { return {}; } }
+  function saveInvSync(d) { try { fs.writeFileSync(INV_FILE, JSON.stringify(d)); } catch (e) {} }
+  if (url === '/api/inv/save' && req.method === 'POST') {
+    readBody(req, function (body) {
+      var snap = null;
+      try { snap = JSON.parse(body); } catch (e) { json(res, 400, { ok: false, err: 'bad json' }); return; }
+      if (!snap || !snap.account) { json(res, 400, { ok: false, err: 'no account' }); return; }
+      var db = loadInvSync();
+      var cur = db[snap.account] || { accountName: snap.account, storage: null, characters: {} };
+      if (snap.storage && snap.storage.lastUpdate) cur.storage = snap.storage;
+      if (snap.characters && typeof snap.characters === 'object') {
+        cur.characters = cur.characters || {};
+        Object.keys(snap.characters).forEach(function (cn) {
+          var nc = snap.characters[cn];
+          if (nc && nc.lastUpdate) {
+            var oc = cur.characters[cn];
+            if (!oc || nc.lastUpdate >= oc.lastUpdate) cur.characters[cn] = nc;
+          }
+        });
+      }
+      cur._ts = Date.now();
+      db[snap.account] = cur;
+      saveInvSync(db);
+      json(res, 200, { ok: true, account: snap.account });
+    });
+    return;
+  }
+  if (url === '/api/inv/clear' && req.method === 'POST') {
+    readBody(req, function (body) {
+      var snap = null;
+      try { snap = JSON.parse(body); } catch (e) { json(res, 400, { ok: false, err: 'bad json' }); return; }
+      var db3 = loadInvSync();
+      if (snap && snap.account && db3[snap.account]) { delete db3[snap.account]; saveInvSync(db3); }
+      json(res, 200, { ok: true });
+    });
+    return;
+  }
+  if (url === '/api/inv/get' && req.method === 'GET') {
+    var q = require('url').parse(req.url, true).query;
+    var db2 = loadInvSync();
+    if (q.account) {
+      json(res, 200, { ok: true, account: q.account, data: db2[q.account] || null });
+    } else {
+      json(res, 200, { ok: true, accounts: Object.keys(db2) });
+    }
+    return;
+  }
+
   // 总页面：GET /acct
   if (url === '/acct') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });

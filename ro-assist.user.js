@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.5
+// @version      2.16.6
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.5"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.16.6"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -657,6 +657,7 @@
       '<div class="row"><label class="switch"><input id="dsh-z-rein" type="checkbox">寻怪自动上马（缰绳 12622）</label><span style="color:#5a6b7f;font-size:11px">骑乘状态不在身自动用</span></div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-mapbound" type="checkbox" checked>地图边界</label>' +
       '<span class="lb" style="min-width:34px">半径</span><input id="dsh-z-mapbound-r" type="number" value="25" min="5" style="flex:0 0 42px"><span style="color:#5a6b7f;font-size:11px">格（以启动点为圆心，走出就回头）</span></div>' +
+      '<div class="row"><span class="lb" style="min-width:80px">地图边缘距离</span><input id="dsh-z-mapbound-edge" type="number" value="15" min="3" style="flex:0 0 42px"><span style="color:#5a6b7f;font-size:11px">格（距当前地图物理边界小于此值就回头，防走到别的图）</span></div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-idlefly" type="checkbox">无目标持续自动瞬移</label>' +
       '<span class="lb" style="min-width:34px">超过</span><input id="dsh-z-idleflysec" type="number" value="10" style="flex:0 0 40px"><span style="color:#5a6b7f">s无锁定怪→瞬移</span></div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-bossfly" type="checkbox">BOSS出现瞬移</label>' +
@@ -2577,7 +2578,7 @@
     ["dsh-z-hpfly", "v"], ["dsh-z-spfly", "v"], ["dsh-z-hpout", "v"], ["dsh-z-keep", "v"],
     ["dsh-z-sit", "c"], ["dsh-z-sithplo", "v"], ["dsh-z-sithphi", "v"], ["dsh-z-sitsplo", "v"], ["dsh-z-sitsphi", "v"],
     ["dsh-z-sitxw", "v"], ["dsh-z-sitback", "c"], ["dsh-z-sitnofight", "c"],
-    ["dsh-z-attint", "v"], ["dsh-z-range", "v"], ["dsh-z-pmrange", "v"], ["dsh-z-mgrange", "v"], ["dsh-z-minrange", "v"], ["dsh-z-mapbound", "c"], ["dsh-z-mapbound-r", "v"],
+    ["dsh-z-attint", "v"], ["dsh-z-range", "v"], ["dsh-z-pmrange", "v"], ["dsh-z-mgrange", "v"], ["dsh-z-minrange", "v"], ["dsh-z-mapbound", "c"], ["dsh-z-mapbound-r", "v"], ["dsh-z-mapbound-edge", "v"],
     ["dsh-z-switchdelay", "v"], ["dsh-z-walkint", "v"], ["dsh-z-chaseint", "v"], ["dsh-z-huntmode", "v"], ["dsh-z-follow", "c"], ["dsh-z-next", "c"],
     ["dsh-arrowen", "c"], ["dsh-invshot", "c"], ["dsh-invshotint", "v"],
     ["dsh-autoskill", "v"], ["dsh-autoskilllv", "v"], ["dsh-autoskillpro", "v"],
@@ -2839,6 +2840,7 @@
     "凶砍": "OVERTHRUST",
     "神威": "IMPOSITIO", "神威祈福": "IMPOSITIO", // V2.16.3 修正：神威祈福=IMPOSITIO（21），非 GLORIA
     "幸运颂歌": "GLORIA", // V2.16.3 补：幸运颂歌=GLORIA（46，+LUK）
+    "灵剑气": "AURABLADE", "灵气剑": "AURABLADE", // V2.16.6 补：骑士灵剑气=AURABLADE（103），旧表只有英文名识别不到
     "牺牲祈福": "SUFFRAGIUM", "牺牲": "SUFFRAGIUM",
     "撒水祈福": "ASPERSIO", "撒水": "ASPERSIO",
     "圣母颂歌": "MAGNIFICAT", "圣母": "MAGNIFICAT",
@@ -2880,7 +2882,7 @@
     { cn: "加速武器", id: 23 }, { cn: "武器值最大化", id: 24 }, { cn: "凶砍", id: 25 },
     { cn: "能量外套", id: 31 }, { cn: "自动防御", id: 58 }, { cn: "反射盾", id: 59 },
     { cn: "长矛加速", id: 68 }, { cn: "爆气", id: 86 }, { cn: "钢体", id: 87 },
-    { cn: "力量增幅", id: 98 }, { cn: "敏捷增幅", id: 99 }, { cn: "光环剑", id: 103 },
+    { cn: "力量增幅", id: 98 }, { cn: "敏捷增幅", id: 99 }, { cn: "光环剑", id: 103 }, { cn: "灵剑气", id: 103 }, { cn: "灵气剑", id: 103 }, // V2.16.6 补：灵剑气/灵气剑=103
     { cn: "防御架势", id: 104 }, { cn: "狂暴", id: 107 }, { cn: "圣洁祝福", id: 473 },
     { cn: "涂毒强化", id: 114 }, { cn: "真视", id: 115 }, { cn: "风之步", id: 116 },
     { cn: "手推车加速", id: 118 }, { cn: "经验保护", id: 130 }, { cn: "灵魂链接", id: 149 },
@@ -6218,6 +6220,29 @@
           }
         }
       }
+      // V2.16.6 地图物理边界：读当前地图尺寸（ALT.width/height），距地图边缘 < 安全距离 → 强制朝图中心走
+      //   （用户需求：防止自研寻怪一路直走走进别的图；以启动点为圆心的半径是软约束，这里是地图硬边界）
+      try {
+        var ALTb = window.require && window.require("Renderer/Map/Altitude");
+        var bndEdge = parseInt($id("dsh-z-mapbound-edge") ? $id("dsh-z-mapbound-edge").value : "15", 10) || 15;
+        if (bndOn && bndEdge > 0 && ALTb && ALTb.width && ALTb.height) {
+          var mw = ALTb.width, mh = ALTb.height;
+          var nearEdgeX = (px0 < bndEdge) || (px0 > mw - bndEdge);
+          var nearEdgeY = (py0 < bndEdge) || (py0 > mh - bndEdge);
+          if (nearEdgeX || nearEdgeY) {
+            // 距地图边缘过近 → 目标钳到图中心方向（离边缘远的一侧），防走到别的图
+            var cx2 = Math.round(mw / 2), cy2 = Math.round(mh / 2);
+            var eDest = mvSnapWalkable(cx2, cy2);
+            var pE = new CLIENT.PS.CZ.REQUEST_MOVE();
+            pE.dest = [eDest[0], eDest[1]];
+            CLIENT.NM.sendPacket(pE);
+            zWalkState.tried = 0;
+            tlog("walk-mapedge 接近地图边缘(" + px0 + "," + py0 + " 图" + mw + "x" + mh + "，边缘安全" + bndEdge + ")，朝图中心走");
+            setStatus("接近地图边缘，朝图内走…", "warn");
+            return;
+          }
+        }
+      } catch (e) {}
       // V2.16.4 卡住检测修正：旧版「0.5s 内走<3格即累计」误报（正常走速1-2格/0.5s+网络延迟起步慢）
       //   现改为时间窗口：连续 2s 坐标几乎没动（<2 格）才算真卡住；只要在动就不累计
       if (zWalkState.lastPos) {
@@ -6274,6 +6299,17 @@
             var maxFar = Math.max(6, bndR2 - Math.abs(px0 - zWalkState.center[0]) - Math.abs(py0 - zWalkState.center[1]) - 2);
             farT = Math.min(farT, maxFar);
           }
+          // V2.16.6 A* 目标再按地图物理边界钳制（防 50 格目标越过图边缘走进别的图）
+          try {
+            var ALT2 = window.require && window.require("Renderer/Map/Altitude");
+            var bndEdge2 = parseInt($id("dsh-z-mapbound-edge") ? $id("dsh-z-mapbound-edge").value : "15", 10) || 15;
+            if (ALT2 && ALT2.width && ALT2.height) {
+              var atx2 = Math.round(px0 + aimD[0] * farT), aty2 = Math.round(py0 + aimD[1] * farT);
+              atx2 = Math.max(bndEdge2, Math.min(ALT2.width - bndEdge2, atx2));
+              aty2 = Math.max(bndEdge2, Math.min(ALT2.height - bndEdge2, aty2));
+              farT = Math.max(6, Math.abs(atx2 - px0) + Math.abs(aty2 - py0)); // 距离按钳制后目标重算（防 farT 虚大）
+            }
+          } catch (e) {}
           var atx = Math.round(px0 + aimD[0] * farT), aty = Math.round(py0 + aimD[1] * farT);
           var pathA = dshFindPath(px0, py0, atx, aty);
           if (pathA && pathA.length) {

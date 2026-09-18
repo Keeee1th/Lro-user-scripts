@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.4
+// @version      2.16.5
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.4"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.16.5"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -4332,8 +4332,72 @@
       if (el) { var t = $id(id); if (t) t.checked = !!el.checked; }
     } catch (e) {}
   }
+  // V2.16.5 助手坐下关联内挂：用户改助手坐下设置（开关+HP/SP四阈值）→ 直接写入内挂 DOM 字段，
+  //   内挂原生坐下（.opensit/.AutoUseSit_*）与助手自实现共用同一套值，不再两套判定打架。
+  //   内挂 DOM 不存在（未开内挂窗口）→ 静默跳过，助手自实现兜底。
+  function pushSitToBot() {
+    try {
+      var setV = function (sel, v) { var el = document.querySelector(sel); if (el && el.value != null) el.value = String(v); };
+      var setC = function (sel, c) { var el = document.querySelector(sel); if (el) el.checked = !!c; };
+      var zsit = $id("dsh-z-sit");
+      setC(".opensit", zsit ? zsit.checked : true);
+      setV(".AutoUseSit_reHpVal", ($id("dsh-z-sithplo") && $id("dsh-z-sithplo").value) || 40);
+      setV(".AutoUseSit_reHpUpVal", ($id("dsh-z-sithphi") && $id("dsh-z-sithphi").value) || 80);
+      setV(".AutoUseSit_reSpVal", ($id("dsh-z-sitsplo") && $id("dsh-z-sitsplo").value) || 30);
+      setV(".AutoUseSit_reSpUpVal", ($id("dsh-z-sitsphi") && $id("dsh-z-sitsphi").value) || 70);
+    } catch (e) {}
+  }
+  // V2.16.5 助手坐下控件 change → 写入内挂（幂等，控件存在才挂）
+  try {
+    ["dsh-z-sit", "dsh-z-sithplo", "dsh-z-sithphi", "dsh-z-sitsplo", "dsh-z-sitsphi"].forEach(function (sid) {
+      var el = $id(sid);
+      if (el) el.addEventListener("change", function () { try { captureAll(); } catch (e) {} pushSitToBot(); });
+    });
+    pushSitToBot(); // 启动时同步一次（内挂窗口未开则静默）
+  } catch (e) {}
+  // V2.16.5 解围技能下拉填充：独立函数，无论内挂 DOM 是否存在都执行（角色已学技能，保留已选值）。
+  //   根因：旧实现只在 fillSkillSelects 的 DB 分支（domSynced=false 时）填充 dsh-z-qoaskill，
+  //   而内挂窗口开过（DOM 存在）时 domSynced 提前 return，解围下拉永远停在空的「- 请选择 -」。
+  function fillZhuQoaskill() {
+    try {
+      var sel = $id("dsh-z-qoaskill");
+      if (!sel) return;
+      var DB = CLIENT.DB;
+      if (!DB) { CLIENT.DB = window.require && window.require("DB/DBManager"); DB = CLIENT.DB; }
+      if (!DB || typeof DB.getAllSkillInfo !== "function") return;
+      var info = DB.getAllSkillInfo();
+      if (!info) return;
+      var learned = {};
+      Object.keys(info).forEach(function (k) {
+        var s = info[k];
+        if (s && s.level > 0 && !isPassiveSkill(s.SKID != null ? s.SKID : k)) learned[s.SKID != null ? s.SKID : k] = s;
+      });
+      var ids = Object.keys(learned);
+      if (!ids.length) return;
+      var cur = sel.value;
+      var html = '<option value="">- 请选择 -</option>';
+      for (var i = 0; i < ids.length; i++) {
+        var nm = getSkillNameById(ids[i]) || (learned[ids[i]] && (learned[ids[i]].name || learned[ids[i]].SkillName)) || ids[i];
+        html += '<option value="' + ids[i] + '">' + nm + ' Lv' + (learned[ids[i]].level || "?") + '</option>';
+      }
+      sel.innerHTML = html;
+      if (cur) sel.value = cur;
+    } catch (e) {}
+  }
+  // V2.16.5 周期兜底：解围下拉仍是空（未点「读取内挂」）且客户端 DB 就绪 → 自动填充；每 ~8s 检查一次，填上即停
+  try {
+    setInterval(function () {
+      try {
+        var selQ = $id("dsh-z-qoaskill");
+        if (!selQ) return;
+        if (selQ.options.length > 1) return; // 已有技能选项 → 不再重复填
+        fillZhuQoaskill();
+      } catch (e) {}
+    }, 8000);
+  } catch (e) {}
   function fillSkillSelects() {
     try {
+      fillZhuQoaskill(); // V2.16.5 解围技能独立填充：每次调用都执行（不再依赖 DB 分支是否到达）
       // 优先：内挂 DOM 自己的技能下拉（带中文名 textContent）
       var domMap = { "dsh-autoskill": ".autoskillid", "dsh-automatic": ".automaticid", "dsh-touchskill": ".touchskillid", "dsh-qoautoskill": ".qoautoskillid", "dsh-autoshadow": ".autoshadowid" };
       var domSynced = false;
@@ -4369,7 +4433,7 @@
         if (s && s.level > 0 && !isPassiveSkill(s.SKID != null ? s.SKID : k)) learned[s.SKID != null ? s.SKID : k] = s;
       });
       var ids = Object.keys(learned);
-      var map = { "dsh-autoskill": ids, "dsh-automatic": ids, "dsh-touchskill": ids, "dsh-qoautoskill": ids, "dsh-autoshadow": ids, "dsh-z-qoaskill": ids };
+      var map = { "dsh-autoskill": ids, "dsh-automatic": ids, "dsh-touchskill": ids, "dsh-qoautoskill": ids, "dsh-autoshadow": ids }; // V2.16.5 解围 dsh-z-qoaskill 已由 fillZhuQoaskill 独立填充
       Object.keys(map).forEach(function (sid) {
         var sel = $id(sid);
         if (!sel) return;
@@ -5240,6 +5304,9 @@
   // V2.15.22：坐下周期（战斗循环挂点，不依赖侦查扫描）——无目标时安全才坐；坐下后由 sitMaintain 自动站起
   function doSitCycle(mobs) {
     try {
+      // V2.16.5 内挂模式（np）完全让位：坐下由内挂原生执行（.opensit/.AutoUseSit_*），
+      //   助手自实现（坐/站/站起维护）都不干预——否则两套判定互相抢（内挂原生即使不开自动战斗也在生效）
+      try { if (npHuntMode() === "np") return; } catch (e) {}
       sitMaintain();
       if (isSitting()) return;
       if (!$id("dsh-z-sit") || !$id("dsh-z-sit").checked) return;
@@ -5818,8 +5885,12 @@
       var ent = CLIENT.SS && CLIENT.SS.Entity;
       if (!ent || !ent.life) return;
       // V2.16.4 上马判定非战斗状态：锁定目标在身（zLock.gid 挂着=正在追/打/还击）→ 不上马（上马动作会卡战斗）
+      // V2.16.5 补两条战斗判定：内挂自动战斗开着（npHuntOn，角色正在被内挂指挥打怪）→ 不上马；
+      //   平A noctrl 连击锁定中（zAtkLast.gid 挂着）→ 不上马。加上 zLock.gid + 3s 被打，覆盖全部战斗状态。
       try {
         if (zLock.gid) { reinFailStreak = 0; return; }
+        if (zAtkLast && zAtkLast.gid) { reinFailStreak = 0; return; } // 平A锁定中（正在连击）
+        if (npHuntOn) { reinFailStreak = 0; return; } // 内挂自动战斗开（角色正在打怪）
         if (zRunning && Date.now() - zHpWatch.lastHitAt < 3000) { reinFailStreak = 0; return; } // 刚被攻击也不上马
       } catch (e) {}
       try { hookStatusIcons(); } catch (e3) {} // 确保判活表工作（幂等）

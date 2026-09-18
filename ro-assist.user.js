@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.3
+// @version      2.16.4
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.3"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.16.4"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -655,6 +655,8 @@
       '<label class="switch"><input id="dsh-z-flyauto" type="checkbox" checked>无翅膀自动瞬移术</label></div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-flystuck" type="checkbox">卡死自动瞬移(助手战斗中·10s)</label></div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-rein" type="checkbox">寻怪自动上马（缰绳 12622）</label><span style="color:#5a6b7f;font-size:11px">骑乘状态不在身自动用</span></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-z-mapbound" type="checkbox" checked>地图边界</label>' +
+      '<span class="lb" style="min-width:34px">半径</span><input id="dsh-z-mapbound-r" type="number" value="25" min="5" style="flex:0 0 42px"><span style="color:#5a6b7f;font-size:11px">格（以启动点为圆心，走出就回头）</span></div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-idlefly" type="checkbox">无目标持续自动瞬移</label>' +
       '<span class="lb" style="min-width:34px">超过</span><input id="dsh-z-idleflysec" type="number" value="10" style="flex:0 0 40px"><span style="color:#5a6b7f">s无锁定怪→瞬移</span></div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-bossfly" type="checkbox">BOSS出现瞬移</label>' +
@@ -675,6 +677,7 @@
       '<span class="lb" style="min-width:26px">寻怪</span><input id="dsh-z-range" type="number" value="12" style="flex:0 0 40px"><span style="color:#5a6b7f">格</span></div>' +
       '<div class="row"><span class="lb">物理距离</span><input id="dsh-z-pmrange" type="number" value="2" min="1" style="flex:0 0 40px"><span style="color:#5a6b7f">格(普攻/近战)</span>' +
       '<span class="lb" style="min-width:48px">魔法距离</span><input id="dsh-z-mgrange" type="number" value="9" min="1" style="flex:0 0 40px"><span style="color:#5a6b7f">格(远程技能)</span></div>' +
+      '<div class="row"><span class="lb">最短攻击距离</span><input id="dsh-z-minrange" type="number" value="0" min="0" style="flex:0 0 40px"><span style="color:#5a6b7f">格（0=不限；技能和普攻都按此区间，太近会后撤拉开）</span></div>' +
       '<div class="row"><span class="lb">换怪延迟</span><input id="dsh-z-switchdelay" type="number" value="0.25" min="0.1" step="0.1" style="flex:0 0 44px"><span style="color:#5a6b7f">s（打完一只→找下一只的间隔）</span></div>' +
       '<div class="row"><span class="lb">直走节流</span><input id="dsh-z-walkint" type="number" value="0.5" min="0.3" step="0.1" style="flex:0 0 44px"><span style="color:#5a6b7f">s（无怪直走寻怪间隔）</span>' +
       '<span class="lb" style="min-width:26px">追怪</span><input id="dsh-z-chaseint" type="number" value="0.5" min="0.3" step="0.1" style="flex:0 0 44px"><span style="color:#5a6b7f">s（内挂模式助手主动追怪间隔）</span></div>' +
@@ -2574,7 +2577,7 @@
     ["dsh-z-hpfly", "v"], ["dsh-z-spfly", "v"], ["dsh-z-hpout", "v"], ["dsh-z-keep", "v"],
     ["dsh-z-sit", "c"], ["dsh-z-sithplo", "v"], ["dsh-z-sithphi", "v"], ["dsh-z-sitsplo", "v"], ["dsh-z-sitsphi", "v"],
     ["dsh-z-sitxw", "v"], ["dsh-z-sitback", "c"], ["dsh-z-sitnofight", "c"],
-    ["dsh-z-attint", "v"], ["dsh-z-range", "v"], ["dsh-z-pmrange", "v"], ["dsh-z-mgrange", "v"],
+    ["dsh-z-attint", "v"], ["dsh-z-range", "v"], ["dsh-z-pmrange", "v"], ["dsh-z-mgrange", "v"], ["dsh-z-minrange", "v"], ["dsh-z-mapbound", "c"], ["dsh-z-mapbound-r", "v"],
     ["dsh-z-switchdelay", "v"], ["dsh-z-walkint", "v"], ["dsh-z-chaseint", "v"], ["dsh-z-huntmode", "v"], ["dsh-z-follow", "c"], ["dsh-z-next", "c"],
     ["dsh-arrowen", "c"], ["dsh-invshot", "c"], ["dsh-invshotint", "v"],
     ["dsh-autoskill", "v"], ["dsh-autoskilllv", "v"], ["dsh-autoskillpro", "v"],
@@ -5603,6 +5606,11 @@
     // 重置锁定模式/监控：重新开始一轮自动战斗（含「打死换下一个=关」的停手状态）
     zLock.gid = null; zLock.name = ""; zLock.dist = null; zLock.done = false;
     zMon.action = "启动中";
+    // V2.16.4 地图边界：记录启动点为锚点（圆心），寻怪走出半径就回头
+    try {
+      var eStart = CLIENT.SS && CLIENT.SS.Entity;
+      if (eStart && eStart.position) zWalkState.center = [Math.round(eStart.position[0]), Math.round(eStart.position[1])];
+    } catch (e) {}
     zUseCounts = {}; // V1.7.0 重置本轮技能释放次数（maxUses）
     zLockCounts = {}; // V1.7.5 重置锁定次数（开/停自动战斗清空）
     dshDiag("zhu-start", { mode: npHuntMode(), panel: (function () { try { return npReadPanelState(); } catch (e) { return null; } })() });
@@ -5809,6 +5817,11 @@
       if (!clientReady()) return;
       var ent = CLIENT.SS && CLIENT.SS.Entity;
       if (!ent || !ent.life) return;
+      // V2.16.4 上马判定非战斗状态：锁定目标在身（zLock.gid 挂着=正在追/打/还击）→ 不上马（上马动作会卡战斗）
+      try {
+        if (zLock.gid) { reinFailStreak = 0; return; }
+        if (zRunning && Date.now() - zHpWatch.lastHitAt < 3000) { reinFailStreak = 0; return; } // 刚被攻击也不上马
+      } catch (e) {}
       try { hookStatusIcons(); } catch (e3) {} // 确保判活表工作（幂等）
       if (buffStateOn(613) || buffStateOn(27)) { reinFailStreak = 0; return; }
       if (now - reinLastUse < 1000) return;
@@ -5819,7 +5832,7 @@
     } catch (e) {}
   }
   masterTickReg(function () { try { tickRein(); } catch (e) {} });
-  var zWalkState = { lastMove: 0, lastChase: 0, dir: 0, noTargetSince: 0, lastIdleFly: 0, lastPos: null, stuckCnt: 0, tried: 0, lastSeenDir: null, lastSeenAt: 0 };
+  var zWalkState = { lastMove: 0, lastChase: 0, dir: 0, noTargetSince: 0, lastIdleFly: 0, lastPos: null, stuckCnt: 0, stuckAt: 0, tried: 0, lastSeenDir: null, lastSeenAt: 0, center: null }; // V2.16.4 stuckAt=卡住时间窗口起点；center=地图边界锚点(启动点)
   var zEscape = { until: 0 };                 // V2.15.23：逃脱状态（坐下被打→移动避开怪，期间不寻怪不打怪）
   var zAStarState = { active: false, tx: 0, ty: 0, since: 0, lastTry: 0, stuckSince: 0, lastPos: null, aim: null }; // V2.10.0 A* 绕障行走状态
   // 状态前置穿插平A计时：zWaitSince = 上次穿插普攻时间（间隔跟随攻击循环，见 zAttack wait 分支）
@@ -6105,20 +6118,55 @@
       }
       var WALK_RANGE = 12; // 每次向目标方向走 12 格
       var px0 = Math.round(ent.position[0]), py0 = Math.round(ent.position[1]);
-      // 卡住检测：本周期坐标与上周期几乎没动 → 计数，连续 2 次卡住就转向
+      // V2.16.4 地图边界：以启动点为中心，半径内寻怪；已走出半径 → 强制往回走（不发外圈目标）
+      var bndOn = $id("dsh-z-mapbound") ? $id("dsh-z-mapbound").checked : true;
+      var bndR = parseInt($id("dsh-z-mapbound-r") ? $id("dsh-z-mapbound-r").value : "25", 10) || 25;
+      if (bndOn && bndR > 0 && zWalkState.center) {
+        var bd0 = Math.abs(px0 - zWalkState.center[0]) + Math.abs(py0 - zWalkState.center[1]);
+        if (bd0 > bndR) {
+          var bDest = mvSnapWalkable(zWalkState.center[0], zWalkState.center[1]);
+          var pB = new CLIENT.PS.CZ.REQUEST_MOVE();
+          pB.dest = [bDest[0], bDest[1]];
+          CLIENT.NM.sendPacket(pB);
+          zWalkState.tried = 0;
+          tlog("walk-bound 超出边界(" + bd0 + ">" + bndR + ")，往回走");
+          setStatus("超出地图边界，往回走…", "warn");
+          return;
+        }
+        // 接近边界（距锚点 > 半径-8 格）→ 转向朝锚点方向，防止越界
+        if (bd0 > bndR - 8) {
+          var bdx = zWalkState.center[0] - px0, bdy = zWalkState.center[1] - py0;
+          if (bdx !== 0 || bdy !== 0) {
+            var bd2 = Math.round(Math.atan2(bdy, bdx) / (Math.PI / 4));
+            var newDir = ((bd2 % 8) + 8) % 8;
+            if (newDir !== zWalkState.dir) {
+              zWalkState.dir = newDir;
+              zWalkState.tried = 0;
+              tlog("walk-bound 接近边界(" + bd0 + ">" + (bndR - 8) + ")，转向圆心");
+            }
+          }
+        }
+      }
+      // V2.16.4 卡住检测修正：旧版「0.5s 内走<3格即累计」误报（正常走速1-2格/0.5s+网络延迟起步慢）
+      //   现改为时间窗口：连续 2s 坐标几乎没动（<2 格）才算真卡住；只要在动就不累计
       if (zWalkState.lastPos) {
         var moved = Math.abs(px0 - zWalkState.lastPos[0]) + Math.abs(py0 - zWalkState.lastPos[1]);
-        if (moved < 3) zWalkState.stuckCnt++;
-        else zWalkState.stuckCnt = 0;
+        if (moved < 2) {
+          if (!zWalkState.stuckAt) zWalkState.stuckAt = now;
+          if (now - zWalkState.stuckAt >= 2000) {
+            zWalkState.dir = (zWalkState.dir + 1) % dirs.length; // 卡住 → 顺时针转一个方向
+            zWalkState.stuckAt = 0;
+            zWalkState.tried = 0;
+            tlog("walk-stuck turn dir=" + zWalkState.dir);
+            setStatus("前方卡住，转向 " + zWalkState.dir, "warn");
+          }
+        } else {
+          zWalkState.stuckAt = 0;
+        }
+      } else {
+        zWalkState.stuckAt = 0;
       }
       zWalkState.lastPos = [px0, py0];
-      if (zWalkState.stuckCnt >= 2) {
-        zWalkState.dir = (zWalkState.dir + 1) % dirs.length; // 卡住 → 顺时针转一个方向
-        zWalkState.stuckCnt = 0;
-        zWalkState.tried = 0;
-        tlog("walk-stuck turn dir=" + zWalkState.dir);
-        setStatus("前方卡住，转向 " + zWalkState.dir, "warn");
-      }
       // V2.10.0 A* 绕障寻路（dsh-z-astar 开关）：方向预检只是直线 12 格，环绕结构图（回字形/迷宫）会原地打转。
       //   A* 基于本图全量地形（ALT.getGat().cells）找真实可达路径 → 只直发路径终点（服务器寻路一次走通，不逐格发包）。
       //   进入「A* 行走中」：发目标后 3~5s 不重发（防重置服务器寻路）；坐标推进即续走；2s 无位移重新 A*。
@@ -6147,7 +6195,14 @@
         if (!zAStarState.active) {
           var aimD = dirs[zWalkState.dir];
           if (now - zWalkState.lastSeenAt < 10000 && zWalkState.lastSeenDir != null) aimD = dirs[zWalkState.lastSeenDir];
+          // V2.16.4 边界钳制：A* 目标不超出边界半径（防止 50 格外目标越过地图边界）
           var farT = 50;
+          var bndOn2 = $id("dsh-z-mapbound") ? $id("dsh-z-mapbound").checked : true;
+          var bndR2 = parseInt($id("dsh-z-mapbound-r") ? $id("dsh-z-mapbound-r").value : "25", 10) || 25;
+          if (bndOn2 && bndR2 > 0 && zWalkState.center) {
+            var maxFar = Math.max(6, bndR2 - Math.abs(px0 - zWalkState.center[0]) - Math.abs(py0 - zWalkState.center[1]) - 2);
+            farT = Math.min(farT, maxFar);
+          }
           var atx = Math.round(px0 + aimD[0] * farT), aty = Math.round(py0 + aimD[1] * farT);
           var pathA = dshFindPath(px0, py0, atx, aty);
           if (pathA && pathA.length) {
@@ -6420,6 +6475,26 @@
         zLastTargetGID = null; // 无目标，重置以便下次直接出手
       }
       if (!target) { zMon.action = "寻怪（走路）"; zWalk(); return; } // 无目标 → 自动走路寻怪
+      // V2.16.4 最短攻击距离区间：目标过近（<最短距离）→ 后撤拉开再打（技能和普攻共用同一区间判定）
+      var minR = parseInt($id("dsh-z-minrange").value, 10) || 0;
+      if (minR > 0 && target && target.position && ent.position) {
+        var dNear = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]);
+        if (dNear < minR) {
+          var bdx = ent.position[0] - target.position[0], bdy = ent.position[1] - target.position[1];
+          var bl = Math.abs(bdx) + Math.abs(bdy);
+          if (bl > 0) {
+            var btx = Math.round(ent.position[0] + (bdx / bl) * 3), bty = Math.round(ent.position[1] + (bdy / bl) * 3);
+            var bDest = mvSnapWalkable(btx, bty);
+            var pB = new CLIENT.PS.CZ.REQUEST_MOVE();
+            pB.dest = [bDest[0], bDest[1]];
+            CLIENT.NM.sendPacket(pB);
+            zMon.action = "后撤拉开距离";
+            setStatus("目标过近(" + dNear + "<" + minR + ")，后撤拉开…", "st");
+            tlog("min-range 后撤 d=" + dNear + " min=" + minR);
+            return;
+          }
+        }
+      }
       // 开始战斗（有目标）→ 结束内挂自动寻怪（避免服务器驱动移动与助手抢控制）
       if (npHuntOn) npHuntStop();
       zWalkState.lastMove = 0; // 打到目标，重置走路计时

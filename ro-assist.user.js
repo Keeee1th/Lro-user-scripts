@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.8
+// @version      2.16.9
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.8"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.16.9"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -5384,7 +5384,7 @@
   function sitMaintain() {
     try {
       if (!$id("dsh-z-sit") || !$id("dsh-z-sit").checked) return;
-      if (!isSitting()) return;
+      if (!isSitting()) { sitSince = 0; sitHpAt = -1; return; } // V2.16.9：没坐着（无论谁站起）清坐下标记，防手动站起残留
       var nowM = Date.now();
       var entM = CLIENT.SS && CLIENT.SS.Entity;
       var lifeM = entM && entM.life;
@@ -5404,8 +5404,9 @@
         setStatus("坐下被打，自动站起应战…", "warn");
         return;
       }
-      // 回满 → 站起继续
-      if (hpM > hiM && spM > sHiM && !winM) {
+      // 回满 → 站起继续（V2.16.9：只对脚本自己坐下的生效，手动坐下不干预；受「回满后继续战斗」开关控制）
+      var sitBackM = !$id("dsh-z-sitback") || $id("dsh-z-sitback").checked;
+      if (sitSince && sitBackM && hpM > hiM && spM > sHiM && !winM) {
         sendSit(false);
         sitSince = 0; sitHpAt = -1;
         if (actLock.act === "sit") actLock.act = null;
@@ -6019,6 +6020,7 @@
     try {
       var sw = $id("dsh-z-rein");
       if (!sw || !sw.checked) { reinFailStreak = 0; return; }
+      if (!zRunning) { reinFailStreak = 0; return; } // V2.16.9：寻怪自动上马只在助手运行时生效
       var now = Date.now();
       if (now < reinBackoffUntil) return;
       if (!clientReady()) return;
@@ -6029,7 +6031,7 @@
       //   被打 3s 内：仅当需反击（非选中怪攻击=还击）或瞬移（=瞬移）时视为战斗不上马；「无视」→ 继续骑马跑
       try {
         if (zLock.gid && lockMobInAtkRange()) { reinFailStreak = 0; return; }
-        if (zAtkLast && zAtkLast.gid) { reinFailStreak = 0; return; } // 平A锁定中（正在连击）
+        if (zAtkLast && zAtkLast.gid && !zAtkLast.outOfRange) { reinFailStreak = 0; return; } // 平A锁定中（目标在射程内正在打）；出射程追怪放行上马
         if (npHuntOn) { reinFailStreak = 0; return; } // 内挂自动战斗开（角色正在打怪）
         if (zRunning && Date.now() - zHpWatch.lastHitAt < 3000) {
           var onaR = ($id("dsh-z-ona") && $id("dsh-z-ona").value) || "还击";
@@ -6692,6 +6694,7 @@
           zLock.done = !zNext && !zLock.reactive;
           zLock.reactive = false;
           zLock.gid = null;
+          zAtkLast.gid = null; zAtkLast.outOfRange = false; // V2.16.9：目标死亡解锁同步清平A标记，防残留导致追怪不上马
           zLockCounts = {}; // V1.7.5 解锁 → 锁定次数清零（重新锁定重计）
           tlog("lock-release done=" + zLock.done);
         }

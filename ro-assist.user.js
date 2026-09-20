@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.7
+// @version      2.16.8
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.7"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.16.8"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -636,8 +636,6 @@
       '<div class="row"><label class="switch"><input id="dsh-scanen" type="checkbox" checked>启用侦查扫描</label>' +
       '<span class="lb" style="margin-left:auto;min-width:26px">间隔</span>' +
       '<input id="dsh-scanint" type="number" value="0.5" min="0.3" step="0.1" style="flex:0 0 44px"><span style="color:#5a6b7f">s（最低0.3）</span></div>' +
-      '<details style="margin:4px 0"><summary style="cursor:pointer;color:#1259b3;font-size:12px">👁 附近怪物（实时 · <span id="dsh-scanst">未启动</span>）— 点开查看</summary>' +
-      '<div class="box" style="margin-top:2px"><div id="dsh-scanlist" style="font-size:11px;max-height:120px;overflow:auto">未启动侦查</div></div></details>' +
       '<div id="dsh-fw-mlock">' +
       '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">怪物锁定目录（只打勾选的怪）</span><button class="ghost" id="dsh-fw-btn-mlock" data-fw="mlock" style="flex:0 0 auto;padding:0 8px;font-size:11px">⧉ 浮窗</button></div>' +
       '<details style="margin:4px 0"><summary style="cursor:pointer;color:#1259b3;font-size:12px">📌 本图怪物锁定（读当前地图怪物表 · 勾选=锁定）</summary>' +
@@ -663,7 +661,7 @@
       '<div class="row"><label class="switch"><input id="dsh-z-idlefly" type="checkbox">无目标持续自动瞬移</label>' +
       '<span class="lb" style="min-width:34px">超过</span><input id="dsh-z-idleflysec" type="number" value="10" style="flex:0 0 40px"><span style="color:#5a6b7f">s无锁定怪→瞬移</span></div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-bossfly" type="checkbox">BOSS出现瞬移</label>' +
-      '<span class="lb" style="min-width:52px">瞬移间隔</span><input id="dsh-z-flyint" type="number" value="30" style="flex:0 0 40px"><span style="color:#5a6b7f">s</span></div>' +
+      '<span class="lb" style="min-width:52px">瞬移间隔</span><input id="dsh-z-flyint" type="number" value="4" style="flex:0 0 40px"><span style="color:#5a6b7f">s</span></div>' +
       '<div class="row"><span class="lb">HP低于</span><input id="dsh-z-hpfly" type="number" value="20" style="flex:0 0 40px"><span style="color:#5a6b7f">%瞬移</span>' +
       '<span class="lb" style="min-width:50px">SP低于</span><input id="dsh-z-spfly" type="number" value="10" style="flex:0 0 40px"><span style="color:#5a6b7f">%瞬移</span></div>' +
       '<div class="row"><span class="lb">HP低于</span><input id="dsh-z-hpout" type="number" value="5" style="flex:0 0 40px"><span style="color:#5a6b7f">%下线</span>' +
@@ -750,7 +748,9 @@
       '<button class="ghost" id="dsh-askdown" style="flex:0 0 auto">↓下移</button>' +
       '<button class="ghost" id="dsh-askdel" style="flex:0 0 auto">删除选中</button></div></div>' +
       '<div class="log" id="dsh-bufflog" style="margin-top:2px">辅助技能：未启用</div>' +
-      '<div class="row" style="margin-top:2px"><span class="lb" style="min-width:48px">当前状态</span><span class="st" id="dsh-statusview" style="font-size:11px;flex:1;line-height:1.5">未读取（客户端就绪后显示）</span></div></div></details>',
+      '<div class="row" style="margin-top:2px"><span class="lb" style="min-width:48px">当前状态</span><span class="st" id="dsh-statusview" style="font-size:11px;flex:1;line-height:1.5">未读取（客户端就绪后显示）</span></div></div></details>' +
+      '<details style="margin:4px 0"><summary style="cursor:pointer;color:#1259b3;font-size:12px">👁 附近怪物（实时 · <span id="dsh-scanst">未启动</span>）— 点开查看</summary>' +
+      '<div class="box" style="margin-top:2px"><div id="dsh-scanlist" style="font-size:11px;max-height:120px;overflow:auto">未启动侦查</div></div></details>',
     assist: '' +
       '<div class="a-layout">' +
       '<div class="a-nav">' +
@@ -4351,10 +4351,13 @@
   // V2.16.5 助手坐下关联内挂：用户改助手坐下设置（开关+HP/SP四阈值）→ 直接写入内挂 DOM 字段，
   //   内挂原生坐下（.opensit/.AutoUseSit_*）与助手自实现共用同一套值，不再两套判定打架。
   //   内挂 DOM 不存在（未开内挂窗口）→ 静默跳过，助手自实现兜底。
+  var sitSyncGuard = false; // V2.16.8：防回环——pushSitToBot 触发内挂 change 时不回读助手（避免无限循环）
   function pushSitToBot() {
     try {
-      var setV = function (sel, v) { var el = document.querySelector(sel); if (el && el.value != null) el.value = String(v); };
-      var setC = function (sel, c) { var el = document.querySelector(sel); if (el) el.checked = !!c; };
+      sitSyncGuard = true;
+      var fire = function (el) { try { if (el && typeof el.dispatchEvent === "function") el.dispatchEvent(new Event("change", { bubbles: true })); } catch (e) {} };
+      var setV = function (sel, v) { var el = document.querySelector(sel); if (el && el.value != null) { el.value = String(v); fire(el); } };
+      var setC = function (sel, c) { var el = document.querySelector(sel); if (el && el.checked !== !!c) { el.checked = !!c; fire(el); } };
       var zsit = $id("dsh-z-sit");
       setC(".opensit", zsit ? zsit.checked : true);
       setV(".AutoUseSit_reHpVal", ($id("dsh-z-sithplo") && $id("dsh-z-sithplo").value) || 30);
@@ -4362,6 +4365,7 @@
       setV(".AutoUseSit_reSpVal", ($id("dsh-z-sitsplo") && $id("dsh-z-sitsplo").value) || 10);
       setV(".AutoUseSit_reSpUpVal", ($id("dsh-z-sitsphi") && $id("dsh-z-sitsphi").value) || 70);
     } catch (e) {}
+    sitSyncGuard = false;
   }
   // V2.16.5 助手坐下控件 change → 写入内挂（幂等，控件存在才挂）
   try {
@@ -4370,6 +4374,29 @@
       if (el) el.addEventListener("change", function () { try { captureAll(); } catch (e) {} pushSitToBot(); });
     });
     pushSitToBot(); // 启动时同步一次（内挂窗口未开则静默）
+  } catch (e) {}
+  // V2.16.8 内挂坐下控件 change → 回读助手（双向同步，对齐怪物锁定 .onlyattack_block 的做法）
+  try {
+    document.addEventListener("change", function (e) {
+      if (sitSyncGuard) return;
+      var t = e.target;
+      if (!t || !t.matches) return;
+      try {
+        if (t.matches(".opensit")) {
+          var zsit2 = $id("dsh-z-sit");
+          if (zsit2) zsit2.checked = !!t.checked;
+          captureAll();
+        } else if (t.matches(".AutoUseSit_reHpVal") && $id("dsh-z-sithplo")) {
+          $id("dsh-z-sithplo").value = t.value; captureAll();
+        } else if (t.matches(".AutoUseSit_reHpUpVal") && $id("dsh-z-sithphi")) {
+          $id("dsh-z-sithphi").value = t.value; captureAll();
+        } else if (t.matches(".AutoUseSit_reSpVal") && $id("dsh-z-sitsplo")) {
+          $id("dsh-z-sitsplo").value = t.value; captureAll();
+        } else if (t.matches(".AutoUseSit_reSpUpVal") && $id("dsh-z-sitsphi")) {
+          $id("dsh-z-sitsphi").value = t.value; captureAll();
+        }
+      } catch (e2) {}
+    });
   } catch (e) {}
   // V2.16.5 解围技能下拉填充：独立函数，无论内挂 DOM 是否存在都执行（角色已学技能，保留已选值）。
   //   根因：旧实现只在 fillSkillSelects 的 DB 分支（domSynced=false 时）填充 dsh-z-qoaskill，
@@ -4900,6 +4927,21 @@
         p.value = 1;
         CLIENT.NM.sendPacket(p);
       }
+      // V2.16.8：清空内挂历史非锁定怪——读内挂 DOM 当前勾选，勾了但不在锁定目录 → 发 value=0 取消（value=0 语义待实测）
+      try {
+        var checks2 = document.querySelectorAll(".onlyattack_block input");
+        for (var j = 0; j < checks2.length; j++) {
+          var cc = checks2[j];
+          var cmid = cc.getAttribute("data-id");
+          if (!cmid) continue;
+          if (cc.checked && !lockList[String(cmid)]) {
+            var p0 = new CLIENT.PS.CZ.NOTIFY_ONLYTARGET();
+            p0.id = parseInt(cmid, 10) || 0;
+            p0.value = 0;
+            CLIENT.NM.sendPacket(p0);
+          }
+        }
+      } catch (e) {}
       tlog("np-sync-targets n=" + ids.length);
       npSyncTargetsDom(); // V2.16.7：发包后对齐内挂 DOM 勾选状态
     } catch (e) {}
@@ -5380,9 +5422,8 @@
   // V2.15.22：坐下周期（战斗循环挂点，不依赖侦查扫描）——无目标时安全才坐；坐下后由 sitMaintain 自动站起
   function doSitCycle(mobs) {
     try {
-      // V2.16.5 内挂模式（np）完全让位：坐下由内挂原生执行（.opensit/.AutoUseSit_*），
-      //   助手自实现（坐/站/站起维护）都不干预——否则两套判定互相抢（内挂原生即使不开自动战斗也在生效）
-      try { if (npHuntMode() === "np") return; } catch (e) {}
+      // V2.16.8：内挂模式不再让位——助手自己发包坐下（sendSit 直接发包，不依赖内挂 .opensit 是否真正生效）；
+      //   坐下期间 zWalk 有 isSitting 保护（检测到坐着直接 return 不寻怪），与内挂寻怪不冲突；数值已由 pushSitToBot 双向同步
       sitMaintain();
       if (isSitting()) return;
       if (!$id("dsh-z-sit") || !$id("dsh-z-sit").checked) return;
@@ -5754,6 +5795,8 @@
       var eStart = CLIENT.SS && CLIENT.SS.Entity;
       if (eStart && eStart.position) zWalkState.center = [Math.round(eStart.position[0]), Math.round(eStart.position[1])];
     } catch (e) {}
+    // V2.16.8 换图回走：记录启动地图键，检测换图后反向走/传送回
+    try { zWalkState.startMap = getMapName(); } catch (e) {}
     zUseCounts = {}; // V1.7.0 重置本轮技能释放次数（maxUses）
     zLockCounts = {}; // V1.7.5 重置锁定次数（开/停自动战斗清空）
     dshDiag("zhu-start", { mode: npHuntMode(), panel: (function () { try { return npReadPanelState(); } catch (e) { return null; } })() });
@@ -6003,7 +6046,7 @@
     } catch (e) {}
   }
   masterTickReg(function () { try { tickRein(); } catch (e) {} });
-  var zWalkState = { lastMove: 0, lastChase: 0, dir: 0, noTargetSince: 0, lastIdleFly: 0, lastPos: null, stuckCnt: 0, stuckAt: 0, tried: 0, lastSeenDir: null, lastSeenAt: 0, center: null, chaseGid: null, chaseDist: 0, chaseSince: 0 }; // V2.16.4 stuckAt=卡住时间窗口起点；center=地图边界锚点(启动点)；V2.16.7 chase*=追怪卡住检测
+  var zWalkState = { lastMove: 0, lastChase: 0, dir: 0, noTargetSince: 0, lastIdleFly: 0, lastPos: null, stuckCnt: 0, stuckAt: 0, tried: 0, lastSeenDir: null, lastSeenAt: 0, center: null, chaseGid: null, chaseDist: 0, chaseSince: 0, startMap: null, lastMoveDir: 0, backMapAt: 0, backDir: 0, backTeleportAt: 0 }; // V2.16.4 stuckAt=卡住时间窗口起点；center=地图边界锚点(启动点)；V2.16.7 chase*=追怪卡住检测
   var zEscape = { until: 0 };                 // V2.15.23：逃脱状态（坐下被打→移动避开怪，期间不寻怪不打怪）
   var zAStarState = { active: false, tx: 0, ty: 0, since: 0, lastTry: 0, stuckSince: 0, lastPos: null, aim: null }; // V2.10.0 A* 绕障行走状态
   // 状态前置穿插平A计时：zWaitSince = 上次穿插普攻时间（间隔跟随攻击循环，见 zAttack wait 分支）
@@ -6158,6 +6201,40 @@
       if (pendingPick) { try { zMon.action = "拾取物品中"; } catch (e) {} return; } // V2.15.16：有拾取任务在身 → 寻怪让位（防拾取移动包被寻怪覆盖）
       var ent = CLIENT.SS.Entity;
       if (!ent || !ent.position) return;
+      // V2.16.8 换图检测 + 反向走回（走路跨图）；反向走 8s 没回图 → 世界地图传送回启动图
+      try {
+        var curKeyB = getMapName();
+        if (zWalkState.startMap && curKeyB && curKeyB !== zWalkState.startMap) {
+          var nowB = Date.now();
+          if (!zWalkState.backMapAt) {
+            zWalkState.backMapAt = nowB;
+            zWalkState.backDir = (zWalkState.lastMoveDir + 4) % 8;
+            tlog("walk-mapchange " + zWalkState.startMap + " -> " + curKeyB + "，反向走回");
+          }
+          var sinceTp = zWalkState.backTeleportAt ? nowB - zWalkState.backTeleportAt : 1e9;
+          if (nowB - zWalkState.backMapAt > 8000 && sinceTp > 20000) {
+            zWalkState.backTeleportAt = nowB;
+            setStatus("反向走未回图，传送回启动图…", "warn");
+            try { teleportToMap(zWalkState.startMap); } catch (e) {}
+            return;
+          }
+          var backDirs = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+          var bd = backDirs[zWalkState.backDir];
+          var btx = Math.round(ent.position[0] + bd[0] * 10);
+          var bty = Math.round(ent.position[1] + bd[1] * 10);
+          var bDest = mvSnapWalkable(btx, bty);
+          var pB = new CLIENT.PS.CZ.REQUEST_MOVE();
+          pB.dest = [bDest[0], bDest[1]];
+          CLIENT.NM.sendPacket(pB);
+          zWalkState.lastMoveDir = zWalkState.backDir;
+          setStatus("已换图，反向走回原图…", "warn");
+          return;
+        }
+        if (zWalkState.backMapAt && curKeyB === zWalkState.startMap) {
+          zWalkState.backMapAt = 0; zWalkState.backTeleportAt = 0;
+          tlog("walk-mapchange 回到原图，恢复寻怪");
+        }
+      } catch (e) {}
       doSitCycle(scanMobs || []); // V2.15.22：坐下周期（无目标时间；安全才坐，坐下被打自动站起）
       var now = Date.now();
       // 坐下时不启动自动寻怪（内挂发包 + 自研直走都不做）——回血/回蓝期间保持静止
@@ -6449,6 +6526,7 @@
             var pmA2 = new CLIENT.PS.CZ.REQUEST_MOVE();
             pmA2.dest = [snapA[0], snapA[1]];
             CLIENT.NM.sendPacket(pmA2);
+            zWalkState.lastMoveDir = zWalkState.dir; // V2.16.8：记录末次移动方向（换图反向走用）
             zAStarState = { active: true, tx: snapA[0], ty: snapA[1], since: now, lastTry: now, stuckSince: 0, lastPos: [px0, py0], aim: [aimD[0], aimD[1]] };
             zWalkState.stuckCnt = 0;
             tlog("walk-astar path " + pathA.length + " -> " + snapA[0] + "," + snapA[1]);
@@ -6508,6 +6586,7 @@
       pmm.dest = [dDest[0], dDest[1]];
       CLIENT.NM.sendPacket(pmm);
       zWalkState.tried = 0;
+      zWalkState.lastMoveDir = zWalkState.dir; // V2.16.8：记录末次移动方向（换图反向走用）
       tlog("walk-dir " + zWalkState.dir + " -> " + dDest[0] + "," + dDest[1]);
       setStatus("无目标，直走寻怪（方向" + zWalkState.dir + "）…", "st");
       return;

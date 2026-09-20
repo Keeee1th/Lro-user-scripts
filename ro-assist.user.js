@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.6
+// @version      2.16.7
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.6"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.16.7"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -57,9 +57,11 @@
   var profiles = loadProfiles();
   pruneProfiles(); // V2.8.9：启动即归并历史小数垃圾键（无损，只删重复档）
   var activeCharKey = "default";
+  // V2.16.7：刷新后恢复上次活跃角色档（防 activeCharKey 重置 default → 面板用错档丢配置）
+  try { var _lastAk = localStorage.getItem("dsh_ro_last_active"); if (_lastAk && profiles[_lastAk]) activeCharKey = _lastAk; } catch (e) {}
   var lastCharGid = null; // 已识别的主角色 GID（换角色自动切档）
   function activeProfileKey() { return activeCharKey; }
-  function setActiveProfile(k) { activeCharKey = k || "default"; }
+  function setActiveProfile(k) { activeCharKey = k || "default"; try { localStorage.setItem("dsh_ro_last_active", activeCharKey); } catch (e) {} }
   function loadProfiles() { try { return JSON.parse(localStorage.getItem(PROF_KEY)) || {}; } catch (e) { return {}; } }
   function saveProfiles() { try { localStorage.setItem(PROF_KEY, JSON.stringify(profiles)); } catch (e) {} }
   function ensureProfile(k) { if (!profiles[k]) profiles[k] = { name: k, gid: 0, saved: {}, lockList: {}, askList: [], lastAt: 0 }; return profiles[k]; }
@@ -669,8 +671,8 @@
       '<div class="row"><span class="st" id="dsh-defstate" style="font-size:11px">防御状态：-</span></div>' +
       '<div class="sec">坐下（参考内挂 · 助手自实现）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-sit" type="checkbox" checked>自动坐下</label>' +
-      '<span class="lb" style="margin-left:auto;min-width:26px">HP</span><input id="dsh-z-sithplo" type="number" value="40" style="flex:0 0 38px"><span style="color:#5a6b7f">~</span><input id="dsh-z-sithphi" type="number" value="80" style="flex:0 0 38px"><span style="color:#5a6b7f">%</span></div>' +
-      '<div class="row"><span class="lb">SP范围</span><input id="dsh-z-sitsplo" type="number" value="30" style="flex:0 0 38px"><span style="color:#5a6b7f">~</span><input id="dsh-z-sitsphi" type="number" value="70" style="flex:0 0 38px"><span style="color:#5a6b7f">%</span>' +
+      '<span class="lb" style="margin-left:auto;min-width:26px">HP</span><input id="dsh-z-sithplo" type="number" value="30" style="flex:0 0 38px"><span style="color:#5a6b7f">~</span><input id="dsh-z-sithphi" type="number" value="80" style="flex:0 0 38px"><span style="color:#5a6b7f">%</span></div>' +
+      '<div class="row"><span class="lb">SP范围</span><input id="dsh-z-sitsplo" type="number" value="10" style="flex:0 0 38px"><span style="color:#5a6b7f">~</span><input id="dsh-z-sitsphi" type="number" value="70" style="flex:0 0 38px"><span style="color:#5a6b7f">%</span>' +
       '<span class="lb" style="min-width:60px">坐下被锁定</span><select id="dsh-z-sitxw" style="flex:0 0 72px"><option selected>无视</option><option>还击</option><option>瞬移</option><option>逃脱</option></select></div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-sitback" type="checkbox" checked>回满后继续战斗</label>' +
       '<label class="switch"><input id="dsh-z-sitnofight" type="checkbox">战斗状态不坐下</label></div>' +
@@ -784,7 +786,7 @@
       '<button class="ghost" id="dsh-itemdel" style="flex:0 0 auto">删除选中</button>' +
       '<label class="switch" style="margin-left:auto"><input id="dsh-itemen" type="checkbox">启用自动使用</label></div></div>' +
       '<div class="sec">自动装箭矢（V2.15.26：箭矢耗尽自动补）</div>' +
-      '<div class="row"><label class="switch"><input id="dsh-arrowen" type="checkbox">箭矢耗尽时用魔法箭袋(2000030)放箭并装上装备栏</label></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-arrowen" type="checkbox" checked>箭矢耗尽时用魔法箭袋(2000030)放箭并装上装备栏</label></div>' +
       '<div class="row"><span class="st" id="dsh-arrowlog" style="font-size:10px">未启用</span></div>' +
       '<div class="sec">平A改用系统noctrl自动连击（V2.15.29：锁定目标后不再连续补发平A包，仅换目标/重进射程补发，消除连击间断）</div>' +
       '<div class="sec">背包快照定期上报（V2.15.27）</div>' +
@@ -2608,6 +2610,16 @@
       saved.ui = ui; saveSaved(saved);
     } catch (e) {}
   }
+  // V2.16.7：配置控件统一 change 即时保存——任何设置改动立即落盘（防「改完未到8s周期就刷新」丢配置）
+  try {
+    var profIds = {};
+    for (var pi = 0; pi < PROF_CONTROLS.length; pi++) profIds[PROF_CONTROLS[pi][0]] = 1;
+    document.addEventListener("change", function (e) {
+      var t = e.target;
+      if (!t || !t.id || !profIds[t.id]) return;
+      try { captureAll(); } catch (e2) {}
+    });
+  } catch (e) {}
   function applyProfileUI() {
     try {
       var ui = saved.ui || {};
@@ -2648,12 +2660,14 @@
       lockList = profiles[key].lockList || {};
       askList = profiles[key].askList || [];
       applyProfileUI();
+      try { fillZhuQoaskill(); } catch (e) {} // V2.16.7：切档后重填解围下拉（新角色已学技能，清掉旧角色技能）
       try { syncApplyRuntime(); renderSyncState(); } catch (e) {} // V2.15.10：切档后同步器按新档配置启停
       try { savememApply(); } catch (e) {} // V2.15.15：切档后按新档省内存开关生效
       renderWinInfo(); renderLockList(); renderAskList();
       lastCharGid = gid;
       setStatus("已加载角色档 " + nm + "（ID" + gid + "）", "ok");
       tlog("profile-load " + key);
+      try { syncRealAtkRange(); } catch (e) {} // V2.16.7：切档后读真实射程并回写物理距离设置
     } catch (e) {}
   }
   $id("dsh-saveprofile").addEventListener("click", function () {
@@ -2662,7 +2676,7 @@
     setStatus("已保存当前角色设置（档: " + activeProfileKey() + "）", "ok");
   });
   // 自动存储（第2项）：周期 + 切后台 + 关页面前兜底（V2.5.0：后台隐藏时周期自动拉长到 30s，省 CPU；切后台/关页兜底已在下面保留）
-  try { setInterval(function () { if (!UI_BG || Date.now() - lastCaptureAt > 30000) { lastCaptureAt = Date.now(); captureAll(); } }, 8000); } catch (e) {}
+  try { setInterval(function () { try { syncRealAtkRange(); } catch (e) {} if (!UI_BG || Date.now() - lastCaptureAt > 30000) { lastCaptureAt = Date.now(); captureAll(); } }, 8000); } catch (e) {}
   try { window.addEventListener("beforeunload", function () { captureAll(); }); } catch (e) {}
   try { document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") captureAll(); }); } catch (e) {}
 
@@ -3880,7 +3894,7 @@
     } catch (e) {}
   }
   masterTickReg(function () { try { tickArrow(); } catch (e) {} });
-  if (saved.arrowEn) { var ae = $id("dsh-arrowen"); if (ae) ae.checked = true; }
+  if (saved.arrowEn === false) { var ae = $id("dsh-arrowen"); if (ae) ae.checked = false; } // V2.16.7：默认开，仅当用户明确关过(saved.arrowEn===false)才恢复为关
 
   // ---------------- 背包快照定期上报（V2.15.27：复用仓库查询读取，到点上报道本机采集服务）----------------
   var invShotLast = 0, invShotSent = 0, invShotFail = 0;
@@ -4343,9 +4357,9 @@
       var setC = function (sel, c) { var el = document.querySelector(sel); if (el) el.checked = !!c; };
       var zsit = $id("dsh-z-sit");
       setC(".opensit", zsit ? zsit.checked : true);
-      setV(".AutoUseSit_reHpVal", ($id("dsh-z-sithplo") && $id("dsh-z-sithplo").value) || 40);
+      setV(".AutoUseSit_reHpVal", ($id("dsh-z-sithplo") && $id("dsh-z-sithplo").value) || 30);
       setV(".AutoUseSit_reHpUpVal", ($id("dsh-z-sithphi") && $id("dsh-z-sithphi").value) || 80);
-      setV(".AutoUseSit_reSpVal", ($id("dsh-z-sitsplo") && $id("dsh-z-sitsplo").value) || 30);
+      setV(".AutoUseSit_reSpVal", ($id("dsh-z-sitsplo") && $id("dsh-z-sitsplo").value) || 10);
       setV(".AutoUseSit_reSpUpVal", ($id("dsh-z-sitsphi") && $id("dsh-z-sitsphi").value) || 70);
     } catch (e) {}
   }
@@ -4383,7 +4397,9 @@
         html += '<option value="' + ids[i] + '">' + nm + ' Lv' + (learned[ids[i]].level || "?") + '</option>';
       }
       sel.innerHTML = html;
-      if (cur) sel.value = cur;
+      // V2.16.7：换角色后已选技能不在新角色已学列表 → 清空（防读成上个角色的技能）
+      if (cur && learned[cur]) sel.value = cur;
+      else sel.value = "";
     } catch (e) {}
   }
   // V2.16.5 周期兜底：解围下拉仍是空（未点「读取内挂」）且客户端 DB 就绪 → 自动填充；每 ~8s 检查一次，填上即停
@@ -4885,8 +4901,36 @@
         CLIENT.NM.sendPacket(p);
       }
       tlog("np-sync-targets n=" + ids.length);
+      npSyncTargetsDom(); // V2.16.7：发包后对齐内挂 DOM 勾选状态
     } catch (e) {}
   }
+  // V2.16.7 内挂名单 DOM 双向同步：助手 lockList ↔ 内挂 .onlyattack_block 勾选状态
+  //   助手勾选/解除锁定 → 写内挂复选框（程序设 checked 不触发 change，避免回环）
+  function npSyncTargetsDom() {
+    try {
+      var checks = document.querySelectorAll(".onlyattack_block input");
+      if (!checks.length) return;
+      for (var i = 0; i < checks.length; i++) {
+        var c = checks[i];
+        var mid = c.getAttribute("data-id");
+        if (!mid) continue;
+        var want = !!lockList[String(mid)];
+        if (c.checked !== want) c.checked = want;
+      }
+    } catch (e) {}
+  }
+  // V2.16.7 内挂勾选/取消勾选 → 写回助手锁定目录（change 委托，内挂操作为准）
+  try {
+    document.addEventListener("change", function (e) {
+      var t = e.target;
+      if (!t || !t.getAttribute || !t.getAttribute("data-id")) return;
+      if (!t.closest || !t.closest(".onlyattack_block")) return;
+      var mid = t.getAttribute("data-id");
+      var nm = t.getAttribute("data-name") || ("ID" + mid);
+      if (t.checked) addLock(mid, nm);
+      else removeLock(mid);
+    });
+  } catch (e) {}
   // toggle 一次自动战斗（发同一包：二转 id=34 value=1 / 三转 WHISPER msg="0"）
   function npToggleHunt() {
     if (npIsThree()) npSendWhisper("NPC:setautoattack");
@@ -4933,13 +4977,26 @@
   } catch (e) {}
   // 攻击距离计算：物理/魔法按技能射程自动选择（普攻=物理距离；技能=技能射程+1 与普攻取大）
   // 客户端 onUseSkill 机制：attackRange+1；无技能则用普攻物理距离
+  // V2.16.7：读取角色真实普攻射程（客户端 Session.Entity.attack_range，来源服务器 ZC.ATTACK_RANGE 的 currentAttRange）
+  //   真实射程优先于写死的物理距离；物理距离(dsh-z-pmrange)仅在用户主动设上限(>默认2)且小于真实射程时才限制。
+  function realAtkRange() {
+    try {
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      if (ent && ent.attack_range && ent.attack_range > 0) return ent.attack_range + 1; // 攻击判定统一 attack_range+1
+    } catch (e) {}
+    return 0;
+  }
   function calcAtkRange() {
     try {
-      var pmRange = parseInt($id("dsh-z-pmrange").value, 10) || 2;
+      var pmRange = parseInt($id("dsh-z-pmrange").value, 10) || 0;
+      var real = realAtkRange();
+      var base = real > 0 ? real : (pmRange > 0 ? pmRange : 2);
+      // 用户主动设物理距离上限（>默认2）且小于真实射程 → 按用户限制；否则用真实射程（弓箭手不再贴脸）
+      if (pmRange > 2 && base > pmRange) base = pmRange;
       var order0 = parseSkillOrder($id("dsh-skillorder").value);
-      var atkRange = pmRange;
+      var atkRange = base;
       if (order0.length) {
-        var maxSkillRange = pmRange;
+        var maxSkillRange = base;
         for (var oi = 0; oi < order0.length; oi++) {
           var sr = getSkillRange(order0[oi].skid, order0[oi].lv);
           if (sr + 1 > maxSkillRange) maxSkillRange = sr + 1;
@@ -4948,6 +5005,21 @@
       }
       return atkRange;
     } catch (e) { return 2; }
+  }
+  // V2.16.7：真实射程自动回写「物理距离」设置并写档（仅在当前值还是默认 0/1/2 时覆盖，避免覆盖用户手动限制）
+  function syncRealAtkRange() {
+    try {
+      var real = realAtkRange();
+      if (real <= 1) return;
+      var el = $id("dsh-z-pmrange");
+      if (!el) return;
+      var cur = parseInt(el.value, 10) || 0;
+      if (cur !== real && (cur === 0 || cur === 1 || cur === 2)) {
+        el.value = real;
+        try { captureAll(); } catch (e) {}
+        tlog("atk-range auto=" + real);
+      }
+    } catch (e) {}
   }
   // 侦查扫描是否扫到「可攻击到的锁定怪物」：基于 scanMobs（侦查实时结果，含 mid/距离/锁定目录比对）
   // 内挂寻怪开关依据（用户需求状态机）：
@@ -5012,11 +5084,13 @@
     if (!lockList[id]) lockList[id] = { name: name || ("ID" + id), ts: Date.now() };
     profileLockSave();
     renderLockList();
+    try { npSyncTargetsDom(); npSyncTargets(); } catch (e) {} // V2.16.7 双向同步内挂名单
   }
   function removeLock(id) {
     delete lockList[String(id)];
     profileLockSave();
     renderLockList();
+    try { npSyncTargetsDom(); npSyncTargets(); } catch (e) {} // V2.16.7 双向同步内挂名单
   }
   $id("dsh-locklist").addEventListener("click", function (e) {
     var b = e.target.closest && e.target.closest("[data-unlock]");
@@ -5259,8 +5333,8 @@
       if (!lfN || !lfN.maxhp || !lfN.maxsp) return false;
       var hpN = lfN.hp / lfN.maxhp * 100;
       var spN = lfN.sp / lfN.maxsp * 100;
-      var loN = parseInt($id("dsh-z-sithplo").value, 10) || 40;
-      var sLoN = parseInt($id("dsh-z-sitsplo").value, 10) || 30;
+      var loN = parseInt($id("dsh-z-sithplo").value, 10) || 30;
+      var sLoN = parseInt($id("dsh-z-sitsplo").value, 10) || 10;
       return hpN < loN || spN < sLoN;
     } catch (e) { return false; }
   }
@@ -5877,6 +5951,27 @@
   masterTickReg(function () { try { tickMoveXY(); } catch (e) {} });
   // ---------------- V2.14.0 寻怪自动上马（缰绳 12622：骑乘状态不在身即用，1s 防抖，连续失败退避30s）----------------
   var reinLastUse = 0, reinFailStreak = 0, reinBackoffUntil = 0;
+  // V2.16.7：锁定怪是否在攻击距离内（正在打）——超射程=追怪赶路中，允许上马
+  function lockMobInAtkRange() {
+    try {
+      if (!zLock.gid) return false;
+      var entR = CLIENT.SS && CLIENT.SS.Entity;
+      if (!entR || !entR.position) return false;
+      var atkR = calcAtkRange();
+      var EM = window.require && window.require("Renderer/EntityManager");
+      var inR = false;
+      if (EM && typeof EM.forEach === "function") {
+        EM.forEach(function (e) {
+          if (inR) return;
+          if (e.GID === zLock.gid && e.objecttype === 5 && e.position) {
+            var d = Math.abs(e.position[0] - entR.position[0]) + Math.abs(e.position[1] - entR.position[1]);
+            if (d <= atkR) inR = true;
+          }
+        });
+      }
+      return inR;
+    } catch (e) { return false; }
+  }
   function tickRein() {
     try {
       var sw = $id("dsh-z-rein");
@@ -5886,14 +5981,17 @@
       if (!clientReady()) return;
       var ent = CLIENT.SS && CLIENT.SS.Entity;
       if (!ent || !ent.life) return;
-      // V2.16.4 上马判定非战斗状态：锁定目标在身（zLock.gid 挂着=正在追/打/还击）→ 不上马（上马动作会卡战斗）
-      // V2.16.5 补两条战斗判定：内挂自动战斗开着（npHuntOn，角色正在被内挂指挥打怪）→ 不上马；
-      //   平A noctrl 连击锁定中（zAtkLast.gid 挂着）→ 不上马。加上 zLock.gid + 3s 被打，覆盖全部战斗状态。
+      // V2.16.7 上马判定细化：锁定怪在攻击距离内（正在打）→ 不上马；超射程（追怪赶路）→ 允许上马（骑马追怪）
+      //   平A noctrl 连击锁定中 → 不上马；内挂指挥打怪（npHuntOn）→ 不上马
+      //   被打 3s 内：仅当需反击（非选中怪攻击=还击）或瞬移（=瞬移）时视为战斗不上马；「无视」→ 继续骑马跑
       try {
-        if (zLock.gid) { reinFailStreak = 0; return; }
+        if (zLock.gid && lockMobInAtkRange()) { reinFailStreak = 0; return; }
         if (zAtkLast && zAtkLast.gid) { reinFailStreak = 0; return; } // 平A锁定中（正在连击）
         if (npHuntOn) { reinFailStreak = 0; return; } // 内挂自动战斗开（角色正在打怪）
-        if (zRunning && Date.now() - zHpWatch.lastHitAt < 3000) { reinFailStreak = 0; return; } // 刚被攻击也不上马
+        if (zRunning && Date.now() - zHpWatch.lastHitAt < 3000) {
+          var onaR = ($id("dsh-z-ona") && $id("dsh-z-ona").value) || "还击";
+          if (onaR === "还击" || onaR === "瞬移") { reinFailStreak = 0; return; } // 需反击/瞬移 → 不上马；无视 → 继续骑马
+        }
       } catch (e) {}
       try { hookStatusIcons(); } catch (e3) {} // 确保判活表工作（幂等）
       if (buffStateOn(613) || buffStateOn(27)) { reinFailStreak = 0; return; }
@@ -5905,7 +6003,7 @@
     } catch (e) {}
   }
   masterTickReg(function () { try { tickRein(); } catch (e) {} });
-  var zWalkState = { lastMove: 0, lastChase: 0, dir: 0, noTargetSince: 0, lastIdleFly: 0, lastPos: null, stuckCnt: 0, stuckAt: 0, tried: 0, lastSeenDir: null, lastSeenAt: 0, center: null }; // V2.16.4 stuckAt=卡住时间窗口起点；center=地图边界锚点(启动点)
+  var zWalkState = { lastMove: 0, lastChase: 0, dir: 0, noTargetSince: 0, lastIdleFly: 0, lastPos: null, stuckCnt: 0, stuckAt: 0, tried: 0, lastSeenDir: null, lastSeenAt: 0, center: null, chaseGid: null, chaseDist: 0, chaseSince: 0 }; // V2.16.4 stuckAt=卡住时间窗口起点；center=地图边界锚点(启动点)；V2.16.7 chase*=追怪卡住检测
   var zEscape = { until: 0 };                 // V2.15.23：逃脱状态（坐下被打→移动避开怪，期间不寻怪不打怪）
   var zAStarState = { active: false, tx: 0, ty: 0, since: 0, lastTry: 0, stuckSince: 0, lastPos: null, aim: null }; // V2.10.0 A* 绕障行走状态
   // 状态前置穿插平A计时：zWaitSince = 上次穿插普攻时间（间隔跟随攻击循环，见 zAttack wait 分支）
@@ -5919,6 +6017,9 @@
   var skillNextAt = {};  // V2.15.28：每技能独立 CD 计时（skillNextAt[SKID]=下次可释放时间戳），到点才发，不再按攻击轮次全局窗口
   try { window.__dshSkillDelay = skillDelay; } catch (e) {} // 供控制台/探针查看
   try { window.__dshSkillNext = skillNextAt; } catch (e) {} // 供控制台/探针查看
+  var zSkillSentAt = {};  // V2.16.7：技能包发出时间戳（估算服务器 RTT）
+  var zSkillRtt = {};     // V2.16.7：每技能滑动平均 RTT ms
+  var zSkillRttAvg = 0;   // V2.16.7：全局平均 RTT ms
   // 被攻击检测：HP 下降窗口 → 触发「非选中怪攻击」处理（无视/瞬移/还击）
   var zHpWatch = { hp: null, lastHitAt: 0 };
   // ---------- V2.7.3 平A断续修复：NOCTRL 模式发包 ----------
@@ -6129,17 +6230,47 @@
             if (npHuntOn) npHuntStop();
           }
         }
-        // V2.7.3：追怪直发怪坐标（服务器寻路，不再 pathFindTo 取 5 格小步）；V2.9.0 节流读设置
+        // V2.16.7：追怪不再直发怪坐标（会走到脸上）——目标改为「距怪 射程-1 格」可走点，停在射程边缘即可攻击（玩家手动点怪同款：射程内直接打）
+        // V2.16.7 追怪卡住检测（与无目标瞬移合并）：追怪目标连续 4s 距离未缩短 → 瞬移（覆盖围殴走不动/障碍物不可达发呆）
+        var cgid7 = near.GID;
+        var cdist7 = Math.abs(near.position[0] - ent.position[0]) + Math.abs(near.position[1] - ent.position[1]);
+        if (zWalkState.chaseGid === cgid7 && cdist7 >= zWalkState.chaseDist) {
+          if (!zWalkState.chaseSince) zWalkState.chaseSince = now;
+        } else if (zWalkState.chaseGid !== cgid7) {
+          zWalkState.chaseGid = cgid7; zWalkState.chaseSince = 0;
+        } else {
+          zWalkState.chaseSince = 0;
+        }
+        zWalkState.chaseDist = cdist7;
+        if (zWalkState.chaseSince && now - zWalkState.chaseSince >= 4000) {
+          var chaseFlyOn = $id("dsh-z-idlefly") && $id("dsh-z-idlefly").checked && !($id("dsh-z-flykill") && !$id("dsh-z-flykill").checked);
+          if (chaseFlyOn && now - zWalkState.lastIdleFly >= 15000) {
+            zWalkState.lastIdleFly = now;
+            zWalkState.chaseSince = 0; zWalkState.chaseGid = null;
+            var fok7 = doFly();
+            if (fok7) markFlyOk(); else markFlyFail();
+            tlog("walk-chase-stuck 追怪卡住4s → 瞬移");
+            setStatus("追怪卡住，自动瞬移换点…", "warn");
+            return;
+          }
+        }
         var chaseInt = (parseFloat($id("dsh-z-chaseint").value) || 0.5) * 1000;
         if (now - zWalkState.lastChase < chaseInt) return;
         zWalkState.lastChase = now;
-        var cDest = mvSnapWalkable(Math.round(near.position[0]), Math.round(near.position[1]));
+        var atkR7 = calcAtkRange();
+        var stopD = Math.max(1, atkR7 - 1);
+        var rdx7 = near.position[0] - ent.position[0];
+        var rdy7 = near.position[1] - ent.position[1];
+        var rdl7 = Math.abs(rdx7) + Math.abs(rdy7);
+        var ttx = Math.round(near.position[0] - (rdl7 > 0 ? (rdx7 / rdl7) * stopD : 0));
+        var tty = Math.round(near.position[1] - (rdl7 > 0 ? (rdy7 / rdl7) * stopD : 0));
+        var cDest = mvSnapWalkable(ttx, tty);
         zWalkState.noTargetSince = 0; // 有目标，重置无目标计时
         var pm = new CLIENT.PS.CZ.REQUEST_MOVE();
         pm.dest = [cDest[0], cDest[1]];
         CLIENT.NM.sendPacket(pm);
-        tlog("walk-追怪 " + (near._job != null ? near._job : near.GID) + " -> " + cDest[0] + "," + cDest[1]);
-        setStatus("发现目标，直发追怪…", "ok");
+        tlog("walk-追怪 " + (near._job != null ? near._job : near.GID) + " 停射程边缘 -> " + cDest[0] + "," + cDest[1] + " (atkRange=" + atkR7 + ")");
+        setStatus("发现目标，追至射程边缘…", "ok");
         return;
       }
       // 无锁定怪持续 N 秒 → 自动瞬移换位置（苍蝇/瞬移术）
@@ -7068,11 +7199,19 @@
   function skillCdMs(o) {
     try {
       if (!o) return 800;
+      var base;
       var srv = skillDelay[o.skid] || 0;
-      if (srv > 0) return Math.max(srv, 800);
-      var cfg = parseInt(o.cd, 10);
-      if (!isNaN(cfg) && cfg > 0) return cfg * 1000;
-      return 800;
+      if (srv > 0) base = Math.max(srv, 800); // 服务器2842真实后摇优先
+      else {
+        var cfg = parseInt(o.cd, 10);
+        if (!isNaN(cfg) && cfg > 0) base = cfg * 1000;
+        else base = 800; // 从未收到该技能服务器回执 → 800ms 兜底
+      }
+      // V2.16.7 服务器延迟补偿：提前约半个 RTT 发包，抵消网络往返滞后（至少保留100ms，防过度提前打断动作）
+      var rtt = zSkillRtt[o.skid] || zSkillRttAvg || 0;
+      var comp = Math.min(Math.round(rtt * 0.5), 250);
+      if (base > comp + 100) base -= comp;
+      return base;
     } catch (e) { return 800; }
   }
   function castStatusPrep(condStr, order) {
@@ -7228,6 +7367,7 @@
           ps.targetID = ent.GID || 0;
           dshCastMark(o.skid, realLv, ent.GID || 0, "zhu");
           CLIENT.NM.sendPacket(ps);
+          zSkillSentAt[o.skid] = Date.now(); // V2.16.7：记录发包时刻算 RTT
           zLastCastAt = Date.now(); // 记录技能释放时间（兼容旧引用）
           zLastCastSkid = o.skid; // V2.15.24：记本次技能（兼容旧引用）
           skillNextAt[o.skid] = Date.now() + skillCdMs(o); // V2.15.28：本技能独立 CD（服务器2842真实后摇>配置cd>800ms）
@@ -7253,6 +7393,7 @@
         p.targetID = target.GID;
         dshCastMark(o.skid, realLv, target.GID, "zhu");
         CLIENT.NM.sendPacket(p);
+        zSkillSentAt[o.skid] = Date.now(); // V2.16.7：记录发包时刻算 RTT
         zLastCastAt = Date.now(); // 记录技能释放时间（兼容旧引用）
         zLastCastSkid = o.skid; // V2.15.24：记本次技能（兼容旧引用）
         skillNextAt[o.skid] = Date.now() + skillCdMs(o); // V2.15.28：本技能独立 CD（服务器2842真实后摇>配置cd>800ms）
@@ -8992,6 +9133,15 @@
       var skid = dv.getUint16(14, true);
       var dly = dv.getUint32(20, true);
       if (skid > 0) skillDelay[skid] = dly;
+      // V2.16.7：RTT 估算（发包→收2842回执时间差，滑动平均，供 skillCdMs 延迟补偿）
+      if (skid > 0 && zSkillSentAt[skid]) {
+        var rtt = Date.now() - zSkillSentAt[skid];
+        if (rtt > 0 && rtt < 2000) {
+          zSkillRtt[skid] = zSkillRtt[skid] ? (zSkillRtt[skid] * 0.7 + rtt * 0.3) : rtt;
+          zSkillRttAvg = zSkillRttAvg ? (zSkillRttAvg * 0.7 + rtt * 0.3) : rtt;
+        }
+        delete zSkillSentAt[skid];
+      }
       console.log('[ACK3-DELAY] skid=' + skid + ' delay=' + dly + 'ms');
       if (btDiagOn) btLog('post-delay', 'ACK3 skid=' + skid + ' delay=' + dly + 'ms');
     } catch (e) {}

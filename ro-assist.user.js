@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.16
+// @version      2.16.17
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.16"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.16.17"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -9360,14 +9360,24 @@
     try {
       var v = (p && p.getPacketVersion) ? p.getPacketVersion() : null;
       var op = (v && v[1] != null) ? v[1] : -1;
-      var buf = (p && p.build) ? p.build() : null;
+      // V2.16.17 修 bug：BinaryWriter 只有 .buffer 没有 byteLength/length，旧写法长度算成 0 → 全部 0B
+      var ab = null, off = 0;
+      if (p && typeof p.build === "function") {
+        var buf = p.build();
+        if (buf) { ab = buf.buffer || buf; off = buf.byteOffset || 0; }
+      }
+      if (!ab && p && p.buffer && p.buffer.byteLength !== undefined) { ab = p.buffer; off = 0; }
+      if (!ab && p && p.view && p.view.buffer) { ab = p.view.buffer; off = 0; }
       var hex = "", len = 0;
-      if (buf) {
-        var u8 = new Uint8Array(buf.buffer || buf, buf.byteOffset || 0, buf.byteLength || buf.length || 0);
+      if (ab) {
+        var total = ab.byteLength || 0;
+        var u8 = new Uint8Array(ab, off, Math.max(0, total - off));
         len = u8.length;
         var m = Math.min(len, 64);
         for (var i = 0; i < m; i++) hex += (u8[i] < 16 ? "0" : "") + u8[i].toString(16);
       }
+      // 没有 getPacketVersion 的对象（非 roBrowser 包）→ 直接从字节里读小端 opcode
+      if (op < 0 && hex.length >= 4) { var o2 = parseInt(hex.substr(2, 2) + hex.substr(0, 2), 16); if (o2 > 0) op = o2; }
       return { op: op, len: len, hex: hex };
     } catch (e) { return { op: -1, len: 0, hex: "" }; }
   }

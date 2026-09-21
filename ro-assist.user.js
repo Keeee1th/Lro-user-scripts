@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.18
+// @version      2.16.19
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.18"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.16.19"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -5324,6 +5324,8 @@
         } else { zStuckSince = null; }
         zLastPos = [px, py];
       }
+      // V2.16.19：坐着不动不算卡死（坐下时坐标本来就不变，否则会被误判卡死→瞬移打断回血）
+      try { if (isSitting()) zStuckSince = null; } catch (e3) {}
       // 群殴/防御检测
       checkDefense(mobs, ent);
       // V1.8.5：缓存侦查结果（拾取走过去安全判定用）
@@ -5547,6 +5549,9 @@
       var cMap = getCurrentMapInfo();
       var isCombatMap = defSnap.isCombatMap;
       if (!clientReady()) return;
+      // V2.16.19：坐下检查提前到瞬移冷却之前——原来排在下面「瞬移冷却 return」之后，
+      //   导致瞬移后 30s 内整段返回、完全不检查坐下（卡死瞬移一触发就再也坐不下）
+      doSitCycle(mobs);
       var now = Date.now();
       // V1.9.4：瞬移连续失败冷却（无翅膀/无瞬移术/SP不足 3 次后 10s 停手，避免空转抖动）
       if (now < flyFailUntil) return;
@@ -5624,7 +5629,9 @@
         var _ht = zAtkHpTrack[zLock.gid];
         atkInvalid = !!(_ht && (now - _ht.at >= 4000));
       }
-      if (isCombatMap && zRunning && $id("dsh-z-flystuck").checked && zStuckSince && (now - zStuckSince > 4000) && (!zLock.gid || atkInvalid)) { needFly = true; reason = "卡死4s"; }
+      // V2.16.19：已坐下 / 正在等坐下（无怪无锁定且 HP·SP 低于坐下阈值）都不算卡死
+      var waitingSit = !zLock.gid && !(mobs && mobs.length) && needSitNow();
+      if (isCombatMap && zRunning && $id("dsh-z-flystuck").checked && zStuckSince && (now - zStuckSince > 4000) && (!zLock.gid || atkInvalid) && !isSitting() && !waitingSit) { needFly = true; reason = "卡死4s"; }
       // V2.16.0：防御瞬移总开关（dsh-z-flykill，默认开）——关掉后群殴/BOSS/低血/SP/被围/卡死/坐下看门狗全部不再瞬移，坐下回血不受影响
       if ($id("dsh-z-flykill") && !$id("dsh-z-flykill").checked) needFly = false;
       // V2.15.22：SP 低瞬移让位——坐下条件满足且未被围、HP 未到危险线时，SP 瞬移让位给坐下回蓝
@@ -5640,8 +5647,7 @@
         lastFly = now;
         setStatus("瞬移(" + reason + ")", "warn");
       }
-      // V2.15.22：坐下周期（战斗循环挂点，不依赖侦查扫描）——无目标时安全才坐；坐下期间被打/回满/看门狗自动站起
-      doSitCycle(mobs);
+      // V2.16.19：坐下周期已提前到本函数开头（不受瞬移冷却影响），此处不再重复调用
       // V1.9.4 面板防御状态行
       var dsEl = $id("dsh-defstate");
       if (dsEl) {

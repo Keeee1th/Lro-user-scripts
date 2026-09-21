@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.12
+// @version      2.16.13
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.12"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.16.13"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -9181,10 +9181,30 @@
       ingest({ type: "raw", opcode: op, hex: hex, map: getMapName(), npcGID: (lastTalkNpc && lastTalkNpc.GID != null) ? lastTalkNpc.GID : 0, npcName: (lastTalkNpc && lastTalkNpc.name) || "", pos: (lastTalkNpc && lastTalkNpc.pos) || null, text: msg.slice(0, 200), stepIdx: reconSteps.length, ts: new Date().toISOString() });
     } catch (e2) {}
   }
+  // V2.16.13 战斗收包采集：统计收包 opcode 分布 + 采集短包样本（定位「被攻击掉血」包字段用）
+  //   掉血/状态/伤害类多为短包（4~32B）；已知 opcode（菜单/对话/技能后摇）跳过。样本限流：每 opcode 2 条、总量 400。
+  var opStat = {}, opStatSamples = 0;
+  function collectOpStat(bytes, op) {
+    try {
+      var len = bytes.byteLength;
+      opStat[op] = (opStat[op] || 0) + 1;
+      if (op === 183 || op === 180 || op === 182 || op === 0x43d || op === 0x43e || op === 0xb1a) return;
+      if (len < 4 || len > 32) return;
+      if (opStatSamples >= 400 || opStat[op] > 2) return;
+      opStatSamples++;
+      var hex = "";
+      var arr = new Uint8Array(bytes, 0, Math.min(32, len));
+      for (var i = 0; i < arr.length; i++) hex += (arr[i] < 16 ? "0" : "") + arr[i].toString(16);
+      var hpNow = null;
+      try { var ent0 = CLIENT.SS && CLIENT.SS.Entity; if (ent0 && ent0.life) hpNow = ent0.life.hp; } catch (e2) {}
+      ingest({ type: "opstat", opcode: op, len: len, hex: hex, hp: hpNow, map: getMapName(), ts: new Date().toISOString() });
+    } catch (e) {}
+  }
   function dispatchInbound(bytes) {
     try {
       var dv = new DataView(bytes);
       var op = dv.getUint16(0, true);
+      collectOpStat(bytes, op);
       if (op === 183) onMenuList(bytes);
       else if (op === 180) onSayDialog(bytes);
       else if (op === 182) onCloseDialog();

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.11
+// @version      2.16.12
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.11"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.16.12"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -6406,6 +6406,10 @@
       }
       var WALK_RANGE = 12; // 每次向目标方向走 12 格
       var px0 = Math.round(ent.position[0]), py0 = Math.round(ent.position[1]);
+      // ===== V2.16.12 停用：区域寻怪半径（软边界）+ 地图物理边缘（硬边界）=====
+      // 用户要求暂时移除「区域寻怪半径」，地图边缘机制意义小一并停用；代码保留供后续恢复（zWalkState.center 保留）。
+      // 注意：两段共享 bndOn 变量，必须一起停用（A* 段的 bndOn2 同步停用）。
+      /*
       // V2.16.4 地图边界：以启动点为中心，半径内寻怪；已走出半径 → 强制往回走（不发外圈目标）
       var bndOn = $id("dsh-z-mapbound") ? $id("dsh-z-mapbound").checked : true;
       var bndR = parseInt($id("dsh-z-mapbound-r") ? $id("dsh-z-mapbound-r").value : "25", 10) || 25;
@@ -6458,6 +6462,7 @@
           }
         }
       } catch (e) {}
+      */
       // V2.16.4 卡住检测修正：旧版「0.5s 内走<3格即累计」误报（正常走速1-2格/0.5s+网络延迟起步慢）
       //   现改为时间窗口：连续 2s 坐标几乎没动（<2 格）才算真卡住；只要在动就不累计
       if (zWalkState.lastPos) {
@@ -6506,8 +6511,9 @@
         if (!zAStarState.active) {
           var aimD = dirs[zWalkState.dir];
           if (now - zWalkState.lastSeenAt < 10000 && zWalkState.lastSeenDir != null) aimD = dirs[zWalkState.lastSeenDir];
-          // V2.16.4 边界钳制：A* 目标不超出边界半径（防止 50 格外目标越过地图边界）
+          // V2.16.12 停用：区域寻怪半径 + 地图物理边缘钳制（与直走段一并停用，保留 farT=50 兜底）
           var farT = 50;
+          /*
           var bndOn2 = $id("dsh-z-mapbound") ? $id("dsh-z-mapbound").checked : true;
           var bndR2 = parseInt($id("dsh-z-mapbound-r") ? $id("dsh-z-mapbound-r").value : "25", 10) || 25;
           if (bndOn2 && bndR2 > 0 && zWalkState.center) {
@@ -6525,6 +6531,7 @@
               farT = Math.max(6, Math.abs(atx2 - px0) + Math.abs(aty2 - py0)); // 距离按钳制后目标重算（防 farT 虚大）
             }
           } catch (e) {}
+          */
           var atx = Math.round(px0 + aimD[0] * farT), aty = Math.round(py0 + aimD[1] * farT);
           var pathA = dshFindPath(px0, py0, atx, aty);
           if (pathA && pathA.length) {

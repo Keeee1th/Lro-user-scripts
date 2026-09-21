@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.15
+// @version      2.16.16
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.15"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.16.16"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -951,7 +951,7 @@
       '<div class="st" id="dsh-menu-status" style="font-size:11px">自动上报：待命</div>' +
       '<div class="row" style="margin-top:6px;gap:6px"><button id="dsh-menu-export" style="flex:0 0 auto">导出JSON</button><button class="ghost" id="dsh-menu-copy" style="flex:0 0 auto">复制</button></div>' +
       '<div class="sec">出站抓包（真机对比用）</div>' +
-      '<div class="row" style="gap:6px"><button id="dsh-txcap" style="flex:0 0 auto">开始抓包</button><button class="ghost" id="dsh-txstop" style="flex:0 0 auto">停止</button><button class="ghost" id="dsh-txexp" style="flex:0 0 auto">导出出站序列</button></div>' +
+      '<div class="row" style="gap:6px;flex-wrap:wrap"><button id="dsh-txcap" style="flex:0 0 auto">开始抓包</button><button class="ghost" id="dsh-txstop" style="flex:0 0 auto">停止</button><button class="ghost" id="dsh-txexp" style="flex:0 0 auto">导出</button><button class="ghost" id="dsh-txdl" style="flex:0 0 auto">下载成文件</button></div>' +
       '<div class="st" id="dsh-txlog" style="font-size:11px">出站抓包：未开始</div>' +
       '<textarea id="dsh-txout" style="width:100%;height:110px;font-size:10px;font-family:monospace" readonly placeholder="点「导出出站序列」后这里出现内容"></textarea>' +
       '<div class="row" style="margin-top:6px;align-items:center;gap:6px"><span class="lb" style="min-width:0;margin:0">选第</span><input id="dsh-menu-num" type="number" min="0" value="0" style="flex:0 0 48px;padding:3px 6px"><span class="lb" style="margin:0">项</span><button id="dsh-menu-choose" style="flex:0 0 auto">发 CHOOSE_MENU</button><button class="ghost" id="dsh-menu-next" style="flex:0 0 auto">下一段</button></div>',
@@ -9217,6 +9217,17 @@
       var dv = new DataView(bytes);
       var op = dv.getUint16(0, true);
       collectOpStat(bytes, op);
+      // V2.16.16：入站也进抓包环（方向 D），导出时与出站合成一条双向时间线
+      if (typeof txCap !== "undefined" && txCap && txCap.on) {
+        try {
+          var u8d = new Uint8Array(bytes);
+          var hxD = "", mD = Math.min(u8d.length, 64);
+          for (var iD = 0; iD < mD; iD++) hxD += (u8d[iD] < 16 ? "0" : "") + u8d[iD].toString(16);
+          txCap.ring.push({ t: Date.now(), d: "D", op: op, len: u8d.length, hex: hxD });
+          if (txCap.ring.length > 3000) txCap.ring.shift();
+          txCap.n++;
+        } catch (eD) {}
+      }
       if (op === 183) onMenuList(bytes);
       else if (op === 180) onSayDialog(bytes);
       else if (op === 182) onCloseDialog();
@@ -9344,7 +9355,7 @@
   //     map 服的出站包在 socket.send 之前已经被 PacketCrypt 混淆，opcode 读出来是乱的；
   //     NM.sendPacket 拿到的是"未混淆的包对象"，getPacketVersion()[1] 直接就是真实 opcode。
   //   注意：这里只是读，不拦截、不修改、不额外发任何包，原来的发包路径原样透传。
-  var txCap = { on: false, ring: [], hooked: false, n: 0, lastLog: 0 };
+  var txCap = { on: false, ring: [], hooked: false, n: 0, lastLog: 0 }; // ring 元素 {t, d('U'出/'D'入), op, len, hex}
   function txBuild(p) {
     try {
       var v = (p && p.getPacketVersion) ? p.getPacketVersion() : null;
@@ -9370,8 +9381,8 @@
         if (txCap.on) {
           try {
             var b = txBuild(p);
-            txCap.ring.push({ t: Date.now(), op: b.op, len: b.len, hex: b.hex });
-            if (txCap.ring.length > 800) txCap.ring.shift();
+            txCap.ring.push({ t: Date.now(), d: "U", op: b.op, len: b.len, hex: b.hex });
+            if (txCap.ring.length > 3000) txCap.ring.shift();
             txCap.n++;
             var el = $id("dsh-txlog");
             if (el && Date.now() - txCap.lastLog > 400) { txCap.lastLog = Date.now(); el.textContent = "出站抓包：进行中，已抓 " + txCap.n + " 个包（缓冲 " + txCap.ring.length + "）"; }
@@ -9386,12 +9397,15 @@
   function txExport() {
     try {
       var t0 = txCap.ring.length ? txCap.ring[0].t : 0;
-      var lines = ["# ro-assist 出站序列 共 " + txCap.ring.length + " 条", "# 列: 相对毫秒  opcode(十进制/hex)  长度  十六进制(前64B)"];
+      var lines = ["# ro-assist 双向抓包 共 " + txCap.ring.length + " 条",
+                   "# 列: 相对毫秒 方向(U=客户端发出 / D=服务器下发) opcode(十进制/hex) 长度 十六进制(前64B)",
+                   "# 地图=" + getMapName() + " 脚本版本=" + VER];
       for (var i = 0; i < txCap.ring.length; i++) {
         var r = txCap.ring[i];
-        lines.push((r.t - t0) + "  " + r.op + "(0x" + (r.op < 0 ? "?" : r.op.toString(16)) + ")  " + r.len + "B  " + r.hex);
+        lines.push((r.t - t0) + " " + (r.d || "U") + " " + r.op + "(0x" + (r.op < 0 ? "?" : r.op.toString(16)) + ") " + r.len + "B " + r.hex);
       }
       var txt = lines.join("\n");
+      txCap.lastText = txt;
       var ta = $id("dsh-txout"); if (ta) ta.value = txt;
       try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt); } catch (e) {}
       $id("dsh-txlog").textContent = "已导出 " + txCap.ring.length + " 条（已尝试复制到剪贴板；下方文本框可手动全选复制）";
@@ -9407,6 +9421,19 @@
     $id("dsh-txlog").textContent = "出站抓包：已停止，共 " + txCap.n + " 个包；点「导出出站序列」复制";
   });
   $id("dsh-txexp").addEventListener("click", txExport);
+  // V2.16.16：下载成文件（避免几千行粘进聊天框）——存到浏览器默认下载目录
+  $id("dsh-txdl").addEventListener("click", function () {
+    try {
+      if (!txCap.lastText) { $id("dsh-txlog").textContent = "还没有内容：先点「停止」再点「导出出站序列」"; return; }
+      var blob = new Blob([txCap.lastText], { type: "text/plain;charset=utf-8" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "ro-txcap-" + Date.now() + ".txt";
+      document.body.appendChild(a); a.click();
+      setTimeout(function () { try { document.body.removeChild(a); URL.revokeObjectURL(a.href); } catch (e) {} }, 1000);
+      $id("dsh-txlog").textContent = "已下载到浏览器下载目录（文件名 ro-txcap-*.txt），把文件名告诉我即可";
+    } catch (e) { $id("dsh-txlog").textContent = "下载异常: " + e.message; }
+  });
   setInterval(function () { try { hookSendPacket(); } catch (e) {} }, 2000);
   hookMenuRecon();
   // V2.15.1 背包整理初始化（物品子页内）

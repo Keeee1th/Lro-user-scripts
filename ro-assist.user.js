@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.19
+// @version      2.16.20
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.19"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.16.20"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -5275,6 +5275,11 @@
       EM.forEach(function (e) {
         try {
           if (e.objecttype !== 5) return;
+          // V2.16.20：跳过死亡实体（原来漏了，其余三处侦查都有 isDeath/ACTION.DIE/remove_tick）——死怪残留会导致：
+          //   解围技能持续判定群殴并对着尸体放技能 / 误判「有可攻击锁定怪」停掉内挂寻怪 / 坐下判断误以为在战斗
+          if (e.isDeath) return;
+          if (e.ACTION && e.action != null && e.action === e.ACTION.DIE) return;
+          if (e.remove_tick) return;
           var d = -1;
           if (ent && ent.position && e.position) {
             d = Math.abs(e.position[0] - ent.position[0]) + Math.abs(e.position[1] - ent.position[1]);

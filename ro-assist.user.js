@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.14
+// @version      2.16.15
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.14"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.16.15"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -658,7 +658,7 @@
       '<label class="switch"><input id="dsh-z-flykill" type="checkbox" checked>防御瞬移总开关</label></div>' +
       '<div class="row"><span class="lb">瞬移方式</span><select id="dsh-z-flymode" style="flex:0 0 120px"><option>翅膀→瞬移术</option><option>苍蝇翅膀优先</option><option>瞬移术Lv1</option><option selected>瞬移术→翅膀</option></select>' +
       '<label class="switch"><input id="dsh-z-flyauto" type="checkbox" checked>无翅膀自动瞬移术</label></div>' +
-      '<div class="row"><label class="switch"><input id="dsh-z-flystuck" type="checkbox">卡死自动瞬移(助手战斗中·10s)</label></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-z-flystuck" type="checkbox">卡死自动瞬移(助手战斗中·4s)</label></div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-rein" type="checkbox">寻怪自动上马（缰绳 12622）</label><span style="color:#5a6b7f;font-size:11px">骑乘状态不在身自动用</span></div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-mapbound" type="checkbox" checked>地图边界</label>' +
       '<span class="lb" style="min-width:34px">半径</span><input id="dsh-z-mapbound-r" type="number" value="25" min="5" style="flex:0 0 42px"><span style="color:#5a6b7f;font-size:11px">格（以启动点为圆心，走出就回头）</span></div>' +
@@ -5617,7 +5617,14 @@
           needFly = true; reason = "低血无药被围";
         }
       }
-      if (isCombatMap && zRunning && $id("dsh-z-flystuck").checked && !zLock.gid && zStuckSince && (now - zStuckSince > 10000)) { needFly = true; reason = "卡死10s"; }
+      // V2.16.15 卡死判定升级：坐标 4s 不变 +（无锁定 或 锁定怪血量 4s 没掉）→ 瞬移
+      //   站桩正常打怪（血量在掉）不误判；空打/到不了/免疫（血量不掉）4s 即换点
+      var atkInvalid = false;
+      if (zLock.gid) {
+        var _ht = zAtkHpTrack[zLock.gid];
+        atkInvalid = !!(_ht && (now - _ht.at >= 4000));
+      }
+      if (isCombatMap && zRunning && $id("dsh-z-flystuck").checked && zStuckSince && (now - zStuckSince > 4000) && (!zLock.gid || atkInvalid)) { needFly = true; reason = "卡死4s"; }
       // V2.16.0：防御瞬移总开关（dsh-z-flykill，默认开）——关掉后群殴/BOSS/低血/SP/被围/卡死/坐下看门狗全部不再瞬移，坐下回血不受影响
       if ($id("dsh-z-flykill") && !$id("dsh-z-flykill").checked) needFly = false;
       // V2.15.22：SP 低瞬移让位——坐下条件满足且未被围、HP 未到危险线时，SP 瞬移让位给坐下回蓝
@@ -6833,6 +6840,7 @@
       }
       // 开始战斗（有目标）→ 结束内挂自动寻怪（避免服务器驱动移动与助手抢控制）
       if (npHuntOn) npHuntStop();
+      zAtkTrackHp(target.GID, target); // V2.16.15：技能/平A统一追踪锁定目标 HP 下降（卡死判定用）
       zWalkState.lastMove = 0; // 打到目标，重置走路计时
       zWalkState.noTargetSince = 0; // 有目标，重置无目标瞬移计时
       // ============ 两层并行决策（内挂锁定模式动作） ============

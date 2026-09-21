@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.20
+// @version      2.16.21
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.20"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.16.21"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -9228,6 +9228,7 @@
       var dv = new DataView(bytes);
       var op = dv.getUint16(0, true);
       collectOpStat(bytes, op);
+      itipPktProbe(bytes, op); // V2.16.21 自动探查：首次出现的 opcode 记录十六进制
       // V2.16.16：入站也进抓包环（方向 D），导出时与出站合成一条双向时间线
       if (typeof txCap !== "undefined" && txCap && txCap.on) {
         try {
@@ -9244,6 +9245,7 @@
       else if (op === 182) onCloseDialog();
       else if (op === 0x43d || op === 0x43e) onSkillPostDelay(bytes, op);
       else if (op === 0xb1a) onSkillAck3(bytes); // V2.15.28：2842 USESKILL_ACK3 动态技能延迟
+      else if (op === 0xc6 || op === 0xc7) itipShopPkt(bytes, op); // V2.16.21 商店买卖列表：取单价（买价/卖价）
       else onRawOpcode(bytes, op);
     } catch (e) {}
   }
@@ -11162,6 +11164,329 @@
     mvpRender(); setInterval(mvpRender, 1000); mvpWatchDom();
   }
   // MVP_TIMER_END
+
+  // ---------------- V2.16.21 装备信息悬浮（真名/词条/售价）+ 自动探查 ----------------
+  // 需求：未鉴定装备的真实 ID/名字/随机词条，以及商店买卖单价，只在鼠标悬浮时以浮层显示；采集全自动，无按钮。
+  // 字段依据（客户端源码 Ragna.roBrowser）：
+  //   item.Options[{index,value}] = 随机词条；DB.getOptionName(index) 取名（模板含 %d，%% 转义）；
+  //   DB.getItemInfo(ITID).identifiedDisplayName = 真名；
+  //   DB.getItemName() 在 !item.IsIdentified 时直接 return unidentifiedDisplayName（词条被吞），故需自行拼装；
+  //   售价：ZC.PC_SELL_ITEMLIST(0xc7)={index,price,overchargeprice}、ZC.PC_PURCHASE_ITEMLIST(0xc6)={price,discountprice,type,ITID}。
+  var ITIP = {
+    on: true, el: null, elKey: "", elAt: 0,
+    sell: {}, buy: {},               // 商店单价缓存
+    invSig: "", invAt: 0,            // 背包探查指纹/时间
+    pendingOps: [], seenOps: {},     // 首次出现的 opcode
+    domShop: false, domBag: false,   // DOM 结构只报一次
+    probeLogged: false
+  };
+  function itipDB() { try { return CLIENT.DB || requireDB("DB/DBManager"); } catch (e) { return null; } }
+  function itipInfo(itid) { try { var db = itipDB(); if (!db || typeof db.getItemInfo !== "function") return null; return db.getItemInfo(itid) || null; } catch (e) { return null; } }
+  function itipNameOf(itid) {
+    var info = itipInfo(itid);
+    if (!info) return null;
+    return info.identifiedDisplayName || info.unidentifiedDisplayName || info.name || null;
+  }
+  function itipEsc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  function itipZeny(n) {
+    var s = String(Math.round(Number(n) || 0)), out = "", c = 0;
+    for (var i = s.length - 1; i >= 0; i--) { out = s.charAt(i) + out; if (++c % 3 === 0 && i > 0) out = "," + out; }
+    return out;
+  }
+  function itipOptText(o) {
+    var nm = null;
+    try { var db = itipDB(); if (db && typeof db.getOptionName === "function") nm = db.getOptionName(o.index); } catch (e) {}
+    if (nm && nm !== "UNKNOWN RANDOM OPTION") return String(nm).replace(/%d/g, String(o.value)).replace(/%%/g, "%");
+    return "词条#" + o.index + " 值" + o.value;
+  }
+  function itipOptList(item) {
+    var out = [];
+    try {
+      var ops = item && item.Options;
+      if (!ops) return out;
+      for (var i = 1; i <= 5; i++) {
+        var o = ops[i];
+        if (!o || !o.index) continue;
+        out.push(itipOptText(o));
+      }
+    } catch (e) {}
+    return out;
+  }
+  function itipCardList(item) {
+    var out = [];
+    try {
+      var slot = item && item.slot;
+      if (!slot) return out;
+      for (var i = 1; i <= 4; i++) {
+        var c = slot["card" + i];
+        if (!c || c === 0xff || c === 0x00ff || c === 0xff00) continue;
+        out.push(itipNameOf(c) || ("卡片#" + c));
+      }
+    } catch (e) {}
+    return out;
+  }
+  function itipInvMap() {
+    var map = {}, list = null;
+    try { list = findInventory(); } catch (e) {}
+    if (!list) return map;
+    for (var i = 0; i < list.length; i++) {
+      var it = list[i];
+      if (!it || typeof it !== "object") continue;
+      map[(it.index != null) ? Number(it.index) : i] = it;
+    }
+    return map;
+  }
+  function itipInvById(itid, map) {
+    for (var k in map) { var it = map[k]; if (it && String(it.ITID != null ? it.ITID : it.itemid) === String(itid)) return it; }
+    return null;
+  }
+  // ---- 浮层 DOM ----
+  function itipNode() {
+    if (ITIP.el && ITIP.el.parentNode) return ITIP.el;
+    var d = document.createElement("div");
+    d.id = "dsh-itemtip";
+    d.style.cssText = "position:fixed;left:0;top:0;z-index:2147483000;display:none;pointer-events:none;max-width:340px;padding:7px 10px;border-radius:5px;background:rgba(12,18,30,0.96);border:1px solid rgba(120,170,240,0.6);color:#e9eff8;font:12px/1.6 'Microsoft YaHei',Arial,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,0.55);white-space:normal;word-break:break-all;text-align:left";
+    try { document.documentElement.appendChild(d); } catch (e) {}
+    ITIP.el = d;
+    return d;
+  }
+  function itipHide() { try { if (ITIP.el) ITIP.el.style.display = "none"; ITIP.elKey = ""; } catch (e) {} }
+  function itipPlace(x, y) {
+    try {
+      var d = ITIP.el; if (!d) return;
+      var w = d.offsetWidth || 200, h = d.offsetHeight || 60;
+      var left = x + 16, top = y + 18;
+      if (left + w > window.innerWidth - 8) left = Math.max(8, x - w - 12);
+      if (top + h > window.innerHeight - 8) top = Math.max(8, window.innerHeight - h - 8);
+      d.style.left = left + "px"; d.style.top = top + "px";
+    } catch (e) {}
+  }
+  function itipChain(el) {
+    var out = [], n = el, g = 0;
+    while (n && g++ < 40) {
+      out.push(n);
+      var root = null;
+      try { root = n.getRootNode ? n.getRootNode() : null; } catch (e) {}
+      n = (root && root.host) ? root.host : (n.parentElement || null);
+    }
+    return out;
+  }
+  function itipIsShop(chain) {
+    for (var i = 0; i < chain.length; i++) {
+      var n = chain[i];
+      try { if (n.id === "NpcStore") return true; } catch (e) {}
+      try { if (n.classList && n.classList.contains("NpcStore")) return true; } catch (e) {}
+    }
+    return false;
+  }
+  function itipBody(item, priceObj) {
+    try {
+      var itid = (item.ITID != null) ? item.ITID : item.itemid;
+      if (itid == null) return "";
+      var ident = !!item.IsIdentified;
+      var opts = itipOptList(item);
+      var cards = itipCardList(item);
+      if (ident && !opts.length && !cards.length && !priceObj) return ""; // 无隐藏信息 → 不弹
+      var refined = Number(item.RefiningLevel || item.refine || 0);
+      var grade = Number(item.enchantgrade || 0);
+      var L = [];
+      if (!ident) L.push('<div style="color:#ffcf5c;font-weight:bold">未鉴定</div>');
+      var head = "";
+      if (refined > 0) head += "+" + refined + " ";
+      if (grade > 0) head += "[" + (["", "D", "C", "B", "A"][grade] || "") + "] ";
+      head += (itipNameOf(itid) || "未知物品");
+      if (cards.length) head += " [" + cards.length + "卡]";
+      L.push('<div style="color:#7fd1ff;font-weight:bold">' + itipEsc(head) + "</div>");
+      L.push('<div style="color:#8f9bb3">物品 ID ' + itid + "</div>");
+      if (opts.length) {
+        L.push('<div style="color:#c9a0ff;margin-top:3px">' + opts.map(function (s) { return "· " + itipEsc(s); }).join("<br>") + "</div>");
+      } else if (!ident) {
+        L.push('<div style="color:#8f9bb3;margin-top:3px">（无随机词条）</div>');
+      }
+      if (cards.length) L.push('<div style="color:#9fd48a;margin-top:3px">插卡：' + itipEsc(cards.join("、")) + "</div>");
+      if (priceObj) {
+        var pz = "";
+        if (priceObj.overchargeprice != null) pz = "卖价 " + itipZeny(priceObj.overchargeprice) + " z";
+        else if (priceObj.price != null) pz = "卖价 " + itipZeny(priceObj.price) + " z";
+        if (priceObj.discountprice != null && priceObj.discountprice !== priceObj.price) pz += "（原价 " + itipZeny(priceObj.price) + "）";
+        if (pz) L.push('<div style="color:#ffd479;margin-top:3px">' + itipEsc(pz) + "</div>");
+      }
+      return L.join("");
+    } catch (e) { return ""; }
+  }
+  function itipShopRow(el) {
+    try {
+      var nm = "", pr = "";
+      try { var nEl = el.querySelector(".name") || el.querySelector(".nameOverlay"); if (nEl) nm = (nEl.textContent || "").trim(); } catch (e) {}
+      try { var pEl = el.querySelector(".price"); if (pEl) pr = (pEl.textContent || "").trim(); } catch (e) {}
+      if (!nm && !pr) return "";
+      var L = ['<div style="color:#7fd1ff;font-weight:bold">' + itipEsc(nm || "商品") + "</div>"];
+      if (pr) L.push('<div style="color:#ffd479">买价 ' + itipEsc(pr) + "</div>");
+      return L.join("");
+    } catch (e) { return ""; }
+  }
+  function itipOver(e) {
+    try {
+      if (!ITIP.on) return;
+      var t = e.target;
+      try { var pth = e.composedPath && e.composedPath(); if (pth && pth.length) t = pth[0]; } catch (e0) {}
+      if (!t || !t.closest) return;
+      var el = t.closest(".item");
+      if (!el) { itipHide(); return; }
+      var html = "";
+      if (itipIsShop(itipChain(el))) {
+        var isSell = false;
+        try { isSell = el.classList.contains("itemAvailable") || !!el.closest(".contentAvailable"); } catch (e1) {}
+        var si = el.getAttribute("data-index");
+        var inv = itipInvMap();
+        var sItem = (si != null) ? inv[Number(si)] : null;
+        html = (isSell && sItem) ? itipBody(sItem, ITIP.sell[Number(si)] || null) : itipShopRow(el);
+      } else {
+        var itid = el.getAttribute("data-itid");
+        if (!itid) { itipHide(); return; }
+        var idx = el.getAttribute("data-index");
+        var inv2 = itipInvMap();
+        var item = (idx != null) ? inv2[Number(idx)] : null;
+        if (!item) item = itipInvById(itid, inv2);
+        if (!item) { itipHide(); return; }
+        html = itipBody(item, null);
+      }
+      if (!html) { itipHide(); return; }
+      var key = html.length + "|" + html.slice(0, 80);
+      var d = itipNode();
+      if (key !== ITIP.elKey) { d.innerHTML = html; ITIP.elKey = key; }
+      d.style.display = "block";
+      itipPlace(e.clientX, e.clientY);
+    } catch (err) { itipHide(); }
+  }
+  // ---- 商店单价解析 ----
+  function itipShopPkt(bytes, op) {
+    try {
+      var u8 = new Uint8Array(bytes);
+      var dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+      var total = u8.length;
+      if (op === 0xc7) {
+        var n7 = ((total - 4) / 10) | 0;
+        for (var i = 0; i < n7; i++) {
+          var o7 = 4 + i * 10;
+          ITIP.sell[dv.getInt16(o7, true)] = { price: dv.getInt32(o7 + 2, true), overchargeprice: dv.getInt32(o7 + 6, true) };
+        }
+      } else if (op === 0xc6) {
+        var sz = 0, rest = total - 4;
+        if (rest > 0 && rest % 13 === 0) sz = 13; else if (rest > 0 && rest % 11 === 0) sz = 11;
+        if (sz) {
+          var n6 = (rest / sz) | 0;
+          for (var j = 0; j < n6; j++) {
+            var o6 = 4 + j * sz;
+            var itid6 = (sz === 13) ? dv.getInt32(o6 + 9, true) : dv.getUint16(o6 + 9, true);
+            ITIP.buy[itid6] = { price: dv.getInt32(o6, true), discountprice: dv.getInt32(o6 + 4, true) };
+          }
+        }
+      }
+    } catch (e) {}
+  }
+  // ---- 自动探查（无按钮，静默）----
+  function itipPktProbe(bytes, op) {
+    try {
+      if (ITIP.seenOps[op] != null) return;
+      var u8 = new Uint8Array(bytes);
+      var hex = "", m = Math.min(u8.length, 256);
+      for (var i = 0; i < m; i++) hex += (u8[i] < 16 ? "0" : "") + u8[i].toString(16);
+      ITIP.seenOps[op] = 1;
+      ITIP.pendingOps.push({ op: op, len: u8.length, hex: hex });
+    } catch (e) {}
+  }
+  function itipProbeInv() {
+    try {
+      var inv = findInventory();
+      if (!inv || !inv.length) return;
+      var db = itipDB();
+      var items = [], sig = [];
+      for (var i = 0; i < inv.length && items.length < 80; i++) {
+        var it = inv[i];
+        if (!it || typeof it !== "object") continue;
+        var itid = (it.ITID != null) ? it.ITID : it.itemid;
+        if (itid == null) continue;
+        var rec = { i: (it.index != null ? it.index : i), ITID: itid, fields: Object.keys(it) };
+        var pas = ["IsIdentified", "identify", "type", "itemType", "count", "amount", "RefiningLevel", "refine", "enchantgrade", "slotCount", "location", "wearState", "IsDamaged", "bound", "PlaceETCTab"];
+        for (var p = 0; p < pas.length; p++) { try { if (it[pas[p]] !== undefined) rec[pas[p]] = it[pas[p]]; } catch (e1) {} }
+        try { rec.slot = it.slot ? JSON.parse(JSON.stringify(it.slot)) : null; } catch (e2) { rec.slot = "ERR"; }
+        try {
+          if (it.Options) {
+            rec.Options = [];
+            for (var oi = 0; oi < it.Options.length; oi++) {
+              var o = it.Options[oi];
+              if (!o) { rec.Options.push(null); continue; }
+              var onm = null;
+              try { if (db && db.getOptionName) onm = db.getOptionName(o.index); } catch (e3) {}
+              rec.Options.push({ index: o.index, value: o.value, name: onm });
+            }
+          } else { rec.Options = null; }
+        } catch (e4) { rec.Options = "ERR"; }
+        try {
+          var info = db && db.getItemInfo ? db.getItemInfo(itid) : null;
+          if (info) { rec.dbName = info.identifiedDisplayName || null; rec.dbUnident = info.unidentifiedDisplayName || null; rec.dbSlotCount = info.slotCount; rec.dbClassNum = info.ClassNum; }
+        } catch (e5) {}
+        try { if (db && db.getItemName) rec.clientName = db.getItemName(it); } catch (e6) {}
+        items.push(rec);
+        sig.push(itid + ":" + (it.IsIdentified ? 1 : 0) + ":" + JSON.stringify(rec.Options));
+      }
+      if (!items.length) return;
+      var s2 = sig.join("|");
+      var now = Date.now();
+      if (s2 === ITIP.invSig) return;
+      if (now - ITIP.invAt < 10000) return;
+      ITIP.invSig = s2; ITIP.invAt = now;
+      ingest({ type: "itemprobe", kind: "inv", ver: VER, map: getMapName(), count: items.length, items: items, ts: new Date().toISOString() });
+    } catch (e) {}
+  }
+  function itipProbeDom() {
+    try {
+      var shop = document.getElementById("NpcStore");
+      if (shop && !ITIP.domShop) {
+        var sr = null;
+        try { sr = shop.shadowRoot || null; } catch (e0) {}
+        var root = sr || shop;
+        var rows = root.querySelectorAll ? root.querySelectorAll(".item") : [];
+        var sample = [];
+        for (var i = 0; i < rows.length && i < 6; i++) sample.push(rows[i].outerHTML.slice(0, 500));
+        ITIP.domShop = true;
+        ingest({ type: "itemprobe", kind: "dom-shop", ver: VER, map: getMapName(),
+          shadow: !!sr, host: shop.outerHTML.slice(0, 300), inner: (root.innerHTML || "").slice(0, 3000),
+          rows: sample, sellCache: ITIP.sell, buyCache: ITIP.buy, ts: new Date().toISOString() });
+      }
+      if (!ITIP.domBag) {
+        var it = document.querySelector(".item[data-itid]");
+        if (it) {
+          var up = [], p = it.parentElement, g = 0;
+          while (p && g++ < 4) { up.push(p.tagName + "#" + (p.id || "") + "." + String(p.className || "").slice(0, 60)); p = p.parentElement; }
+          ITIP.domBag = true;
+          ingest({ type: "itemprobe", kind: "dom-bag", ver: VER, map: getMapName(), html: it.outerHTML.slice(0, 600), up: up, ts: new Date().toISOString() });
+        }
+      }
+    } catch (e) {}
+  }
+  try {
+    document.addEventListener("mouseover", itipOver, true);
+    document.addEventListener("mousemove", function (e) { try { if (ITIP.el && ITIP.el.style.display === "block") itipPlace(e.clientX, e.clientY); } catch (e2) {} }, true);
+    document.addEventListener("mouseout", function (e) {
+      try {
+        var rt = e.relatedTarget;
+        try { if (rt && rt.closest && rt.closest(".item")) return; } catch (e2) {}
+        itipHide();
+      } catch (e3) {}
+    }, true);
+    document.addEventListener("scroll", itipHide, true);
+  } catch (e) {}
+  setInterval(function () { try { itipProbeInv(); itipProbeDom(); } catch (e) {} }, 3000);
+  setInterval(function () {
+    try {
+      if (!ITIP.pendingOps.length) return;
+      var list = ITIP.pendingOps; ITIP.pendingOps = [];
+      ingest({ type: "itemprobe", kind: "opmap", ver: VER, map: getMapName(), ops: list, ts: new Date().toISOString() });
+    } catch (e) {}
+  }, 10000);
+  // ITIP_END
 
   init();
 })();

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.13
+// @version      2.16.14
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.13"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.16.14"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -950,6 +950,10 @@
       '<div id="dsh-menu-recon" style="font-size:11px;max-height:140px;overflow:auto;background:#f6f8fa;border:1px solid #dfe5ec;border-radius:4px;padding:6px;white-space:pre-wrap">菜单：未捕获（点NPC对话后自动出现）</div>' +
       '<div class="st" id="dsh-menu-status" style="font-size:11px">自动上报：待命</div>' +
       '<div class="row" style="margin-top:6px;gap:6px"><button id="dsh-menu-export" style="flex:0 0 auto">导出JSON</button><button class="ghost" id="dsh-menu-copy" style="flex:0 0 auto">复制</button></div>' +
+      '<div class="sec">出站抓包（真机对比用）</div>' +
+      '<div class="row" style="gap:6px"><button id="dsh-txcap" style="flex:0 0 auto">开始抓包</button><button class="ghost" id="dsh-txstop" style="flex:0 0 auto">停止</button><button class="ghost" id="dsh-txexp" style="flex:0 0 auto">导出出站序列</button></div>' +
+      '<div class="st" id="dsh-txlog" style="font-size:11px">出站抓包：未开始</div>' +
+      '<textarea id="dsh-txout" style="width:100%;height:110px;font-size:10px;font-family:monospace" readonly placeholder="点「导出出站序列」后这里出现内容"></textarea>' +
       '<div class="row" style="margin-top:6px;align-items:center;gap:6px"><span class="lb" style="min-width:0;margin:0">选第</span><input id="dsh-menu-num" type="number" min="0" value="0" style="flex:0 0 48px;padding:3px 6px"><span class="lb" style="margin:0">项</span><button id="dsh-menu-choose" style="flex:0 0 auto">发 CHOOSE_MENU</button><button class="ghost" id="dsh-menu-next" style="flex:0 0 auto">下一段</button></div>',
     system: '' +
       '<div class="row"><span class="lb">数据源</span><span id="dsh-datasrc">检测中…</span></div>' +
@@ -9327,6 +9331,75 @@
       $id("dsh-cleanlog").textContent = "已发 REQ_NEXT_SCRIPT（下一段对话）";
     } catch (e) { $id("dsh-cleanlog").textContent = "下一段异常: " + e.message; }
   });
+  // ---------------- V2.16.14 出站抓包（真机 vs 无头端逐字节对比 · 只读不改游戏行为）----------------
+  //   为什么包 NM.sendPacket 而不是 WebSocket.prototype.send：
+  //     map 服的出站包在 socket.send 之前已经被 PacketCrypt 混淆，opcode 读出来是乱的；
+  //     NM.sendPacket 拿到的是"未混淆的包对象"，getPacketVersion()[1] 直接就是真实 opcode。
+  //   注意：这里只是读，不拦截、不修改、不额外发任何包，原来的发包路径原样透传。
+  var txCap = { on: false, ring: [], hooked: false, n: 0, lastLog: 0 };
+  function txBuild(p) {
+    try {
+      var v = (p && p.getPacketVersion) ? p.getPacketVersion() : null;
+      var op = (v && v[1] != null) ? v[1] : -1;
+      var buf = (p && p.build) ? p.build() : null;
+      var hex = "", len = 0;
+      if (buf) {
+        var u8 = new Uint8Array(buf.buffer || buf, buf.byteOffset || 0, buf.byteLength || buf.length || 0);
+        len = u8.length;
+        var m = Math.min(len, 64);
+        for (var i = 0; i < m; i++) hex += (u8[i] < 16 ? "0" : "") + u8[i].toString(16);
+      }
+      return { op: op, len: len, hex: hex };
+    } catch (e) { return { op: -1, len: 0, hex: "" }; }
+  }
+  function hookSendPacket() {
+    if (txCap.hooked) return true;
+    try {
+      if (!CLIENT.NM) { try { clientReady(); } catch (e0) {} }
+      if (!CLIENT.NM || typeof CLIENT.NM.sendPacket !== "function") return false;
+      var orig = CLIENT.NM.sendPacket;
+      CLIENT.NM.sendPacket = function (p) {
+        if (txCap.on) {
+          try {
+            var b = txBuild(p);
+            txCap.ring.push({ t: Date.now(), op: b.op, len: b.len, hex: b.hex });
+            if (txCap.ring.length > 800) txCap.ring.shift();
+            txCap.n++;
+            var el = $id("dsh-txlog");
+            if (el && Date.now() - txCap.lastLog > 400) { txCap.lastLog = Date.now(); el.textContent = "出站抓包：进行中，已抓 " + txCap.n + " 个包（缓冲 " + txCap.ring.length + "）"; }
+          } catch (e) {}
+        }
+        return orig.apply(this, arguments);
+      };
+      txCap.hooked = true;
+      return true;
+    } catch (e) { return false; }
+  }
+  function txExport() {
+    try {
+      var t0 = txCap.ring.length ? txCap.ring[0].t : 0;
+      var lines = ["# ro-assist 出站序列 共 " + txCap.ring.length + " 条", "# 列: 相对毫秒  opcode(十进制/hex)  长度  十六进制(前64B)"];
+      for (var i = 0; i < txCap.ring.length; i++) {
+        var r = txCap.ring[i];
+        lines.push((r.t - t0) + "  " + r.op + "(0x" + (r.op < 0 ? "?" : r.op.toString(16)) + ")  " + r.len + "B  " + r.hex);
+      }
+      var txt = lines.join("\n");
+      var ta = $id("dsh-txout"); if (ta) ta.value = txt;
+      try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt); } catch (e) {}
+      $id("dsh-txlog").textContent = "已导出 " + txCap.ring.length + " 条（已尝试复制到剪贴板；下方文本框可手动全选复制）";
+    } catch (e) { try { $id("dsh-txlog").textContent = "导出异常: " + e.message; } catch (e2) {} }
+  }
+  $id("dsh-txcap").addEventListener("click", function () {
+    if (!hookSendPacket()) { $id("dsh-txlog").textContent = "客户端未就绪：请先进游戏，再点「开始抓包」"; return; }
+    txCap.on = true; txCap.ring = []; txCap.n = 0;
+    $id("dsh-txlog").textContent = "出站抓包：已开始（先进图站稳 20 秒，再点停止）";
+  });
+  $id("dsh-txstop").addEventListener("click", function () {
+    txCap.on = false;
+    $id("dsh-txlog").textContent = "出站抓包：已停止，共 " + txCap.n + " 个包；点「导出出站序列」复制";
+  });
+  $id("dsh-txexp").addEventListener("click", txExport);
+  setInterval(function () { try { hookSendPacket(); } catch (e) {} }, 2000);
   hookMenuRecon();
   // V2.15.1 背包整理初始化（物品子页内）
   try { if (typeof bagCleanInit === "function") { bagCleanInit(); } } catch (e) {}

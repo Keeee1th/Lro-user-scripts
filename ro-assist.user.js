@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.10
+// @version      2.16.11
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.10"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.16.11"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -349,6 +349,11 @@
       }
       return cur || "";
     } catch (e) { return ""; }
+  }
+  // 地图名口径规范化：去 .rsw/.gat 扩展名 + 去 map_ 前缀 + 转小写（V2.16.11 统一换图/传送比较口径）
+  function normMapKey(m) {
+    if (m == null) return "";
+    return String(m).replace(/\.(rsw|gat)$/i, "").replace(/^map_/i, "").toLowerCase();
   }
   // V2.13.0：当前地图中文名（显示用；getMapName 保留返回原始 key 供逻辑使用）
   function getMapNameCn() {
@@ -6206,7 +6211,7 @@
       // V2.16.8 换图检测 + 反向走回（走路跨图）；反向走 8s 没回图 → 世界地图传送回启动图
       try {
         var curKeyB = getMapName();
-        if (zWalkState.startMap && curKeyB && curKeyB !== zWalkState.startMap) {
+        if (zWalkState.startMap && curKeyB && normMapKey(curKeyB) !== normMapKey(zWalkState.startMap)) {
           var nowB = Date.now();
           if (!zWalkState.backMapAt) {
             zWalkState.backMapAt = nowB;
@@ -6232,7 +6237,7 @@
           setStatus("已换图，反向走回原图…", "warn");
           return;
         }
-        if (zWalkState.backMapAt && curKeyB === zWalkState.startMap) {
+        if (zWalkState.backMapAt && normMapKey(curKeyB) === normMapKey(zWalkState.startMap)) {
           zWalkState.backMapAt = 0; zWalkState.backTeleportAt = 0;
           tlog("walk-mapchange 回到原图，恢复寻怪");
         }
@@ -8586,7 +8591,7 @@
         var mm = bg.match(/map\/[a-z]+\/([a-zA-Z0-9_]+)\.png/);
         if (mm) cm = mm[1];
       }
-      if (cm === m) return td;
+      if (normMapKey(cm) === normMapKey(m)) return td;
     }
     return null;
   }
@@ -8673,7 +8678,7 @@
     var iv = setInterval(function () {
       try {
         var cur = getMapName();
-        if (cur && map && cur.toLowerCase() === map.toLowerCase()) {
+        if (cur && map && normMapKey(cur) === normMapKey(map)) {
           clearInterval(iv);
           mvLog("已到 " + map);
           if (typeof onArrive === "function") onArrive();

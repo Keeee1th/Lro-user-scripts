@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.19.0
+// @version      2.20.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.19.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.20.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -604,55 +604,22 @@
   // ---------------- 页签定义 ----------------
   var PAGE_HTML = {
     nei: '' +
-      '<div class="drow"><button class="dbtn" data-drw="battle-nei" data-title="内挂 · 战斗设置">战斗设置</button>' +
-      '<button class="dbtn" data-drw="skill-np" data-title="内挂 · 技能设置">技能设置</button>' +
-      '<span class="st" id="dsh-battlestate" style="font-size:10px;margin-left:auto">内挂状态: 未读取（打开内挂窗口）</span></div>' +
-      '<div class="sub-page drawer-page" data-subpage="nei" data-dname="battle-nei">' +
-      '<div class="sec">内挂模式（技能配置 · 攻击/移动设置）</div>' +
-      '<div class="row"><span class="lb">主动技能</span><select id="dsh-autoskill"><option>- 请选择 -</option></select>' +
-      '<span class="lb" style="min-width:26px">Lv</span><input id="dsh-autoskilllv" type="number" value="10" style="flex:0 0 38px">' +
-      '<span class="lb" style="min-width:26px">概率</span><input id="dsh-autoskillpro" type="number" value="100" style="flex:0 0 40px"><span style="color:#5a6b7f">%</span></div>' +
-      '<div class="row"><span class="lb">辅助技能</span><span class="st" id="dsh-nei-addi-count" style="font-size:10px">0 槽</span>' +
-      '<button class="ghost" id="dsh-nei-addi-add" style="flex:0 0 auto">添加</button>' +
-      '<button class="ghost" id="dsh-nei-addi-import" style="flex:0 0 auto">一次性导入</button>' +
-      '<button class="ghost" id="dsh-nei-addi-clear" style="flex:0 0 auto">清空</button></div>' +
-      '<div id="dsh-nei-addi" style="display:flex;flex-direction:column;gap:3px"></div>' +
-      '<div class="row" id="dsh-nei-addi-importbox" style="display:none;flex-direction:column;align-items:stretch;gap:3px">' +
-      '<textarea id="dsh-nei-addi-importta" rows="4" placeholder="一次性导入：每行一条 技能名或ID:等级，例：&#10;12:5&#10;加速术:10&#10;天使之赐福:9&#10;导入=整批替换当前列表，未识别的行跳过并在状态栏提示"></textarea>' +
-      '<div class="row"><button id="dsh-nei-addi-importok" style="flex:0 0 auto">导入并替换</button>' +
-      '<button class="ghost" id="dsh-nei-addi-importcancel" style="flex:0 0 auto">取消</button></div></div>' +
-      '<div class="row"><span class="lb">自动念咒</span><select id="dsh-automatic"><option>- 请选择 -</option></select>' +
-      '<span class="lb" style="min-width:40px">触发技能</span><select id="dsh-touchskill"><option>- 请选择 -</option></select>' +
-      '<label class="switch"><input id="dsh-touchskillop" type="checkbox" checked>开</label></div>' +
-      '<div class="row"><span class="lb">解围技能</span><select id="dsh-qoautoskill"><option>- 请选择 -</option></select>' +
-      '<span class="lb" style="min-width:26px">Lv</span><input id="dsh-qoautoskilllv" type="number" value="5" style="flex:0 0 38px"></div>' +
-      '<div class="row"><span class="lb">影咒技能</span><select id="dsh-autoshadow"><option>- 请选择 -</option></select></div>' +
-      '<div class="row"><span class="lb">寻怪模式</span><select id="dsh-searchmode" style="flex:0 0 90px"><option value="">-</option></select>' +
-      '<button class="ghost" id="dsh-readbot" style="flex:0 0 auto">读取内挂</button>' +
+      // V2.20.0：内挂配置改为直连游戏自带的右下角齿轮（删掉助手镜像页，只留打开入口 + 快速开关）
+      '<div class="row"><button id="dsh-open-gear" style="flex:1 1 auto">打开游戏内挂设置</button>' +
+      '<button class="ghost" id="dsh-open-gear-skill" style="flex:0 0 auto">技能设置</button></div>' +
+      '<div class="row"><span class="st" id="dsh-battlestate" style="font-size:10px">内挂状态: 未读取</span></div>' +
+      '<div class="sec">快速开关（直接发包给服务器，不依赖内挂窗口是否打开）</div>' +
+      '<div class="row"><button id="dsh-np-atk" style="flex:0 0 auto">开自动战斗</button>' +
+      '<button class="ghost" id="dsh-np-pick" style="flex:0 0 auto">开自动拾取</button>' +
+      '<button class="ghost" id="dsh-np-eat" style="flex:0 0 auto">开自动吃药</button></div>' +
+      '<div class="row"><span class="lb">寻怪模式</span><select id="dsh-np-huntmode" style="flex:0 0 96px">' +
+      '<option value="0" selected>移动寻怪</option><option value="1">范围寻怪</option><option value="2">原地寻怪</option></select>' +
+      '<button class="ghost" id="dsh-np-hunt" style="flex:0 0 auto">发送寻怪模式</button></div>' +
+      '<div class="row"><span class="st" id="dsh-np-log" style="font-size:10px">未发送</span></div>' +
+      '<div class="sec">内挂状态（读游戏内挂面板）</div>' +
+      '<div class="row"><span class="lb">检测目标</span><span class="st" id="dsh-targets" style="font-size:11px">未读取</span></div>' +
+      '<div class="row"><button class="ghost" id="dsh-readbot" style="flex:0 0 auto">读取内挂状态</button>' +
       '<button class="ghost" id="dsh-probe-neidom" style="flex:0 0 auto">探查内挂DOM</button></div>' +
-      '<div class="row"><span class="lb">检测目标</span><span class="st" id="dsh-targets" style="font-size:11px">未读取（打开内挂后点读取）</span></div>' +
-      '<div class="row"><span class="lb">攻击距离</span><input id="dsh-distarget" type="number" value="0" style="flex:0 0 46px"><span style="color:#5a6b7f">格</span>' +
-      '<span class="lb" style="min-width:44px">被攻击</span><select id="dsh-onlynoattack" style="flex:0 0 80px"><option value="">-</option></select></div>' +
-      '<div class="sec">当前地图怪物（读地图表 · 同内挂检测目标）</div>' +
-      '<div class="box"><div id="dsh-nei-mapmobs" style="font-size:11px;max-height:110px;overflow:auto"><span class="st">读取地图怪物表（中文名），勾选=加入锁定目录</span></div></div>' +
-      '<div class="sec">防御与瞬移（内挂原生设置 · 桥接）</div>' +
-      '<div class="row"><span class="lb">非选中怪攻击</span><select id="dsh-ona2" style="flex:0 0 100px"><option>无视</option><option>瞬移</option><option selected>还击</option></select></div>' +
-      '<div class="row"><span class="lb">群殴时</span><span style="color:#5a6b7f">n≥</span><input id="dsh-mobnummin" type="number" value="6" style="flex:0 0 38px"><span style="color:#5a6b7f">只怪→</span>' +
-      '<select id="dsh-mobnummax" style="flex:0 0 80px"><option>解围技能</option><option selected>瞬移</option></select></div>' +
-      '<div class="row"><label class="switch"><input id="dsh-flygroup" type="checkbox" checked>群殴自动瞬移</label>' +
-      '<label class="switch"><input id="dsh-flystuck" type="checkbox" checked>卡死自动瞬移</label></div>' +
-      '<div class="row"><label class="switch"><input id="dsh-bossfly" type="checkbox" checked>BOSS出现瞬移</label>' +
-      '<span class="lb" style="min-width:52px">瞬移间隔</span><input id="dsh-flytimer" type="number" value="30" style="flex:0 0 40px"><span style="color:#5a6b7f">s</span></div>' +
-      '<div class="row"><span class="lb">HP低于</span><input id="dsh-minhpfly" type="number" value="20" style="flex:0 0 40px"><span style="color:#5a6b7f">%瞬移</span>' +
-      '<span class="lb" style="min-width:50px">SP低于</span><input id="dsh-minspfly" type="number" value="10" style="flex:0 0 40px"><span style="color:#5a6b7f">%瞬移</span></div>' +
-      '<div class="row"><span class="lb">HP低于</span><input id="dsh-minhpout" type="number" value="5" style="flex:0 0 40px"><span style="color:#5a6b7f">%下线</span>' +
-      '<span class="lb" style="min-width:50px">无法瞬移</span><select id="dsh-keepway" style="flex:0 0 70px"><option selected>无视</option><option>逃脱</option></select></div>' +
-      '<div class="sec">坐下（内挂原生 · 桥接）</div>' +
-      '<div class="row"><label class="switch"><input id="dsh-opensit" type="checkbox" checked>自动坐下</label>' +
-      '<span class="lb" style="margin-left:auto;min-width:26px">HP</span><input id="dsh-sithplo" type="number" value="40" style="flex:0 0 38px"><span style="color:#5a6b7f">~</span><input id="dsh-sithphi" type="number" value="80" style="flex:0 0 38px"><span style="color:#5a6b7f">%</span></div>' +
-      '<div class="row"><span class="lb">SP范围</span><input id="dsh-sitsplo" type="number" value="30" style="flex:0 0 38px"><span style="color:#5a6b7f">~</span><input id="dsh-sitsphi" type="number" value="70" style="flex:0 0 38px"><span style="color:#5a6b7f">%</span>' +
-      '<span class="lb" style="min-width:60px">坐下被锁定</span><select id="dsh-sitxw" style="flex:0 0 72px"><option selected>无视</option><option>还击</option><option>瞬移</option><option>逃脱</option></select></div>' +
-      '</div>' +
       '<div class="sub-page drawer-page" data-subpage="zhu" data-dname="battle-zhu">' +
       '<div class="sec">助手模式（自控发包 · 无CD）</div>' +
       '<div class="sec">怪物侦查扫描（间隔可调）</div>' +
@@ -721,15 +688,6 @@
       '<div class="drow"><button class="dbtn" data-drw="battle-zhu" data-title="助手 · 战斗设置">战斗设置</button>' +
       '<button class="dbtn" data-drw="skill-zhu" data-title="助手 · 技能设置">技能设置</button>' +
       '<span class="st" id="dsh-z-state" style="font-size:10px;margin-left:auto">助手未启动</span></div>' +
-      '<details class="drawer-page" data-dname="skill-np" style="margin:4px 0" open><summary style="cursor:pointer;color:#1259b3;font-size:12px">⚙ 内挂模式（模拟内挂指令 · 直接发给服务器）</summary>' +
-      '<div style="margin-top:4px"><div class="row"><span class="lb">寻怪模式</span><select id="dsh-np-huntmode" style="flex:0 0 96px">' +
-      '<option value="0" selected>移动寻怪</option><option value="1">范围寻怪</option><option value="2">原地寻怪</option></select>' +
-      '<button class="ghost" id="dsh-np-hunt" style="flex:0 0 auto">📡 发送寻怪模式</button></div>' +
-      '<div class="row"><button id="dsh-np-atk" style="flex:0 0 auto">⚔ 模拟内挂：开自动战斗</button>' +
-      '<button class="ghost" id="dsh-np-pick" style="flex:0 0 auto">📥 模拟内挂：开自动拾取</button>' +
-      '<button class="ghost" id="dsh-np-eat" style="flex:0 0 auto">🍖 模拟内挂：开自动吃药</button></div>' +
-      '<div class="row"><span class="st" id="dsh-np-log" style="font-size:10px">未发送（二转=NOTIFY_UPDATEINFO id34/35/36/38 · 三转=WHISPER NPC:setauto*）</span></div>' +
-      '</div></details>' +
       '<details class="drawer-page" data-dname="skill-zhu" style="margin:4px 0" open><summary style="cursor:pointer;color:#1259b3;font-size:12px">🪄 助手模式（技能释放与顺序 · 多辅助 · 自动施放）<button class="ghost" id="dsh-fw-btn-skill" data-fw="skill" style="flex:0 0 auto;padding:0 8px;font-size:11px;float:right;margin-top:-1px">⧉ 浮窗</button></summary>' +
       '<div style="margin-top:4px"><div class="sec" style="margin-top:0">技能释放与顺序（自动判断释放前置 · 自动补状态）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-prereq" type="checkbox" checked>自动补充释放前置（状态/气弹）</label>' +
@@ -4769,24 +4727,63 @@
   if (saved.account) { var accEl = $id("dsh-acc"); if (accEl) accEl.value = saved.account; }
   if (saved.password) { var pwdEl = $id("dsh-pwd"); if (pwdEl) pwdEl.value = saved.password; }
 
+  // ---------------- V2.20.0 内挂齿轮直连（替代助手的「内挂配置」镜像页）----------------
+  // 游戏内挂窗口 = AMD 模块 UI/Components/vbk/vbk；右下角齿轮 = #vbk .btn.setAuto button.setAutokey。
+  // 点齿轮 = 游戏自己的开关（toggle #vbk .btns 的 setAuto 类），面板靠 CSS 显隐、DOM 常驻，
+  // 所以助手既能直接开它，也能在它没开的时候照样读写里面的值 —— 只有一份数据源，不会两边打架。
+  function neiGearBtn() {
+    var sels = ["#vbk .btn.setAuto .blocks button.setAutokey", "#vbk button.setAutokey", ".setAutokey"];
+    for (var i = 0; i < sels.length; i++) {
+      try { var el = document.querySelector(sels[i]); if (el) return el; } catch (e) {}
+    }
+    return null;
+  }
+  function neiGearIsOpen() {
+    try {
+      var b = document.querySelector("#vbk .btns");
+      return !!(b && b.className && String(b.className).indexOf("setAuto") >= 0);
+    } catch (e) { return false; }
+  }
+  function neiGearOpen() {
+    try {
+      if (neiGearIsOpen()) return true;
+      var btn = neiGearBtn();
+      if (!btn) return false;
+      btn.click();
+      return neiGearIsOpen();
+    } catch (e) { return false; }
+  }
+  // 切到内挂面板指定页签：openattack 战斗 / openpick 拾取 / openeat 吃药 / openfollow 模式
+  function neiGearTab(name) {
+    try {
+      if (!neiGearOpen()) return false;
+      var sp = document.querySelector("#vbk .btn.setAuto .container .content .nav span." + name);
+      if (!sp) return false;
+      sp.click();
+      return true;
+    } catch (e) { return false; }
+  }
+
   // ---------------- 内挂桥接：读取战斗设置 ----------------
   function readBot() {
     var out = [];
     try {
+      // V2.20.0：读不到内挂控件就先直接点开齿轮再读（面板 DOM 常驻，通常不需要这一步）
+      if (!document.querySelector(".onlyattack_block")) neiGearOpen();
       var q = function (s) { return document.querySelector(s); };
       var sv = function (s) { var el = q(s); return el ? el.value : null; };
       var sm = q(".searchMode");
       if (sm) {
         out.push("寻怪: " + (sm.options[sm.selectedIndex] ? sm.options[sm.selectedIndex].textContent : sm.value));
-        $id("dsh-searchmode").innerHTML = sm.innerHTML;
+        var smT = $id("dsh-searchmode"); if (smT) smT.innerHTML = sm.innerHTML;
       }
       var ona = q(".onlynoattack");
       if (ona) {
         out.push("被攻: " + (ona.options[ona.selectedIndex] ? ona.options[ona.selectedIndex].textContent : ona.value));
-        $id("dsh-onlynoattack").innerHTML = ona.innerHTML;
+        var onaT = $id("dsh-onlynoattack"); if (onaT) onaT.innerHTML = ona.innerHTML;
       }
       var dt = sv(".disTarget");
-      if (dt != null) { $id("dsh-distarget").value = dt; out.push("距离: " + dt + "格"); }
+      if (dt != null) { var dtT = $id("dsh-distarget"); if (dtT) dtT.value = dt; out.push("距离: " + dt + "格"); }
       var tg = [];
       var checks = document.querySelectorAll(".onlyattack_block input");
       for (var i = 0; i < checks.length; i++) {
@@ -4794,7 +4791,7 @@
         var mobid = c.getAttribute("data-id");
         if (mobid && c.checked) tg.push(c.getAttribute("data-name") || mobid);
       }
-      $id("dsh-targets").textContent = tg.length ? tg.join("、") : "（未勾选）";
+      var tgT = $id("dsh-targets"); if (tgT) tgT.textContent = tg.length ? tg.join("、") : "（未勾选）";
       out.push("目标: " + (tg.length ? tg.join("、") : "无"));
       // 技能下拉（只显示已学）
       fillSkillSelects();
@@ -5206,6 +5203,17 @@
   $id("dsh-readbot").addEventListener("click", function () {
     setStatus("内挂: " + readBot(), "ok");
   });
+  // V2.20.0 内挂齿轮直连按钮
+  try {
+    $id("dsh-open-gear").addEventListener("click", function () {
+      if (neiGearOpen()) { neiGearTab("openattack"); setStatus("已打开游戏内挂设置（战斗设置页）", "ok"); }
+      else setStatus("没找到内挂齿轮（客户端内挂组件未就绪，进图后再试）", "err");
+    });
+    $id("dsh-open-gear-skill").addEventListener("click", function () {
+      if (neiGearOpen()) { neiGearTab("openattack"); setStatus("已打开游戏内挂设置（技能在战斗设置页里）", "ok"); }
+      else setStatus("没找到内挂齿轮（客户端内挂组件未就绪，进图后再试）", "err");
+    });
+  } catch (e) {}
   // ---------------- 内挂 DOM 探查（V2.15.9 一次性工具：拿内挂窗口真实控件位置，服务端落盘）----------------
   // 用法：游戏里打开内挂窗口（任意页）→ 点「探查内挂DOM」→ 自动 POST 到本地 8899 落盘 collect.log / p-*.json
   var NEI_ANCHOR_SELS = [".startButton", ".setAutokey", ".openattack", ".searchMode", ".onlynoattack", ".disTarget", ".onlyattack_block", ".mobnumMin", ".mobnumMax", ".flytimer", ".MinHpValFly", ".MinSpValFly", ".MinHpVal", ".bossfly", ".opensit", ".AutoUseSit_reHpVal", ".openpick", ".lootProbability", ".setAutoBlock"];

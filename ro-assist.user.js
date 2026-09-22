@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.23
+// @version      2.16.24
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.23"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.16.24"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -11178,6 +11178,7 @@
     invSig: "", invAt: 0,            // 背包探查指纹/时间
     pendingOps: [], seenOps: {},     // 首次出现的 opcode
     domShop: false, domBag: false,   // DOM 结构只报一次
+    lastIdent: {},                   // ITID#index -> 是否已鉴定（检测鉴定事件）
     probeLogged: false
   };
   function itipDB() { try { return CLIENT.DB || requireDB("DB/DBManager"); } catch (e) { return null; } }
@@ -11223,9 +11224,19 @@
   function itipOptList(item) {
     var out = [];
     try {
-      // V2.16.23：lastRO 客户端字段名是小写 options（上游 roBrowser 是大写 Options），两个都读
+      // V2.16.24：lastRO 的 options 是对象 {Index0,Value0,Param0,...,Index4,Value4,Param4}（实测），
+      // 上游 roBrowser 是数组 Options[1..5]={index,value,param}，两种都支持。
+      // 注意 nRandomOptionCnt 在 lastRO 里不可靠（有词条时也可能是 0），不能拿它判断有无词条。
       var ops = item && (item.options || item.Options);
       if (!ops) return out;
+      if (!Array.isArray(ops) && ops.Index0 !== undefined) {
+        for (var k = 0; k <= 4; k++) {
+          var ix = Number(ops["Index" + k] || 0);
+          if (!ix) continue;
+          out.push(itipOptText({ index: ix, value: Number(ops["Value" + k] || 0), param: Number(ops["Param" + k] || 0) }));
+        }
+        return out;
+      }
       for (var i = 1; i <= 5; i++) {
         var o = ops[i];
         if (!o || !o.index) continue;
@@ -11423,10 +11434,34 @@
     } catch (e) {}
   }
   // ---- 自动探查（无按钮，静默）----
+  // V2.16.24：鉴定前后取证用的双向包环（只在背包状态变化时随探查一起上报）
+  var ITIP_RING = { in: [], out: [], hooked: false };
+  function itipRingPush(arr, rec) {
+    try { arr.push(rec); if (arr.length > 120) arr.shift(); } catch (e) {}
+  }
+  function itipHookOut() {
+    if (ITIP_RING.hooked) return;
+    try {
+      if (!CLIENT.NM) { try { clientReady(); } catch (e0) {} }
+      if (!CLIENT.NM || typeof CLIENT.NM.sendPacket !== "function") return;
+      var orig = CLIENT.NM.sendPacket;
+      CLIENT.NM.sendPacket = function (p) {
+        try {
+          var b = txBuild(p);
+          if (b && b.op >= 0) itipRingPush(ITIP_RING.out, { t: Date.now(), op: b.op, len: b.len, hex: b.hex });
+        } catch (e) {}
+        return orig.apply(this, arguments);
+      };
+      ITIP_RING.hooked = true;
+    } catch (e) {}
+  }
   function itipPktProbe(bytes, op) {
     try {
-      if (ITIP.seenOps[op] != null) return;
       var u8 = new Uint8Array(bytes);
+      var hx = "", mm = Math.min(u8.length, 96);
+      for (var q = 0; q < mm; q++) hx += (u8[q] < 16 ? "0" : "") + u8[q].toString(16);
+      itipRingPush(ITIP_RING.in, { t: Date.now(), op: op, len: u8.length, hex: hx });
+      if (ITIP.seenOps[op] != null) return;
       var hex = "", m = Math.min(u8.length, 256);
       for (var i = 0; i < m; i++) hex += (u8[i] < 16 ? "0" : "") + u8[i].toString(16);
       ITIP.seenOps[op] = 1;
@@ -11449,15 +11484,22 @@
         for (var p = 0; p < pas.length; p++) { try { if (it[pas[p]] !== undefined) rec[pas[p]] = it[pas[p]]; } catch (e1) {} }
         try { rec.slot = it.slot ? JSON.parse(JSON.stringify(it.slot)) : null; } catch (e2) { rec.slot = "ERR"; }
         try {
-          var rawOps = it.options || it.Options || null; // V2.16.23：lastRO 用小写 options
+          var rawOps = it.options || it.Options || null; // V2.16.24：lastRO 用小写 options，形态是 {Index0,Value0,Param0,...} 对象
           if (rawOps) {
+            rec.optionsRaw = JSON.parse(JSON.stringify(rawOps));
             rec.Options = [];
-            for (var oi = 1; oi <= 5; oi++) {
-              var o = rawOps[oi];
-              if (!o) { rec.Options.push(null); continue; }
+            for (var oi = 0; oi <= 4; oi++) {
+              var ix = 0, vv = 0, pp = 0;
+              if (!Array.isArray(rawOps) && rawOps["Index" + oi] !== undefined) {
+                ix = Number(rawOps["Index" + oi] || 0); vv = Number(rawOps["Value" + oi] || 0); pp = Number(rawOps["Param" + oi] || 0);
+              } else {
+                var o = rawOps[oi + 1];
+                if (o) { ix = Number(o.index || 0); vv = Number(o.value || 0); pp = Number(o.param || 0); }
+              }
+              if (!ix) { rec.Options.push(null); continue; }
               var onm = null;
-              try { if (db && db.getOptionName) onm = db.getOptionName(o.index); } catch (e3) {}
-              rec.Options.push({ index: o.index, value: o.value, param: o.param, name: onm });
+              try { if (db && db.getOptionName) onm = db.getOptionName(ix); } catch (e3) {}
+              rec.Options.push({ slot: oi, index: ix, value: vv, param: pp, name: onm });
             }
           } else { rec.Options = null; }
         } catch (e4) { rec.Options = "ERR"; }
@@ -11483,7 +11525,16 @@
       if (s2 === ITIP.invSig) return;
       if (now - ITIP.invAt < 10000) return;
       ITIP.invSig = s2; ITIP.invAt = now;
-      ingest({ type: "itemprobe", kind: "inv", ver: VER, map: getMapName(), count: items.length, items: items, ts: new Date().toISOString() });
+      var identChanged = false;
+      for (var q2 = 0; q2 < items.length; q2++) {
+        var ik = items[q2].ITID + "#" + items[q2].i;
+        var nowId = items[q2].IsIdentified ? 1 : 0;
+        if (ITIP.lastIdent[ik] === 0 && nowId === 1) identChanged = true;
+        ITIP.lastIdent[ik] = nowId;
+      }
+      var payload = { type: "itemprobe", kind: "inv", ver: VER, map: getMapName(), count: items.length, items: items, ts: new Date().toISOString() };
+      if (identChanged) { payload.identifyEvent = true; payload.ringIn = ITIP_RING.in.slice(-50); payload.ringOut = ITIP_RING.out.slice(-40); }
+      ingest(payload);
     } catch (e) {}
   }
   function itipProbeDom() {
@@ -11524,6 +11575,7 @@
     }, true);
     document.addEventListener("scroll", itipHide, true);
   } catch (e) {}
+  setInterval(function () { try { itipHookOut(); } catch (e) {} }, 2000);
   setInterval(function () { try { itipProbeInv(); itipProbeDom(); } catch (e) {} }, 3000);
   setInterval(function () {
     try {

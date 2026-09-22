@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.17.2
+// @version      2.18.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.17.2"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.18.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -997,16 +997,8 @@
       '<div class="sec">面板</div>' +
       '<div class="row"><span class="lb">状态</span><span id="dsh-status" class="warn">等待启动…</span></div>' +
       '<div class="row"><span class="lb">大小</span><span class="st">右下角 ↘ 拖动手柄可拉伸</span></div>' +
-      '<div class="row"><span class="lb">面板快捷键</span><span class="st" id="dsh-hotkey-info" style="min-width:0;word-break:break-all"></span></div>' +
-      '<div class="row"><button id="dsh-hotkey-set" style="flex:0 0 auto">设置快捷键</button>' +
-      '<button class="ghost" id="dsh-hotkey-clear" style="flex:0 0 auto">清除</button></div>' +
-      '<div class="row"><span class="lb">内挂自动战斗键</span><span class="st" id="dsh-hotkey-info-np" style="min-width:0;word-break:break-all"></span></div>' +
-      '<div class="row"><button id="dsh-hotkey-set-np" style="flex:0 0 auto">设置快捷键</button>' +
-      '<button class="ghost" id="dsh-hotkey-clear-np" style="flex:0 0 auto">清除</button></div>' +
-      '<div class="row"><span class="lb">助手自动战斗键</span><span class="st" id="dsh-hotkey-info-z" style="min-width:0;word-break:break-all"></span></div>' +
-      '<div class="row"><button id="dsh-hotkey-set-z" style="flex:0 0 auto">设置快捷键</button>' +
-      '<button class="ghost" id="dsh-hotkey-clear-z" style="flex:0 0 auto">清除</button></div>' +
-      '<div class="log">快捷键均为 Switch 单键切换（每次按下切换一次，不分开/关两键）：面板键=面板收起/展开；内挂自动战斗键=直接 toggle 发包；助手自动战斗键=开始/停止。点击「设置快捷键」后按下组合键（支持 Ctrl/Alt/Shift/Win+键），Esc 取消；相同组合不可重复绑定；未设置时悬浮球/按钮照常工作。</div>' +
+      '<div class="row"><span class="lb">快捷键</span><span class="st">已全部移到「功能菜单」里逐个功能设置（点悬浮球打开菜单，每行右侧的键位按钮）</span></div>' +
+      '<div class="log">V2.18.0：快捷键改为在「功能菜单」里按功能设置 —— 左键点键位按钮 → 按下组合键（支持 Ctrl/Alt/Shift/Win + 键，功能键 F1~F12 也可）；Esc 取消；右键键位按钮清除；20 秒不按自动取消。所有快捷键都是单键切换（按一次开、再按一次关）。同一组合不可重复绑定；功能总开关关掉后该功能的快捷键也不响应；输入框内打字时不触发。注意：浏览器标签页必须在最前面才收得到按键。</div>' +
       '<div class="sec">登录验证自动过</div>' +
       '<div class="row"><label class="switch"><input id="dsh-capauto" type="checkbox" checked>自动过验证</label><span class="st" id="dsh-capstate" style="font-size:10px;margin-left:auto">待命</span></div>' +
       '<div class="row"><span class="lb">填入后等待</span><input id="dsh-capwait" type="number" value="10" min="0" style="flex:0 0 48px"><span style="color:#5a6b7f">s 再点「下面」（0=立即提交）</span></div>' +
@@ -1684,6 +1676,8 @@
   }
   var RO_MODULES = [
     { id: "panel", name: "主面板",          kind: "panel" },
+    { id: "np",    name: "内挂自动战斗",    kind: "act", noToggle: true },
+    { id: "zhu",   name: "助手自动战斗",    kind: "act", noToggle: true },
     { id: "mlock", name: "本图怪物锁定",    kind: "fw" },
     { id: "tp",    name: "传送功能",        kind: "fw" },
     { id: "skill", name: "助手技能设置",    kind: "fw" },
@@ -1707,6 +1701,7 @@
     return !!fwOpenIds[id];
   }
   function roModOpen(id) {
+    if (id === "np" || id === "zhu") return;   // 纯动作类（只有快捷键，没有窗口）
     if (id === "panel") { saved.collapsed = false; try { saveSaved(saved); } catch (e) {} applyCollapse(false); return; }
     if (id === "mvp") { var m = roModEl("mvp"); if (m) m.style.display = "flex"; return; }
     if (id === "zhud") { try { ensureZHud(); if (zHudEl) zHudEl.style.display = ""; } catch (e) {} return; }
@@ -1714,6 +1709,7 @@
     if (!fwOpenIds[id]) fwToggle(id);
   }
   function roModClose(id) {
+    if (id === "np" || id === "zhu") return;   // 纯动作类（只有快捷键，没有窗口）
     if (id === "panel") { saved.collapsed = true; try { saveSaved(saved); } catch (e) {} applyCollapse(true); return; }
     if (id === "mvp" || id === "zhud" || id === "ztip") { var e3 = roModEl(id); if (e3) e3.style.display = "none"; return; }
     if (fwOpenIds[id]) fwToggle(id);
@@ -1755,8 +1751,8 @@
       x.addEventListener("click", function () { roMenuToggle(); });
       roWinBind(el, {
         id: "menu", drag: bar, grip: roGrip(el),
-        minW: 280, minH: 180, dw: 330, dh: 420,
-        ax: Math.max(8, roVw() - 330 * roScale() - 16), ay: Math.max(8, Math.round(roVh() * 0.14))
+        minW: 300, minH: 180, dw: 372, dh: 470,
+        ax: Math.max(8, roVw() - 372 * roScale() - 16), ay: Math.max(8, Math.round(roVh() * 0.12))
       });
       el.style.display = "none";
       roMenuEl = el;
@@ -1781,7 +1777,7 @@
     var body = document.getElementById("dsh-menu-body");
     if (!body) return;
     body.textContent = "";
-    var sec = document.createElement("div"); sec.className = "ro-sec"; sec.textContent = "功能（勾选 = 启用，按钮 = 打开 / 收回）";
+    var sec = document.createElement("div"); sec.className = "ro-sec"; sec.textContent = "功能（勾选 = 启用 · 点键位 = 设快捷键 · 右键键位 = 清除）";
     body.appendChild(sec);
     for (var i = 0; i < RO_MODULES.length; i++) {
       (function (m) {
@@ -1796,6 +1792,21 @@
         });
         var nm = document.createElement("span"); nm.className = "nm"; nm.textContent = m.name;
         lab.appendChild(cb); lab.appendChild(nm); row.appendChild(lab);
+        // V2.18.0 键位按钮：左键设置/重设，右键清除
+        var kb = document.createElement("button"); kb.type = "button";
+        kb.style.cssText = "min-width:54px;max-width:104px;height:18px;padding:0 5px;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+        var hk = hkOf(m.id);
+        if (hkTarget === m.id) {
+          kb.textContent = "按组合键…";
+          kb.style.outline = "2px solid #e0a03a"; kb.style.outlineOffset = "1px";
+        } else {
+          kb.textContent = hk ? hkLabel(hk) : "未设键";
+          if (!hk) kb.style.color = "#8a8a8a";
+        }
+        kb.title = hk ? ("当前：" + hkLabel(hk) + "　左键重设 / 右键清除") : "点击后按下组合键即可绑定（右键清除）";
+        kb.addEventListener("click", function () { hkBeginSet(m.id); });
+        kb.addEventListener("contextmenu", function (ev) { ev.preventDefault(); ev.stopPropagation(); if (hkOf(m.id)) hkClear(m.id); });
+        row.appendChild(kb);
         if (!m.noToggle) {
           var b = document.createElement("button"); b.type = "button";
           b.style.cssText = "min-width:46px;height:18px;padding:0 6px;font-size:11px;";
@@ -2141,43 +2152,73 @@
 
   // ---------------- 快捷键（V2.8.0 三组 · Switch 单键切换）：面板收起 / 内挂自动战斗 / 助手自动战斗 ----------------
   // 捕获态 hkTarget：null|panel|np|zhu；三组存全局独立 key（V2.13.0 起所有角色共用，刷新/换角色不丢）
-  var HK_TARGETS = {
-    panel: { key: "hotkey", label: "面板", info: "dsh-hotkey-info", set: "dsh-hotkey-set", clear: "dsh-hotkey-clear" },
-    np: { key: "hotkeyNp", label: "内挂自动战斗", info: "dsh-hotkey-info-np", set: "dsh-hotkey-set-np", clear: "dsh-hotkey-clear-np" },
-    zhu: { key: "hotkeyZhu", label: "助手自动战斗", info: "dsh-hotkey-info-z", set: "dsh-hotkey-set-z", clear: "dsh-hotkey-clear-z" }
-  };
-  // V2.13.0：快捷键全局记忆（独立 key dsh_ro_hotkeys_v1，所有角色共用；首次从旧角色档迁移一次）
-  var HK_KEY = "dsh_ro_hotkeys_v1";
-  var hotkeyCfg = { hotkey: null, hotkeyNp: null, hotkeyZhu: null };
-  function loadHotkeys() {
+  // ============ V2.18.0 快捷键系统（泛化：RO_MODULES 里每个功能都能绑一个键）============
+  // 存储 dsh_ro_hotkeys_v2 = { "<模块id>": {ctrl,alt,shift,meta,key} }
+  // 旧版 dsh_ro_hotkeys_v1 的三个固定键（hotkey / hotkeyNp / hotkeyZhu）首次自动迁移到 panel / np / zhu
+  var HK_KEY2 = "dsh_ro_hotkeys_v2";
+  var HK_KEY1 = "dsh_ro_hotkeys_v1";
+  var hkCfg = null;
+  function hkLoad() {
+    if (hkCfg) return hkCfg;
+    hkCfg = {};
     try {
-      var o = JSON.parse(localStorage.getItem(HK_KEY)) || {};
-      return { hotkey: o.hotkey || null, hotkeyNp: o.hotkeyNp || null, hotkeyZhu: o.hotkeyZhu || null };
-    } catch (e) { return { hotkey: null, hotkeyNp: null, hotkeyZhu: null }; }
-  }
-  function saveHotkeys() {
-    try { localStorage.setItem(HK_KEY, JSON.stringify({ hotkey: hotkeyCfg.hotkey || null, hotkeyNp: hotkeyCfg.hotkeyNp || null, hotkeyZhu: hotkeyCfg.hotkeyZhu || null })); } catch (e) {}
-  }
-  hotkeyCfg = loadHotkeys();
-  if (!hotkeyCfg.hotkey && !hotkeyCfg.hotkeyNp && !hotkeyCfg.hotkeyZhu) {
-    try {
-      var _profs = JSON.parse(localStorage.getItem(PROF_KEY)) || {};
-      for (var _pk in _profs) {
-        var _ps = _profs[_pk] && _profs[_pk].saved;
-        if (!_ps) continue;
-        if (!hotkeyCfg.hotkey && _ps.hotkey) hotkeyCfg.hotkey = _ps.hotkey;
-        if (!hotkeyCfg.hotkeyNp && _ps.hotkeyNp) hotkeyCfg.hotkeyNp = _ps.hotkeyNp;
-        if (!hotkeyCfg.hotkeyZhu && _ps.hotkeyZhu) hotkeyCfg.hotkeyZhu = _ps.hotkeyZhu;
-      }
-      if (hotkeyCfg.hotkey || hotkeyCfg.hotkeyNp || hotkeyCfg.hotkeyZhu) saveHotkeys();
+      var o = JSON.parse(localStorage.getItem(HK_KEY2) || "{}");
+      if (o && typeof o === "object") hkCfg = o;
     } catch (e) {}
+    try {
+      if (!hkCfg.panel && !hkCfg.np && !hkCfg.zhu) {
+        var o1 = JSON.parse(localStorage.getItem(HK_KEY1) || "{}");
+        if (o1 && (o1.hotkey || o1.hotkeyNp || o1.hotkeyZhu)) {
+          if (o1.hotkey) hkCfg.panel = o1.hotkey;
+          if (o1.hotkeyNp) hkCfg.np = o1.hotkeyNp;
+          if (o1.hotkeyZhu) hkCfg.zhu = o1.hotkeyZhu;
+          hkSave();
+        }
+      }
+    } catch (e) {}
+    return hkCfg;
   }
-  var hkTarget = null;
-  function hkLabelName(t) { var d = HK_TARGETS[t]; return d ? d.label : t; }
-  function hkAction(t) {
-    if (t === "panel") hkToggle();
-    else if (t === "np") npToggleFight();
-    else if (t === "zhu") zToggleFight();
+  function hkSave() { try { localStorage.setItem(HK_KEY2, JSON.stringify(hkCfg || {})); } catch (e) {} }
+  function hkOf(id) { var c = hkLoad()[id]; return (c && c.key) ? c : null; }
+  function hkName(id) {
+    for (var i = 0; i < RO_MODULES.length; i++) { if (RO_MODULES[i].id === id) return RO_MODULES[i].name; }
+    return id;
+  }
+  function hkFriendly(code) {
+    try {
+      if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+      if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+      if (/^F[0-9]{1,2}$/.test(code)) return code;
+      var map = { Backquote: "`", Minus: "-", Equal: "=", BracketLeft: "[", BracketRight: "]", Backslash: "\\",
+        Semicolon: ";", Quote: "'", Comma: ",", Period: ".", Slash: "/", Space: "空格", Enter: "Enter", Tab: "Tab",
+        ArrowUp: "↑", ArrowDown: "↓", ArrowLeft: "←", ArrowRight: "→", NumpadAdd: "小键盘+", NumpadSubtract: "小键盘-" };
+      if (map[code]) return map[code];
+      return String(code || "").replace(/^(Numpad|Arrow)/, "");
+    } catch (e) { return code; }
+  }
+  function hkLabel(h) {
+    if (!h || !h.key) return "未设键";
+    var mods = [];
+    if (h.ctrl) mods.push("Ctrl");
+    if (h.alt) mods.push("Alt");
+    if (h.shift) mods.push("Shift");
+    if (h.meta) mods.push("Win");
+    return mods.concat([hkFriendly(h.key)]).join("+");
+  }
+  function hkIsSame(a, b) {
+    return !!(a && b && a.key === b.key && !!a.ctrl === !!b.ctrl && !!a.alt === !!b.alt && !!a.shift === !!b.shift && !!a.meta === !!b.meta);
+  }
+  function hkIsTyping(e) {
+    try {
+      var el = e.target;
+      return !!(el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable));
+    } catch (e2) { return false; }
+  }
+  function hkToggle() {
+    try {
+      if (saved.collapsed) { saved.collapsed = false; saveSaved(saved); applyCollapse(false); }
+      else { saved.collapsed = true; saveSaved(saved); applyCollapse(true); }
+    } catch (e) {}
   }
   // 内挂自动战斗快捷键：校准后 toggle 发包一次（无需开面板），本地 npHuntOn 跟随本次按下翻转
   function npToggleFight() {
@@ -2196,106 +2237,69 @@
       else startZhu();
     } catch (e) {}
   }
-  function hkFriendly(code) {
-    try {
-      if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
-      if (/^Digit[0-9]$/.test(code)) return code.slice(5);
-      var map = { Backquote: "`", Minus: "-", Equal: "=", BracketLeft: "[", BracketRight: "]", Backslash: "\\",
-        Semicolon: ";", Quote: "'", Comma: ",", Period: ".", Slash: "/", Space: "空格", Enter: "Enter", Tab: "Tab" };
-      if (map[code]) return map[code];
-      return code;
-    } catch (e) { return code; }
+  function hkAction(id) {
+    if (!roModOn(id)) { setStatus("「" + hkName(id) + "」功能已关闭，快捷键不响应", "warn"); return; }
+    if (id === "panel") { hkToggle(); return; }
+    if (id === "np") { npToggleFight(); return; }
+    if (id === "zhu") { zToggleFight(); return; }
+    roModToggle(id);
   }
-  function hkLabel(h) {
-    if (!h || !h.key) return "未设置";
-    var mods = [];
-    if (h.ctrl) mods.push("Ctrl");
-    if (h.alt) mods.push("Alt");
-    if (h.shift) mods.push("Shift");
-    if (h.meta) mods.push("Win");
-    return mods.concat([hkFriendly(h.key)]).join("+");
+  var hkTarget = null, hkTimer = null;
+  function hkBeginSet(id) {
+    if (hkTarget === id) { hkTarget = null; }
+    else {
+      hkTarget = id;
+      if (hkTimer) clearTimeout(hkTimer);
+      hkTimer = setTimeout(function () {
+        if (hkTarget) { hkTarget = null; try { roMenuRender(); } catch (e) {} setStatus("快捷键设置超时已取消", "st"); }
+      }, 20000);
+    }
+    try { roMenuRender(); } catch (e) {}
+    if (hkTarget) setStatus("请按下「" + hkName(id) + "」的快捷键组合（建议带 Ctrl/Alt），Esc 取消", "ok");
   }
-  function hkIsSame(a, b) {
-    return !!(a && b && a.key === b.key && !!a.ctrl === !!b.ctrl && !!a.alt === !!b.alt && !!a.shift === !!b.shift && !!a.meta === !!b.meta);
-  }
-  function hkRender() {
-    if (btDiagOn) { try { btLog('hk-render', 'panel=' + JSON.stringify(hotkeyCfg.hotkey || null) + ' np=' + JSON.stringify(hotkeyCfg.hotkeyNp || null) + ' zhu=' + JSON.stringify(hotkeyCfg.hotkeyZhu || null) + ' global=1'); } catch (e) {} }
-    Object.keys(HK_TARGETS).forEach(function (t) {
-      var d = HK_TARGETS[t];
-      var infoEl = $id(d.info);
-      if (infoEl) infoEl.textContent = hkLabel(hotkeyCfg[d.key]);
-      var sb = $id(d.set);
-      if (sb) sb.textContent = hkTarget === t ? "请按组合键…（Esc 取消）" : (hotkeyCfg[d.key] && hotkeyCfg[d.key].key ? "重新设置快捷键" : "设置快捷键");
-    });
-  }
-  function hkIsTyping(e) {
-    try {
-      var el = e.target;
-      return el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || (el.isContentEditable));
-    } catch (e2) { return false; }
-  }
-  function hkToggle() {
-    try {
-      if (saved.collapsed) { saved.collapsed = false; saveSaved(saved); applyCollapse(false); }
-      else { saved.collapsed = true; saveSaved(saved); applyCollapse(true); }
-    } catch (e) {}
+  function hkClear(id) {
+    try { delete hkLoad()[id]; } catch (e) { hkLoad()[id] = null; }
+    hkSave();
+    try { roMenuRender(); } catch (e) {}
+    setStatus("「" + hkName(id) + "」快捷键已清除", "st");
   }
   document.addEventListener("keydown", function (e) {
     try {
       if (hkTarget) {
         e.preventDefault();
         e.stopPropagation();
-        if (e.key === "Escape" || e.key === "Esc") { hkTarget = null; hkRender(); setStatus("快捷键设置已取消", "st"); return; }
+        if (e.key === "Escape" || e.key === "Esc") { hkTarget = null; try { roMenuRender(); } catch (e0) {} setStatus("快捷键设置已取消", "st"); return; }
         if (e.key === "Control" || e.key === "Alt" || e.key === "Shift" || e.key === "Meta") return; // 等待组合键完整按下
-        if (hkIsTyping(e)) { hkTarget = null; hkRender(); setStatus("快捷键设置已取消（输入框内不响应）", "st"); return; }
+        if (hkIsTyping(e)) { hkTarget = null; try { roMenuRender(); } catch (e0) {} setStatus("快捷键设置已取消（输入框内不响应）", "st"); return; }
         var h = { ctrl: !!e.ctrlKey, alt: !!e.altKey, shift: !!e.shiftKey, meta: !!e.metaKey, key: e.code || e.key };
-        var dup = null;
-        Object.keys(HK_TARGETS).forEach(function (t2) {
-          if (t2 === hkTarget) return;
-          if (hkIsSame(h, hotkeyCfg[HK_TARGETS[t2].key])) dup = t2;
-        });
-        if (dup) { hkRender(); setStatus("此组合已用于「" + hkLabelName(dup) + "」，请换一组", "warn"); return; }
+        var dup = null, all = hkLoad();
+        for (var k in all) { if (k === hkTarget) continue; if (hkIsSame(h, all[k])) { dup = k; break; } }
+        if (dup) { try { roMenuRender(); } catch (e0) {} setStatus("此组合已用于「" + hkName(dup) + "」，请换一组", "warn"); return; }
         var curT = hkTarget;
-        hotkeyCfg[HK_TARGETS[curT].key] = h;
-        saveHotkeys();
+        hkLoad()[curT] = h;
+        hkSave();
         hkTarget = null;
-        hkRender();
-        setStatus("「" + hkLabelName(curT) + "」快捷键已设为 " + hkLabel(h), "ok");
+        if (hkTimer) { clearTimeout(hkTimer); hkTimer = null; }
+        try { roMenuRender(); } catch (e0) {}
+        setStatus("「" + hkName(curT) + "」快捷键已设为 " + hkLabel(h), "ok");
         return;
       }
       if (hkIsTyping(e)) return; // 打字/输入框聚焦时不响应
       if (e.key === "Control" || e.key === "Alt" || e.key === "Shift" || e.key === "Meta") return;
-      var keys = Object.keys(HK_TARGETS);
-      for (var ki = 0; ki < keys.length; ki++) {
-        var t = keys[ki];
-        var hh = hotkeyCfg[HK_TARGETS[t].key];
+      var cfg = hkLoad();
+      for (var id in cfg) {
+        var hh = cfg[id];
         if (!hh || !hh.key) continue;
         var match = (hh.ctrl === (e.ctrlKey || e.metaKey)) && (hh.alt === !!e.altKey) && (hh.shift === !!e.shiftKey) &&
           ((hh.key === (e.code || e.key)) || (hh.key === e.key));
         if (!match) continue;
         e.preventDefault();
         e.stopPropagation();
-        hkAction(t);
+        hkAction(id);
         break;
       }
     } catch (e3) {}
   }, true);
-  Object.keys(HK_TARGETS).forEach(function (t) {
-    var d = HK_TARGETS[t];
-    var sb = $id(d.set), cb = $id(d.clear);
-    if (sb) sb.addEventListener("click", function () {
-      hkTarget = hkTarget === t ? null : t;
-      hkRender();
-      if (hkTarget === t) setStatus("请在 5 秒内按下「" + hkLabelName(t) + "」快捷键组合（建议带 Ctrl/Alt）…", "ok");
-    });
-    if (cb) cb.addEventListener("click", function () {
-      if (hkTarget === t) hkTarget = null;
-      hotkeyCfg[d.key] = null; saveHotkeys();
-      hkRender();
-      setStatus("「" + hkLabelName(t) + "」快捷键已清除", "st");
-    });
-  });
-  hkRender();
 
   // 悬浮球自动靠边：窗口尺寸变化时保持球在视口内（贴边不丢失）
   function snapBallToEdge() {
@@ -3056,7 +3060,7 @@
       ensureProfile(key);
       profiles[key].name = nm; profiles[key].gid = gid;
       saved = loadSaved();
-      if (btDiagOn) { try { btLog('hk', '切档=' + key + ' hotkey=' + JSON.stringify(hotkeyCfg.hotkey || null) + ' np=' + JSON.stringify(hotkeyCfg.hotkeyNp || null) + ' zhu=' + JSON.stringify(hotkeyCfg.hotkeyZhu || null)); } catch (e) {} }
+      if (btDiagOn) { try { btLog('hk', '切档=' + key + ' panel=' + JSON.stringify(hkOf('panel')) + ' np=' + JSON.stringify(hkOf('np')) + ' zhu=' + JSON.stringify(hkOf('zhu'))); } catch (e) {} }
       lockList = profiles[key].lockList || {};
       askList = profiles[key].askList || [];
       applyProfileUI();

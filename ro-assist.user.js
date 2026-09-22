@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.26
+// @version      2.16.27
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.26"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.16.27"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -792,6 +792,7 @@
       '<label class="switch" style="margin-left:auto"><input id="dsh-itemen" type="checkbox">启用自动使用</label></div></div>' +
       '<div class="sec">自动装箭矢（V2.15.26：箭矢耗尽自动补）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-arrowen" type="checkbox" checked>箭矢耗尽时用魔法箭袋(2000030)放箭并装上装备栏</label></div>' +
+      '<div class="row"><span class="st" style="font-size:10px">V2.16.27：仅当手持弓/乐器/鞭子时生效（其它职业没有箭矢槽，避免白耗箭袋）</span></div>' +
       '<div class="row"><span class="st" id="dsh-arrowlog" style="font-size:10px">未启用</span></div>' +
       '<div class="sec">平A改用系统noctrl自动连击（V2.15.29：锁定目标后不再连续补发平A包，仅换目标/重进射程补发，消除连击间断）</div>' +
       '<div class="sec">背包快照定期上报（V2.15.27）</div>' +
@@ -3852,6 +3853,33 @@
       var el = $id("dsh-arrowlog"); if (el) el.textContent = msg;
     } catch (e) {}
   }
+  // V2.16.27：读当前装备武器的武器类型（客户端 WeaponType：11=弓 13=乐器 14=鞭子）
+  // 自动换箭只在手持这三类武器时生效——其它职业没有箭矢槽，旧代码会一路走到
+  // 「背包无箭矢 → 使用魔法箭袋(2000030)」，白白消耗箭袋。
+  function readEquippedWeaponType() {
+    try {
+      var eq = null;
+      try { eq = window.require && window.require("UI/Components/Equipment/Equipment"); } catch (e1) {}
+      if (!eq && window.requireDB) { try { eq = window.requireDB("UI/Components/Equipment/Equipment"); } catch (e2) {} }
+      var slot = eq && eq.ui && eq.ui.find('.weapon .item[data-index]');
+      var index = slot && slot.length ? Number(slot.attr('data-index')) : null;
+      if (index == null || isNaN(index)) return { wt: -1, itid: null, why: "未装备武器" };
+      var item = (eq.getItemByIndex && eq.getItemByIndex(index)) || null;
+      if (!item) return { wt: -1, itid: null, why: "取不到武器实例" };
+      var itid = item.ITID != null ? item.ITID : item.itemid;
+      if (itid == null) return { wt: -1, itid: null, why: "武器无 ITID" };
+      var db = itipDB();
+      if (!db) return { wt: -1, itid: itid, why: "DB 不可用" };
+      if (typeof db.getWeaponType === "function") {
+        var t = Number(db.getWeaponType(itid));
+        return { wt: isNaN(t) ? -1 : t, itid: itid, why: "getWeaponType" };
+      }
+      // 兜底：ItemTable 的 ClassNum 就是武器类型（客户端 DBManager.getWeaponType 内部同逻辑）
+      var info = (db.getItemInfo && db.getItemInfo(itid)) || null;
+      var cn = info && info.ClassNum != null ? Number(info.ClassNum) : NaN;
+      return { wt: isNaN(cn) ? -1 : cn, itid: itid, why: "ClassNum兜底" };
+    } catch (e) { return { wt: -1, itid: null, why: "异常:" + e.message }; }
+  }
   function readEquippedAmmo() {
     try {
       var eq = null;
@@ -3897,6 +3925,13 @@
       var en = $id("dsh-arrowen");
       if (!en || !en.checked) { setArrowLog("未启用"); return; }
       var now = Date.now();
+      // V2.16.27：先判武器类型，非弓/乐器/鞭子直接不动作（防止非弓箭手白耗魔法箭袋）
+      var wq = readEquippedWeaponType();
+      zArrow.wt = wq.wt; zArrow.wItid = wq.itid; zArrow.wWhy = wq.why;
+      if (wq.wt !== 11 && wq.wt !== 13 && wq.wt !== 14) {
+        setArrowLog("当前武器不是弓/乐器/鞭子（类型 " + wq.wt + "，武器ID " + (wq.itid == null ? "无" : wq.itid) + "），自动换箭不生效");
+        return;
+      }
       var ammo = readEquippedAmmo();
       var arrows = readBagArrows();
       var bagN = arrows.reduce(function (a, b) { return a + b.count; }, 0);
@@ -11706,7 +11741,9 @@
       ASKP.sig = sig; ASKP.at = now;
       var learned = null;
       try { learned = JSON.parse(localStorage.getItem("dsh_ro_skill_status_v1") || "{}"); } catch (e4) {}
-      ingest({ type: "itemprobe", kind: "ask", ver: VER, map: getMapName(), askEn: en, askIntv: intv, askSpGuard: spGuard,
+      var eqInfo = null;
+      try { var wq2 = readEquippedWeaponType(); var am2 = readEquippedAmmo(); eqInfo = { wItid: wq2.itid, wType: wq2.wt, why: wq2.why, arrowEn: ($id("dsh-arrowen") ? !!$id("dsh-arrowen").checked : null), ammoItid: am2 ? am2.itid : null, ammoCount: am2 ? am2.count : null, bagArrowN: (function(){ try { return readBagArrows().reduce(function (a, b) { return a + b.count; }, 0); } catch (e) { return null; } })() }; } catch (eE) {}
+      ingest({ type: "itemprobe", kind: "ask", ver: VER, map: getMapName(), askEn: en, askIntv: intv, askSpGuard: spGuard, equip: eqInfo,
         spPct: spPct, siHook: (typeof dshSIState !== "undefined" ? dshSIState : null), list: list, buffActive: ba, learned: learned, ts: new Date().toISOString() });
     } catch (e) {}
   }

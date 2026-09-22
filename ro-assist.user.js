@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.21.1
+// @version      2.22.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.21.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.22.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -232,7 +232,7 @@
       xhr.timeout = 1500;
       xhr.onload = function () {
         useLocalData = xhr.status === 200 && xhr.responseText.indexOf("clientinfo") !== -1;
-        if (useLocalData) setStatus("本地数据源 ✓ 加载秒开", "ok");
+        if (useLocalData) setStatus("本地数据源（加载秒开）", "ok");
         tlog("detect=" + (useLocalData ? "local" : "remote-fallback") + " status=" + xhr.status);
         cb();
       };
@@ -519,9 +519,27 @@
     "#dsh-ro-panel .a-nav .sub-tab{flex:none;padding:7px 8px;text-align:left;border-radius:6px;background:rgba(227,234,244,.92);border:1px solid #c7d3e6;font-weight:600;font-size:12px;line-height:1.35;white-space:normal}" +
     "#dsh-ro-panel .a-nav .sub-tab.active{background:rgba(255,255,255,.97);color:#1d4ed8;border:1px solid #1d4ed8;border-left:3px solid #1f9d4d}" +
     "#dsh-ro-panel .a-body{flex:auto;min-width:0}" +
-    "#dsh-ro-panel .sec{margin:10px 0 7px;font-size:12px;color:#1259b3;font-weight:700;border-left:3px solid #2f6fde;padding-left:8px}" +
+    "#dsh-ro-panel .sec{margin:12px 0 6px;font-size:12px;color:#1259b3;font-weight:700;border-left:3px solid #2f6fde;padding-left:8px;line-height:1.5}" +
     "#dsh-ro-panel .sec:first-child{margin-top:0}" +
-    "#dsh-ro-panel .row{margin:6px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}" +
+    // V2.22.0 UI 统一层：行分隔灰线（对齐功能菜单 .ro-row）+ 列表行/联想下拉/折叠标题统一
+    "#dsh-ro-panel .row{margin:0;padding:6px 2px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #e6ebf2}" +
+    "#dsh-ro-panel .row:last-child{border-bottom:0}" +
+    "#dsh-ro-panel .row>.st{color:#6b7a90;font-size:12px}" +
+    "#dsh-ro-panel .prow{display:flex;align-items:center;gap:6px;padding:6px 2px;border-bottom:1px solid #e2e2e2;font-size:12px;color:#3c4d66}" +
+    "#dsh-ro-panel .prow:last-child{border-bottom:0}" +
+    "#dsh-ro-panel .prow:hover{background:#f3f7fd}" +
+    "#dsh-ro-panel .prow.sel{background:#e8f1ff}" +
+    "#dsh-ro-panel .prow .pidx{flex:none;min-width:16px;text-align:right;color:#9db1cc;font-size:11px}" +
+    "#dsh-ro-panel .prow .pnm{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+    "#dsh-ro-panel .skgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 10px;max-height:180px;overflow:auto}" +
+    "#dsh-ro-panel .skgrid .list-item{min-width:0;padding:5px 2px}" +
+    "#dsh-ro-panel .skgrid .switch{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+    "#dsh-ro-panel #dsh-skillorderlist,#dsh-ro-panel #dsh-asklist{max-height:132px;overflow:auto}" +
+    "#dsh-ro-panel .ac{position:absolute;top:calc(100% + 3px);left:0;right:0;z-index:99;background:#fff;border:1px solid #b8c6d4;border-radius:6px;max-height:180px;overflow:auto;box-shadow:0 3px 8px rgba(0,0,0,.18)}" +
+    "#dsh-ro-panel details>summary{list-style:none;cursor:pointer;padding:5px 2px;border-bottom:1px solid #e6ebf2;color:#1259b3;font-size:12px}" +
+    "#dsh-ro-panel details>summary::-webkit-details-marker{display:none}" +
+    "#dsh-ro-panel details>summary::before{content:'▸ ';color:#7d93b3}" +
+    "#dsh-ro-panel details[open]>summary::before{content:'▾ ';color:#2f6fde}" +
     "#dsh-ro-panel .row .lb{color:#5a6b7f;flex:none;min-width:50px}" +
     "#dsh-ro-panel input[type=text],#dsh-ro-panel input[type=password],#dsh-ro-panel input[type=number],#dsh-ro-panel select{flex:1;min-width:0;background:rgba(255,255,255,.9);border:1px solid #b9c4d4;color:#16202c;border-radius:5px;padding:3px 6px;font-size:13px;outline:none;font-family:inherit}" +
     "#dsh-ro-panel textarea{width:100%;background:rgba(255,255,255,.9);border:1px solid #b9c4d4;color:#16202c;border-radius:5px;padding:4px 6px;font-size:12px;resize:vertical;outline:none;font-family:Consolas,'Microsoft YaHei',monospace;line-height:1.5}" +
@@ -532,7 +550,8 @@
     "#dsh-ro-panel button.ghost{background:rgba(238,242,248,.92);color:#2a3a52;border-color:#c8d4e4}#dsh-ro-panel button.ghost:hover{background:#e2e9f4}" +
     "#dsh-ro-panel .box{background:rgba(255,255,255,.88);border:1px solid #dce4f0;border-radius:8px;padding:8px 10px;margin:7px 0}" +
     "#dsh-ro-panel .box .b-hd{font-size:12px;color:#1259b3;font-weight:700;margin-bottom:3px}" +
-    "#dsh-ro-panel .list-item{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#3c4d66;padding:2px 0;border-bottom:1px dashed #e3e9f3}" +
+    "#dsh-ro-panel .list-item{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:12px;color:#3c4d66;padding:6px 2px;border-bottom:1px solid #e2e2e2}" +
+    "#dsh-ro-panel .list-item:hover{background:#f3f7fd}" +
     "#dsh-ro-panel .drag-item{cursor:grab;user-select:none;background:rgba(255,255,255,.85)}" +
     "#dsh-ro-panel .drag-item.dragging{opacity:.5;background:#e6f0ff}" +
     "#dsh-ro-panel .drag-item .dh{color:#9db1cc;margin-right:4px;font-size:13px;flex:none}" +
@@ -599,7 +618,13 @@
     "#dsh-ro-menu button{height:20px;min-width:42px;padding:0 7px;border:1px solid;border-color:#cfcfcf #a9a9a9 #5f5f5f #bdbdbd;border-radius:4px;background:linear-gradient(to bottom,#fff 0%,#f2f2f2 35%,#dcdcdc 55%,#f9f9f9 100%);color:#3f3f3f;font-size:11px;font-weight:400;line-height:1;cursor:pointer;font-family:inherit;text-shadow:1px 1px rgba(255,255,255,.85)}" +
     "#dsh-ro-menu button:hover{background:linear-gradient(to bottom,#f7fbff,#dfe8f6 35%,#c0d0ee 55%,#f0f6ff)}" +
     "#dsh-ro-menu select{height:20px;background:#fff;border:1px solid #aaa;border-radius:0;color:#111;font-size:11px;padding:0 2px;font-family:inherit}" +
-    "#dsh-ro-menu .ro-info{color:#555;font-size:10px;padding:2px 2px 0}";
+    "#dsh-ro-menu .ro-info{color:#555;font-size:10px;padding:2px 2px 0}" +
+    // V2.22.0 悬浮球旁战斗快速开关（26×26 两个小方块：[内]=内挂自动战斗 [助]=助手自动战斗）
+    "#dsh-ball .qs{position:absolute;left:-31px;width:26px;height:26px;min-width:0;padding:0;border-radius:6px;border:1px solid #8e8e8e;background:linear-gradient(to bottom,#fff 0%,#f2f2f2 35%,#dcdcdc 55%,#f9f9f9 100%);color:#3f3f3f;font:700 11px/1 'Microsoft YaHei',Arial,sans-serif;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.5);opacity:.94;text-shadow:1px 1px rgba(255,255,255,.85)}" +
+    "#dsh-ball .qs:hover{opacity:1}" +
+    "#dsh-ball .qs.on{background:linear-gradient(to bottom,#4bd07f 0%,#25a55a 55%,#1c8b4a 100%);border-color:#17793a;color:#fff;text-shadow:0 1px 1px rgba(0,0,0,.35)}" +
+    "#dsh-ball #dsh-qs-nei{top:1px}" +
+    "#dsh-ball #dsh-qs-zhu{bottom:1px}";
 
   // ---------------- 页签定义 ----------------
   var PAGE_HTML = {
@@ -681,52 +706,59 @@
       '<div class="row"><span class="st" style="font-size:10px">内挂=只有可攻击到的锁定怪（射程内）才停内挂、助手战斗；无怪/锁定怪超出射程→持续内挂寻怪移动靠近</span></div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-follow" type="checkbox" checked>锁定目标跟随追击</label>' +
       '<label class="switch"><input id="dsh-z-next" type="checkbox" checked>打死换下一个</label></div>' +
-      '<details style="margin:4px 0"><summary style="cursor:pointer;color:#1259b3;font-size:12px">🔍 战斗诊断（V2.12.5-diag · 默认关 · 不改行为）</summary>' +
+      '<div class="sec">目标范围</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-z-allmobs" type="checkbox" checked>打全部怪（不限「本图怪物锁定」名单）</label></div>' +
+      '<div class="row"><span class="st">勾选=攻击距离内所有怪都打（血少优先抢尾刀）；取消=只打锁定名单里的怪。</span></div>' +
+      '<details style="margin:6px 0"><summary>战斗诊断（默认关 · 不改行为）</summary>' +
       '<div class="row"><label class="switch"><input id="dsh-bt-diag" type="checkbox">启用诊断日志</label></div>' +
       '<div class="row" style="flex-wrap:wrap;gap:4px"><button class="ghost" id="dsh-bt-snap" style="flex:0 0 auto;padding:0 8px;font-size:11px">快照</button><button class="ghost" id="dsh-bt-mark" style="flex:0 0 auto;padding:0 8px;font-size:11px">标记测试</button></div>' +
       '<div class="row"><span class="st" id="dsh-bt-state" style="font-size:10px">诊断: 关</span></div>' +
       '<div id="dsh-bt-log" style="font-size:10px;max-height:150px;overflow:auto;background:#f4f6f8;border:1px solid #d8e0e8;border-radius:4px;padding:4px;font-family:monospace;white-space:pre-wrap;line-height:1.5">诊断日志: 关</div></details>' +
       '</div>' +
       '<div class="sub-page" data-subpage="zs-skill">' +
-      '<div style="margin-top:4px"><div class="sec" style="margin-top:0">技能释放与顺序（自动判断释放前置 · 自动补状态）</div>' +
+      '<div class="sec">普攻兜底（技能优先 · 只补空档）</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-z-attmix" type="checkbox" checked>技能空档补普攻</label>' +
+      '<span class="lb" style="margin-left:auto;min-width:56px">让位余量</span>' +
+      '<input id="dsh-z-attmixmargin" type="number" value="300" min="0" step="50" style="flex:0 0 56px"><span class="st">毫秒</span></div>' +
+      '<div class="row"><span class="st">技能还剩不到「让位余量」就冷却好时不补普攻，先等技能；完全没配技能时直接普攻。</span></div>' +
+      '<div class="sec">技能释放与顺序（自动判断释放前置 · 自动补状态）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-prereq" type="checkbox" checked>自动补充释放前置（状态/气弹）</label>' +
       '<span class="tag blue" id="dsh-prereqcnt" style="margin-left:auto">释放需求表: 94技能</span></div>' +
-      '<div class="row"><label class="switch"><input id="dsh-z-attmix" type="checkbox">穿插平A（锁定普攻：技能放不出/冷却/无技能时补普攻）</label>' + // V2.15.30 默认不勾选=纯技能流
-      '<span class="st" style="font-size:10px">关=纯技能流不普攻（法师等可关）</span></div>' +
-      '<details id="dsh-skillpickbox" style="margin:4px 0"><summary style="cursor:pointer;color:#1259b3;font-size:12px">🖱 点选技能释放（展开/收缩）</summary>' +
-      '<div class="box"><div class="b-hd">点选已学主动技能 → 自动生成技能顺序（拖拽排序 · 可收缩本栏）</div>' +
-      '<div id="dsh-skillpick" style="font-size:11px;max-height:140px;overflow:auto"></div></div></details>' +
+      '<details id="dsh-skillpickbox" style="margin:6px 0"><summary>点选技能释放（展开/收缩）</summary>' +
+      '<div class="box"><div class="b-hd">点选已学主动技能 → 自动生成技能顺序</div>' +
+      '<div id="dsh-skillpick" class="skgrid"></div></div></details>' +
       '<div class="box"><div class="b-hd">技能顺序（拖拽排序 · 点选技能自动加入）</div>' +
-      '<div id="dsh-skillorderlist" style="font-size:11px;max-height:110px;overflow:auto"><span class="st">空（点选上方技能加入，拖拽调整顺序）</span></div>' +
+      '<div id="dsh-skillorderlist"><span class="st">空（点选上方技能加入，拖拽调整顺序）</span></div>' +
       '<div class="row" style="margin-top:2px"><button class="ghost" id="dsh-skillclear" style="flex:0 0 auto">清空</button>' +
       '<button class="ghost" id="dsh-skillimp" style="flex:0 0 auto">导入已学技能</button></div></div>' +
-      '<details style="margin:4px 0"><summary style="cursor:pointer;color:#1259b3;font-size:12px">📝 手动编辑技能顺序/条件（默认折叠 · 高级用法）</summary>' +
+      '<details style="margin:6px 0"><summary>手动编辑技能顺序/条件（高级用法）</summary>' +
       '<textarea id="dsh-skillorder" rows="3" placeholder="技能顺序：每行 技能ID:等级:条件:释放%:次数:锁定次数:冷却秒&#10;例：271  :5   :球5,爆气:80 :20 :3:2&#10;   技能ID :等级:条件    :概率:次数:锁定次数:冷却秒&#10;条件=释放前置，须全满足，可空；释放%=0-100（省略=100）&#10;次数=整轮最多放N次（0=不限，重开重置）；锁定次数=每只怪最多放N次（0=不限，换怪重置）&#10;冷却秒=该技能间隔兜底秒数（0/省略=自动跟随服务器2842真实后摇，无数据默认250ms）&#10;等级超已学自动降级、未学自动跳过；只填ID也能用"></textarea>' +
       '<div class="log" style="margin-top:2px">字段说明：技能ID:等级:条件:释放%:次数:锁定次数:冷却秒。条件=释放前置（如阿修罗需球5,爆气，自动补状态）；释放%=0-100（省略=100）；次数=整轮上限（OpenKore maxUses，重开自动战斗重置）；锁定次数=每只怪上限（换目标/解锁清零重计）；冷却秒=该技能释放间隔兜底（0/省略=自动跟随服务器2842真实后摇[动态]，无数据默认250ms）。技能按各自冷却独立释放，不再按攻击轮次重复发包。点选/拖拽生成的行只填前2段，无需手写。例：271:5:球5,爆气:80:20:3:2 = 阿修罗5级，需5球+爆气，80%概率，整轮最多20次，每只怪最多3次，间隔兜底2秒。</div>' +
       '</details>' +
-      '<div class="row" style="margin:0 0 4px"><span class="sec" style="margin:0">辅助技能（选技能自动加判定条件 · 按间隔施放）</span><button class="ghost" id="dsh-statehelp" style="flex:0 0 auto;margin-left:auto">状态速查</button></div>' +
+      '<div class="sec">辅助技能（选技能自动加判定条件 · 按间隔施放）</div>' +
       '<div class="row"><span class="lb">技能</span><select id="dsh-askskill" style="flex:0 0 auto;max-width:130px"><option value="">选择技能…</option></select>' +
       '<button class="ghost" id="dsh-askskilladd" style="flex:0 0 auto">＋加入</button>' +
       '<button class="ghost" id="dsh-askskillload" style="flex:0 0 auto">读技能栏</button></div>' +
       '<div class="row"><span class="lb">判定</span><select id="dsh-askcond" style="flex:0 0 auto"><option value="">无（纯按间隔放）</option><option value="self" selected>自身状态消失才补</option><option value="party">队友状态消失才补（待支持）</option></select></div>' +
       '<div class="row" style="align-items:center;flex-wrap:wrap;gap:4px 6px"><span class="lb">Debuff</span>' +
       '<div style="position:relative;flex:1 1 130px;min-width:100px"><input id="dsh-askdebuff" placeholder="输入Debuff中文/ID（联想）" autocomplete="off" style="width:100%;box-sizing:border-box;padding:3px 6px">' +
-      '<div id="dsh-askdebuff-ac" style="display:none;position:absolute;top:calc(100% + 3px);left:0;right:0;z-index:99;background:#fff;border:1px solid #b8c6d4;border-radius:4px;max-height:180px;overflow:auto;box-shadow:0 3px 8px rgba(0,0,0,.18)"></div></div>' +
+      '<div id="dsh-askdebuff-ac" class="ac" style="display:none"></div></div>' +
       '<span style="color:#5a6b7f;font-size:11px;line-height:1.4">选中后=该 Debuff 在身才放（如缓速在身→放加速术）</span></div>' +
       '<div class="row" style="align-items:center;flex-wrap:wrap;gap:4px 6px"><span class="lb">自身状态</span>' +
       '<div style="position:relative;flex:1 1 130px;min-width:100px"><input id="dsh-askstatus" placeholder="状态ID/英文（如 12 或 INC_AGI，联想辅助）" autocomplete="off" style="width:100%;box-sizing:border-box;padding:3px 6px;border:1px solid #b8c6d4;border-radius:4px;font-size:12px">' +
-      '<div id="dsh-askstatus-ac" style="display:none;position:absolute;top:calc(100% + 3px);left:0;right:0;z-index:99;background:#fff;border:1px solid #b8c6d4;border-radius:4px;max-height:140px;overflow:auto"></div></div>' +
+      '<div id="dsh-askstatus-ac" class="ac" style="display:none"></div></div>' +
       '<span style="color:#5a6b7f;font-size:11px;line-height:1.4">选中后=该状态不在身才补（消失补）· 数字ID或英文EFST直认</span></div>' +
-      '<div class="row"><span class="lb">间隔</span><input id="dsh-askint" type="number" value="120" style="flex:0 0 44px"><span style="color:#5a6b7f">s</span>' +
-      '<span class="lb" style="min-width:34px">SP≥</span><input id="dsh-asksp" type="number" value="30" style="flex:0 0 40px"><span style="color:#5a6b7f">%</span>' +
+      '<div class="row"><span class="lb">间隔</span><input id="dsh-askint" type="number" value="120" style="flex:0 0 48px"><span class="st">秒</span>' +
+      '<span class="lb" style="min-width:52px">SP不低于</span><input id="dsh-asksp" type="number" value="30" style="flex:0 0 44px"><span class="st">%</span>' +
       '<label class="switch" style="margin-left:auto"><input id="dsh-asken" type="checkbox">启用自动释放</label></div>' +
       '<div class="box"><div class="b-hd">技能释放列表 <span class="tag green" id="dsh-askcount" style="float:right">0 项</span></div>' +
-      '<div id="dsh-asklist" style="font-size:11px;max-height:120px;overflow:auto"><span class="st">空（点选技能加入，可拖拽调序）</span></div>' +
+      '<div id="dsh-asklist"><span class="st">空（点选技能加入，可拖拽调序）</span></div>' +
       '<div class="row" style="margin-top:2px"><button class="ghost" id="dsh-askup" style="flex:0 0 auto">↑上移</button>' +
       '<button class="ghost" id="dsh-askdown" style="flex:0 0 auto">↓下移</button>' +
       '<button class="ghost" id="dsh-askdel" style="flex:0 0 auto">删除选中</button></div></div>' +
       '<div class="log" id="dsh-bufflog" style="margin-top:2px">辅助技能：未启用</div>' +
-      '<div class="row" style="margin-top:2px"><span class="lb" style="min-width:48px">当前状态</span><span class="st" id="dsh-statusview" style="font-size:11px;flex:1;line-height:1.5">未读取（客户端就绪后显示）</span></div></div>' +
+      '<div class="row"><span class="lb" style="min-width:48px">当前状态</span><span class="st" id="dsh-statusview" style="flex:1;line-height:1.6">未读取（客户端就绪后显示）</span>' +
+      '<button class="ghost" id="dsh-statehelp" style="flex:0 0 auto">状态速查</button></div>' +
       '</div>' +
       '<div class="sub-page" data-subpage="zs-near">' +
       '<div class="sec">附近怪物（实时 · <span id="dsh-scanst">未启动</span>）</div>' +
@@ -758,7 +790,7 @@
       '<div class="row"><span class="lb">触发</span><select id="dsh-itemcond" style="flex:0 0 100px"><option value="manual">手动</option><option value="hp">HP低于%</option><option value="sp">SP低于%</option><option value="interval">间隔秒</option><option value="status">状态在身用</option><option value="statusgone">状态消失用</option></select>' +
       '<input id="dsh-itemcondval" type="number" value="50" style="flex:0 0 40px">' +
       '<div style="position:relative;flex:0 0 92px"><input id="dsh-itemstatus" placeholder="状态中文/ID" autocomplete="off" style="width:100%;box-sizing:border-box;padding:3px 6px">' +
-      '<div id="dsh-itemstatus-ac" style="display:none;position:absolute;top:calc(100% + 3px);left:0;right:0;z-index:99;background:#fff;border:1px solid #b8c6d4;border-radius:4px;max-height:180px;overflow:auto;box-shadow:0 3px 8px rgba(0,0,0,.18)"></div></div>' +
+      '<div id="dsh-itemstatus-ac" class="ac" style="display:none"></div></div>' +
       '<button class="ghost" id="dsh-itemupd" style="flex:0 0 auto">更新</button></div>' +
       '<div class="box"><div class="b-hd">物品使用列表 <span class="tag green" id="dsh-itemcount" style="float:right">0 项</span></div>' +
       '<div id="dsh-itemlist" style="font-size:11px;max-height:90px;overflow:auto"><span class="st">空（选物品加入，可拖拽调序）</span></div>' +
@@ -777,7 +809,7 @@
       '<div class="row"><span class="st" id="dsh-invshotlog" style="font-size:10px"></span></div>' +
       '<div class="sec">辅助对象 · 自动跟随玩家</div>' +
       '<div class="row"><span class="lb">跟随目标</span><select id="dsh-followtarget" style="flex:0 0 auto;max-width:140px"><option value="">选择玩家…（侦测）</option></select>' +
-      '<button class="ghost" id="dsh-followscan" style="flex:0 0 auto">🔄 刷新</button></div>' +
+      '<button class="ghost" id="dsh-followscan" style="flex:0 0 auto">刷新</button></div>' +
       '<div class="row"><span class="lb">跟随距离</span><input id="dsh-followdist" type="number" value="3" min="1" style="flex:0 0 40px"><span style="color:#5a6b7f">格（达到即停）</span>' +
       '<label class="switch" style="margin-left:auto"><input id="dsh-followen" type="checkbox">启用跟随</label></div>' +
       '<div class="row"><span class="st" id="dsh-followlog" style="font-size:10px">未启用（选择玩家后开启）</span></div>' +
@@ -785,7 +817,7 @@
       // 子页2：宠物投喂
       '<div class="sub-page" data-subpage="ap-pet">' +
       '<div class="sec">宠物投喂（饱食度低于阈值自动喂）</div>' +
-      '<div class="row"><button id="dsh-petfeed2" style="flex:0 0 auto">🍖 喂食</button>' +
+      '<div class="row"><button id="dsh-petfeed2" style="flex:0 0 auto">喂食</button>' +
       '<span class="lb" style="margin-left:8px;min-width:26px">饱食度&lt;</span><input id="dsh-petfeedhp2" type="number" value="25" style="flex:0 0 44px"><span style="color:#5a6b7f">%自动喂</span>' +
       '<span class="lb" style="min-width:34px">间隔</span><input id="dsh-petfeedint2" type="number" value="10" style="flex:0 0 40px"><span style="color:#5a6b7f">s</span>' +
       '<label class="switch" style="margin-left:auto"><input id="dsh-peten2" type="checkbox">自动喂食</label></div>' +
@@ -838,7 +870,7 @@
       // 子页7：物品（拾取 + 背包整理，V2.15.1 自拾取页搬入）
       '<div class="sub-page" data-subpage="ap-item">' +
       '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">物品 · 拾取 + 背包整理</span>' +
-      '<button class="ghost" id="dsh-fw-btn-item" data-fw="item" style="flex:0 0 auto;padding:0 8px;font-size:11px">⧉ 浮窗</button></div>' +
+      '<button class="ghost" id="dsh-fw-btn-item" data-fw="item" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
       '<div id="dsh-fw-item">' +
       '<div class="sec">拾取</div>' +
 '<div class="sec">① 百分比拾取（直接联动内挂）</div>' +
@@ -851,10 +883,10 @@
       '<div class="log">数值直接读取/写回游戏内挂的拾取设置（#lootProbability + .openpick），拾取由内挂自己跑。</div>' +
       '<div class="sec">② 指定 ID 拾取（怪物掉落树 · 点选物品加入）</div>' +
       '<div class="row"><span class="lb">当前地图</span><span class="st" id="dsh-pickmap" style="flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—（未进图）</span>' +
-      '<button class="ghost" id="dsh-pickmapbtn" style="flex:0 0 auto">📌 本图怪物掉落</button></div>' +
+      '<button class="ghost" id="dsh-pickmapbtn" style="flex:0 0 auto">本图怪物掉落</button></div>' +
       '<div id="dsh-fw-mlock">' +
       '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">怪物锁定目录（只打勾选的怪）</span><button class="ghost" id="dsh-fw-btn-mlock" data-fw="mlock" style="flex:0 0 auto;padding:0 8px;font-size:11px">⧉ 浮窗</button></div>' +
-      '<details style="margin:4px 0" open><summary style="cursor:pointer;color:#1259b3;font-size:12px">📌 本图怪物锁定（读当前地图怪物表 · 勾选=锁定）</summary>' +
+      '<details style="margin:4px 0" open><summary>本图怪物锁定（读当前地图怪物表 · 勾选=锁定）</summary>' +
       '<div class="box" style="margin-top:2px"><div id="dsh-z-maplock" style="font-size:11px;max-height:120px;overflow:auto"><span class="st">读取当前地图怪物表（换图自动刷新）</span></div></div></details>' +
       '<div class="box"><div class="b-hd">已锁定 <button class="ghost" id="dsh-lockclear" style="flex:0 0 auto;padding:0 8px;font-size:11px">清空锁定</button><span class="tag green" id="dsh-lockcount" style="float:right">0 种</span></div><div id="dsh-locklist" style="font-size:11px">未锁定（勾选本图怪物或侦查扫描到的怪）</div>' +
       '<div class="log" style="margin-top:2px">锁定后自动切换目标：优先级=勾选怪 &gt; 最近 &gt; 血最少</div></div>' +
@@ -862,20 +894,20 @@
       '<div class="row"><span class="st" style="font-size:10px">本图怪物锁定已独立成功能菜单里的「本图怪物锁定」页（悬浮球 → 本图怪物锁定）</span></div>' +
       '<div class="row"><input id="dsh-mobsearch" type="text" placeholder="搜索怪物名/ID…（全量图鉴）">' +
       '<button class="ghost" id="dsh-mobsearchbtn" style="flex:0 0 auto">搜索</button>' +
-      '<button class="ghost" id="dsh-mobsearchclr" style="flex:0 0 auto">✕ 清空</button></div>' +
+      '<button class="ghost" id="dsh-mobsearchclr" style="flex:0 0 auto">清空</button></div>' +
       '<div class="row"><input id="dsh-itemsearch" type="text" placeholder="搜索物品名/ID…（搜物品查掉落，或直接「＋加入」指定ID）">' +
       '<button class="ghost" id="dsh-itemsearchadd" style="flex:0 0 auto">＋加入</button>' +
       '<button class="ghost" id="dsh-itemsearchbtn" style="flex:0 0 auto">搜物品</button>' +
-      '<button class="ghost" id="dsh-itemsearchclr" style="flex:0 0 auto">✕ 清空</button></div>' +
+      '<button class="ghost" id="dsh-itemsearchclr" style="flex:0 0 auto">清空</button></div>' +
       '<div id="dsh-itemsearch-res" style="font-size:11px;max-height:150px;overflow:auto"></div>' +
       '<div class="box"><div class="b-hd">当前白名单 <span class="tag green" id="dsh-wlcount" style="float:right">0 个物品ID</span></div>' +
       '<div id="dsh-wllist" style="font-size:11px;max-height:70px;overflow:auto">空</div></div>' +
       '<div id="dsh-drop-tree" style="font-size:11px;max-height:200px;overflow:auto">' +
-      '<div class="st">怪物掉落树：点「📌 本图怪物掉落」直接看当前地图怪 → 展开勾选物品加入白名单；也可搜索。</div></div>' +
+      '<div class="st">怪物掉落树：点「本图怪物掉落」直接看当前地图怪 → 展开勾选物品加入白名单；也可搜索。</div></div>' +
       '<div class="row"><label class="switch"><input id="dsh-picken" type="checkbox">启用指定ID自动拾取</label><span class="st" id="dsh-pickstate" style="margin-left:auto"></span><span class="st" id="dsh-picklog"></span></div>' +
       '<div class="row"><label class="switch"><input id="dsh-pickwalk" type="checkbox" checked>距离不足自动走过去捡</label></div>' +
       '<div class="row"><label class="switch"><input id="dsh-picksafe" type="checkbox" checked>危险时不走过去捡（Boss/低血/低SP 在场）</label></div>' +
-      '<div class="log">怪物=当前地图表联动（同内挂检测目标）+挂机实测自动入列；掉落=mob_db 全量数据零网络。勾选物品→自动加入上方白名单并保存；物品一落地即检测白名单并自动拾取（15格内）。「🔒 本图锁定目录」=读本图怪物表生成锁定列表（勾选进战斗锁定目录，换图自动刷新）。</div>' +
+      '<div class="log">怪物=当前地图表联动（同内挂检测目标）+挂机实测自动入列；掉落=mob_db 全量数据零网络。勾选物品→自动加入上方白名单并保存；物品一落地即检测白名单并自动拾取（15格内）。「本图锁定目录」=读本图怪物表生成锁定列表（勾选进战斗锁定目录，换图自动刷新）。</div>' +
       '<div class="sec">背包整理（按物品ID · 自动丢弃白名单）</div>' +
       '<div class="row"><span class="st" id="dsh-bag-state" style="font-size:10px">未初始化（登录后自动就绪）</span></div>' +
       '<div id="dsh-bag-clean" style="font-size:11px"></div>' +
@@ -949,11 +981,11 @@
       '<div class="row"><label class="switch"><input id="dsh-bgkeep" type="checkbox" checked>后台保活(音频+WebLock)</label><span class="tag blue">切后台保持吃药/打怪/拾取</span></div>' +
       '<div class="row"><label class="switch"><input id="dsh-alert" type="checkbox" checked>掉线提醒</label>' +
       '<label class="switch"><input id="dsh-reconn" type="checkbox" checked>自动重连</label></div>' +
-      (IS_MN ? '<div class="box" style="background:rgba(255,235,215,.95);border:1px solid #e08a2a"><div class="b-hd" style="color:#b45309">📱 手机版保活 · 重要设置（必做）</div>' +
+      (IS_MN ? '<div class="box" style="background:rgba(255,235,215,.95);border:1px solid #e08a2a"><div class="b-hd" style="color:#b45309">手机版保活 · 重要设置（必做）</div>' +
         '<div class="row"><span class="st" style="font-size:11px;color:#7c2d12">① 系统设置 → 电池/应用管理 → 找到本浏览器（Kiwi 等）→ 电池优化 → 选 <b>「不限制 / 无限制」</b>（小米/华为等品牌在「应用启动管理」里允许后台活动）。<br>② 否则切后台会被系统杀进程/断网络 → 掉线。</span></div>' +
         '<div class="row"><span class="st" style="font-size:11px;color:#7c2d12">③ 助手已加后台保活：切后台瞬间连发心跳 + 回前台自动补心跳，超 90 秒自动重登。切后台勿超 90 秒；长时间挂机请保持屏幕常亮或分屏。</span></div></div>' : '') +
       '<div class="sec">快速侦查（附近怪物/物品）</div>' +
-      '<details style="margin-top:2px"><summary style="cursor:pointer;color:#1259b3;font-size:12px">🕵 点开查看附近目标</summary>' +
+      '<details style="margin-top:2px"><summary>点开查看附近目标</summary>' +
       '<div class="st" id="dsh-recon" style="font-size:11px;max-height:110px;overflow:auto">未就绪</div></details>' +
       '<div class="sec">面板</div>' +
       '<div class="row"><span class="lb">状态</span><span id="dsh-status" class="warn">等待启动…</span></div>' +
@@ -989,14 +1021,14 @@
 
     '<div class="tabs">' + tabsHtml + '</div>' +
     // 登录信息折叠框（原登录页取消后迁至面板顶部、橘色信息=角色状态条正上方）
-    '<details id="dsh-loginbox" style="margin:6px 8px 0"><summary style="cursor:pointer;color:#b45309;font-size:12px;font-weight:bold;display:flex;align-items:center;gap:8px"><span>🔐 登录 · 展开/收起</span><button id="dsh-recenter" title="面板回中" style="margin-left:auto;flex:0 0 auto;color:#b45309;background:rgba(255,255,255,.55);border:1px solid #d9a441;border-radius:5px;padding:1px 8px;font-size:11px;cursor:pointer;font-weight:600">回中</button></summary>' +
+    '<details id="dsh-loginbox" style="margin:6px 8px 0"><summary style="cursor:pointer;color:#b45309;font-size:12px;font-weight:bold;display:flex;align-items:center;gap:8px"><span>登录 · 展开/收起</span><button id="dsh-recenter" title="面板回中" style="margin-left:auto;flex:0 0 auto;color:#b45309;background:rgba(255,255,255,.55);border:1px solid #d9a441;border-radius:5px;padding:1px 8px;font-size:11px;cursor:pointer;font-weight:600">回中</button></summary>' +
     '<div class="row" style="margin-top:4px"><span class="lb">线路</span><select id="dsh-server" style="flex:0 0 140px">' +
     '<option value="5">V6-Eden 进阶二转</option><option value="3">V6-Online 三转</option></select>' +
     '<span class="st" id="dsh-server-note" style="font-size:10px">版本 ' + version + '</span></div>' +
     '<div class="row"><span class="lb">账号</span><input id="dsh-acc" placeholder="游戏账号" autocomplete="off"></div>' +
     '<div class="row"><span class="lb">密码</span><input id="dsh-pwd" type="password" placeholder="游戏密码" autocomplete="off"></div>' +
     '<div class="row"><button id="dsh-save">保存并自动登录</button><button class="ghost" id="dsh-clear">清除</button><button class="ghost" id="dsh-reboot">重启客户端</button></div>' +
-    '<div class="row"><button id="dsh-save-confirm" class="green" style="flex:0 0 auto">🔐 中转确认后登录已保存账号</button></div>' +
+    '<div class="row"><button id="dsh-save-confirm" class="green" style="flex:0 0 auto">中转确认后登录已保存账号</button></div>' +
     '<div class="row"><span class="st" id="dsh-autolognote" style="font-size:10px">默认不自动登录：先在中转页/登录界面确认（避免挤掉中转会话），确认后点上方按钮登录已保存账号</span></div>' +
     '<div class="row"><button class="green" id="dsh-saveprofile" style="flex:0 0 auto">保存当前角色设置</button>' +
     '<span class="st" id="dsh-proflabel" style="font-size:10px"></span></div>' +
@@ -1511,7 +1543,14 @@
         "background:var(--dsh-close) no-repeat;background-size:11px 11px;cursor:pointer;font-size:0;line-height:0;color:transparent;";
       var body = document.createElement("div");
       body.className = "ro-fw-body";
-      body.style.cssText = "overflow:auto;flex:1 1 auto;min-height:0;padding:5px;border-top:1px solid #7897b9;background:#fff;color:#111;";
+      body.style.cssText = "overflow:auto;flex:1 1 auto;min-height:0;padding:5px;border-top:1px solid #7897b9;background:#fff;color:#111;font:13px/1.6 'Microsoft YaHei',system-ui,sans-serif;";
+      // V2.22.0：浮窗内容被移到面板外，挂在 #dsh-ro-panel 下的样式全部失效（浮窗一直是裸样式）。
+      // 这里把同一份 PANEL_CSS 的作用域整体换成 .ro-fw-body 注入浮窗，保证浮窗与面板观感一致。
+      try {
+        var fwStyle = document.createElement("style");
+        fwStyle.textContent = String(PANEL_CSS).replace(/#dsh-ro-panel\s+/g, ".ro-fw-body ");
+        body.appendChild(fwStyle);
+      } catch (e0) {}
       x.addEventListener("click", function () { fwClose(id); });
       // V2.17.0：拖动改由公共层 dragEl 处理（带缩放换算 + 视口夹紧 + 位置记忆）。
       // 旧实现每个浮窗各挂一对 document 级 pointermove/pointerup 监听，浮窗越多监听越多。
@@ -1900,7 +1939,9 @@
 
   // 悬浮球（V2.17.2：波利 GIF + 右下角「助」字角标；GIF 走 data URI 所以动画保留）
   var BALL_GIF = "data:image/gif;base64,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";
-  var ball = $("div", "", '<img src="' + BALL_GIF + '" alt=""><span class="zhu">助</span><span class="dot"></span>');
+  var ball = $("div", "", '<img src="' + BALL_GIF + '" alt=""><span class="zhu">助</span><span class="dot"></span>' +
+    '<button type="button" class="qs" id="dsh-qs-nei" title="内挂自动战斗">内</button>' +
+    '<button type="button" class="qs" id="dsh-qs-zhu" title="助手自动战斗">助</button>');
   ball.id = "dsh-ball";
   ball.title = "点击展开功能菜单";
   document.documentElement.appendChild(ball);
@@ -2111,6 +2152,32 @@
     saved.collapsed = true; saveSaved(saved); applyCollapse(true);
   });
   // V2.17.1：悬浮球点一下弹出「功能菜单」，再点一下收起（主面板改从菜单里打开）
+  // V2.22.0 悬浮球旁战斗快速开关：[内]=内挂自动战斗开/关，[助]=助手自动战斗开/关。
+  //   状态点：内挂读 npHuntOn（本地跟踪），助手读 zRunning；绿底=已开。点按钮要 stopPropagation，
+  //   否则冒泡到球会顺手把功能菜单也弹出来。
+  function qswPaint() {
+    try {
+      var bn = $id("dsh-qs-nei"), bz = $id("dsh-qs-zhu");
+      if (bn) { bn.className = "qs" + (npHuntOn ? " on" : ""); bn.title = "内挂自动战斗：" + (npHuntOn ? "已开（点击关闭）" : "已关（点击开启）"); }
+      if (bz) { bz.className = "qs" + (zRunning ? " on" : ""); bz.title = "助手自动战斗：" + (zRunning ? "已开（点击停止）" : "已关（点击启动）"); }
+    } catch (e) {}
+  }
+  try {
+    var qswNei = $id("dsh-qs-nei"), qswZhu = $id("dsh-qs-zhu");
+    if (qswNei) qswNei.addEventListener("click", function (ev) {
+      ev.stopPropagation(); ev.preventDefault();
+      try { setBattle(!npHuntOn); } catch (e) {}
+      qswPaint();
+    });
+    if (qswZhu) qswZhu.addEventListener("click", function (ev) {
+      ev.stopPropagation(); ev.preventDefault();
+      try { if (zRunning) stopZhu(); else startZhu(); } catch (e) {}
+      qswPaint();
+    });
+    [qswNei, qswZhu].forEach(function (b) { if (b) b.addEventListener("pointerdown", function (ev) { ev.stopPropagation(); }); });
+    setInterval(qswPaint, 1000);
+    qswPaint();
+  } catch (e) {}
   ball.addEventListener("click", function () {
     if (ball.__dsDragged) { ball.__dsDragged = false; return; } // 拖动松手不弹菜单
     roMenuToggle();
@@ -2317,7 +2384,7 @@
     var el2 = $id("dsh-status2");
     if (el2) el2.textContent = text;
     var ds = $id("dsh-datasrc");
-    if (ds) ds.textContent = useLocalData ? "本地镜像 ✓" : "原站（可能较慢）";
+    if (ds) ds.textContent = useLocalData ? "本地镜像" : "原站（可能较慢）";
   }
 
   // ---------------- 角色状态条更新 ----------------
@@ -3193,14 +3260,14 @@
             // 带 ?auto=1 重载：buildConfig 检测到 auto= 才注入 autoLogin → 自动重登，
             // 比 onDisconnect 的 10s 延迟 + 无参 reload（还需手动启动）更可靠。
             if (gap > 90000 && $id("dsh-reconn") && $id("dsh-reconn").checked && saved.account) {
-              setStatus("⚠ 切后台超时，自动重连并重登…", "err");
+              setStatus("注意：切后台超时，自动重连并重登…", "err");
               tlog("mn-visible auto-reload gap=" + gap);
               var autoU = switchServerUrl(pickCv());
               autoU = autoU.replace(/([?&])(run|auto)=/g, "$1auto=");
               if (!/\bauto=/.test(autoU)) autoU += (autoU.indexOf("?") >= 0 ? "&" : "?") + "auto=1";
               location.replace(autoU);
             } else if (gap > 90000) {
-              setStatus("⚠ 切后台超过 90 秒，可能已掉线（未开自动重连）", "err");
+              setStatus("注意：切后台超过 90 秒，可能已掉线（未开自动重连）", "err");
             }
           }
         } catch (e) {}
@@ -3321,7 +3388,7 @@
       hits.forEach(function (it) {
         var row = document.createElement("div");
         row.textContent = it.cn + " (ID" + it.id + ")" + (it.deb ? "·debuff" : "");
-        row.style.cssText = "padding:4px 6px;font-size:11px;cursor:pointer;border-bottom:1px solid #eef2f6";
+        row.className = "prow"; row.style.cursor = "pointer";
         row.addEventListener("mousedown", function (ev) { ev.preventDefault(); });
         row.addEventListener("click", function () {
           input.value = it.cn;
@@ -4593,7 +4660,7 @@
   }
 
   // ---------------- 标签页标题带账号（V2.15.6）----------------
-  // 登录成功后浏览器标签页标题 = 「仙境的传说 - 账号」；掉线闪烁期间闪「⚠ 掉线了！」，结束恢复带账号标题。
+  // 登录成功后浏览器标签页标题 = 「仙境的传说 - 账号」；掉线闪烁期间闪「掉线了！」，结束恢复带账号标题。
   // 无专门登录成功事件 → 5s 轻量轮询：客户端就绪且标题不符才设置；闪烁期间跳过避免互相覆盖。
   var titleFlashing = false;
   function baseTitle() {
@@ -4627,12 +4694,12 @@
     if (reconnecting) return;
     var doAlert = $id("dsh-alert") && $id("dsh-alert").checked;
     var doReload = $id("dsh-reconn") && $id("dsh-reconn").checked && saved.account;
-    setStatus("⚠ 已断开连接", "err");
+    setStatus("注意：已断开连接", "err");
     if (doAlert) {
       var flashes = 0;
       titleFlashing = true;
       var iv = setInterval(function () {
-        document.title = (flashes++ % 2) ? "⚠ 掉线了！" : baseTitle();
+        document.title = (flashes++ % 2) ? "掉线了！" : baseTitle();
         if (flashes > 14) { clearInterval(iv); titleFlashing = false; applyBaseTitle(); }
       }, 600);
     }
@@ -5347,10 +5414,10 @@
     // 三转 → WHISPER NPC:setauto*；二转 → NOTIFY_UPDATEINFO
     if (npIsThree()) {
       var ok = npSendWhisper(id3);
-      npLog((ok ? "✓ " : "✗ ") + label + "（三转 WHISPER " + id3 + "）");
+      npLog((ok ? "成功 " : "失败 ") + label + "（三转 WHISPER " + id3 + "）");
     } else {
       var ok2 = npSendUpdate(id5, val != null ? val : 1);
-      npLog((ok2 ? "✓ " : "✗ ") + label + "（二转 UPDATEINFO id=" + id5 + " val=" + (val != null ? val : 1) + "）");
+      npLog((ok2 ? "成功 " : "失败 ") + label + "（二转 UPDATEINFO id=" + id5 + " val=" + (val != null ? val : 1) + "）");
     }
     setStatus("已发送模拟内挂指令：" + label, "ok");
     tlog("np-cmd " + label + " cv=" + DEFAULTS.ClientVer);
@@ -5368,7 +5435,7 @@
     // 寻怪模式仅二转 UPDATEINFO id=38；三转无此字段则提示
     if (npIsThree()) { npLog("三转寻怪模式由 NPC:setautoattack 自动处理，无需单独发送"); setStatus("三转：自动战斗已含移动寻怪", "ok"); return; }
     var ok = npSendUpdate(38, v);
-    npLog((ok ? "✓ " : "✗ ") + "寻怪模式已设为 " + ["移动", "范围", "原地"][v] + "寻怪（id=38 val=" + v + "）");
+    npLog((ok ? "成功 " : "失败 ") + "寻怪模式已设为 " + ["移动", "范围", "原地"][v] + "寻怪（id=38 val=" + v + "）");
     setStatus("已发送寻怪模式：" + ["移动", "范围", "原地"][v] + "寻怪", ok ? "ok" : "err");
     tlog("np-hunt mode=" + v);
   });
@@ -5376,7 +5443,7 @@
   // ---------------- 内挂机制寻怪（套用内挂：服务器驱动移动 · 战斗判断仍助手控制）----------------
   // 用法：无目标时发内挂指令让服务器移动寻怪；有目标时助手自己打（锁定目录/技能顺序/换怪延迟全由助手）
   // 二转(5)：UPDATEINFO id=38(移动寻怪) + id=34(toggle 自动战斗)；三转(3)：WHISPER NPC:setautoattack
-  // ⚠️ 客户端 vbk 源码实证（Online_mn.js @3336649）：setautoattack 是 toggle 型——
+  // 客户端 vbk 源码实证（Online_mn.js @3336649）：setautoattack 是 toggle 型——
   //    .openattack 勾选/取消都发同一包（二转 id=34 value=1、三转 WHISPER msg="0"），服务器收到就翻转一次。
   //    客户端从不发 value=0；因此「关闭」=再发一次同一包（toggle 回来），绝不能周期重发（否则每 1.5s 开关一次）。
   // 通过 NOTIFY_ONLYTARGET 同步锁定目录 → 服务器寻怪只追锁定怪
@@ -5582,7 +5649,7 @@
     if (!ids.length) { el.innerHTML = '<span class="st">未锁定（勾选本图怪物或侦查扫描到的怪）</span>'; return; }
     var html = "";
     ids.forEach(function (id) {
-      html += '<div class="list-item"><span>🐛 ' + (lockList[id].name || ("ID" + id)) + ' · ID' + id + '</span>' +
+      html += '<div class="list-item"><span>' + (lockList[id].name || ("ID" + id)) + ' · ID' + id + '</span>' +
         '<button class="ghost" data-unlock="' + id + '" style="flex:0 0 auto;padding:0 8px;font-size:11px">解除</button></div>';
     });
     el.innerHTML = html;
@@ -7160,6 +7227,7 @@
       }
       var zFollow = !$id("dsh-z-follow") || $id("dsh-z-follow").checked; // 锁定目标跟随追击
       var zNext = !$id("dsh-z-next") || $id("dsh-z-next").checked;       // 打死换下一个
+      var zAllMobs = !$id("dsh-z-allmobs") || $id("dsh-z-allmobs").checked; // V2.22.0 打全部怪（默认开）
       var target = null, best = 1e9, bestHp = 1e18; // V2.15.25：bestHp=当前选中怪的绝对剩余HP（血少优先抢尾刀）
       var hitTarget = null, hitBest = 1e9;
       // 锁定模式：已锁定目标 → 只认锁定目标（固定 GID 持续攻击，防目标漂移），不重新扫描选最近
@@ -7203,7 +7271,7 @@
             if (e.ACTION && e.action != null && e.action === e.ACTION.DIE) return;
             if (e.remove_tick) return;
             var mid = e._job != null ? String(e._job) : (e.job != null ? String(e.job) : (e.mobId != null ? String(e.mobId) : null));
-            var inLock = !anyLock || (mid && lockList[mid]);
+            var inLock = !anyLock || zAllMobs || (mid && lockList[mid]); // V2.22.0：打全部怪开 → 不看锁定名单
             if (!ent.position || !e.position) return;
             var d = Math.abs(e.position[0] - ent.position[0]) + Math.abs(e.position[1] - ent.position[1]);
             if (inLock) {
@@ -7318,13 +7386,16 @@
       // 第二层【并行判断层】：castOrderSkill 每轮并行扫描全部技能——前置+射程满足 → 已发技能包
       //   （return true）；前置满足但超射程 → "walk" 走近再放；技能冷却窗口 → "wait-cd"；
       //   全部不满足 → "wait"。
-      // 第一层【默认锁定层】：技能层不动作时 → 对锁定目标持续普攻（「穿插平A」开关控制，合并原
-      //   锁定普攻开关）：REQUEST_ACT 固定 target.GID（内挂锁定模式动作），目标死亡/丢失才由
-      //   zLock 解锁换目标。锁定普攻只作兜底，从不阻塞技能层判断；每轮只发一个动作包（技能优先）。
-      // 「穿插平A」开=技能放不出/冷却/无技能时一律普攻兜底；关=纯技能流（法师等不摸怪）。
-      var attMix = $id("dsh-z-attmix") ? $id("dsh-z-attmix").checked : false; // V2.15.30 默认纯技能流
+      // 第一层【默认锁定层】：技能层不动作时 → 对锁定目标持续普攻（「技能空档补普攻」开关控制）：
+      //   REQUEST_ACT 固定 target.GID（内挂锁定模式动作），目标死亡/丢失才由 zLock 解锁换目标。
+      //   锁定普攻只作兜底，从不阻塞技能层判断；每轮只发一个动作包（技能优先）。
+      // V2.22.0 技能优先让位：补普攻前先看「技能最快还有多久冷却好」——剩余小于「让位余量」
+      //   （默认 300ms，可在技能设置页调）就不发普攻，把这一轮让给技能；完全没配技能时直接普攻。
+      var attMix = $id("dsh-z-attmix") ? $id("dsh-z-attmix").checked : true; // V2.22.0 默认开=技能空档补普攻
+      var attMixGap = $id("dsh-z-attmixmargin") ? (parseInt($id("dsh-z-attmixmargin").value, 10) || 0) : 300;
       var order = parseSkillOrder($id("dsh-skillorder").value);
       var cast = castOrderSkill(order, target);
+      var attNextGap = attMix ? skillNextGap(order) : Infinity; // Infinity=没有可用技能 → 直接普攻
       if (btDiagOn) { try { var tD = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]); btLog('zAtk', 'cast=' + cast + ' targetDist=' + tD + ' atkRange=' + atkRange + ' pmRange=' + pmRange + ' npMode=' + npMode); } catch (e) {} }
       if (cast === "walk") {
         zWaitSince = 0; // 走位后穿插普攻立即出手（上次普攻时间重置）
@@ -7336,6 +7407,12 @@
       }
       if (cast === "wait-cd") {
         // 技能释放冷却窗口（技能层内部冷却）→ 开=冷却间隙补普攻；关=干等技能
+        // V2.22.0 技能优先：技能马上就要冷却好（剩余 < 让位余量）→ 这轮不发普攻，把攻击循环让给技能
+        if (attNextGap <= attMixGap) {
+          zMon.action = "等技能（还差" + Math.ceil(attNextGap) + "ms）";
+          setStatus("技能即将就绪，让位不补普攻…", "st");
+          return;
+        }
         if (!attMix) {
           zMon.action = "技能冷却中";
           setStatus("技能释放冷却中…", "st");
@@ -7344,8 +7421,8 @@
         var distCd = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]);
         if (distCd <= pmRange) {
           sendNormalAtk(target.GID); // V2.15.29 NOCTRL 平A（同目标锁定不重发，仅换目标/重进射程补发）
-          zMon.action = "穿插平A(冷却)";
-          setStatus("技能冷却，穿插平A…", "st");
+          zMon.action = "技能空档补普攻";
+          setStatus("技能冷却空档，补普攻…", "st");
           return;
         }
         zAtkLast.outOfRange = true; // V2.15.29：目标出射程追怪 → 回来需重新锁定（系统连击在移动中已断）
@@ -7357,15 +7434,15 @@
         // 技能层全部不满足（前置缺/补状态节流中）→ 落到第一层：默认锁定普攻
         if (!attMix) {
           zMon.action = "等状态前置";
-          setStatus("等状态前置（穿插平A已关，纯技能流）…", "st");
+          setStatus("等状态前置（技能空档补普攻已关，纯技能流）…", "st");
           return;
         }
         // 默认锁定普攻：对锁定目标 REQUEST_ACT（间隔=攻击循环本身，每轮一击，无需额外判断）
         var distToT2 = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]);
         if (distToT2 <= pmRange) {
           sendNormalAtk(target.GID); // V2.15.29 NOCTRL 平A
-          zMon.action = "穿插平A(锁定)";
-          setStatus("前置未就绪，锁定普攻…", "st");
+          zMon.action = "技能空档补普攻";
+          setStatus("前置未就绪，补普攻…", "st");
           return;
         }
         zAtkLast.outOfRange = true; // V2.15.29：目标出射程追怪 → 回来需重新锁定
@@ -7375,12 +7452,7 @@
       }
       zWaitSince = 0; // 释放成功 → 下次技能层不动作时锁定普攻立即出手
       if (cast === "none" || !cast) {
-        // 无技能配置 → 默认锁定普攻（穿插平A关时无技能就不攻击）
-        if (!attMix) {
-          zMon.action = "未配技能";
-          setStatus("未配置技能（穿插平A已关），等待…", "st");
-          return;
-        }
+        // V2.22.0：完全没配技能 → 直接普攻，不受「技能空档补普攻」开关限制
         var distToT = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]);
         if (distToT > pmRange) { zAtkLast.outOfRange = true; zMon.action = "追怪（普攻射程外）"; zWalk(); return; } // V2.15.29：出射程追怪 → 回来重新锁定
         sendNormalAtk(target.GID); // V2.15.29 NOCTRL 平A
@@ -7853,6 +7925,24 @@
       return false;
     } catch (e) { return false; }
   }
+  // V2.22.0：技能最快还要多少毫秒才能放（Infinity = 当前没有任何可释放技能）。
+  // 供「技能空档补普攻」做让位余量判断——剩余冷却小于余量时不补普攻，优先等技能。
+  function skillNextGap(order) {
+    try {
+      if (!order || !order.length) return Infinity;
+      var now = Date.now(), min = Infinity;
+      for (var i = 0; i < order.length; i++) {
+        var o = order[i];
+        if (clampSkillLv(o.skid, o.lv) <= 0) continue;                    // 未学
+        if (o.uses > 0 && (zUseCounts[o.skid] || 0) >= o.uses) continue;  // 本轮次数已满
+        if (o.lock > 0 && (zLockCounts[o.skid] || 0) >= o.lock) continue; // 每怪次数已满
+        var nx = skillNextAt[o.skid] || 0;
+        var gap = nx > now ? (nx - now) : 0;
+        if (gap < min) min = gap;
+      }
+      return min;
+    } catch (e) { return Infinity; }
+  }
   function castOrderSkill(order, target) {
     // 并行判断链条（技能链 + 普攻链 各自独立评估，按优先级合流）：
     //  评估阶段：每轮把所有技能的前置/射程并行扫一遍——前置不满足的技能只记录，不立即停下补状态，
@@ -8004,6 +8094,18 @@
       if (saved.attMix != null) attMixEl.checked = !!saved.attMix;
       attMixEl.addEventListener("change", function () { saved.attMix = this.checked; saveSaved(saved); });
     }
+    // V2.22.0：让位余量（毫秒）——技能剩余冷却小于它时不补普攻，优先等技能
+    var attMixMargEl = $id("dsh-z-attmixmargin");
+    if (attMixMargEl) {
+      if (saved.attMixGap != null) attMixMargEl.value = saved.attMixGap;
+      attMixMargEl.addEventListener("change", function () { saved.attMixGap = parseInt(this.value, 10) || 0; saveSaved(saved); });
+    }
+    // V2.22.0：助手自动战斗默认打全部怪
+    var allMobsEl = $id("dsh-z-allmobs");
+    if (allMobsEl) {
+      if (saved.allMobs != null) allMobsEl.checked = !!saved.allMobs;
+      allMobsEl.addEventListener("change", function () { saved.allMobs = this.checked; saveSaved(saved); });
+    }
   } catch (e) {}
   $id("dsh-scanen").addEventListener("change", function () {
     if (this.checked) startScan(); else stopScan();
@@ -8067,10 +8169,11 @@
           if (parts2.length) dispCond = "自动:" + parts2.join(",");
         }
       }
-      html += '<div class="list-item drag-item" data-drag-i="' + i + '" draggable="true" title="拖动调整顺序"><span class="dh">⠿</span><span>' + (i + 1) + '. ' + nm + ' Lv' + o.lv + ' <span class="st">ID' + o.skid + (dispCond ? ' · 需' + dispCond : '') + '</span></span>' +
-        '<input type="number" min="0" max="100" value="' + (o.prob != null ? o.prob : 100) + '" data-prob="' + o.skid + '" title="释放百分比" style="flex:0 0 44px;width:44px;padding:1px 2px;font-size:10px;text-align:center">' +
-        '<span class="st" style="font-size:10px">%</span>' +
-        '<button class="ghost" data-rm-sk="' + o.skid + '" style="flex:0 0 auto;padding:0 6px;font-size:10px">✕</button></div>';
+      html += '<div class="prow drag-item" data-drag-i="' + i + '" draggable="true" title="拖动调整顺序"><span class="dh">⠿</span><span class="pidx">' + (i + 1) + '</span>' +
+        '<span class="pnm">' + nm + ' <span class="st">Lv' + o.lv + ' · ID' + o.skid + (dispCond ? ' · 需' + dispCond : '') + '</span></span>' +
+        '<input type="number" min="0" max="100" value="' + (o.prob != null ? o.prob : 100) + '" data-prob="' + o.skid + '" title="释放百分比" style="flex:0 0 48px;text-align:center">' +
+        '<span class="st">%</span>' +
+        '<button class="ghost" data-rm-sk="' + o.skid + '" style="flex:0 0 auto;padding:0 7px">删除</button></div>';
     }
     el.innerHTML = html;
     // 释放百分比实时修改 → 写回 textarea（对象序列化，保留 cond、不吞技能名）
@@ -8121,7 +8224,7 @@
     parseSkillOrder($id("dsh-skillorder").value).forEach(function (o) { orderSkids[o.skid] = true; });
     var html = "";
     list.forEach(function (s) {
-      html += '<div class="list-item"><label class="switch"><input type="checkbox" data-sk="' + s.skid + '" data-lv="' + s.lv + '" data-nm="' + s.name + '"' + (orderSkids[s.skid] ? " checked" : "") + '>' +
+      html += '<div class="list-item"><label class="switch" title="' + s.name + ' Lv' + s.lv + '"><input type="checkbox" data-sk="' + s.skid + '" data-lv="' + s.lv + '" data-nm="' + s.name + '"' + (orderSkids[s.skid] ? " checked" : "") + '>' +
         s.name + ' Lv' + s.lv + '</label></div>';
     });
     el.innerHTML = html;
@@ -8479,7 +8582,7 @@
       var it = list[i];
       var m = it.m;
       if (!m) continue;
-      html += '<details><summary style="cursor:pointer;padding:2px 0">🐛 ' + (m.kName || m.name || ("ID" + it.id)) + ' · ID' + it.id + ' · LV' + (m.LV || "?") + ' <span class="tag">掉落树</span></summary><div style="padding-left:8px">';
+      html += '<details><summary style="cursor:pointer;padding:2px 0">' + (m.kName || m.name || ("ID" + it.id)) + ' · ID' + it.id + ' · LV' + (m.LV || "?") + ' <span class="tag">掉落树</span></summary><div style="padding-left:8px">';
       for (var d = 0; d < 9; d++) {
         var did = m["Drop" + d + "id"];
         if (did == null) continue;
@@ -8558,7 +8661,7 @@
       var mobs = list[i].mobs || [];
       var inWl = wl[String(itid)] ? true : false;
       // V1.9.4：加入按钮 HTML 先生成（掉落信息异常也不吞按钮）
-      var btnHtml = '<button class="ghost" data-wlswitch="' + itid + '" data-nm="' + nm.replace(/"/g, "&quot;") + '" style="flex:0 0 auto;margin-left:auto">' + (inWl ? "✓ 已加" : "＋ 加入白名单") + '</button>';
+      var btnHtml = '<button class="ghost" data-wlswitch="' + itid + '" data-nm="' + nm.replace(/"/g, "&quot;") + '" style="flex:0 0 auto;margin-left:auto">' + (inWl ? "已加" : "加入白名单") + '</button>';
       html += '<div class="list-item" style="border-bottom:1px dashed #334"><span class="dh">◆</span>' + nm + ' <span class="st">(' + itid + ')</span>';
       try {
         if (mobs.length) {
@@ -8627,7 +8730,7 @@
     if (wl[String(id)]) { setStatus("ID " + id + " 已在拾取名单", "ok"); return; }
     var nm = getItemNameS(id);
     addWl(String(id), nm);
-    renderItemSearch([{ itid: id, name: nm, mobs: [] }], kw); // 结果区显示该行并刷新为 ✓ 已加
+    renderItemSearch([{ itid: id, name: nm, mobs: [] }], kw); // 结果区显示该行并刷新为 已加
     setStatus("已加入拾取名单：ID " + id + (nm !== ("ID" + id) ? "（" + nm + "）" : ""), "ok");
   });
   // V1.9.4：开启「指定ID自动拾取」时确认白名单状态（空名单 = 提示先加 ID，避免开关无效感）
@@ -8916,7 +9019,7 @@
     hits.forEach(function (it) {
       var row = document.createElement("div");
       row.textContent = (it.cn ? it.cn + " " : "") + it.map;
-      row.style.cssText = "padding:4px 6px;font-size:11px;cursor:pointer;border-bottom:1px solid #eef2f6";
+      row.className = "prow"; row.style.cursor = "pointer";
       row.addEventListener("mousedown", function (ev) { ev.preventDefault(); }); // 防 input 失焦先关
       row.addEventListener("click", function () {
         $id("dsh-map").value = it.map;
@@ -9235,7 +9338,7 @@
       npcList.forEach(function (n, i) {
         var row = document.createElement("div");
         row.textContent = (i + 1) + ". " + n.name + (n.pos ? " (" + Math.floor(n.pos[0]) + "," + Math.floor(n.pos[1]) + ")" : "");
-        row.style.cssText = "padding:3px 5px;cursor:pointer;border-bottom:1px solid #eef2f6";
+        row.className = "prow"; row.style.cursor = "pointer";
         row.addEventListener("click", function () {
           selNpc = n;
           var all = box.querySelectorAll("div");
@@ -10151,9 +10254,9 @@
         if (l.sp_max > 0) spPct = Math.round(l.sp / l.sp_max * 100) + "%";
       }
       var lockTxt = zLock.gid
-        ? ("🔒 " + (zLock.name || zLock.gid) + (zLock.dist != null ? " [" + zLock.dist + "格]" : ""))
-        : (zLock.done ? "⏹ 已击杀待命" : "未锁定");
-      zHudEl.textContent = "⚔ 锁定: " + lockTxt + " | 动作: " + zMon.action + " | HP " + hpPct + " SP " + spPct;
+        ? ("锁定 " + (zLock.name || zLock.gid) + (zLock.dist != null ? " [" + zLock.dist + "格]" : ""))
+        : (zLock.done ? "已击杀待命" : "未锁定");
+      zHudEl.textContent = "锁定: " + lockTxt + " | 动作: " + zMon.action + " | HP " + hpPct + " SP " + spPct;
     } catch (e) {}
   }
 
@@ -10379,7 +10482,7 @@
         "border-radius:5px;padding:2px 8px;font-size:12px;cursor:pointer;font-family:inherit;";
       var x = document.createElement("button");
       x.id = "dsh-statepopx";
-      x.textContent = "✕";
+      x.textContent = "×";
       x.style.cssText =
         "flex:none;background:transparent;color:#fff;border:none;cursor:pointer;font-size:15px;padding:0 2px;font-family:inherit;";
       hd.appendChild(cp);
@@ -11902,7 +12005,7 @@
           try { var ro = item.options || item.Options; if (ro) raw = JSON.stringify(ro).slice(0, 140); } catch (eR) { raw = "ERR"; }
           dg.push("词条 options=" + (("options" in item) ? "有" : "无") + " 条数=" + nroc + " 原始=" + (raw || "空"));
         }
-        if (dg.length) L.push('<div style="color:#7c8899;margin-top:4px;font-size:11px">' + itipEsc(dg.join(" // ")) + "</div>");
+        // V2.22.0：词条显示已确认正常，临时诊断行（dg）不再输出到提示条
       } catch (eD) {}
       if (cards.length) L.push('<div style="color:#9fd48a;margin-top:3px">插卡：' + itipEsc(cards.join("、")) + "</div>");
       if (priceObj) {

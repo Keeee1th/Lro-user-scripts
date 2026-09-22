@@ -11378,6 +11378,8 @@
         var idx = el.getAttribute("data-index");
         var inv2 = itipInvMap();
         var item = (idx != null) ? inv2[Number(idx)] : null;
+        // V2.16.22：data-index 与 item.index 编号若不一致会张冠李戴 → 用槽位上的 data-itid 校验，对不上就按 ITID 反查
+        if (item && String(item.ITID != null ? item.ITID : item.itemid) !== String(itid)) item = null;
         if (!item) item = itipInvById(itid, inv2);
         if (!item) { itipHide(); return; }
         html = itipBody(item, null);

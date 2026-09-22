@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.18.0
+// @version      2.19.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.18.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.19.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -607,7 +607,6 @@
       '<div class="drow"><button class="dbtn" data-drw="battle-nei" data-title="内挂 · 战斗设置">战斗设置</button>' +
       '<button class="dbtn" data-drw="skill-np" data-title="内挂 · 技能设置">技能设置</button>' +
       '<span class="st" id="dsh-battlestate" style="font-size:10px;margin-left:auto">内挂状态: 未读取（打开内挂窗口）</span></div>' +
-      '<div class="log">内挂模式：战斗/技能/防御/瞬移/坐下由游戏内挂执行，助手只读写内挂设置。开始/停止按钮固定在角色状态条下方（主面板常驻）。</div>' +
       '<div class="sub-page drawer-page" data-subpage="nei" data-dname="battle-nei">' +
       '<div class="sec">内挂模式（技能配置 · 攻击/移动设置）</div>' +
       '<div class="row"><span class="lb">主动技能</span><select id="dsh-autoskill"><option>- 请选择 -</option></select>' +
@@ -653,7 +652,6 @@
       '<span class="lb" style="margin-left:auto;min-width:26px">HP</span><input id="dsh-sithplo" type="number" value="40" style="flex:0 0 38px"><span style="color:#5a6b7f">~</span><input id="dsh-sithphi" type="number" value="80" style="flex:0 0 38px"><span style="color:#5a6b7f">%</span></div>' +
       '<div class="row"><span class="lb">SP范围</span><input id="dsh-sitsplo" type="number" value="30" style="flex:0 0 38px"><span style="color:#5a6b7f">~</span><input id="dsh-sitsphi" type="number" value="70" style="flex:0 0 38px"><span style="color:#5a6b7f">%</span>' +
       '<span class="lb" style="min-width:60px">坐下被锁定</span><select id="dsh-sitxw" style="flex:0 0 72px"><option selected>无视</option><option>还击</option><option>瞬移</option><option>逃脱</option></select></div>' +
-      '<div class="log">内挂模式：技能/战斗/防御/瞬移/坐下全部由游戏内挂执行，助手只读写内挂设置。技能下拉只显示角色已学习。辅助技能支持多槽（每槽独立选技能+独立开关），buff 消失由内挂自动补状态（含队友状态），本页为查看/记录多辅助配置。</div>' +
       '</div>' +
       '<div class="sub-page drawer-page" data-subpage="zhu" data-dname="battle-zhu">' +
       '<div class="sec">助手模式（自控发包 · 无CD）</div>' +
@@ -713,7 +711,6 @@
       '<div class="row"><span class="st" style="font-size:10px">内挂=只有可攻击到的锁定怪（射程内）才停内挂、助手战斗；无怪/锁定怪超出射程→持续内挂寻怪移动靠近</span></div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-follow" type="checkbox" checked>锁定目标跟随追击</label>' +
       '<label class="switch"><input id="dsh-z-next" type="checkbox" checked>打死换下一个</label></div>' +
-      '<div class="log">助手模式=自己发包：侦查 EntityManager 附近MOB（跳过死亡）→ 命中锁定目录 → 锁定模式：选定目标后固定GID持续攻击（不死/不丢失不换，防漂移）→ 按技能顺序施放（释放前置自动补，并行判断）→ 无技能默认普攻（穿插平A开关：技能间隙按攻击间隔补普攻）→ 打死换下一个/锁定跟随追击可开关 → 被非锁定怪攻击时按「非选中怪攻击」处理（无视/瞬移/还击，HP下降3s内触发）→ 无目标寻怪：①自研直走+A*避障（定向直走，撞墙/卡住才转向）；②内挂机制寻怪=只有可攻击到的锁定怪（射程内）才停内挂、助手战斗；无怪或锁定怪超出射程→持续发包让服务器移动靠近（二转 UPDATEINFO id38/34，三转 NPC:setautoattack）。持续N秒无锁定怪→自动瞬移换点(苍蝇/瞬移术Lv1)。</div>' +
       '<details style="margin:4px 0"><summary style="cursor:pointer;color:#1259b3;font-size:12px">🔍 战斗诊断（V2.12.5-diag · 默认关 · 不改行为）</summary>' +
       '<div class="row"><label class="switch"><input id="dsh-bt-diag" type="checkbox">启用诊断日志</label></div>' +
       '<div class="row" style="flex-wrap:wrap;gap:4px"><button class="ghost" id="dsh-bt-snap" style="flex:0 0 auto;padding:0 8px;font-size:11px">快照</button><button class="ghost" id="dsh-bt-mark" style="flex:0 0 auto;padding:0 8px;font-size:11px">标记测试</button></div>' +
@@ -724,7 +721,6 @@
       '<div class="drow"><button class="dbtn" data-drw="battle-zhu" data-title="助手 · 战斗设置">战斗设置</button>' +
       '<button class="dbtn" data-drw="skill-zhu" data-title="助手 · 技能设置">技能设置</button>' +
       '<span class="st" id="dsh-z-state" style="font-size:10px;margin-left:auto">助手未启动</span></div>' +
-      '<div class="log">助手模式：自控发包战斗（侦查/锁定/防御/坐下/寻怪/追击）+ 技能释放与顺序/多辅助。开始/停止按钮固定在角色状态条下方（主面板常驻）。</div>' +
       '<details class="drawer-page" data-dname="skill-np" style="margin:4px 0" open><summary style="cursor:pointer;color:#1259b3;font-size:12px">⚙ 内挂模式（模拟内挂指令 · 直接发给服务器）</summary>' +
       '<div style="margin-top:4px"><div class="row"><span class="lb">寻怪模式</span><select id="dsh-np-huntmode" style="flex:0 0 96px">' +
       '<option value="0" selected>移动寻怪</option><option value="1">范围寻怪</option><option value="2">原地寻怪</option></select>' +
@@ -733,7 +729,7 @@
       '<button class="ghost" id="dsh-np-pick" style="flex:0 0 auto">📥 模拟内挂：开自动拾取</button>' +
       '<button class="ghost" id="dsh-np-eat" style="flex:0 0 auto">🍖 模拟内挂：开自动吃药</button></div>' +
       '<div class="row"><span class="st" id="dsh-np-log" style="font-size:10px">未发送（二转=NOTIFY_UPDATEINFO id34/35/36/38 · 三转=WHISPER NPC:setauto*）</span></div>' +
-      '<div class="log">内挂模式=游戏内挂执行（技能配置已并入「战斗」页签 · 内挂子页）。</div></div></details>' +
+      '</div></details>' +
       '<details class="drawer-page" data-dname="skill-zhu" style="margin:4px 0" open><summary style="cursor:pointer;color:#1259b3;font-size:12px">🪄 助手模式（技能释放与顺序 · 多辅助 · 自动施放）<button class="ghost" id="dsh-fw-btn-skill" data-fw="skill" style="flex:0 0 auto;padding:0 8px;font-size:11px;float:right;margin-top:-1px">⧉ 浮窗</button></summary>' +
       '<div style="margin-top:4px"><div class="sec" style="margin-top:0">技能释放与顺序（自动判断释放前置 · 自动补状态）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-prereq" type="checkbox" checked>自动补充释放前置（状态/气弹）</label>' +
@@ -814,7 +810,6 @@
       '<div class="row"><label class="switch"><input id="dsh-arrowen" type="checkbox" checked>箭矢耗尽时用魔法箭袋(2000030)放箭并装上装备栏</label></div>' +
       '<div class="row"><span class="st" style="font-size:10px">V2.16.27：仅当手持弓/乐器/鞭子时生效（其它职业没有箭矢槽，避免白耗箭袋）</span></div>' +
       '<div class="row"><span class="st" id="dsh-arrowlog" style="font-size:10px">未启用</span></div>' +
-      '<div class="sec">平A改用系统noctrl自动连击（V2.15.29：锁定目标后不再连续补发平A包，仅换目标/重进射程补发，消除连击间断）</div>' +
       '<div class="sec">背包快照定期上报（V2.15.27）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-invshot" type="checkbox" checked>开启定期上报</label>' +
       '<span class="lb" style="margin-left:8px">间隔</span><input id="dsh-invshotint" type="number" value="120" style="flex:0 0 44px"><span style="color:#5a6b7f">秒</span></div>' +
@@ -1059,8 +1054,8 @@
 
   // 手机版窄屏适配：宽度 92vw（≤400px 屏宽不溢出），PC 版保持 400px
   var PANEL_LAYOUT =
-    (IS_MN ? "position:fixed;top:6px;left:50%;transform:translateX(-50%);z-index:2147483647;width:92vw;max-width:420px;min-width:240px;height:calc(100vh - 12px);min-height:240px;max-height:none;" :
-      "position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:2147483647;width:400px;min-width:300px;height:640px;min-height:360px;max-height:92vh;") +
+    (IS_MN ? "position:fixed;top:6px;left:50%;transform:translateX(-50%);z-index:2147482000;width:92vw;max-width:420px;min-width:240px;height:calc(100vh - 12px);min-height:240px;max-height:none;" :
+      "position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:2147482000;width:400px;min-width:300px;height:640px;min-height:360px;max-height:92vh;") +
     "background:rgba(244,247,252,.93);border:2px solid #1f9d4d;border-radius:12px;color:#16202c;" +
     "font:13px/1.6 'Microsoft YaHei',system-ui,sans-serif;" +
     "box-shadow:0 0 0 3px rgba(31,157,77,.35),0 10px 32px rgba(0,0,0,.55);display:flex;flex-direction:column;overflow:hidden;";
@@ -1331,6 +1326,30 @@
     var v = parseFloat(el && el.getAttribute && el.getAttribute("data-dsh-scale"));
     return (isFinite(v) && v > 0) ? v : 1;
   }
+  // V2.19.0 公共层 A3：窗口层级——点谁谁到最前；功能菜单固定在所有窗口之下（修复「打开的窗口被菜单压住」）
+  var RO_Z_MENU = 2147481000;    // 功能菜单
+  var RO_Z_WIN = 2147482000;     // 助手窗口基础层级
+  var RO_Z_TOOLTIP = 2147483500; // 悬浮信息（永远最上，非交互）
+  var roZTop = RO_Z_WIN;
+  function roBringFront(el) {
+    try {
+      if (!el || !el.style) return;
+      if (roZTop >= RO_Z_TOOLTIP - 1) roZTop = RO_Z_WIN;
+      el.style.zIndex = String(++roZTop);
+    } catch (e) {}
+  }
+  // 捕获阶段全局监听：窗口内部都做了 stopPropagation（事件隔离），只有捕获阶段收得到
+  try {
+    document.addEventListener("pointerdown", function (ev) {
+      try {
+        var t = ev.target;
+        if (!t || !t.closest) return;
+        var w = t.closest("[data-dsh-win]");
+        if (!w || w.id === "dsh-ro-menu") return; // 功能菜单不参与抢层级
+        roBringFront(w);
+      } catch (e) {}
+    }, true);
+  } catch (e) {}
   function roWinEls() { try { return document.querySelectorAll("[data-dsh-win]"); } catch (e) { return []; } }
   function roScaleAll() { var l = roWinEls(); for (var i = 0; i < l.length; i++) roApplyScale(l[i]); }
   function roScaleSet(v) { roUi().scale = v; roUiSave(); roScaleAll(); try { roReclampAll(); } catch (e) {} }
@@ -1535,7 +1554,7 @@
       var win = document.createElement("div");
       win.id = "dsh-fw-" + id;
       // V2.17.0：位置 / 尺寸 / 缩放 / 拖动 / 拉伸全部交给公共层 roWinBind，这里只留外观
-      win.style.cssText = "position:fixed;z-index:2147483646;" +
+      win.style.cssText = "position:fixed;z-index:2147482000;" +
         "border:1px solid #8e8e8e;border-radius:3px;background:#fff;box-shadow:1px 2px 2px rgba(0,0,0,.55);" +
         "display:flex;flex-direction:column;overflow:hidden;font:12px/1.6 'Microsoft YaHei',Arial,sans-serif;color:#111;";
       win.setAttribute("data-fw", "1");
@@ -1702,11 +1721,12 @@
   }
   function roModOpen(id) {
     if (id === "np" || id === "zhu") return;   // 纯动作类（只有快捷键，没有窗口）
-    if (id === "panel") { saved.collapsed = false; try { saveSaved(saved); } catch (e) {} applyCollapse(false); return; }
-    if (id === "mvp") { var m = roModEl("mvp"); if (m) m.style.display = "flex"; return; }
+    if (id === "panel") { saved.collapsed = false; try { saveSaved(saved); } catch (e) {} applyCollapse(false); try { roBringFront(document.getElementById("dsh-ro-panel")); } catch (e) {} return; }
+    if (id === "mvp") { var m = roModEl("mvp"); if (m) { m.style.display = "flex"; try { roBringFront(m); } catch (e) {} } return; }
     if (id === "zhud") { try { ensureZHud(); if (zHudEl) zHudEl.style.display = ""; } catch (e) {} return; }
     if (id === "ztip") { try { ensureZTip(); if (zTipEl) zTipEl.style.display = ""; } catch (e) {} return; }
     if (!fwOpenIds[id]) fwToggle(id);
+    try { roBringFront(roModEl(id)); } catch (e) {}  // V2.19.0：打开就置顶
   }
   function roModClose(id) {
     if (id === "np" || id === "zhu") return;   // 纯动作类（只有快捷键，没有窗口）
@@ -1722,7 +1742,7 @@
     try {
       var el = document.createElement("div");
       el.id = "dsh-ro-menu";
-      el.style.cssText = "position:fixed;z-index:2147483647;display:none;flex-direction:column;overflow:hidden;" +
+      el.style.cssText = "position:fixed;z-index:2147481000;display:none;flex-direction:column;overflow:hidden;" +
         "border:1px solid #8e8e8e;border-radius:3px;background:#fff;box-shadow:1px 2px 2px rgba(0,0,0,.55);" +
         "font:12px/1.6 'Microsoft YaHei',Arial,sans-serif;color:#111;";
       var bar = document.createElement("div");
@@ -1777,8 +1797,15 @@
     var body = document.getElementById("dsh-menu-body");
     if (!body) return;
     body.textContent = "";
-    var sec = document.createElement("div"); sec.className = "ro-sec"; sec.textContent = "功能（勾选 = 启用 · 点键位 = 设快捷键 · 右键键位 = 清除）";
-    body.appendChild(sec);
+    // V2.19.0：原说明行（勾选=启用 · 点键位=设快捷键 · 右键键位=清除）删除，改为「重启客户端」按钮。
+    //   设置本来就是改一下自动存（按角色），不需要「保存设置」按钮。
+    var rbRow = document.createElement("div"); rbRow.className = "ro-row"; rbRow.style.margin = "0 0 4px";
+    var rbBtn = document.createElement("button"); rbBtn.type = "button"; rbBtn.textContent = "重启客户端";
+    rbBtn.style.cssText = "flex:1;height:20px;font-size:11px;";
+    rbBtn.title = "重新加载客户端页面（设置已自动保存，不会丢）";
+    rbBtn.addEventListener("click", function () { try { location.reload(); } catch (e) {} });
+    rbRow.appendChild(rbBtn);
+    body.appendChild(rbRow);
     for (var i = 0; i < RO_MODULES.length; i++) {
       (function (m) {
         var row = document.createElement("div"); row.className = "ro-row";
@@ -11554,7 +11581,7 @@
     var height = number(prefs.height, 340, 120, Math.max(120, innerHeight));
     var alpha = number(prefs.alpha, 0.45, 0, 1), collapsed = !!prefs.collapsed;
     box.id = "dsh-mvp-timers";
-    box.style.cssText = "position:fixed;z-index:2147483646;box-sizing:border-box;min-width:220px;min-height:40px;max-width:100vw;max-height:100vh;color:#edf4ff;border:1px solid #8298b066;border-radius:8px;padding:8px;font:13px/1.5 sans-serif;display:flex;flex-direction:column;overflow:hidden;text-shadow:0 1px 3px #000";
+    box.style.cssText = "position:fixed;z-index:2147482000;box-sizing:border-box;min-width:220px;min-height:40px;max-width:100vw;max-height:100vh;color:#edf4ff;border:1px solid #8298b066;border-radius:8px;padding:8px;font:13px/1.5 sans-serif;display:flex;flex-direction:column;overflow:hidden;text-shadow:0 1px 3px #000";
     box.style.width = width + "px";
     box.style.left = number(prefs.left, Math.max(0, innerWidth - width - 12), 0, Math.max(0, innerWidth - width)) + "px";
     box.style.top = number(prefs.top, 80, 0, Math.max(0, innerHeight - 40)) + "px";

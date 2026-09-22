@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.21.0
+// @version      2.21.1
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.21.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.21.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -745,20 +745,16 @@
       '<button class="sub-tab" data-sub="ap-item">物品</button>' +
       '<button class="sub-tab" data-sub="ap-sync">同步器</button></div>' +
       '<div class="a-body">' +
-      // 子页1：自动吃药 + 使用背包物品 + 自动跟随（默认）
+      // 子页1：战斗辅助（自动使用物品 + 自动装箭矢）+ 背包快照 + 自动跟随（默认）
       '<div class="sub-page active" data-subpage="ap-pot">' +
-      '<div class="sec">自动吃药</div>' +
-      '<div class="row"><span class="lb">HP低于</span><input id="dsh-pothealhp" type="number" value="40" style="flex:0 0 44px"><span style="color:#5a6b7f">%喝红</span>' +
-      '<span class="lb" style="min-width:48px">SP低于</span><input id="dsh-potsp" type="number" value="30" style="flex:0 0 44px"><span style="color:#5a6b7f">%喝蓝</span></div>' +
-      '<div class="row"><label class="switch"><input id="dsh-poten" type="checkbox">启用自动吃药</label>' +
-      '<span class="st" id="dsh-potlog" style="font-size:10px"></span></div>' +
       '<div id="dsh-fw-aid">' +
       '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">战斗辅助 · 自动使用物品 / 自动装箭矢</span>' +
       '<button class="ghost" id="dsh-fw-btn-aid" data-fw="aid" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
       '<div class="sec">自动使用物品（点选背包 · 条件触发）</div>' +
       '<div class="row"><span class="lb">物品</span><select id="dsh-itempick" style="flex:0 0 auto;max-width:130px"><option value="">选择物品…</option></select>' +
       '<button class="ghost" id="dsh-itempickadd" style="flex:0 0 auto">＋加入</button>' +
-      '<button class="ghost" id="dsh-itempickload" style="flex:0 0 auto">读背包</button></div>' +
+      '<button class="ghost" id="dsh-itempickload" style="flex:0 0 auto">读背包</button>' +
+      '<button class="ghost" id="dsh-potquick" style="flex:0 0 auto" title="从背包里找红药/蓝药，按 HP低于50% / SP低于30% 自动生成两条规则">一键加红蓝药</button></div>' +
       '<div class="row"><span class="lb">触发</span><select id="dsh-itemcond" style="flex:0 0 100px"><option value="manual">手动</option><option value="hp">HP低于%</option><option value="sp">SP低于%</option><option value="interval">间隔秒</option><option value="status">状态在身用</option><option value="statusgone">状态消失用</option></select>' +
       '<input id="dsh-itemcondval" type="number" value="50" style="flex:0 0 40px">' +
       '<div style="position:relative;flex:0 0 92px"><input id="dsh-itemstatus" placeholder="状态中文/ID" autocomplete="off" style="width:100%;box-sizing:border-box;padding:3px 6px">' +
@@ -2969,7 +2965,6 @@
     ["dsh-opensit", "c"], ["dsh-sithplo", "v"], ["dsh-sithphi", "v"], ["dsh-sitsplo", "v"], ["dsh-sitsphi", "v"], ["dsh-sitxw", "v"],
     ["dsh-petfeedhp2", "v"], ["dsh-petfeedint2", "v"], ["dsh-peten2", "c"],
     ["dsh-followtarget", "v"], ["dsh-followdist", "v"], ["dsh-followen", "c"],
-    ["dsh-pothealhp", "v"], ["dsh-potsp", "v"], ["dsh-poten", "c"],
     ["dsh-itempick", "v"], ["dsh-itemcond", "v"], ["dsh-itemcondval", "v"], ["dsh-itemen", "c"],
     ["dsh-lootprob", "v"], ["dsh-openpick", "c"], ["dsh-picken", "c"], ["dsh-pickwalk", "c"], ["dsh-picksafe", "c"], ["dsh-bountyhl", "c"], ["dsh-bgkeep", "c"], ["dsh-capauto", "c"], ["dsh-capwait", "v"], ["dsh-z-rein", "c"], ["dsh-sync-en", "c"], ["dsh-savemem", "c"], ["dsh-fpslock", "c"], ["dsh-fps", "v"], ["dsh-sync-mode", "v"], ["dsh-sync-int", "v"]
   ];
@@ -3066,7 +3061,7 @@
   }
 
   // ---------------- 后台保活（V1.8.2）：音频 + Web Lock 双豁免 Chrome 定时器深度节流 ----------------
-  // Chrome 后台 >5 分钟把定时器节流到约 1 次/分钟 → 吃药(tickPots)/打怪(zAttack)/拾取(tickItems)停摆。
+  // Chrome 后台 >5 分钟把定时器节流到约 1 次/分钟 → 打怪(zAttack)/用物品(tickItems)/拾取停摆。
   // 页面「在发声」或「持有活跃 Web Lock」均满足 Chrome 不节流条件。
   // 音频：60Hz 正弦波 + gain 0.003 ≈ 近无声；须发生在用户手势后（AudioContext 策略），开关 change 本身即手势。
   // Web Lock：navigator.locks 永续 shared 锁（Chrome 87+），无需手势；AbortController 用于取消勾选时释放（Chrome 105+，旧版无 signal 则锁存续至页面关闭，可接受）。
@@ -4007,34 +4002,15 @@
       return null;
     } catch (e) { return null; }
   }
-  function tickPots() {
+  // V2.21.0：助手「自动吃药」已与「自动使用物品」合并（同一套 HP/SP 条件 + 用物品机制，避免两边同时喝）。
+  //   tickPots 删除；红蓝药改由「一键加红蓝药」按钮生成规则，统一交给 tickItems 执行。
+  //   喝水线（用于「低血无药被围 → 升级瞬移」瀑布）改从物品列表里的 HP 规则取，没有则按 40%。
+  function potHpThr() {
     try {
-      var en = $id("dsh-poten") && $id("dsh-poten").checked;
-      if (!en) return;
-      if (!clientReady()) return;
-      var ent = CLIENT.SS.Entity;
-      if (!ent || !ent.life) return;
-      var now = Date.now();
-      if (now - potLastUse < 3000) return; // 3s 防连喝
-      var life = ent.life;
-      var hpPct = life.maxhp > 0 ? life.hp / life.maxhp * 100 : 100;
-      var spPct = life.maxsp > 0 ? life.sp / life.maxsp * 100 : 100;
-      var hpThr = parseInt($id("dsh-pothealhp").value, 10) || 40;
-      var spThr = parseInt($id("dsh-potsp").value, 10) || 30;
-      if (hpPct < hpThr) {
-        var hp = findPotion(true);
-        if (hp) { useItemByIndex(hp.index); potLastUse = now; potNoPotion = false; potLog("HP" + Math.round(hpPct) + "%<" + hpThr + "% 已喝 " + hp.name); return; }
-        potLog("HP" + Math.round(hpPct) + "%<" + hpThr + "% 但无红药"); potNoPotion = true; return;
-      }
-      if (spPct < spThr) {
-        var sp = findPotion(false);
-        if (sp) { useItemByIndex(sp.index); potLastUse = now; potLog("SP" + Math.round(spPct) + "%<" + spThr + "% 已喝 " + sp.name); return; }
-        potLog("SP" + Math.round(spPct) + "%<" + spThr + "% 但无蓝药");
-      }
+      for (var i = 0; i < itemList.length; i++) { if (itemList[i] && itemList[i].cond === "hp") return itemList[i].condval || 40; }
     } catch (e) {}
+    return 40;
   }
-  masterTickReg(function () { try { tickPots(); } catch (e) {} });
-  if (saved.potEn) { $id("dsh-poten").checked = true; }
 
   // ---------------- B4：自动使用物品（点选背包 + 调序 + 条件触发）----------------
   var itemList = (function () { try { return JSON.parse(localStorage.getItem("dsh_ro_itemlist")) || []; } catch (e) { return []; } })();
@@ -4100,6 +4076,24 @@
     setStatus("已读取背包 " + Object.keys(seen).length + " 种物品", "ok");
   }
   $id("dsh-itempickload").addEventListener("click", loadInvItems);
+  // V2.21.0 一键加红蓝药：从背包找红药/蓝药，生成 HP低于50% / SP低于30% 两条规则（可在列表里改数值）
+  $id("dsh-potquick").addEventListener("click", function () {
+    try {
+      if (!clientReady()) { setStatus("客户端未就绪，进图后再点", "err"); return; }
+      var hp = findPotion(true), sp = findPotion(false);
+      if (!hp && !sp) { setStatus("背包里没找到红药/蓝药（药名需含「红色药水/白色药水/蓝色药水」等关键词）", "err"); return; }
+      var added = 0;
+      var push = function (p, cond, val) {
+        if (!p) return;
+        for (var i = 0; i < itemList.length; i++) { if (itemList[i].itid === p.itid && itemList[i].cond === cond) return; }
+        itemList.push({ itid: p.itid, index: p.index, name: p.name, cond: cond, condval: val, st: "", stInv: false });
+        added++;
+      };
+      push(hp, "hp", 50); push(sp, "sp", 30);
+      saveItemList();
+      setStatus(added ? ("已加入 " + added + " 条红蓝药规则（HP低于50% / SP低于30%，可改数值）") : "红蓝药规则已存在，未重复添加", added ? "ok" : "warn");
+    } catch (e) { setStatus("一键加红蓝药失败: " + e.message, "err"); }
+  });
   bindStatusAc($id("dsh-itemstatus"), $id("dsh-itemstatus-ac"));
   (function () {
     var icSel = $id("dsh-itemcond"), isIn = $id("dsh-itemstatus");
@@ -4198,7 +4192,8 @@
             if (ik.ITID === it.itid || ik.itemid === it.itid) { idx = ik.index != null ? ik.index : k; break; }
           }
         }
-        if (idx < 0) continue;
+        if (idx < 0) { if (it.cond === "hp") potNoPotion = true; continue; } // V2.21.0：无红药标记（瀑布用）
+        if (it.cond === "hp") potNoPotion = false;
         useItemByIndex(idx);
         it.last = now;
         return; // 每轮只用一项
@@ -6087,7 +6082,7 @@
         if (isCombatMap && spPct < (parseInt($id("dsh-z-spfly").value, 10) || 10)) { needFly = true; reason = "SP" + Math.round(spPct) + "%"; }
         if (hpPct < (parseInt($id("dsh-z-hpout").value, 10) || 5)) { setStatus("HP极低，10秒后下线", "err"); }
         // V1.9.4 瀑布接管：低血(喝水线) + 无药 + 被围 → 升级瞬移（消 25% 无药死区）
-        var potThrNow = parseInt($id("dsh-pothealhp").value, 10) || 40;
+        var potThrNow = potHpThr();
         if (isCombatMap && potNoPotion && mobs.length > 0 && hpPct < potThrNow && !needFly) {
           needFly = true; reason = "低血无药被围";
         }
@@ -6123,7 +6118,7 @@
       if (dsEl) {
         if (needFly) dsEl.textContent = "防御状态：瞬移(" + reason + ")";
         else if (defSnap.sitting) dsEl.textContent = "防御状态：坐下回血";
-        else if (potNoPotion && life && life.maxhp > 0 && (life.hp / life.maxhp * 100) < (parseInt($id("dsh-pothealhp").value, 10) || 40) && mobs.length > 0) dsEl.textContent = "防御状态：低血无药被围";
+        else if (potNoPotion && life && life.maxhp > 0 && (life.hp / life.maxhp * 100) < potHpThr() && mobs.length > 0) dsEl.textContent = "防御状态：低血无药被围";
         else dsEl.textContent = "防御状态：正常";
       }
     } catch (e) {}

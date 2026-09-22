@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.17.0
+// @version      2.17.1
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.17.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.17.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -583,7 +583,22 @@
     // V2.17.0 公共层 A：统一窗口拉伸手柄（所有助手窗口共用，右下角，可拖动改尺寸）
     ".dsh-grip{position:absolute;right:0;bottom:0;width:18px;height:18px;cursor:nwse-resize;z-index:9;touch-action:none;pointer-events:auto}" +
     ".dsh-grip::after{content:'';position:absolute;right:3px;bottom:3px;width:9px;height:9px;border-right:2px solid rgba(120,140,170,.9);border-bottom:2px solid rgba(120,140,170,.9);border-bottom-right-radius:3px}" +
-    ".dsh-grip:hover::after{border-color:#1d4ed8}";
+    ".dsh-grip:hover::after{border-color:#1d4ed8}" +
+    // V2.17.1 窗口透明度滑块（主面板与功能浮窗统一）
+    ".dsh-alpha{display:inline-flex;align-items:center;gap:2px;flex:none;margin:0 2px}" +
+    ".dsh-alpha .lb{font-size:9px;line-height:1;color:#333;text-shadow:1px 1px #fff}" +
+    ".dsh-alpha input[type=range]{width:40px;height:10px;margin:0;padding:0;flex:none;accent-color:#647c9d}" +
+    "#dsh-ro-panel .hd .st{color:#333!important;font-size:10px!important}" +
+    // V2.17.1 功能菜单（独立窗口，不在 #dsh-ro-panel 内，故需自带一套）
+    "#dsh-ro-menu .ro-sec{margin:2px 0 4px;padding:2px 0 2px 6px;border-left:3px solid #6f9ad0;background:linear-gradient(to right,#eef4fb,rgba(238,244,251,0));color:#123a63;font-size:11px;font-weight:700}" +
+    "#dsh-ro-menu .ro-row{display:flex;align-items:center;gap:5px;min-height:24px;padding:1px 2px;border-bottom:1px solid #e2e2e2}" +
+    "#dsh-ro-menu .ro-row:last-child{border-bottom:0}" +
+    "#dsh-ro-menu .ro-row .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}" +
+    "#dsh-ro-menu .ro-cb{width:13px;height:13px;margin:0;padding:0;flex:none;accent-color:#647c9d}" +
+    "#dsh-ro-menu button{height:20px;min-width:42px;padding:0 7px;border:1px solid;border-color:#cfcfcf #a9a9a9 #5f5f5f #bdbdbd;border-radius:4px;background:linear-gradient(to bottom,#fff 0%,#f2f2f2 35%,#dcdcdc 55%,#f9f9f9 100%);color:#3f3f3f;font-size:11px;font-weight:400;line-height:1;cursor:pointer;font-family:inherit;text-shadow:1px 1px rgba(255,255,255,.85)}" +
+    "#dsh-ro-menu button:hover{background:linear-gradient(to bottom,#f7fbff,#dfe8f6 35%,#c0d0ee 55%,#f0f6ff)}" +
+    "#dsh-ro-menu select{height:20px;background:#fff;border:1px solid #aaa;border-radius:0;color:#111;font-size:11px;padding:0 2px;font-family:inherit}" +
+    "#dsh-ro-menu .ro-info{color:#555;font-size:10px;padding:2px 2px 0}";
 
   // ---------------- 页签定义 ----------------
   var PAGE_HTML = {
@@ -1017,7 +1032,7 @@
   var panel = $("div", "", '<div class="hd"><b>仙境传说 V' + VER + ' · 助手</b><span class="hbtns">' +
     '<span class="st" id="dsh-st" style="color:#cfe0ff;font-size:11px"></span>' +
     '<button class="hbtn" id="dsh-min" title="缩成悬浮球">▁</button>' +
-    '<button class="hbtn" id="dsh-popout" title="弹出独立窗口">⧉</button></span></div>' +
+
     '<div class="tabs">' + tabsHtml + '</div>' +
     // 登录信息折叠框（原登录页取消后迁至面板顶部、橘色信息=角色状态条正上方）
     '<details id="dsh-loginbox" style="margin:6px 8px 0"><summary style="cursor:pointer;color:#b45309;font-size:12px;font-weight:bold;display:flex;align-items:center;gap:8px"><span>🔐 登录 · 展开/收起</span><button id="dsh-recenter" title="面板回中" style="margin-left:auto;flex:0 0 auto;color:#b45309;background:rgba(255,255,255,.55);border:1px solid #d9a441;border-radius:5px;padding:1px 8px;font-size:11px;cursor:pointer;font-weight:600">回中</button></summary>' +
@@ -1325,7 +1340,7 @@
   }
   function roWinEls() { try { return document.querySelectorAll("[data-dsh-win]"); } catch (e) { return []; } }
   function roScaleAll() { var l = roWinEls(); for (var i = 0; i < l.length; i++) roApplyScale(l[i]); }
-  function roScaleSet(v) { roUi().scale = v; roUiSave(); roScaleAll(); }
+  function roScaleSet(v) { roUi().scale = v; roUiSave(); roScaleAll(); try { roReclampAll(); } catch (e) {} }
   // 位置夹紧：按「缩放后」的可视尺寸夹紧，保证标题栏始终留在视口内可抓
   function roClampXY(el, x, y, w, h) {
     var s = roScaleOf(el);
@@ -1365,9 +1380,48 @@
   function roWinSave(id, el) {
     try {
       var m = roUi().win;
-      m[id] = { x: parseFloat(el.style.left) || 0, y: parseFloat(el.style.top) || 0, w: el.offsetWidth, h: el.offsetHeight };
+      var cur = m[id] || {};            // 必须合并而不是整体替换，否则会抹掉同一窗口的 a（透明度）
+      cur.x = parseFloat(el.style.left) || 0;
+      cur.y = parseFloat(el.style.top) || 0;
+      cur.w = el.offsetWidth;
+      cur.h = el.offsetHeight;
+      m[id] = cur;
       roUiSave();
     } catch (e) {}
+  }
+  // ---- 窗口透明度（甲案：整个窗口一起变淡，30%~100%，每个窗口独立记忆）----
+  function roSetAlpha(el, id, a) {
+    if (!el) return;
+    a = Math.max(0.3, Math.min(1, a));
+    el.style.opacity = (a >= 0.999) ? "" : String(a);
+    try {
+      var m = roUi().win;
+      if (!m[id]) m[id] = {};
+      m[id].a = a;
+    } catch (e) {}
+  }
+  function roAlphaOf(id) {
+    try { var w = roUi().win[id]; if (w && typeof w.a === "number") return w.a; } catch (e) {}
+    return 1;
+  }
+  // 标题栏上的「透明」滑块（主面板与所有功能浮窗统一用这个）
+  function roAlphaSlider(el, id) {
+    var wrap = document.createElement("span");
+    wrap.className = "dsh-alpha";
+    var lab = document.createElement("span");
+    lab.className = "lb";
+    lab.textContent = "透明";
+    var inp = document.createElement("input");
+    inp.type = "range"; inp.min = "30"; inp.max = "100";
+    inp.value = String(Math.round(roAlphaOf(id) * 100));
+    inp.title = "窗口透明度 " + inp.value + "%（30%~100%）";
+    inp.addEventListener("input", function () {
+      roSetAlpha(el, id, parseInt(inp.value, 10) / 100);
+      inp.title = "窗口透明度 " + inp.value + "%（30%~100%）";
+    });
+    inp.addEventListener("change", function () { roUiSave(); });
+    wrap.appendChild(lab); wrap.appendChild(inp);
+    return wrap;
   }
   function roGrip(el) {
     var g = document.createElement("div");
@@ -1398,6 +1452,8 @@
     var p = roClampXY(el, dx, dy, el.offsetWidth, el.offsetHeight);
     el.style.left = p.x + "px"; el.style.top = p.y + "px";
     el.style.right = "auto"; el.style.bottom = "auto";
+    // V2.17.1 透明度：默认 100%，按窗口独立记忆
+    roSetAlpha(el, id, (st && typeof st.a === "number") ? st.a : 1);
     var save = function () { roWinSave(id, el); };
     if (opt.drag) {
       dragEl(opt.drag, function (x, y) {
@@ -1498,13 +1554,8 @@
       var tt = document.createElement("span");
       tt.textContent = title || "浮窗";
       tt.style.cssText = "flex:1;min-width:0;font-weight:700;font-size:11px;line-height:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
-      var opLab = document.createElement("span");
-      opLab.textContent = "透明";
-      opLab.style.cssText = "font-size:10px;color:#333;flex:none;";
-      var op = document.createElement("input");
-      op.type = "range"; op.min = "30"; op.max = "100"; op.value = "90";
-      op.style.cssText = "width:52px;height:12px;flex:none;";
-      op.title = "透明度（30%~100%）";
+      // V2.17.1：透明度滑块统一（旧版只改背景色 alpha，效果很弱；现在调整个窗口）
+      var opBox = roAlphaSlider(win, "fw-" + id);
       var x = document.createElement("button");
       x.textContent = "";  // RO 原生关闭球（位图），不用 × 字符
       x.title = "收回浮窗（回到设置抽屉原位）";
@@ -1513,11 +1564,10 @@
       var body = document.createElement("div");
       body.className = "ro-fw-body";
       body.style.cssText = "overflow:auto;flex:1 1 auto;min-height:0;padding:5px;border-top:1px solid #7897b9;background:#fff;color:#111;";
-      op.addEventListener("input", function () { try { win.style.background = "rgba(255,255,255," + (parseInt(op.value, 10) / 100) + ")"; } catch (e) {} });
       x.addEventListener("click", function () { fwClose(id); });
       // V2.17.0：拖动改由公共层 dragEl 处理（带缩放换算 + 视口夹紧 + 位置记忆）。
       // 旧实现每个浮窗各挂一对 document 级 pointermove/pointerup 监听，浮窗越多监听越多。
-      bar.appendChild(tt); bar.appendChild(opLab); bar.appendChild(op); bar.appendChild(x);
+      bar.appendChild(tt); bar.appendChild(opBox); bar.appendChild(x);
       win.appendChild(bar); win.appendChild(body);
       // 先登记 fwState 再挂载/隔离：任何后续异常都不留下「已挂载未记录」的半成品浮窗（防无限生成）
       if (!fwState[id]) fwState[id] = {};
@@ -1608,6 +1658,182 @@
     }, false);
   } catch (e) {}
 
+
+
+  // ================= V2.17.1 公共层 C：功能菜单（点选式）=================
+  // 悬浮球点一下弹出菜单；菜单每行「打开」即弹出对应功能窗口，再点「收回」关掉。
+  // 每行左侧勾选框是该功能的总开关：关掉后功能不工作、快捷键也不响应。
+  // 后续阶段新增功能只需往 RO_MODULES 加一行，菜单/快捷键/开关会自动带上。
+  var RO_MOD_KEY = "dsh_ro_modules_v1";
+  var roModC = null;
+  function roMods() {
+    if (roModC) return roModC;
+    roModC = {};
+    try {
+      var o = JSON.parse(localStorage.getItem(RO_MOD_KEY) || "{}");
+      if (o && typeof o === "object") roModC = o;
+    } catch (e) {}
+    return roModC;
+  }
+  function roModOn(id) { var m = roMods(); return m[id] === undefined ? true : !!m[id]; }
+  function roModSet(id, on) {
+    roMods()[id] = !!on;
+    try { localStorage.setItem(RO_MOD_KEY, JSON.stringify(roMods())); } catch (e) {}
+    try { roMenuRender(); } catch (e) {}
+  }
+  var RO_MODULES = [
+    { id: "panel", name: "主面板",          kind: "panel" },
+    { id: "mlock", name: "本图怪物锁定",    kind: "fw" },
+    { id: "tp",    name: "传送功能",        kind: "fw" },
+    { id: "skill", name: "助手技能设置",    kind: "fw" },
+    { id: "item",  name: "物品 · 拾取与整理", kind: "fw" },
+    { id: "mvp",   name: "MVP 计时",        kind: "custom" },
+    { id: "zhud",  name: "战斗监控横条",    kind: "custom" },
+    { id: "ztip",  name: "动作提示条",      kind: "custom", noToggle: true }
+  ];
+  function roModEl(id) {
+    if (id === "panel") return document.getElementById("dsh-ro-panel");
+    if (id === "mvp") return document.getElementById("dsh-mvp-timers");
+    if (id === "zhud") return document.getElementById("dsh-ro-z-hud");
+    if (id === "ztip") return document.getElementById("dsh-ztip");
+    return document.getElementById("dsh-fw-" + id);
+  }
+  function roModIsOpen(id) {
+    if (id === "panel" || id === "mvp" || id === "zhud" || id === "ztip") {
+      var e2 = roModEl(id);
+      return !!(e2 && e2.style.display !== "none");
+    }
+    return !!fwOpenIds[id];
+  }
+  function roModOpen(id) {
+    if (id === "panel") { saved.collapsed = false; try { saveSaved(saved); } catch (e) {} applyCollapse(false); return; }
+    if (id === "mvp") { var m = roModEl("mvp"); if (m) m.style.display = "flex"; return; }
+    if (id === "zhud") { try { ensureZHud(); if (zHudEl) zHudEl.style.display = ""; } catch (e) {} return; }
+    if (id === "ztip") { try { ensureZTip(); if (zTipEl) zTipEl.style.display = ""; } catch (e) {} return; }
+    if (!fwOpenIds[id]) fwToggle(id);
+  }
+  function roModClose(id) {
+    if (id === "panel") { saved.collapsed = true; try { saveSaved(saved); } catch (e) {} applyCollapse(true); return; }
+    if (id === "mvp" || id === "zhud" || id === "ztip") { var e3 = roModEl(id); if (e3) e3.style.display = "none"; return; }
+    if (fwOpenIds[id]) fwToggle(id);
+  }
+  function roModToggle(id) { if (roModIsOpen(id)) roModClose(id); else roModOpen(id); }
+
+  var roMenuEl = null;
+  function roMenuBuild() {
+    if (roMenuEl && roMenuEl.parentNode) return roMenuEl;
+    try {
+      var el = document.createElement("div");
+      el.id = "dsh-ro-menu";
+      el.style.cssText = "position:fixed;z-index:2147483647;display:none;flex-direction:column;overflow:hidden;" +
+        "border:1px solid #8e8e8e;border-radius:3px;background:#fff;box-shadow:1px 2px 2px rgba(0,0,0,.55);" +
+        "font:12px/1.6 'Microsoft YaHei',Arial,sans-serif;color:#111;";
+      var bar = document.createElement("div");
+      bar.className = "ro-fw-title";
+      bar.style.cssText = "display:flex;align-items:center;gap:3px;height:17px;min-height:17px;padding:0 3px;border-radius:3px 3px 0 0;" +
+        "background-color:#fff;background-image:var(--dsh-tb);background-repeat:repeat-x;background-size:auto 17px;" +
+        "color:#111;text-shadow:1px 1px #fff;cursor:move;user-select:none;flex:none;";
+      var orb = document.createElement("span");
+      orb.style.cssText = "flex:0 0 11px;width:11px;height:11px;background:var(--dsh-base) no-repeat;background-size:11px 11px;";
+      var tt = document.createElement("span");
+      tt.textContent = "功能菜单";
+      tt.style.cssText = "flex:1;min-width:0;font-weight:700;font-size:11px;line-height:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+      var x = document.createElement("button");
+      x.textContent = "";
+      x.title = "关闭功能菜单";
+      x.style.cssText = "flex:0 0 auto;width:11px;height:11px;min-width:11px;padding:0;border:0;border-radius:50%;" +
+        "background:var(--dsh-close) no-repeat;background-size:11px 11px;cursor:pointer;font-size:0;line-height:0;color:transparent;";
+      bar.appendChild(orb); bar.appendChild(tt); bar.appendChild(roAlphaSlider(el, "menu")); bar.appendChild(x);
+      var body = document.createElement("div");
+      body.className = "ro-fw-body";
+      body.id = "dsh-menu-body";
+      body.style.cssText = "overflow:auto;flex:1 1 auto;min-height:0;padding:5px;border-top:1px solid #7897b9;background:#fff;color:#111;";
+      el.appendChild(bar); el.appendChild(body);
+      el.style.display = "flex";   // 必须先显示再绑定：display:none 时 offsetWidth=0，定位夹紧会算错
+      document.documentElement.appendChild(el);
+      x.addEventListener("click", function () { roMenuToggle(); });
+      roWinBind(el, {
+        id: "menu", drag: bar, grip: roGrip(el),
+        minW: 280, minH: 180, dw: 330, dh: 420,
+        ax: Math.max(8, roVw() - 330 * roScale() - 16), ay: Math.max(8, Math.round(roVh() * 0.14))
+      });
+      el.style.display = "none";
+      roMenuEl = el;
+      roMenuRender();
+      return el;
+    } catch (e) { return null; }
+  }
+  function roMenuToggle() {
+    var el = roMenuBuild();
+    if (!el) return;
+    if (el.style.display === "none") { el.style.display = "flex"; roMenuRender(); }
+    else { el.style.display = "none"; }
+  }
+  function roMenuRow(parent, labelText, ctrl) {
+    var row = document.createElement("div"); row.className = "ro-row";
+    var nm = document.createElement("span"); nm.className = "nm"; nm.textContent = labelText;
+    row.appendChild(nm); row.appendChild(ctrl);
+    parent.appendChild(row);
+    return row;
+  }
+  function roMenuRender() {
+    var body = document.getElementById("dsh-menu-body");
+    if (!body) return;
+    body.textContent = "";
+    var sec = document.createElement("div"); sec.className = "ro-sec"; sec.textContent = "功能（勾选 = 启用，按钮 = 打开 / 收回）";
+    body.appendChild(sec);
+    for (var i = 0; i < RO_MODULES.length; i++) {
+      (function (m) {
+        var row = document.createElement("div"); row.className = "ro-row";
+        var lab = document.createElement("label");
+        lab.style.cssText = "display:flex;align-items:center;gap:4px;flex:1;min-width:0;cursor:pointer;";
+        var cb = document.createElement("input"); cb.type = "checkbox"; cb.className = "ro-cb";
+        cb.checked = roModOn(m.id);
+        cb.addEventListener("change", function () {
+          roModSet(m.id, cb.checked);
+          if (!cb.checked) { try { roModClose(m.id); } catch (e) {} }
+        });
+        var nm = document.createElement("span"); nm.className = "nm"; nm.textContent = m.name;
+        lab.appendChild(cb); lab.appendChild(nm); row.appendChild(lab);
+        if (!m.noToggle) {
+          var b = document.createElement("button"); b.type = "button";
+          b.style.cssText = "min-width:46px;height:18px;padding:0 6px;font-size:11px;";
+          b.textContent = roModIsOpen(m.id) ? "收回" : "打开";
+          b.addEventListener("click", function () { roModToggle(m.id); roMenuRender(); });
+          row.appendChild(b);
+        }
+        body.appendChild(row);
+      })(RO_MODULES[i]);
+    }
+    // ---- 通用设置 ----
+    var sec2 = document.createElement("div"); sec2.className = "ro-sec"; sec2.style.marginTop = "9px";
+    sec2.textContent = "通用";
+    body.appendChild(sec2);
+    var sc = document.createElement("select");
+    var opts = [["auto", "自动（跟随窗口大小）"], ["1", "100%"], ["0.9", "90%"], ["0.8", "80%"], ["0.75", "75%"], ["0.7", "70%"], ["0.6", "60%"], ["0.5", "50%"], ["1.1", "110%"], ["1.25", "125%"]];
+    for (var oi = 0; oi < opts.length; oi++) {
+      var op2 = document.createElement("option"); op2.value = opts[oi][0]; op2.textContent = opts[oi][1]; sc.appendChild(op2);
+    }
+    sc.value = String(roUi().scale);
+    if (!sc.value) sc.value = "auto";
+    sc.addEventListener("change", function () { roScaleSet(sc.value === "auto" ? "auto" : parseFloat(sc.value)); roMenuRender(); });
+    roMenuRow(body, "界面缩放", sc);
+    var sl = document.createElement("select");
+    var lows = [0.5, 0.6, 0.7, 0.75, 0.8, 0.9];
+    for (var li = 0; li < lows.length; li++) {
+      var ol = document.createElement("option"); ol.value = String(lows[li]); ol.textContent = Math.round(lows[li] * 100) + "%"; sl.appendChild(ol);
+    }
+    sl.value = String(roUi().scaleMin);
+    sl.addEventListener("change", function () { roUi().scaleMin = parseFloat(sl.value); roUiSave(); roScaleAll(); roReclampAll(); roMenuRender(); });
+    roMenuRow(body, "自动缩放下限", sl);
+    var sk = document.createElement("input"); sk.type = "checkbox"; sk.className = "ro-cb";
+    sk.checked = roSkinOn();
+    sk.addEventListener("change", function () { roSkinSet(sk.checked); });
+    roMenuRow(body, "RO 原生皮肤", sk);
+    var info = document.createElement("div"); info.className = "ro-info";
+    info.textContent = "当前视口 " + roVw() + "×" + roVh() + " · 实际缩放 " + Math.round(roScale() * 100) + "%";
+    body.appendChild(info);
+  }
 
   // 鼠标→触摸模拟层：手机版（r=mn）游戏用 jquery.mobile-events 触摸事件驱动，只认触摸不认鼠标；
   // 外接/蓝牙鼠标的 mousedown 不会变成触摸 → 游戏点不动。此处把「真实鼠标」事件合成为触摸派发到游戏。
@@ -1829,6 +2055,11 @@
   (function () {
     var rh = panel.querySelector("#dsh-resize");
     if (IS_MN && rh) rh.style.display = "none"; // 手机版铺满视口，隐藏手动缩放手柄
+    // V2.17.1：主面板标题栏加「透明」滑块（与功能浮窗同一套，每窗口独立记忆）
+    try {
+      var hb = panel.querySelector(".hd .hbtns");
+      if (hb) hb.insertBefore(roAlphaSlider(panel, "panel"), hb.firstChild);
+    } catch (e) {}
     // V2.17.0：分屏（视口窄）时默认面板尺寸也收一档 —— 只靠缩字号会糊，尺寸+缩放一起收更清楚
     var narrow = roVw() < 1100;
     var pw0 = IS_MN ? Math.min(430, Math.round(roVw() * 0.92)) : (narrow ? 360 : 400);
@@ -1890,17 +2121,19 @@
   // 展开/收起
   function applyCollapse(c) {
     try {
-      if (c) { panel.style.display = "none"; ball.style.display = "flex"; }
-      else { panel.style.display = "flex"; ball.style.display = "none"; }
+      if (c) { panel.style.display = "none"; }
+      else { panel.style.display = "flex"; }
+      // V2.17.1：悬浮球改为常驻 —— 它现在是「功能菜单」的唯一入口，不再随面板显隐而消失
+      ball.style.display = "flex";
     } catch (e) {}
   }
   panel.querySelector("#dsh-min").addEventListener("click", function () {
     saved.collapsed = true; saveSaved(saved); applyCollapse(true);
   });
+  // V2.17.1：悬浮球点一下弹出「功能菜单」，再点一下收起（主面板改从菜单里打开）
   ball.addEventListener("click", function () {
-    if (ball.style.display === "none") return;
-    if (ball.__dsDragged) { ball.__dsDragged = false; return; } // V1.7.6 拖动松手不弹面板
-    saved.collapsed = false; saveSaved(saved); applyCollapse(false);
+    if (ball.__dsDragged) { ball.__dsDragged = false; return; } // 拖动松手不弹菜单
+    roMenuToggle();
   });
   if (saved.collapsed) applyCollapse(true);
 
@@ -2101,79 +2334,8 @@
     }
   } catch (e) {}
 
-  // 独立窗口（多开/总控演示：复制本面板到弹窗）
-  panel.querySelector("#dsh-popout").addEventListener("click", function () {
-    try {
-      var w = window.open("about:blank", "RO助手独立面板", "width=440,height=740,popup=yes,resizable=yes");
-      if (w && w.document) {
-        // 干净弹窗：不复制游戏页内联定位，弹窗内按自身视口铺满
-        var doc = w.document;
-        doc.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>RO助手独立面板</title><style>' +
-          'html,body{margin:0;padding:0;background:#eef2f8;overflow:hidden}' +
-          PANEL_CSS +
-          // 弹窗专用定位：!important 压过 panel 内嵌 style（复制进来加载更晚）
-          '#dsh-ro-panel{position:fixed!important;top:8px!important;left:8px!important;right:8px!important;bottom:8px!important;width:auto!important;height:auto!important;min-width:0!important;min-height:0!important;max-height:none!important;transform:none!important}' +
-          '#dsh-ro-panel .hd .hbtn{user-select:none}' +
-          '</style></head><body><div id="dsh-ro-panel">' + panel.innerHTML + '</div>' +
-          '<script>' +
-          'var P=document.getElementById("dsh-ro-panel");' +
-          // 遥控弹窗：初始切到战斗页，显示 statbar
-          '(function(){var t=P.querySelector(\'.tab[data-page="nei"]\');if(t)t.click();})();' +
-          'P.querySelector(".tabs").addEventListener("click",function(e){var t=e.target.closest&&e.target.closest(".tab");if(!t)return;var nm=t.getAttribute("data-page");' +
-          'P.querySelectorAll(".tab").forEach(function(x){x.classList.toggle("active",x===t);});' +
-          'P.querySelectorAll(".page").forEach(function(p){p.classList.toggle("active",p.getAttribute("data-page")===nm);});' +
-          'var drq=P.querySelector("#dsh-drawer");if(drq)drq.classList.remove("open");' +
-          'P.querySelector("#dsh-statbar").style.display="flex";});' +
-          'P.addEventListener("click",function(e){var st=e.target.closest&&e.target.closest(".sub-tab");if(!st)return;var host=st.closest(".page");if(!host)return;' +
-          'host.querySelectorAll(".sub-tab").forEach(function(t){t.classList.toggle("active",t===st);});' +
-          'host.querySelectorAll(".sub-page").forEach(function(p){p.classList.toggle("active",p.getAttribute("data-subpage")===st.getAttribute("data-sub"));});});' +
-          'P.querySelectorAll("[data-drw]").forEach(function(b){b.addEventListener("click",function(){var dr4=P.querySelector("#dsh-drawer");if(!dr4)return;var nm4=b.getAttribute("data-drw");dr4.querySelectorAll("[data-dname]").forEach(function(x){x.style.display=x.getAttribute("data-dname")===nm4?"block":"none";});var tt4=dr4.querySelector("#dsh-drawer-title");if(tt4)tt4.textContent=b.getAttribute("data-title")||"";dr4.classList.add("open");});});' +
-          'var dc4=P.querySelector("#dsh-drawer-close");if(dc4)dc4.addEventListener("click",function(){var dr5=P.querySelector("#dsh-drawer");if(dr5)dr5.classList.remove("open");});' +
-          'P.querySelector("#dsh-min").addEventListener("click",function(){try{window.close();}catch(e){P.style.display="none";}});' +
-          '(function(){var hd=P.querySelector(".hd"),mv=false,ox,oy;hd.addEventListener("pointerdown",function(e){if(e.target.closest&&e.target.closest("button"))return;mv=true;P.style.right="auto";P.style.bottom="auto";P.style.transform="none";ox=e.clientX-P.offsetLeft;oy=e.clientY-P.offsetTop;});' +
-          'document.addEventListener("pointermove",function(e){if(mv){P.style.left=(e.clientX-ox)+"px";P.style.top=(e.clientY-oy)+"px";}});' +
-          'document.addEventListener("pointerup",function(){mv=false;});})();' +
-          '(function(){var rh=P.querySelector("#dsh-resize"),rz=false,sx,sy,ow,oh;rh.addEventListener("pointerdown",function(e){rz=true;sx=e.clientX;sy=e.clientY;ow=P.offsetWidth;oh=P.offsetHeight;P.style.right="auto";P.style.bottom="auto";e.stopPropagation();});' +
-          'document.addEventListener("pointermove",function(e){if(!rz)return;P.style.width=Math.max(300,ow+e.clientX-sx)+"px";P.style.height=Math.max(360,oh+e.clientY-sy)+"px";P.style.transform="none";});' +
-          'document.addEventListener("pointerup",function(){rz=false;});})();' +
-          // 遥控：接收主窗口 BroadcastChannel 快照，实时渲染游戏信息
-          '(function(){var CH=null;try{CH=new BroadcastChannel("dsh_ro_remote");}catch(e){}' +
-          'var st2=document.getElementById("dsh-status2");if(st2)st2.textContent="遥控等待数据…";' +
-          'if(CH){CH.onmessage=function(ev){' +
-          'var d=ev.data&&ev.data.data;if(!d)return;' +
-          'var st2b=document.getElementById("dsh-status2");if(st2b)st2b.textContent=d.online?"遥控已连接 · 实时同步中":"遥控已连接 · 等待登录";' +
-          'var wi=document.getElementById("dsh-wininfo");if(wi&&d.winInfo)wi.textContent=d.winInfo;' +
-          'var sb=document.getElementById("dsh-statbar");if(sb){' +
-          'if(d.stat){var s=d.stat;var nm=sb.querySelector(".nm"),jb=sb.querySelector(".job"),lv=sb.querySelector(".lv");' +
-          'if(nm)nm.textContent=s.name;if(jb)jb.textContent=s.job+" · "+(s.map||"");if(lv)lv.textContent="Lv"+s.lv+"/"+s.jlv;' +
-          'var hpPct=s.maxhp>0?Math.round(s.hp/s.maxhp*100):0,spPct=s.maxsp>0?Math.round(s.sp/s.maxsp*100):0;' +
-          'var hpb=sb.querySelector(".hp"),spb=sb.querySelector(".sp");if(hpb)hpb.style.width=Math.max(0,Math.min(100,hpPct))+"%";if(spb)spb.style.width=Math.max(0,Math.min(100,spPct))+"%";' +
-          'var bn=sb.querySelectorAll(".bnum");if(bn[0])bn[0].textContent=(s.hp!=null?s.hp:"?")+"/"+(s.maxhp!=null?s.maxhp:"?");if(bn[1])bn[1].textContent=(s.sp!=null?s.sp:"?")+"/"+(s.maxsp!=null?s.maxsp:"?");' +
-          'var wn=sb.querySelector(".warn");if(wn)wn.textContent="负重"+(s.weight!=null?Math.round(s.weight/(s.maxWeight||1)*100)+"%":"—");' +
-          'var zy=sb.querySelector(".zeny");if(zy)zy.textContent="Zeny "+(s.zeny!=null?String(s.zeny).replace(/\\B(?=(\\d{3})+(?!\\d))/g,","):"—");' +
-          'var chr=document.getElementById("dsh-chr");if(chr)chr.textContent="Lv"+s.lv+" HP "+(s.hp!=null?s.hp:"?")+"/"+(s.maxhp!=null?s.maxhp:"?")+" SP "+(s.sp!=null?s.sp:"?")+"/"+(s.maxsp!=null?s.maxsp:"?")+" ("+((s.map)||"?")+")";' +
-          '}else{var nm2=sb.querySelector(".nm"),jb2=sb.querySelector(".job");if(nm2)nm2.textContent="—";if(jb2)jb2.textContent="未登录";}' +
-          '}' +
-          'var rl=document.getElementById("dsh-scanlist");if(rl&&d.mobs){' +
-          'if(!d.mobs.length){rl.innerHTML="附近无怪物";}' +
-          'else{var mh="";for(var mi=0;mi<d.mobs.length;mi++){mh+=\'<div class="list-item"><span>\'+d.mobs[mi].name+\'</span><span style="color:#5a6b7f">\'+((d.mobs[mi].mid!=null?"ID"+d.mobs[mi].mid+" ":"")+(d.mobs[mi].dist>=0?d.mobs[mi].dist+"m":""))+\'</span></div>\';}' +
-          'rl.innerHTML=mh;}' +
-          '}' +
-          '};}' +
-          '})();' +
-          '<\/script></body></html>');
-        doc.close();
-        // 弹出后收起原游戏页面板（悬浮球可重新展开）
-        panel.style.display = "none";
-        ball.style.display = "flex";
-        saved.collapsed = true;
-        try { saveSaved(saved); } catch (e) {}
-        // 启动遥控同步通道（主窗口 → 弹窗，BroadcastChannel 每 1s 推送游戏快照）
-        startRemoteSync();
-        setStatus("独立面板已弹出（遥控同步已开启）", "ok");
-      } else { setStatus("弹窗被浏览器拦截——请允许本站弹窗", "err"); }
-    } catch (e) { setStatus("弹窗异常: " + e.message, "err"); }
-  });
+  // （已删除：「弹出独立窗口」按钮与 window.open 弹窗生成代码 —— 弹窗为独立 JS 环境，
+  //   读不到游戏 CLIENT，且弹窗内操作无法回传游戏。功能改由「功能菜单」承载。）
 
   // ---------------- 状态条 ----------------
   function setStatus(text, cls) {
@@ -2233,8 +2395,11 @@
     } catch (e) {}
   }
 
-  // ---------------- 遥控同步（主窗口 → 弹窗 BroadcastChannel）----------------
-  var remoteCh = null, remoteTimer = null;
+  // ---------------- 遥控快照 buildRemoteSnapshot（多账号状态上报在用，保留）----------------
+  // 已删除的是 startRemoteSync()：它只为「弹出独立窗口」每秒推送一份快照。
+  // 弹窗是独立的 JS 环境，读不到游戏 CLIENT；原作者用 BroadcastChannel 做单向推送，
+  // 弹窗里能显示数据，但弹窗内的任何操作都回传不到游戏。功能改由「功能菜单」承载。
+  // remoteCh 保留：多账号同步器的即时通道 syncBCInit() 在复用它。
   function buildRemoteSnapshot() {
     var snap = { t: Date.now(), winInfo: "", account: null, online: false, stat: null, mobs: [] };
     try { var wi = $id("dsh-wininfo"); if (wi) snap.winInfo = wi.textContent; } catch (e) {}
@@ -2276,14 +2441,7 @@
     } catch (e) {}
     return snap;
   }
-  function startRemoteSync() {
-    if (remoteTimer) return;
-    try { if (!remoteCh) remoteCh = new BroadcastChannel("dsh_ro_remote"); } catch (e) { remoteCh = null; }
-    remoteTimer = setInterval(function () {
-      if (!remoteCh) return;
-      try { remoteCh.postMessage({ cmd: "snapshot", data: buildRemoteSnapshot() }); } catch (e) {}
-    }, 1000);
-  }
+  var remoteCh = null;
 
   // ---------------- 多账号平台 · 状态上报 + 同步器（P1 状态上报 / v2.15.8 同步器）----------------
   // 上报：每 15s POST 到本机中心 8899；中心有未执行广播时 hurry → 临时 3s 轮询
@@ -9957,6 +10115,8 @@
     } catch (e) {}
   }
   function renderZMonitor() {
+    // V2.17.1 功能菜单总开关：关掉「战斗监控横条」后不再渲染（也不创建）
+    if (!roModOn("zhud")) { try { if (zHudEl) zHudEl.style.display = "none"; } catch (e) {} return; }
     ensureZHud();
     if (!zHudEl) return;
     try {
@@ -10058,6 +10218,8 @@
     } catch (e) {}
   }
   function renderZTip() {
+    // V2.17.1 功能菜单总开关：关掉「动作提示条」后不再显示
+    if (!roModOn("ztip")) { try { if (zTipEl) zTipEl.style.display = "none"; } catch (e) {} return; }
     ensureZTip();
     if (!zTipEl) return;
     try {

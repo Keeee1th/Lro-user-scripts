@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.20.0
+// @version      2.21.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.20.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.21.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -620,19 +620,22 @@
       '<div class="row"><span class="lb">检测目标</span><span class="st" id="dsh-targets" style="font-size:11px">未读取</span></div>' +
       '<div class="row"><button class="ghost" id="dsh-readbot" style="flex:0 0 auto">读取内挂状态</button>' +
       '<button class="ghost" id="dsh-probe-neidom" style="flex:0 0 auto">探查内挂DOM</button></div>' +
-      '<div class="sub-page drawer-page" data-subpage="zhu" data-dname="battle-zhu">' +
+      '',
+    zhu: '' +
+      // V2.21.0：去掉侧边抽屉，改成页内二级页签（战斗设置 / 技能设置 / 附近怪物），合并为「助手战斗设置」
+      '<div class="row"><span class="st" id="dsh-z-state" style="font-size:10px">助手未启动</span>' +
+      '<button class="ghost" id="dsh-fw-btn-zhu2" data-fw="zhu2" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
+      '<div id="dsh-fw-zhu2">' +
+      '<div class="sub-tabs">' +
+      '<button class="sub-tab active" data-sub="zs-battle">战斗设置</button>' +
+      '<button class="sub-tab" data-sub="zs-skill">技能设置</button>' +
+      '<button class="sub-tab" data-sub="zs-near">附近怪物</button></div>' +
+      '<div class="sub-page active" data-subpage="zs-battle">' +
       '<div class="sec">助手模式（自控发包 · 无CD）</div>' +
       '<div class="sec">怪物侦查扫描（间隔可调）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-scanen" type="checkbox" checked>启用侦查扫描</label>' +
       '<span class="lb" style="margin-left:auto;min-width:26px">间隔</span>' +
       '<input id="dsh-scanint" type="number" value="0.5" min="0.3" step="0.1" style="flex:0 0 44px"><span style="color:#5a6b7f">s（最低0.3）</span></div>' +
-      '<div id="dsh-fw-mlock">' +
-      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">怪物锁定目录（只打勾选的怪）</span><button class="ghost" id="dsh-fw-btn-mlock" data-fw="mlock" style="flex:0 0 auto;padding:0 8px;font-size:11px">⧉ 浮窗</button></div>' +
-      '<details style="margin:4px 0"><summary style="cursor:pointer;color:#1259b3;font-size:12px">📌 本图怪物锁定（读当前地图怪物表 · 勾选=锁定）</summary>' +
-      '<div class="box" style="margin-top:2px"><div id="dsh-z-maplock" style="font-size:11px;max-height:120px;overflow:auto"><span class="st">读取当前地图怪物表（换图自动刷新）</span></div></div></details>' +
-      '<div class="box"><div class="b-hd">已锁定 <button class="ghost" id="dsh-lockclear" style="flex:0 0 auto;padding:0 8px;font-size:11px">清空锁定</button><span class="tag green" id="dsh-lockcount" style="float:right">0 种</span></div><div id="dsh-locklist" style="font-size:11px">未锁定（勾选本图怪物或侦查扫描到的怪）</div>' +
-      '<div class="log" style="margin-top:2px">锁定后自动切换目标：优先级=勾选怪 &gt; 最近 &gt; 血最少</div></div>' +
-      '</div>' +
       '<div class="sec">防御与瞬移（助手自实现）</div>' +
       '<div class="row"><span class="lb">非选中怪攻击</span><select id="dsh-z-ona" style="flex:0 0 100px"><option>无视</option><option>瞬移</option><option selected>还击</option></select></div>' +
       '<div class="row"><span class="lb">群殴时</span><span style="color:#5a6b7f">n≥</span><input id="dsh-z-grp" type="number" value="6" min="0" style="flex:0 0 38px"><span style="color:#5a6b7f">只怪（0=关闭）→</span>' +
@@ -683,12 +686,8 @@
       '<div class="row" style="flex-wrap:wrap;gap:4px"><button class="ghost" id="dsh-bt-snap" style="flex:0 0 auto;padding:0 8px;font-size:11px">快照</button><button class="ghost" id="dsh-bt-mark" style="flex:0 0 auto;padding:0 8px;font-size:11px">标记测试</button></div>' +
       '<div class="row"><span class="st" id="dsh-bt-state" style="font-size:10px">诊断: 关</span></div>' +
       '<div id="dsh-bt-log" style="font-size:10px;max-height:150px;overflow:auto;background:#f4f6f8;border:1px solid #d8e0e8;border-radius:4px;padding:4px;font-family:monospace;white-space:pre-wrap;line-height:1.5">诊断日志: 关</div></details>' +
-      '</div>',
-    zhu: '' +
-      '<div class="drow"><button class="dbtn" data-drw="battle-zhu" data-title="助手 · 战斗设置">战斗设置</button>' +
-      '<button class="dbtn" data-drw="skill-zhu" data-title="助手 · 技能设置">技能设置</button>' +
-      '<span class="st" id="dsh-z-state" style="font-size:10px;margin-left:auto">助手未启动</span></div>' +
-      '<details class="drawer-page" data-dname="skill-zhu" style="margin:4px 0" open><summary style="cursor:pointer;color:#1259b3;font-size:12px">🪄 助手模式（技能释放与顺序 · 多辅助 · 自动施放）<button class="ghost" id="dsh-fw-btn-skill" data-fw="skill" style="flex:0 0 auto;padding:0 8px;font-size:11px;float:right;margin-top:-1px">⧉ 浮窗</button></summary>' +
+      '</div>' +
+      '<div class="sub-page" data-subpage="zs-skill">' +
       '<div style="margin-top:4px"><div class="sec" style="margin-top:0">技能释放与顺序（自动判断释放前置 · 自动补状态）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-prereq" type="checkbox" checked>自动补充释放前置（状态/气弹）</label>' +
       '<span class="tag blue" id="dsh-prereqcnt" style="margin-left:auto">释放需求表: 94技能</span></div>' +
@@ -727,9 +726,13 @@
       '<button class="ghost" id="dsh-askdown" style="flex:0 0 auto">↓下移</button>' +
       '<button class="ghost" id="dsh-askdel" style="flex:0 0 auto">删除选中</button></div></div>' +
       '<div class="log" id="dsh-bufflog" style="margin-top:2px">辅助技能：未启用</div>' +
-      '<div class="row" style="margin-top:2px"><span class="lb" style="min-width:48px">当前状态</span><span class="st" id="dsh-statusview" style="font-size:11px;flex:1;line-height:1.5">未读取（客户端就绪后显示）</span></div></div></details>' +
-      '<details style="margin:4px 0"><summary style="cursor:pointer;color:#1259b3;font-size:12px">👁 附近怪物（实时 · <span id="dsh-scanst">未启动</span>）— 点开查看</summary>' +
-      '<div class="box" style="margin-top:2px"><div id="dsh-scanlist" style="font-size:11px;max-height:120px;overflow:auto">未启动侦查</div></div></details>',
+      '<div class="row" style="margin-top:2px"><span class="lb" style="min-width:48px">当前状态</span><span class="st" id="dsh-statusview" style="font-size:11px;flex:1;line-height:1.5">未读取（客户端就绪后显示）</span></div></div>' +
+      '</div>' +
+      '<div class="sub-page" data-subpage="zs-near">' +
+      '<div class="sec">附近怪物（实时 · <span id="dsh-scanst">未启动</span>）</div>' +
+      '<div class="box" style="margin-top:2px"><div id="dsh-scanlist" style="font-size:11px;max-height:120px;overflow:auto">未启动侦查</div></div>' +
+      '</div>' +
+      '</div>',
     assist: '' +
       '<div class="a-layout">' +
       '<div class="a-nav">' +
@@ -749,6 +752,9 @@
       '<span class="lb" style="min-width:48px">SP低于</span><input id="dsh-potsp" type="number" value="30" style="flex:0 0 44px"><span style="color:#5a6b7f">%喝蓝</span></div>' +
       '<div class="row"><label class="switch"><input id="dsh-poten" type="checkbox">启用自动吃药</label>' +
       '<span class="st" id="dsh-potlog" style="font-size:10px"></span></div>' +
+      '<div id="dsh-fw-aid">' +
+      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">战斗辅助 · 自动使用物品 / 自动装箭矢</span>' +
+      '<button class="ghost" id="dsh-fw-btn-aid" data-fw="aid" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
       '<div class="sec">自动使用物品（点选背包 · 条件触发）</div>' +
       '<div class="row"><span class="lb">物品</span><select id="dsh-itempick" style="flex:0 0 auto;max-width:130px"><option value="">选择物品…</option></select>' +
       '<button class="ghost" id="dsh-itempickadd" style="flex:0 0 auto">＋加入</button>' +
@@ -768,6 +774,7 @@
       '<div class="row"><label class="switch"><input id="dsh-arrowen" type="checkbox" checked>箭矢耗尽时用魔法箭袋(2000030)放箭并装上装备栏</label></div>' +
       '<div class="row"><span class="st" style="font-size:10px">V2.16.27：仅当手持弓/乐器/鞭子时生效（其它职业没有箭矢槽，避免白耗箭袋）</span></div>' +
       '<div class="row"><span class="st" id="dsh-arrowlog" style="font-size:10px">未启用</span></div>' +
+      '</div>' +
       '<div class="sec">背包快照定期上报（V2.15.27）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-invshot" type="checkbox" checked>开启定期上报</label>' +
       '<span class="lb" style="margin-left:8px">间隔</span><input id="dsh-invshotint" type="number" value="120" style="flex:0 0 44px"><span style="color:#5a6b7f">秒</span></div>' +
@@ -848,10 +855,15 @@
       '<div class="log">数值直接读取/写回游戏内挂的拾取设置（#lootProbability + .openpick），拾取由内挂自己跑。</div>' +
       '<div class="sec">② 指定 ID 拾取（怪物掉落树 · 点选物品加入）</div>' +
       '<div class="row"><span class="lb">当前地图</span><span class="st" id="dsh-pickmap" style="flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—（未进图）</span>' +
-      '<button class="ghost" id="dsh-pickmapbtn" style="flex:0 0 auto">📌 本图怪物掉落</button>' +
-      '<button class="ghost" id="dsh-maplockbtn" style="flex:0 0 auto">🔒 本图锁定目录</button></div>' +
-      '<div class="box"><div class="b-hd">本图可锁定怪物目录（勾选=加入锁定 · 换图自动刷新）</div>' +
-      '<div id="dsh-maplock" style="font-size:11px;max-height:150px;overflow:auto"><span class="st">点「🔒 本图锁定目录」读取本图怪物表</span></div></div>' +
+      '<button class="ghost" id="dsh-pickmapbtn" style="flex:0 0 auto">📌 本图怪物掉落</button></div>' +
+      '<div id="dsh-fw-mlock">' +
+      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">怪物锁定目录（只打勾选的怪）</span><button class="ghost" id="dsh-fw-btn-mlock" data-fw="mlock" style="flex:0 0 auto;padding:0 8px;font-size:11px">⧉ 浮窗</button></div>' +
+      '<details style="margin:4px 0" open><summary style="cursor:pointer;color:#1259b3;font-size:12px">📌 本图怪物锁定（读当前地图怪物表 · 勾选=锁定）</summary>' +
+      '<div class="box" style="margin-top:2px"><div id="dsh-z-maplock" style="font-size:11px;max-height:120px;overflow:auto"><span class="st">读取当前地图怪物表（换图自动刷新）</span></div></div></details>' +
+      '<div class="box"><div class="b-hd">已锁定 <button class="ghost" id="dsh-lockclear" style="flex:0 0 auto;padding:0 8px;font-size:11px">清空锁定</button><span class="tag green" id="dsh-lockcount" style="float:right">0 种</span></div><div id="dsh-locklist" style="font-size:11px">未锁定（勾选本图怪物或侦查扫描到的怪）</div>' +
+      '<div class="log" style="margin-top:2px">锁定后自动切换目标：优先级=勾选怪 &gt; 最近 &gt; 血最少</div></div>' +
+      '</div>' +
+      '<div class="row"><span class="st" style="font-size:10px">本图怪物锁定已独立成功能菜单里的「本图怪物锁定」页（悬浮球 → 本图怪物锁定）</span></div>' +
       '<div class="row"><input id="dsh-mobsearch" type="text" placeholder="搜索怪物名/ID…（全量图鉴）">' +
       '<button class="ghost" id="dsh-mobsearchbtn" style="flex:0 0 auto">搜索</button>' +
       '<button class="ghost" id="dsh-mobsearchclr" style="flex:0 0 auto">✕ 清空</button></div>' +
@@ -1194,39 +1206,9 @@
     }
   } catch (e) {}
 
-  // ---- 侧边抽屉（V1.7.0）：战斗页/技能页的 内挂模式/助手模式 配置块滑入右侧抽屉 ----
-  try {
-    var drawerEl = $("div", "", '<div class="d-hd"><span class="st" id="dsh-drawer-title" style="color:#fff;font-size:12px"></span><button class="ghost" id="dsh-drawer-close" style="margin-left:auto;color:#fff;border:1px solid rgba(255,255,255,.55)">返回</button></div><div class="d-main"><div class="d-body"></div></div>');
-    drawerEl.id = "dsh-drawer";
-    panel.appendChild(drawerEl);
-    var drBody = drawerEl.querySelector(".d-body");
-    // 四个模式配置块整体迁入抽屉（常驻 DOM：init 阶段 $id() 事件绑定照常生效，移动节点不丢监听）
-    // 块物理存放于内挂/助手页内，此处从面板全局定位（不再依赖所在页）
-    var neiEl = panel.querySelector('[data-dname="battle-nei"]');
-    var zhuEl = panel.querySelector('[data-dname="battle-zhu"]');
-    var npEl = panel.querySelector('[data-dname="skill-np"]');
-    var zsEl = panel.querySelector('[data-dname="skill-zhu"]');
-    if (neiEl) { neiEl.classList.remove("active"); drBody.appendChild(neiEl); }
-    if (zhuEl) { zhuEl.classList.remove("active"); drBody.appendChild(zhuEl); }
-    if (npEl) drBody.appendChild(npEl);
-    if (zsEl) drBody.appendChild(zsEl);
-    var openDrawer = function (name, title) {
-      var dr = $id("dsh-drawer"); if (!dr) return;
-      var pages = dr.querySelectorAll("[data-dname]");
-      for (var di = 0; di < pages.length; di++) {
-        pages[di].style.display = pages[di].getAttribute("data-dname") === name ? "block" : "none";
-      }
-      var tt = $id("dsh-drawer-title"); if (tt) tt.textContent = title || "";
-      dr.classList.add("open");
-    };
-    var closeDrawer = function () { var dr = $id("dsh-drawer"); if (dr) dr.classList.remove("open"); };
-    panel.querySelectorAll("[data-drw]").forEach(function (b) {
-      b.addEventListener("click", function () {
-        openDrawer(b.getAttribute("data-drw"), b.getAttribute("data-title") || "");
-      });
-    });
-    $id("dsh-drawer-close").addEventListener("click", closeDrawer);
-  } catch (e) {}
+  // ---- V2.21.0：侧边抽屉整体删除 ----
+  // 旧的「战斗设置 / 技能设置」右侧滑出抽屉交互不方便，已改为页内二级页签
+  // （助手模式页 = 战斗设置 / 技能设置 / 附近怪物 三个页签，且可整块浮窗）。
 
   // ================= V2.17.0 公共层 A / A2 / D =================
   // A  统一窗口行为：所有助手窗口（主面板 / 功能浮窗 / 功能管理器 / MVP 计时）共用同一套
@@ -1608,7 +1590,8 @@
   try {
     fwReg("mlock", "本图怪物锁定", function () { return document.getElementById("dsh-fw-mlock"); });
     fwReg("tp", "传送功能", function () { return document.getElementById("dsh-fw-tp"); });
-    fwReg("skill", "助手技能设置", function () { var p = document.getElementById("dsh-ro-panel"); return p ? p.querySelector('[data-dname="skill-zhu"]') : null; });
+    fwReg("zhu2", "助手战斗设置", function () { return document.getElementById("dsh-fw-zhu2"); });
+    fwReg("aid", "战斗辅助", function () { return document.getElementById("dsh-fw-aid"); });
     // MVP 计时：不使用标准浮窗，直接控制独立窗口的显示/隐藏
     fwReg("mvp", "MVP 计时", function () { 
       var mvpWin = document.getElementById("dsh-mvp-timers");
@@ -1657,7 +1640,8 @@
     { id: "zhu",   name: "助手自动战斗",    kind: "act", noToggle: true },
     { id: "mlock", name: "本图怪物锁定",    kind: "fw" },
     { id: "tp",    name: "传送功能",        kind: "fw" },
-    { id: "skill", name: "助手技能设置",    kind: "fw" },
+    { id: "zhu2",  name: "助手战斗设置",    kind: "fw" },
+    { id: "aid",   name: "战斗辅助",        kind: "fw" },
     { id: "item",  name: "物品 · 拾取与整理", kind: "fw" },
     { id: "mvp",   name: "MVP 计时",        kind: "custom" },
     { id: "zhud",  name: "战斗监控横条",    kind: "custom" },
@@ -1960,7 +1944,9 @@
   panel.addEventListener("click", function (e) {
     var st = e.target.closest && e.target.closest(".sub-tab");
     if (!st) return;
-    var host = st.closest(".page");
+    // V2.21.0：向上找同时含 .sub-page 的容器（页内 / 浮窗里都能切）
+    var host = st.parentNode;
+    while (host && host.querySelector && !host.querySelector(".sub-page")) host = host.parentNode;
     if (!host) return;
     host.querySelectorAll(".sub-tab").forEach(function (t) { t.classList.toggle("active", t === st); });
     host.querySelectorAll(".sub-page").forEach(function (p) { p.classList.toggle("active", p.getAttribute("data-subpage") === st.getAttribute("data-sub")); });
@@ -5630,7 +5616,7 @@
     lockList = {};
     profileLockSave();
     renderLockList();
-    try { renderMapLock($id("dsh-maplock")); renderMapLock($id("dsh-z-maplock")); } catch (e) {}
+    try { renderMapLock($id("dsh-z-maplock")); } catch (e) {}
     try { renderMapMobs(); } catch (e) {}
     setStatus("已清空怪物锁定目录", "ok");
   });
@@ -8667,7 +8653,7 @@
   // 本图可锁定怪物目录：读本图怪物表 → 勾选=加入锁定目录（不折叠，换图自动刷新）
   // 拾取页(#dsh-maplock) 与 助手页(#dsh-z-maplock) 共用
   function renderMapLock(el) {
-    el = el || $id("dsh-maplock");
+    el = el || $id("dsh-z-maplock");
     if (!el) return;
     var info = getCurrentMapInfo();
     if (!info || !info.mobIds || !info.mobIds.length) { el.innerHTML = '<span class="st">本图怪物表无数据（未进图/表缺失）</span>'; return; }
@@ -8695,7 +8681,8 @@
       });
     });
   }
-  $id("dsh-maplockbtn").addEventListener("click", function () {
+  var maplockBtnEl = $id("dsh-maplockbtn");
+  if (maplockBtnEl) maplockBtnEl.addEventListener("click", function () {
     renderMapLock();
     setStatus("已读取本图锁定目录", "ok");
   });
@@ -10515,7 +10502,7 @@
               setStatus("换图：自动战斗已停止", "st");
               tlog("map-changed: battle stopped");
             } catch (e7) {}
-            try { refreshPickMap(); renderMapLock(); renderMapLock($id("dsh-z-maplock")); } catch (e3) {}
+            try { refreshPickMap(); renderMapLock($id("dsh-z-maplock")); } catch (e3) {}
           }
         } catch (e4) {}
         // 拾取页当前地图名/技能列表/锁定目录刷新 —— V2.5.0 后台隐藏跳过（纯 UI，换图事件内已补刷）

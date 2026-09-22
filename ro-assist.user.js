@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.21
+// @version      2.16.22
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.21"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.16.22"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -11182,10 +11182,30 @@
   };
   function itipDB() { try { return CLIENT.DB || requireDB("DB/DBManager"); } catch (e) { return null; } }
   function itipInfo(itid) { try { var db = itipDB(); if (!db || typeof db.getItemInfo !== "function") return null; return db.getItemInfo(itid) || null; } catch (e) { return null; } }
-  function itipNameOf(itid) {
-    var info = itipInfo(itid);
+  // V2.16.22：原写法把 unidentifiedDisplayName("未知物品") 排在 name 前面 → 未鉴定装备永远显示"未知物品"。
+  // 实测可用字段与脚本内 getItemName() 一致（identifiedDiSPlayName 是历史拼写，兜底用 .name），这里做多候选 + 占位名过滤。
+  var ITIP_BADNAME = /^(未鉴定|未知物品|Unknown Item|Unknown|\?\?+)$/i;
+  function itipPickName(info) {
     if (!info) return null;
-    return info.identifiedDisplayName || info.unidentifiedDisplayName || info.name || null;
+    var cands = [info.identifiedDisplayName, info.name, info.identifiedName, info.identifiedDiSPlayName, info.displayName];
+    for (var i = 0; i < cands.length; i++) {
+      if (cands[i] == null) continue;
+      var s = String(cands[i]).trim();
+      if (!s || ITIP_BADNAME.test(s)) continue;
+      return s;
+    }
+    return null;
+  }
+  function itipNameOf(itid) { try { return itipPickName(itipInfo(itid)); } catch (e) { return null; } }
+  function itipNameDiag(itid) {
+    try {
+      var info = itipInfo(itid);
+      if (!info) return "DB 取不到（CLIENT.DB/require 没拿到 DBManager）";
+      var ks = ["identifiedDisplayName", "name", "identifiedName", "unidentifiedDisplayName"];
+      var parts = [];
+      for (var i = 0; i < ks.length; i++) { var v = info[ks[i]]; parts.push(ks[i] + "=" + (v === undefined ? "无" : JSON.stringify(String(v).slice(0, 24)))); }
+      return "表字段[" + Object.keys(info).join(",") + "] " + parts.join(" ");
+    } catch (e) { return "诊断异常:" + e.message; }
   }
   function itipEsc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
   function itipZeny(n) {
@@ -11294,7 +11314,8 @@
       var head = "";
       if (refined > 0) head += "+" + refined + " ";
       if (grade > 0) head += "[" + (["", "D", "C", "B", "A"][grade] || "") + "] ";
-      head += (itipNameOf(itid) || "未知物品");
+      var realName = itipNameOf(itid);
+      head += (realName || "未知物品");
       if (cards.length) head += " [" + cards.length + "卡]";
       L.push('<div style="color:#7fd1ff;font-weight:bold">' + itipEsc(head) + "</div>");
       L.push('<div style="color:#8f9bb3">物品 ID ' + itid + "</div>");
@@ -11303,6 +11324,16 @@
       } else if (!ident) {
         L.push('<div style="color:#8f9bb3;margin-top:3px">（无随机词条）</div>');
       }
+      // V2.16.22 诊断：字段没读到时把客户端原始字段名/值打出来（定位 lastRO 改过的字段名，定位完删掉）
+      try {
+        var dg = [];
+        if (!realName) dg.push("名称 " + itipNameDiag(itid));
+        if (!opts.length) {
+          var nroc = (item.nRandomOptionCnt == null) ? "无" : String(item.nRandomOptionCnt);
+          dg.push("词条 Options=" + (("Options" in item) ? "有" : "无") + " nRandomOptionCnt=" + nroc + " 物品字段[" + Object.keys(item).join(",") + "]");
+        }
+        if (dg.length) L.push('<div style="color:#7c8899;margin-top:4px;font-size:11px">' + itipEsc(dg.join(" // ")) + "</div>");
+      } catch (eD) {}
       if (cards.length) L.push('<div style="color:#9fd48a;margin-top:3px">插卡：' + itipEsc(cards.join("、")) + "</div>");
       if (priceObj) {
         var pz = "";
@@ -11425,8 +11456,16 @@
         } catch (e4) { rec.Options = "ERR"; }
         try {
           var info = db && db.getItemInfo ? db.getItemInfo(itid) : null;
-          if (info) { rec.dbName = info.identifiedDisplayName || null; rec.dbUnident = info.unidentifiedDisplayName || null; rec.dbSlotCount = info.slotCount; rec.dbClassNum = info.ClassNum; }
-        } catch (e5) {}
+          if (info) {
+            rec.dbKeys = Object.keys(info);
+            rec.dbName = info.identifiedDisplayName || null;
+            rec.dbNameAlt = info.name || null;
+            rec.dbUnident = info.unidentifiedDisplayName || null;
+            rec.dbSlotCount = info.slotCount;
+            rec.dbClassNum = info.ClassNum;
+            rec.dbPicked = itipPickName(info);
+          } else { rec.dbKeys = "INFO_NULL"; }
+        } catch (e5) { rec.dbKeys = "ERR:" + e5.message; }
         try { if (db && db.getItemName) rec.clientName = db.getItemName(it); } catch (e6) {}
         items.push(rec);
         sig.push(itid + ":" + (it.IsIdentified ? 1 : 0) + ":" + JSON.stringify(rec.Options));

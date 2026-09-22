@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.22
+// @version      2.16.23
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.22"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.16.23"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -11187,7 +11187,8 @@
   var ITIP_BADNAME = /^(未鉴定|未知物品|Unknown Item|Unknown|\?\?+)$/i;
   function itipPickName(info) {
     if (!info) return null;
-    var cands = [info.identifiedDisplayName, info.name, info.identifiedName, info.identifiedDiSPlayName, info.displayName];
+    // V2.16.23：lastRO 客户端实测真名就在 identifiedDiSPlayName（大写 S，上游 roBrowser 才叫 identifiedDisplayName）
+    var cands = [info.identifiedDiSPlayName, info.identifiedDisplayName, info.name, info.identifiedName, info.displayName];
     for (var i = 0; i < cands.length; i++) {
       if (cands[i] == null) continue;
       var s = String(cands[i]).trim();
@@ -11222,7 +11223,8 @@
   function itipOptList(item) {
     var out = [];
     try {
-      var ops = item && item.Options;
+      // V2.16.23：lastRO 客户端字段名是小写 options（上游 roBrowser 是大写 Options），两个都读
+      var ops = item && (item.options || item.Options);
       if (!ops) return out;
       for (var i = 1; i <= 5; i++) {
         var o = ops[i];
@@ -11330,7 +11332,9 @@
         if (!realName) dg.push("名称 " + itipNameDiag(itid));
         if (!opts.length) {
           var nroc = (item.nRandomOptionCnt == null) ? "无" : String(item.nRandomOptionCnt);
-          dg.push("词条 Options=" + (("Options" in item) ? "有" : "无") + " nRandomOptionCnt=" + nroc + " 物品字段[" + Object.keys(item).join(",") + "]");
+          var raw = "";
+          try { var ro = item.options || item.Options; if (ro) raw = JSON.stringify(ro).slice(0, 140); } catch (eR) { raw = "ERR"; }
+          dg.push("词条 options=" + (("options" in item) ? "有" : "无") + " 条数=" + nroc + " 原始=" + (raw || "空"));
         }
         if (dg.length) L.push('<div style="color:#7c8899;margin-top:4px;font-size:11px">' + itipEsc(dg.join(" // ")) + "</div>");
       } catch (eD) {}
@@ -11441,18 +11445,19 @@
         var itid = (it.ITID != null) ? it.ITID : it.itemid;
         if (itid == null) continue;
         var rec = { i: (it.index != null ? it.index : i), ITID: itid, fields: Object.keys(it) };
-        var pas = ["IsIdentified", "identify", "type", "itemType", "count", "amount", "RefiningLevel", "refine", "enchantgrade", "slotCount", "location", "wearState", "IsDamaged", "bound", "PlaceETCTab"];
+        var pas = ["IsIdentified", "identify", "type", "itemType", "count", "amount", "RefiningLevel", "refine", "enchantgrade", "slotCount", "location", "wearState", "WearState", "IsDamaged", "bound", "PlaceETCTab", "nRandomOptionCnt", "bindOnEquipType", "SpareBits"];
         for (var p = 0; p < pas.length; p++) { try { if (it[pas[p]] !== undefined) rec[pas[p]] = it[pas[p]]; } catch (e1) {} }
         try { rec.slot = it.slot ? JSON.parse(JSON.stringify(it.slot)) : null; } catch (e2) { rec.slot = "ERR"; }
         try {
-          if (it.Options) {
+          var rawOps = it.options || it.Options || null; // V2.16.23：lastRO 用小写 options
+          if (rawOps) {
             rec.Options = [];
-            for (var oi = 0; oi < it.Options.length; oi++) {
-              var o = it.Options[oi];
+            for (var oi = 1; oi <= 5; oi++) {
+              var o = rawOps[oi];
               if (!o) { rec.Options.push(null); continue; }
               var onm = null;
               try { if (db && db.getOptionName) onm = db.getOptionName(o.index); } catch (e3) {}
-              rec.Options.push({ index: o.index, value: o.value, name: onm });
+              rec.Options.push({ index: o.index, value: o.value, param: o.param, name: onm });
             }
           } else { rec.Options = null; }
         } catch (e4) { rec.Options = "ERR"; }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.27
+// @version      2.17.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.27"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.17.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -579,7 +579,11 @@
     "#dsh-ro-panel .pages::-webkit-scrollbar-thumb,#dsh-ro-panel #dsh-drawer .d-body::-webkit-scrollbar-thumb{background:#1f9d4d;border:3px solid rgba(244,247,252,.9);border-radius:8px;min-height:44px}" +
     "#dsh-ro-panel .pages::-webkit-scrollbar-thumb:hover,#dsh-ro-panel #dsh-drawer .d-body::-webkit-scrollbar-thumb:hover{background:#17893f}" +
     "#dsh-ro-panel .pages::-webkit-scrollbar-track,#dsh-ro-panel #dsh-drawer .d-body::-webkit-scrollbar-track{background:transparent;border-radius:8px}" +
-    "#dsh-ro-panel .pages *, #dsh-ro-panel #dsh-drawer .d-body *{scrollbar-color:auto}";
+    "#dsh-ro-panel .pages *, #dsh-ro-panel #dsh-drawer .d-body *{scrollbar-color:auto}" +
+    // V2.17.0 公共层 A：统一窗口拉伸手柄（所有助手窗口共用，右下角，可拖动改尺寸）
+    ".dsh-grip{position:absolute;right:0;bottom:0;width:18px;height:18px;cursor:nwse-resize;z-index:9;touch-action:none;pointer-events:auto}" +
+    ".dsh-grip::after{content:'';position:absolute;right:3px;bottom:3px;width:9px;height:9px;border-right:2px solid rgba(120,140,170,.9);border-bottom:2px solid rgba(120,140,170,.9);border-bottom-right-radius:3px}" +
+    ".dsh-grip:hover::after{border-color:#1d4ed8}";
 
   // ---------------- 页签定义 ----------------
   var PAGE_HTML = {
@@ -1058,6 +1062,27 @@
   panel.insertBefore(innerStyle, panel.firstChild);
   document.documentElement.appendChild(panel);
 
+  // ================= V2.17.0 公共层 B：RO 原生皮肤（覆盖层，完全不动 PANEL_CSS）================
+  // 做法：4 张游戏原生位图（标题栏/系统球/关闭/最小化）内嵌为 base64，另一层 <style> 追加在
+  // PANEL_CSS 之后做覆盖。现有布局一行未改 —— 想回滚只需删掉这一层 <style> 即可。
+  // 面板外框是行内样式（PANEL_LAYOUT），行内样式优先级高于样式表，故这几条加 !important。
+  var RO_SKIN_CSS = ":root{--dsh-tb:url(\"data:image/bmp;base64,Qk2ABAAAAAAAALIDAAAoAAAADAAAABEAAAABAAgAAAAAAAAAAAASCwAAEgsAAN8AAADfAAAAAAAAAP///wD/AP8Ax5KBAMaRgADFkYAAy5aFAMuXhgDMmIcAyZaGAMqXiADKlYIAx5KAAMiTgQDJlYMAyJSCAMaTgQDKloQAyJWDAMeUggDLmIYAyZaEAMmWhQDJl4UAzJmIAMuZhwDIloUA5s7FAOzUywDGlIEAx5WCAMWVggDow7QA4L6wAOfFtwDYqZMA2ayXANmtmQDYrZkA7r+qANyxnQDsvqkA8MKuAPDDrgDww68A8MSxAPDFsQDiuaYA4bmnAPHItQDmwK8A8su5APHKuADnwbAA8cu6AOjFtQDoxbYA58S1ANq6qwDoxrcA4cCxAN6+rwDgv7EA376wAOnIuQDXuawA38G0AN2/sgDixrkA6dHGAPfe0wDgrpUA5LKaAOOzmwDVp5EA2KyVAOS2ngDjtJ0A4rSdAOO1ngDluKEA2q6ZANmumQDYrpkA27GcAN2zngDvwqwA4LahAPDErwDhuKQA4LikAPHGsQDsw64A4bmmAO7FsADiuqcA47ypAPHJtQDyyrcA5L6sAPHKtwDwyrcA5MCuAOfDsQDlwrAA5sOxAN6+rgDcvKwA58a2AN2+rgDev7AA3b6vAN3AsQDewrQA3cGzAOTLvwDiyb0A6dLGAOvUyQDq08gA6dLHAOnUygDq1csA59PJAOzZ0AA7OTgAPjw7AEJAPwBhX14A4LGYAOO2ngDYrpcA4b2qAObDsADnxLEA6MazAOXDsQDlxLEA2sGzAOTOwgD44tYA59LHAOjUyQDn08gA8uDWAPTk2wD618IA59PHAJeSjwD828UA/NzHAPzdyQD838sAmpSQAOrn5QD428UA/N/JAPzfygD84MsA+9/KAPvfywDy0bYA8tK3APzhywDTzcgA8tS5APLVuwDx1bsA89i/AMC5swDKw70A8ta7APPYvgDy2L4A89m/APnhyQBmY2AAYV5bAMjDvgCqpqIAUlBOAFdVUwDf29cAtLGuAL27uQBmZWQA9vX0AMfGxQDy2b8A89zCAPPcxADx2LsA893CAPPdxADz3sQA897FAPPexgD659EA/evWAPvp1ADx2bsA897DAPPfxQD6588A++jQAPro0AD86tIA+unQAPvq0AD979gA/fDcAP3x3AD98doA/fLbAPvz2wBra2oA8vLyAOfn5wDDw8MAwsLCAMDAwAC9vb0Atra2AAAAAAAAAAAAAAAAAM7Ozs7Ozs7Ozs7OzsPDw8PDw8PDw8PDw9PT09PT09PT09PT062tra2tra2tra2trZ+fn5+fn5+fn5+fn1hYWFhYWFhYWFhYWDQ0NDQ0NDQ0NDQ0NExMTExMTExMTExMTF9fX19fX19fX19fX1JSUlJSUlJSUlJSUjs7Ozs7Ozs7Ozs7O4aGhoaGhoaGhoaGhnl5eXl5eXl5eXl5eW9vb29vb29vb29vb3JycnJycnJycnJycg8PDw8PDw8PDw8PDwAA\");--dsh-base:url(\"data:image/bmp;base64,Qk1wAQAAAAAAAOoAAAAoAAAACwAAAAsAAAABAAgAAAAAAAAAAAASCwAAEgsAAC0AAAAtAAAAAAAAAP///wD/AP8A4K2VALphNQCaUC0AikkoAMZpOwDHaz4AeUInAMlvQwB5QykAynFGAMpySACPVTgAh1A1AM16UQDOfFQAz39WAKBjRQCfY0UA0YVfAJ5lSgCdZUkA0odjALN2WADWkXAAu4FjANeWdgDanH4A25+BANyihgDPmoEAz5uCAN+skgDhr5cA5bmkAOa8pwDowa0A6se2AO7RwwD04tkAzp6DAM2egwD///8AAgICAgICAgICAgIAAgICHBAVEBwCAgIAAgIrEgMmAxIqAgIAAiAHIyUnJSMHIQIAAhcRHyIkIh8RFgIAAgkIGh4dHhoICQIAAg8FBAoMCgQFDwIAAhkGGB0fHRgGGQIAAgITDSgpKA0UAgIAAgICGw4LDhsCAgIAAgICAgICAgICAgIAAAA=\");--dsh-close:url(\"data:image/bmp;base64,Qk3MAQAAAAAAAEYBAAAoAAAACwAAAAsAAAABAAgAAAAAAAAAAAASCwAAEgsAAEQAAABEAAAAAAAAAP///wD/AP8A/wH/AH5KNQBYIQgAbToiAKNfPwB1Qy0AdUQtALN1WACKXUgAonBaANCagQCtinoA5r2qAMeklADhva0AWiMJAFokCQBjLhUAZDEXAMdsPwB5QicAeUMpAMlwRQCeWDYAk1c5AI9VOACHUDUAzXpRAM18VAB5STIAm2NGANGFXwDRhWAAyYBcAJ1lSQCkak0AnWZKANOJZQClbVAAglU/ALN2WADVjWsA1I1rAIVaRAC7gWMA2Jd2ANeWdgCNY04A0ph7AM+agQDJmYIA4KyTAKJ9awDluaQA5bunAOvItwDoz8MA8tvPAPHazwD15d0A2Zp5ANGkigDSpo0A9uffAP///wACAgICAgICAgICAgACAgIxHiIeMQICAgACAkAwDzo5P0EDAgACNB8LID43BiQNAgACJSMRFS4TECwnAgACFxY2DhIyOBkXAgACHRozCAkFNQcdAgACKxsMFDsqBCEKAgACAiYoPEI9LSkCAgACAgIvHBgcLwICAgACAgICAgICAgICAgAAAA==\");--dsh-mini:url(\"data:image/bmp;base64,Qk2gAQAAAAAAABoBAAAoAAAACwAAAAsAAAABAAgAAAAAAAAAAAASCwAAEgsAADkAAAA5AAAAAAAAAP///wD/AP8AoVw8AKVjRADUi2kAilxHALuHcADgrZUA7c/BAFojCABaIwkAikopAItLKwB5QicAyG5BAHlDKQDKckgAy3ZMAI9UOACPVTgAh1A1AM16UQDPf1YAoGNFANCCXADRhV8AnmVKANOKZwDUi2gAs3ZYAMWFZQC7gGMAu4FjAL+DZgDWlHMA15Z2ANuegADbnoEA3KKGAN2ligDeposAz5uCANekiwC7loQA5bumAOjBrQDpxLIA7tHDAO/UxgDx29AA9OLZAMKNcQDCj3MAxJF2AM6egwD///8AAgICAgICAgICAgIAAgICJBYaFiQCAgIAAgI3FwguCBc3AgIAAioPLQkyMS8SKgIAAhsdLDU2NTQmGwIAAg4ZBgsLCwojDgIAAhUDHwcrKSIEFQIAAh4MBScoJRwNHgIAAgIYETAzMBEYAgIAAgICIRQQEyACAgIAAgICAgICAgICAgIAAAA=\")}\n#dsh-ro-panel{background:#fff!important;border:1px solid #8e8e8e!important;border-radius:3px!important;box-shadow:1px 2px 2px rgba(0,0,0,.55)!important;color:#111!important}\n#dsh-ro-panel .hd{height:17px;min-height:17px;padding:0 3px;gap:3px;border-bottom:0;border-radius:3px 3px 0 0;background-color:#fff;background-image:var(--dsh-tb);background-repeat:repeat-x;background-size:auto 17px;color:#111;text-shadow:1px 1px #fff;cursor:move}\n#dsh-ro-panel .hd b{color:#111;font-weight:700;font-size:11px;line-height:13px;text-shadow:1px 1px #fff}\n#dsh-ro-panel .hd .hbtns{gap:3px}\n#dsh-ro-panel .hd .hbtn{height:13px;min-width:0;padding:0 5px;border:1px solid;border-color:#cfcfcf #a9a9a9 #5f5f5f #bdbdbd;border-radius:3px;background:linear-gradient(to bottom,#fff 0%,#f2f2f2 35%,#dcdcdc 55%,#f9f9f9 100%);color:#3f3f3f;font-size:10px;line-height:11px;font-weight:400;text-shadow:1px 1px rgba(255,255,255,.85)}\n#dsh-ro-panel .hd .hbtn:hover{background:linear-gradient(to bottom,#f7fbff,#dfe8f6 35%,#c0d0ee 55%,#f0f6ff);border-color:#c9d1dd #8ea2c4 #4d5f86 #b1bfd5}\n#dsh-ro-panel .tabs{background:#fff;border-bottom:1px solid #7897b9;padding:3px 4px 0;gap:2px}\n#dsh-ro-panel .tab{height:21px;padding:0 9px;border:1px solid #a8bfd8;border-bottom:0;border-radius:4px 4px 0 0;background:linear-gradient(to bottom,#eef5fd,#cfe0f4 45%,#b9d0ea);color:#2a4a70;font-size:11px;line-height:19px;text-shadow:1px 1px #fff}\n#dsh-ro-panel .tab:hover{background:linear-gradient(to bottom,#f7fbff,#dbe9f8 45%,#c8dcf2);color:#123a63}\n#dsh-ro-panel .tab.active{background:#fff;border-color:#7897b9;border-bottom:0;color:#123a63;font-weight:700;height:22px;line-height:20px;text-shadow:none}\n#dsh-ro-panel .statbar{background:#f7f7f7;border-bottom:1px solid #c1c6c2;color:#333;font-size:11px;padding:3px 5px}\n#dsh-ro-panel .statbar .nm{color:#111}#dsh-ro-panel .statbar .job{color:#555}#dsh-ro-panel .statbar .lv{color:#123a63}\n#dsh-ro-panel .statbar .bar .bg{background:#dfe5ec;border:1px solid #9aa7b6;height:8px;border-radius:0}\n#dsh-ro-panel .statbar .bar .hp{background:linear-gradient(#ff8a8a,#d63a3a)}#dsh-ro-panel .statbar .bar .sp{background:linear-gradient(#8ec2ff,#2f6fde)}\n#dsh-ro-panel .statbar .bar .bnum{color:#333}\n#dsh-ro-panel .pages{background:#fff;padding:8px 10px 12px}\n#dsh-ro-panel .sec{margin:5px 0 4px;padding:2px 0 2px 6px;border-left:3px solid #6f9ad0;background:linear-gradient(to right,#eef4fb,rgba(238,244,251,0));color:#123a63;font-size:11px;font-weight:700}\n#dsh-ro-panel .box{background:#fbfcfe;border:1px solid #c1c6c2;border-radius:3px;padding:5px 6px;margin:5px 0}\n#dsh-ro-panel .box .b-hd{color:#123a63;font-size:11px;font-weight:700}\n#dsh-ro-panel .list-item{color:#333;font-size:11px;border-bottom:1px solid #e2e2e2}\n#dsh-ro-panel .log{background:#f4f4f4;border:1px solid #dcdcdc;border-radius:2px;color:#555;font-size:10px}\n#dsh-ro-panel .tag{border:1px solid #b9c6d6;border-radius:3px;background:#f2f6fb;color:#31527a;font-size:10px}\n#dsh-ro-panel .tag.blue{background:#e6eefa;border-color:#9fb8d8;color:#123a63}#dsh-ro-panel .tag.green{background:#eef8f1;border-color:#8fbfa2;color:#1d6b3c}\n#dsh-ro-panel button{height:20px;min-width:42px;padding:0 7px;border:1px solid;border-color:#cfcfcf #a9a9a9 #5f5f5f #bdbdbd;border-radius:4px;background:linear-gradient(to bottom,#fff 0%,#f2f2f2 35%,#dcdcdc 55%,#f9f9f9 100%);color:#3f3f3f;font-size:11px;font-weight:400;line-height:1;text-shadow:1px 1px rgba(255,255,255,.85);box-shadow:inset 0 1px rgba(255,255,255,.95),inset 0 -1px rgba(0,0,0,.12)}\n#dsh-ro-panel button:hover{background:linear-gradient(to bottom,#f7fbff,#dfe8f6 35%,#c0d0ee 55%,#f0f6ff);border-color:#c9d1dd #8ea2c4 #4d5f86 #b1bfd5}\n#dsh-ro-panel button.green{color:#123a63;border-color:#bcd0e6 #8fa9c6 #4a6b91 #a9bfd8;background:linear-gradient(to bottom,#fbfdff,#e3eefa 35%,#c2d9f2 55%,#f2f8ff)}\n#dsh-ro-panel button.red{color:#8d2727;border-color:#d4c5c5 #b9a0a0 #765858 #c3aeae;background:linear-gradient(#fff,#eadede 55%,#fff8f8)}\n#dsh-ro-panel button.ghost{color:#3f3f3f;border-color:#cfcfcf #a9a9a9 #5f5f5f #bdbdbd;background:linear-gradient(to bottom,#fff,#efefef 55%,#fbfbfb)}\n#dsh-ro-panel input[type=text],#dsh-ro-panel input[type=password],#dsh-ro-panel input[type=number]{height:20px;background:#efefef;border:0;border-radius:0;box-shadow:inset 1px 1px 1px #c8c8c8;color:#111;font-size:11px;padding:1px 4px}\n#dsh-ro-panel select{height:20px;background:#fff;border:1px solid #aaa;border-radius:0;box-shadow:none;color:#111;font-size:11px;padding:0 2px}\n#dsh-ro-panel textarea{background:#efefef;border:0;border-radius:0;box-shadow:inset 1px 1px 1px #c8c8c8;color:#111;font-size:11px}\n#dsh-ro-panel .switch input{accent-color:#647c9d}\n#dsh-ro-panel .status{background:#f7f7f7;border-top:1px solid #c1c6c2;color:#333;font-size:10px;padding:2px 5px}\n#dsh-ro-panel .status .dot{width:7px;height:7px;background:#37b24d}\n#dsh-ro-panel .sub-tabs{border-bottom:1px solid #7897b9;gap:2px}\n#dsh-ro-panel .sub-tab{height:20px;padding:0 9px;border:1px solid #a8bfd8;border-bottom:0;border-radius:4px 4px 0 0;background:linear-gradient(to bottom,#eef5fd,#cfe0f4 45%,#b9d0ea);color:#2a4a70;font-size:11px;font-weight:400;line-height:18px;text-shadow:1px 1px #fff}\n#dsh-ro-panel .sub-tab:hover{background:linear-gradient(to bottom,#f7fbff,#dbe9f8 45%,#c8dcf2)}\n#dsh-ro-panel .sub-tab.active{background:#fff;border-color:#7897b9;border-bottom:0;color:#123a63;font-weight:700;text-shadow:none}\n#dsh-ro-panel .a-nav .sub-tab{height:auto;padding:6px 7px;border-radius:3px;border:1px solid #a8bfd8;background:linear-gradient(to bottom,#eef5fd,#cfe0f4 45%,#b9d0ea);color:#2a4a70;font-size:11px;line-height:1.35;text-shadow:1px 1px #fff}\n#dsh-ro-panel .a-nav .sub-tab.active{background:#fff;border:1px solid #7897b9;border-left:3px solid #6f9ad0;color:#123a63}\n#dsh-ro-panel .dbtn{border:1px solid;border-color:#cfcfcf #a9a9a9 #5f5f5f #bdbdbd;border-radius:4px;background:linear-gradient(to bottom,#fff 0%,#f2f2f2 35%,#dcdcdc 55%,#f9f9f9 100%);color:#3f3f3f;font-size:11px;font-weight:400;padding:7px 6px;text-shadow:1px 1px rgba(255,255,255,.85)}\n#dsh-ro-panel .dbtn:active{background:linear-gradient(to bottom,#cdd8eb,#b7c8e5 45%,#dfe9fb)}\n#dsh-ro-panel #dsh-drawer{background:#fff;border-left:1px solid #8e8e8e;box-shadow:-3px 0 6px rgba(0,0,0,.35)}\n#dsh-ro-panel #dsh-drawer .d-hd{height:17px;min-height:17px;padding:0 3px;gap:3px;background:#fff;background-image:var(--dsh-tb);background-repeat:repeat-x;background-size:auto 17px;color:#111;text-shadow:1px 1px #fff;font-size:11px;font-weight:700}\n#dsh-ro-panel #dsh-drawer .d-hd .st{color:#111!important;font-size:11px!important}\n#dsh-ro-panel #dsh-drawer .d-hd button{height:13px!important;min-width:0!important;padding:0 6px!important;font-size:10px!important;color:#3f3f3f!important;border:1px solid #b9a0a0!important;border-radius:3px!important;background:linear-gradient(#fff,#eadede 55%,#fff8f8)!important}\n#dsh-ro-panel #dsh-drawer .d-rail{background:#f2f2f2;border-right:1px solid #c1c6c2;padding:5px 4px;gap:5px}\n#dsh-ro-panel #dsh-drawer .d-rail button{font-size:11px;font-weight:400;padding:6px 4px}\n#dsh-ro-panel #dsh-drawer .d-body{background:#fff;padding:8px 10px 12px}\n#dsh-ro-panel .pages,#dsh-ro-panel #dsh-drawer .d-body{scrollbar-color:#b9c6d6 transparent}\n#dsh-ro-panel .pages::-webkit-scrollbar-thumb,#dsh-ro-panel #dsh-drawer .d-body::-webkit-scrollbar-thumb{background:#b9c6d6;border:3px solid #fff}\n#dsh-ro-panel .pages::-webkit-scrollbar-thumb:hover,#dsh-ro-panel #dsh-drawer .d-body::-webkit-scrollbar-thumb:hover{background:#93a8c0}\n#dsh-fw-mgr{border:1px solid #8e8e8e;border-radius:3px;background:#fff;box-shadow:1px 2px 2px rgba(0,0,0,.55);color:#111}\n.dsh-grip::after{border-right:2px solid #8a8a8a;border-bottom:2px solid #8a8a8a}\n.dsh-grip:hover::after{border-color:#123a63}";
+  var roSkinStyleEl = null;
+  function roSkinSet(on) { try { if (roSkinStyleEl) roSkinStyleEl.disabled = !on; } catch (e) {} }
+  function roSkinOn() { try { return !!(roSkinStyleEl && !roSkinStyleEl.disabled); } catch (e) { return false; } }
+  (function () {
+    try {
+      var st = document.createElement("style");
+      st.id = "dsh-ro-skin";
+      st.textContent = RO_SKIN_CSS;
+      document.documentElement.appendChild(st);
+      roSkinStyleEl = st;
+      // 面板内部还注入了一份 PANEL_CSS（innerStyle），延迟再挪到最末尾，确保覆盖层排在它之后
+      setTimeout(function () { try { document.documentElement.appendChild(st); } catch (e) {} }, 0);
+    } catch (e) {}
+  })();
+
+
   // ---- 赏金任务材料提示（V1.8.4）：物品栏槽 data-itid 命中赏金清单 → 金边+数量变金（纯样式注入，不改图片）----
   // V1.8.1 用 .item.maked[data-itid] 从未生效（物品栏真实结构=<div class="item" data-index data-itid draggable>，v0.13.10 探针 domInv 取证）；
   // V1.8.4 重写为 .item[data-itid]，仓库(.items 无 itid)/装备(仅 data-index)槽暂不覆盖
@@ -1242,6 +1267,181 @@
     $id("dsh-drawer-close").addEventListener("click", closeDrawer);
   } catch (e) {}
 
+  // ================= V2.17.0 公共层 A / A2 / D =================
+  // A  统一窗口行为：所有助手窗口（主面板 / 功能浮窗 / 功能管理器 / MVP 计时）共用同一套
+  //    拖动 + 拉伸 + 位置尺寸记忆 + 事件隔离，不再每个窗口各写一份。
+  // A2 界面缩放：按浏览器「视口」尺寸（innerWidth / innerHeight）等比缩放助手 UI。
+  //    视口尺寸天然排除了浏览器顶栏、书签栏与页面自身顶框，分屏时助手自动变小不再压住游戏。
+  //    缩放只作用于助手窗口根节点，绝不改 documentElement（那会把游戏画面一起缩放）。
+  // D  事件隔离：助手 UI 根节点统一打 data-dsh-ui="1"，判定只此一处；旧实现维护的是手写
+  //    选择器清单，漏掉了功能浮窗/战斗条/提示条，兜底形同虚设。
+  var RO_UI_KEY = "dsh_ro_ui_v1";
+  var RO_DESIGN_W = 1600, RO_DESIGN_H = 900;   // 缩放基准视口：1600x900 时按 100% 显示
+  var RO_SCALE_HARD_MIN = 0.5, RO_SCALE_HARD_MAX = 1.5;
+  var roUiC = null;
+  function roUi() {
+    if (roUiC) return roUiC;
+    roUiC = { win: {}, scale: "auto", scaleMin: 0.75 };
+    try {
+      var o = JSON.parse(localStorage.getItem(RO_UI_KEY) || "{}");
+      if (o && typeof o === "object") {
+        if (o.win && typeof o.win === "object") roUiC.win = o.win;
+        if (o.scale !== undefined && o.scale !== null) roUiC.scale = o.scale;
+        var sm = parseFloat(o.scaleMin);
+        if (isFinite(sm) && sm >= RO_SCALE_HARD_MIN && sm <= 1) roUiC.scaleMin = sm;
+      }
+    } catch (e) {}
+    return roUiC;
+  }
+  function roUiSave() { try { localStorage.setItem(RO_UI_KEY, JSON.stringify(roUi())); } catch (e) {} }
+  function roVw() { return window.innerWidth || document.documentElement.clientWidth || 1280; }
+  function roVh() { return window.innerHeight || document.documentElement.clientHeight || 800; }
+  function roScaleAuto() {
+    if (typeof IS_MN !== "undefined" && IS_MN) return 1;  // 手机版铺满视口，不参与缩放
+    var lo = roUi().scaleMin;
+    var s = Math.min(1, roVw() / RO_DESIGN_W, roVh() / RO_DESIGN_H);
+    if (!(s > 0)) s = 1;
+    if (s < lo) s = lo;
+    return Math.round(s * 100) / 100;
+  }
+  function roScale() {
+    var v = roUi().scale;
+    if (v === "auto" || v === undefined || v === null) return roScaleAuto();
+    var n = parseFloat(v);
+    if (!isFinite(n) || n <= 0) return roScaleAuto();
+    return Math.max(RO_SCALE_HARD_MIN, Math.min(RO_SCALE_HARD_MAX, Math.round(n * 100) / 100));
+  }
+  // 助手窗口的 transform 由本函数独占写入（其它任何地方都不得再写窗口的 transform）
+  function roApplyScale(el) {
+    if (!el) return;
+    var s = roScale();
+    try { el.setAttribute("data-dsh-scale", String(s)); } catch (e) {}
+    el.style.transformOrigin = "top left";
+    el.style.transform = (s === 1) ? "none" : "scale(" + s + ")";
+  }
+  function roScaleOf(el) {
+    var v = parseFloat(el && el.getAttribute && el.getAttribute("data-dsh-scale"));
+    return (isFinite(v) && v > 0) ? v : 1;
+  }
+  function roWinEls() { try { return document.querySelectorAll("[data-dsh-win]"); } catch (e) { return []; } }
+  function roScaleAll() { var l = roWinEls(); for (var i = 0; i < l.length; i++) roApplyScale(l[i]); }
+  function roScaleSet(v) { roUi().scale = v; roUiSave(); roScaleAll(); }
+  // 位置夹紧：按「缩放后」的可视尺寸夹紧，保证标题栏始终留在视口内可抓
+  function roClampXY(el, x, y, w, h) {
+    var s = roScaleOf(el);
+    var ww = (w || el.offsetWidth || 0) * s, hh = (h || el.offsetHeight || 0) * s;
+    var minX = 60 - ww, maxX = roVw() - 60, minY = 0, maxY = roVh() - 24;
+    if (maxX < minX) maxX = minX;
+    if (maxY < minY) maxY = minY;
+    if (!isFinite(x)) x = 0;
+    if (!isFinite(y)) y = 0;
+    return { x: Math.max(minX, Math.min(maxX, x)), y: Math.max(minY, Math.min(maxY, y)) };
+  }
+  function roReclampAll() {
+    var l = roWinEls();
+    for (var i = 0; i < l.length; i++) {
+      var el = l[i];
+      if (!el.style || el.style.display === "none") continue;
+      var x = parseFloat(el.style.left), y = parseFloat(el.style.top);
+      if (!isFinite(x) || !isFinite(y)) continue;
+      var p = roClampXY(el, x, y);
+      el.style.left = p.x + "px"; el.style.top = p.y + "px";
+    }
+    // 悬浮球不参与缩放，但视口变小后要保证还在屏幕内（否则分屏后找不回来）
+    try {
+      var bl = document.getElementById("dsh-ball");
+      if (bl && bl.style.display !== "none" && bl.style.left) {
+        var bx = parseFloat(bl.style.left) || 0, by = parseFloat(bl.style.top) || 0;
+        var nbx = Math.max(0, Math.min(roVw() - 40, bx)), nby = Math.max(0, Math.min(roVh() - 40, by));
+        if (nbx !== bx || nby !== by) { bl.style.left = nbx + "px"; bl.style.top = nby + "px"; }
+      }
+    } catch (e) {}
+  }
+  var roScaleTimer = null;
+  function roScaleOnResize() {
+    if (roScaleTimer) clearTimeout(roScaleTimer);
+    roScaleTimer = setTimeout(function () { try { roScaleAll(); roReclampAll(); } catch (e) {} }, 200);
+  }
+  function roWinSave(id, el) {
+    try {
+      var m = roUi().win;
+      m[id] = { x: parseFloat(el.style.left) || 0, y: parseFloat(el.style.top) || 0, w: el.offsetWidth, h: el.offsetHeight };
+      roUiSave();
+    } catch (e) {}
+  }
+  function roGrip(el) {
+    var g = document.createElement("div");
+    g.className = "dsh-grip";
+    g.title = "按住拖动可拉伸窗口大小";
+    el.appendChild(g);
+    return g;
+  }
+  // 统一窗口绑定：拖动（标题栏）+ 拉伸（右下角手柄）+ 位置尺寸记忆 + 缩放 + 事件隔离
+  function roWinBind(el, opt) {
+    if (!el || el.__roBound) return;
+    el.__roBound = true;
+    opt = opt || {};
+    var id = opt.id || el.id || "w";
+    el.setAttribute("data-dsh-win", "1");
+    el.setAttribute("data-dsh-ui", "1");
+    var st = roUi().win[id] || null;
+    var s0 = roScale();
+    var mw = opt.minW || 220, mh = opt.minH || 120;
+    var w = (st && st.w) ? st.w : (opt.dw || 0);
+    var h = (st && st.h) ? st.h : (opt.dh || 0);
+    if (w) el.style.width = Math.round(Math.max(mw, Math.min(w, (roVw() - 16) / s0))) + "px";
+    if (h) el.style.height = Math.round(Math.max(mh, Math.min(h, (roVh() - 16) / s0))) + "px";
+    roApplyScale(el);
+    var pw = (el.offsetWidth || 0) * s0, ph = (el.offsetHeight || 0) * s0;
+    var dx = (st && isFinite(st.x)) ? st.x : ((opt.ax !== undefined) ? opt.ax : Math.max(0, (roVw() - pw) / 2));
+    var dy = (st && isFinite(st.y)) ? st.y : ((opt.ay !== undefined) ? opt.ay : Math.max(0, (roVh() - ph) / 2));
+    var p = roClampXY(el, dx, dy, el.offsetWidth, el.offsetHeight);
+    el.style.left = p.x + "px"; el.style.top = p.y + "px";
+    el.style.right = "auto"; el.style.bottom = "auto";
+    var save = function () { roWinSave(id, el); };
+    if (opt.drag) {
+      dragEl(opt.drag, function (x, y) {
+        var q = roClampXY(el, x, y);
+        el.style.left = q.x + "px"; el.style.top = q.y + "px";
+      }, function () { return roScaleOf(el); }, save);
+    }
+    var grip = opt.grip;
+    if (grip) {
+      var rz = false, rsx = 0, rsy = 0, rw = 0, rh = 0;
+      try { grip.style.touchAction = "none"; } catch (e) {}
+      grip.addEventListener("pointerdown", function (e) {
+        rz = true; rsx = e.clientX; rsy = e.clientY;
+        rw = el.offsetWidth; rh = el.offsetHeight;
+        try { grip.setPointerCapture && grip.setPointerCapture(e.pointerId); } catch (err) {}
+        try { e.stopPropagation(); if (e.cancelable) e.preventDefault(); } catch (err) {}
+      });
+      grip.addEventListener("pointermove", function (e) {
+        if (!rz) return;
+        var sc = roScaleOf(el);
+        var nw = rw + (e.clientX - rsx) / sc, nh = rh + (e.clientY - rsy) / sc;
+        nw = Math.max(mw, Math.min(nw, (roVw() - 16) / sc));
+        nh = Math.max(mh, Math.min(nh, (roVh() - 16) / sc));
+        if (opt.maxW) nw = Math.min(nw, opt.maxW);
+        if (opt.maxH) nh = Math.min(nh, opt.maxH);
+        el.style.width = Math.round(nw) + "px"; el.style.height = Math.round(nh) + "px";
+      });
+      var rzEnd = function () { if (!rz) return; rz = false; save(); try { opt.onResize && opt.onResize(); } catch (e) {} };
+      grip.addEventListener("pointerup", rzEnd);
+      grip.addEventListener("pointercancel", rzEnd);
+    }
+    try { isolateEl(el); } catch (e) {}
+    try { opt.onReady && opt.onReady(); } catch (e) {}
+  }
+  // D 事件隔离统一判定：助手 UI 根节点都带 data-dsh-ui="1"；
+  // 兜底再认一次 dsh- 前缀 id（助手全部元素 id 均以 dsh- 开头），双保险不会漏。
+  function inAssistantUI(t) {
+    try {
+      if (!t || !t.closest) return false;
+      return !!(t.closest('[data-dsh-ui="1"]') || t.closest('[id^="dsh-"]'));
+    } catch (e) { return false; }
+  }
+  try { window.addEventListener("resize", roScaleOnResize); } catch (e) {}
+
   // 事件隔离层：游戏引擎在 document/window 挂全局鼠标/触摸监听（点地图=走路），
   // 助手 UI 内的点击/拖动/滚动冒泡到 document 会被误判为游戏操作 → 角色乱走。
   // 在面板与悬浮球冒泡阶段 stopPropagation，让助手 UI 成为操作「孤岛」：
@@ -1251,6 +1451,7 @@
     "touchstart", "touchmove", "touchend", "pointerdown", "pointermove", "pointerup"];
   function isolateEl(el) {
     if (!el) return;
+    try { el.setAttribute("data-dsh-ui", "1"); } catch (e) {}  // V2.17.0 公共层 D：标记助手 UI 根节点
     for (var ie = 0; ie < isoEvents.length; ie++) {
       el.addEventListener(isoEvents[ie], function (ev) { ev.stopPropagation(); }, false);
     }
@@ -1266,7 +1467,7 @@
     for (var ie2 = 0; ie2 < isoEvents.length; ie2++) {
       document.addEventListener(isoEvents[ie2], function (ev) {
         try {
-          if (ev.target && ev.target.closest && ev.target.closest("#dsh-ro-panel, #dsh-ball, #dsh-mini, #dsh-mvp-timers")) {
+          if (inAssistantUI(ev.target)) {
             ev.stopPropagation();
           }
         } catch (e) {}
@@ -1284,55 +1485,63 @@
       if (fwState[id] && fwState[id].win && fwState[id].win.parentNode) return fwState[id].win;
       var win = document.createElement("div");
       win.id = "dsh-fw-" + id;
-      win.style.cssText = "position:fixed;z-index:2147483646;" + (IS_MN ? "width:88vw;max-width:420px;left:50%;transform:translateX(-50%);top:10vh;" : "width:320px;left:calc(50% + 80px);top:120px;") +
-        "background:rgba(244,247,252,.92);border:1px solid #1f9d4d;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.45);" +
-        "display:flex;flex-direction:column;overflow:hidden;font:12px/1.6 'Microsoft YaHei',system-ui,sans-serif;color:#16202c;";
+      // V2.17.0：位置 / 尺寸 / 缩放 / 拖动 / 拉伸全部交给公共层 roWinBind，这里只留外观
+      win.style.cssText = "position:fixed;z-index:2147483646;" +
+        "border:1px solid #8e8e8e;border-radius:3px;background:#fff;box-shadow:1px 2px 2px rgba(0,0,0,.55);" +
+        "display:flex;flex-direction:column;overflow:hidden;font:12px/1.6 'Microsoft YaHei',Arial,sans-serif;color:#111;";
       win.setAttribute("data-fw", "1");
       var bar = document.createElement("div");
-      bar.style.cssText = "display:flex;align-items:center;gap:6px;padding:5px 8px;background:rgba(31,157,77,.14);cursor:move;user-select:none;flex:none;";
+      bar.className = "ro-fw-title";
+      bar.style.cssText = "display:flex;align-items:center;gap:3px;height:17px;min-height:17px;padding:0 3px;border-radius:3px 3px 0 0;" +
+        "background-color:#fff;background-image:var(--dsh-tb);background-repeat:repeat-x;background-size:auto 17px;" +
+        "color:#111;text-shadow:1px 1px #fff;cursor:move;user-select:none;flex:none;";
       var tt = document.createElement("span");
       tt.textContent = title || "浮窗";
-      tt.style.cssText = "flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+      tt.style.cssText = "flex:1;min-width:0;font-weight:700;font-size:11px;line-height:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
       var opLab = document.createElement("span");
       opLab.textContent = "透明";
-      opLab.style.cssText = "font-size:10px;color:#5a6b7f;";
+      opLab.style.cssText = "font-size:10px;color:#333;flex:none;";
       var op = document.createElement("input");
       op.type = "range"; op.min = "30"; op.max = "100"; op.value = "90";
-      op.style.cssText = "width:56px;height:14px;";
+      op.style.cssText = "width:52px;height:12px;flex:none;";
       op.title = "透明度（30%~100%）";
       var x = document.createElement("button");
-      x.textContent = "×";
+      x.textContent = "";  // RO 原生关闭球（位图），不用 × 字符
       x.title = "收回浮窗（回到设置抽屉原位）";
-      x.style.cssText = "flex:0 0 auto;width:22px;height:22px;line-height:20px;text-align:center;border:1px solid #d0a8a8;border-radius:5px;background:#fff;color:#b91c1c;cursor:pointer;font-size:14px;padding:0;";
+      x.style.cssText = "flex:0 0 auto;width:11px;height:11px;min-width:11px;padding:0;border:0;border-radius:50%;" +
+        "background:var(--dsh-close) no-repeat;background-size:11px 11px;cursor:pointer;font-size:0;line-height:0;color:transparent;";
       var body = document.createElement("div");
-      body.style.cssText = "overflow:auto;max-height:60vh;padding:4px;";
-      op.addEventListener("input", function () { try { win.style.background = "rgba(244,247,252," + (parseInt(op.value, 10) / 100) + ")"; } catch (e) {} });
+      body.className = "ro-fw-body";
+      body.style.cssText = "overflow:auto;flex:1 1 auto;min-height:0;padding:5px;border-top:1px solid #7897b9;background:#fff;color:#111;";
+      op.addEventListener("input", function () { try { win.style.background = "rgba(255,255,255," + (parseInt(op.value, 10) / 100) + ")"; } catch (e) {} });
       x.addEventListener("click", function () { fwClose(id); });
-      // 拖动：标题栏 pointerdown → document pointermove/pointerup（浮窗不冒泡到游戏由隔离层保证）
-      var drag = null;
-      bar.addEventListener("pointerdown", function (ev) {
-        try {
-          if (ev.target === x || ev.target === op || ev.target === opLab) return;
-          drag = { sx: ev.clientX, sy: ev.clientY, lx: win.offsetLeft, ty: win.offsetTop };
-          try { ev.preventDefault(); } catch (e) {}
-        } catch (e) {}
-      });
-      document.addEventListener("pointermove", function (ev) {
-        try { if (!drag) return; var nx = drag.lx + (ev.clientX - drag.sx), ny = drag.ty + (ev.clientY - drag.sy); win.style.left = nx + "px"; win.style.top = ny + "px"; win.style.transform = "none"; } catch (e) {}
-      }, true);
-      document.addEventListener("pointerup", function () { drag = null; }, true);
+      // V2.17.0：拖动改由公共层 dragEl 处理（带缩放换算 + 视口夹紧 + 位置记忆）。
+      // 旧实现每个浮窗各挂一对 document 级 pointermove/pointerup 监听，浮窗越多监听越多。
       bar.appendChild(tt); bar.appendChild(opLab); bar.appendChild(op); bar.appendChild(x);
       win.appendChild(bar); win.appendChild(body);
       // 先登记 fwState 再挂载/隔离：任何后续异常都不留下「已挂载未记录」的半成品浮窗（防无限生成）
       if (!fwState[id]) fwState[id] = {};
       fwState[id].win = win; fwState[id].body = body;
       document.documentElement.appendChild(win);
-      try { isolateEl(win); } catch (e) {} // 事件隔离：点浮窗不触发游戏移动（失败不致命，下次重试）
-      // 记住位置（localStorage dsh_ro_fwpos）
+      // 位置记忆迁移：旧的 dsh_ro_fwpos 一次性并入统一的 dsh_ro_ui_v1
       try {
-        var pos = JSON.parse(localStorage.getItem("dsh_ro_fwpos") || "{}");
-        if (pos[id]) { win.style.left = pos[id].l + "px"; win.style.top = pos[id].t + "px"; win.style.transform = "none"; }
+        if (!roUi().win["fw-" + id]) {
+          var pos = JSON.parse(localStorage.getItem("dsh_ro_fwpos") || "{}");
+          if (pos[id]) { roUi().win["fw-" + id] = { x: pos[id].l, y: pos[id].t }; roUiSave(); }
+        }
       } catch (e) {}
+      // V2.17.0 公共层 A：统一绑定（拖动 / 拉伸 / 位置尺寸记忆 / 缩放 / 事件隔离）
+      var gw = IS_MN ? Math.min(430, Math.round(roVw() * 0.9)) : 340;
+      var gh = IS_MN ? Math.min(700, roVh() - 60) : 380;
+      roWinBind(win, {
+        id: "fw-" + id,
+        drag: bar,
+        grip: roGrip(win),
+        minW: 240, minH: 140,
+        dw: gw, dh: gh,
+        ax: Math.max(0, Math.round((roVw() - gw * roScale()) / 2) + 60),
+        ay: Math.max(0, Math.round(roVh() * 0.12))
+      });
       return win;
     } catch (e) { return null; }
   }
@@ -1429,7 +1638,7 @@
         } catch (e) {}
       }
       function simInUi(t) {
-        try { return t && t.closest && t.closest("#dsh-ro-panel, #dsh-ball, #dsh-mini, #dsh-mvp-timers"); } catch (e) { return false; }
+        return inAssistantUI(t);
       }
       function simDown(e) {
         try {
@@ -1536,7 +1745,7 @@
   });
 
   // ---------------- 拖动（标题栏 + 悬浮球 + 拉伸手柄）----------------
-  function dragEl(el, onmove) {
+  function dragEl(el, onmove, scaleFn, onEnd) {
     var sx, sy, ox, oy, moving = false, dx0 = 0, dy0 = 0;
     // V2.6.6 移动端防断触：禁掉浏览器对 pointer 的默认手势（滚动/缩放），否则 Kiwi/手机
     // 会把拖动当页面滚动而打断 pointermove（断触）。标题栏/球/手柄三处统一。
@@ -1546,13 +1755,19 @@
       // V2.6.8 防「未按住却跟手」：鼠标未按键仍在移动 = 此前的 pointerup 丢失（如
       // captured 元素被隐藏/捕获隐式释放），立即按松手收尾，杜绝残留监听把悬浮标带着跑
       if (e.pointerType === "mouse" && !(e.buttons & 1)) { onUp(e); return; }
-      onmove(ox + e.clientX - sx, oy + e.clientY - sy);
+      // V2.17.0：窗口按比例缩放时，屏幕位移要除以缩放值才是窗口位移，
+      // 否则缩到 70% 后鼠标会跑在窗口前面（拖起来「跟不上手」）。
+      var sc = 1;
+      try { sc = (scaleFn && scaleFn()) || 1; } catch (err) { sc = 1; }
+      if (!(sc > 0)) sc = 1;
+      onmove(ox + (e.clientX - sx) / sc, oy + (e.clientY - sy) / sc);
     }
     // move/up/cancel 挂到 window：手指移出元素范围仍持续收到事件，拖动跟手不中断
     function onUp(e) {
       moving = false;
       // V1.7.6：拖动位移 >8px = 拖动（松手不触发球展开），未拖动=单击（照常展开）
       el.__dsDragged = Math.abs(e.clientX - dx0) + Math.abs(e.clientY - dy0) > 8;
+      try { onEnd && onEnd(); } catch (err) {}
       el.removeEventListener("pointermove", onMove);
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("pointercancel", onUp);
@@ -1568,12 +1783,14 @@
       if (!moving) return;         // 正常松手:onUp 已收尾,moving=false,忽略
       if (e.buttons & 1) return;   // 仍按住但捕获被取消:保留监听继续拖
       moving = false;
+      try { onEnd && onEnd(); } catch (err) {}
       el.removeEventListener("pointermove", onMove);
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("pointercancel", onUp);
     });
     el.addEventListener("pointerdown", function (e) {
-      if (e.target.closest && e.target.closest("button")) return;
+      // V2.17.0：按钮 / 滑块 / 输入框 / 拉伸手柄上按下不算拖动（否则拖不动滑块、点不进输入框）
+      if (e.target.closest && e.target.closest("button,input,select,textarea,.dsh-grip")) return;
       moving = true;
       sx = e.clientX; sy = e.clientY;
       dx0 = e.clientX; dy0 = e.clientY; // V1.7.6 拖动位移起点（>8px 判定为拖动，抑制随后 click）
@@ -1596,37 +1813,48 @@
       el.addEventListener("pointercancel", onUp);
     });
   }
-  dragEl(panel.querySelector(".hd"), function (x, y) {
-    panel.style.left = x + "px"; panel.style.top = y + "px";
-    panel.style.transform = "none";
-    try { localStorage.setItem("dsh_panel_pos", JSON.stringify([x, y])); } catch (e) {}
-  });
-  dragEl(ball, function (x, y) {
-    ball.style.left = x + "px"; ball.style.top = y + "px";
-    ball.style.right = "auto"; ball.style.bottom = "auto";
-    try { localStorage.setItem("dsh_ball_pos", JSON.stringify([x, y])); } catch (e) {}
-  });
+  // V2.17.0 公共层 A：主面板接入统一窗口（拖动 / 拉伸 / 位置尺寸记忆 / 缩放 / 事件隔离一次到位）
+  // 旧存储 dsh_panel_pos / dsh_panel_size 一次性迁入统一的 dsh_ro_ui_v1，老用户的位置不丢。
+  try {
+    if (!roUi().win["panel"]) {
+      var migP = null, migS = null;
+      try { migP = JSON.parse(localStorage.getItem("dsh_panel_pos") || "null"); } catch (e) {}
+      try { migS = JSON.parse(localStorage.getItem("dsh_panel_size") || "null"); } catch (e) {}
+      if (migP && migP.length === 2) {
+        roUi().win["panel"] = { x: migP[0], y: migP[1], w: (migS && migS.length === 2) ? migS[0] : 0, h: (migS && migS.length === 2) ? migS[1] : 0 };
+        roUiSave();
+      }
+    }
+  } catch (e) {}
   (function () {
     var rh = panel.querySelector("#dsh-resize");
     if (IS_MN && rh) rh.style.display = "none"; // 手机版铺满视口，隐藏手动缩放手柄
-    var resizing = false, rsx, rsy, row, roh;
-    rh.addEventListener("pointerdown", function (e) {
-      resizing = true; rsx = e.clientX; rsy = e.clientY;
-      row = panel.offsetWidth; roh = panel.offsetHeight;
-      rh.setPointerCapture && rh.setPointerCapture(e.pointerId);
-      e.stopPropagation();
+    // V2.17.0：分屏（视口窄）时默认面板尺寸也收一档 —— 只靠缩字号会糊，尺寸+缩放一起收更清楚
+    var narrow = roVw() < 1100;
+    var pw0 = IS_MN ? Math.min(430, Math.round(roVw() * 0.92)) : (narrow ? 360 : 400);
+    var ph0 = IS_MN ? Math.min(780, roVh() - 12) : (narrow ? 560 : 640);
+    roWinBind(panel, {
+      id: "panel",
+      drag: panel.querySelector(".hd"),
+      grip: rh,
+      minW: 300, minH: 360,
+      dw: pw0, dh: ph0,
+      ax: Math.max(0, Math.round((roVw() - pw0 * roScale()) / 2)),
+      ay: IS_MN ? 6 : 60,
+      onResize: function () { try { fwRefreshHosts(); } catch (e) {} }
     });
-    rh.addEventListener("pointermove", function (e) {
-      if (!resizing) return;
-      var w = Math.min(Math.max(row + e.clientX - rsx, 300), window.innerWidth - 40);
-      var h = Math.min(Math.max(roh + e.clientY - rsy, 360), window.innerHeight - 40);
-      panel.style.width = w + "px"; panel.style.height = h + "px";
-      panel.style.transform = "none";
-      try { localStorage.setItem("dsh_panel_size", JSON.stringify([w, h])); } catch (err) {}
-    });
-    rh.addEventListener("pointerup", function () { resizing = false; });
-    rh.addEventListener("pointercancel", function () { resizing = false; });
   })();
+  // 悬浮球：不参与缩放（分屏后它是唯一能找回面板的入口，必须保持可点），只做视口内夹紧
+  dragEl(ball, function (x, y) {
+    var nx = Math.max(0, Math.min(roVw() - 40, x));
+    var ny = Math.max(0, Math.min(roVh() - 40, y));
+    ball.style.left = nx + "px"; ball.style.top = ny + "px";
+    ball.style.right = "auto"; ball.style.bottom = "auto";
+    try { localStorage.setItem("dsh_ball_pos", JSON.stringify([nx, ny])); } catch (e) {}
+  });
+  // V2.17.0：面板拉伸改由公共层 roWinBind 统一处理（含缩放换算 / 视口夹紧 / 尺寸记忆）。
+  // 旧实现见 git 历史，问题有两个：1) 拉伸手柄的位移没有除以缩放值，缩放后拉不动；
+  // 2) 每次 move 都写 localStorage，拖一次写几百次。
 
   // 面板回中：复位默认居中（PC 400×640 top:60 水平居中 / 手机铺满视口），清掉记忆的位置/大小
   function recenterPanel() {
@@ -1636,11 +1864,13 @@
         panel.style.width = "92vw"; panel.style.maxWidth = "420px"; panel.style.height = "calc(100vh - 12px)";
         panel.style.minHeight = "240px"; panel.style.maxHeight = "none";
       } else {
-        panel.style.left = "50%"; panel.style.top = "60px"; panel.style.transform = "translateX(-50%)";
-        panel.style.width = "400px"; panel.style.minWidth = "300px"; panel.style.height = "640px";
-        panel.style.minHeight = "360px"; panel.style.maxHeight = "92vh";
+        panel.style.width = "400px"; panel.style.height = "640px";
+        panel.style.left = Math.max(0, Math.round((roVw() - 400 * roScale()) / 2)) + "px";
+        panel.style.top = "60px";
       }
       panel.style.right = "auto"; panel.style.bottom = "auto";
+      try { roApplyScale(panel); } catch (e) {}
+      try { delete roUi().win["panel"]; roUiSave(); } catch (e) {}
       localStorage.removeItem("dsh_panel_pos");
       localStorage.removeItem("dsh_panel_size");
       var st = panel.querySelector("#dsh-status2");
@@ -9714,10 +9944,15 @@
           zHudEl.style.transform = "none";
         }
       } catch (e) {}
+      // V2.17.0 公共层 D：横条此前没有事件隔离 —— 拖它时 pointer 事件会冒泡到游戏监听，
+      // 被当成「点了地板」导致角色走动。补上隔离（阶段二会用「当前目标」窗口取代它）。
+      try { isolateEl(zHudEl); } catch (e) {}
       dragEl(zHudEl, function (x, y) {
-        zHudEl.style.left = x + "px"; zHudEl.style.top = y + "px";
+        var nx = Math.max(-zHudEl.offsetWidth + 60, Math.min(roVw() - 60, x));
+        var ny = Math.max(0, Math.min(roVh() - 24, y));
+        zHudEl.style.left = nx + "px"; zHudEl.style.top = ny + "px";
         zHudEl.style.transform = "none";
-        try { localStorage.setItem("dsh_zhud_pos", JSON.stringify([x, y])); } catch (err) {}
+        try { localStorage.setItem("dsh_zhud_pos", JSON.stringify([nx, ny])); } catch (err) {}
       });
     } catch (e) {}
   }
@@ -9819,6 +10054,7 @@
         "border:1px solid rgba(255,255,255,0.25);box-shadow:0 1px 8px rgba(0,0,0,0.5);" +
         "text-shadow:0 1px 2px rgba(0,0,0,0.6);";
       document.documentElement.appendChild(zTipEl);
+      try { isolateEl(zTipEl); } catch (e) {}  // V2.17.0 公共层 D：统一打助手 UI 标记
     } catch (e) {}
   }
   function renderZTip() {
@@ -11194,11 +11430,13 @@
       var r = box.getBoundingClientRect(); drag = {x:e.clientX,y:e.clientY,left:r.left,top:r.top};
       header.setPointerCapture(e.pointerId); e.preventDefault();
     };
-    header.onpointermove = function (e) { if (!drag) return; box.style.left = drag.left + e.clientX - drag.x + "px"; box.style.top = drag.top + e.clientY - drag.y + "px"; clamp(); };
+    // V2.17.0 公共层 A2：窗口按比例缩放时，屏幕位移要除以缩放值才是窗口位移
+    header.onpointermove = function (e) { if (!drag) return; var sc = roScaleOf(box); box.style.left = drag.left + (e.clientX - drag.x) / sc + "px"; box.style.top = drag.top + (e.clientY - drag.y) / sc + "px"; clamp(); };
     header.onpointerup = header.onpointercancel = function () { drag = null; save(); };
     box.appendChild(header); box.appendChild(controls); box.appendChild(mvpActionStatus); box.appendChild(mvpTimerBody);
     document.body.appendChild(box); layout(); clamp();
     try { isolateEl(box); } catch (e) {} // V2.15.8：浮窗操作隔层，不再漏到游戏 window 级监听
+    try { box.setAttribute("data-dsh-win", "1"); roApplyScale(box); } catch (e) {} // V2.17.0 公共层 A2：随视口缩放
     // 恢复显示状态（默认显示，除非用户手动关闭过）
     if (prefs.hidden) box.style.display = "none";
     // 修改 save 函数，保存显示状态

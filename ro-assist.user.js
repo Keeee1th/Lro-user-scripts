@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.24
+// @version      2.16.25
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.24"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.16.25"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -11215,11 +11215,85 @@
     for (var i = s.length - 1; i >= 0; i--) { out = s.charAt(i) + out; if (++c % 3 === 0 && i > 0) out = "," + out; }
     return out;
   }
+  // V2.16.25：内置中文词条表（lastRO 客户端不提供可用的 DB.getOptionName，探查实测返回空）
+  // 译自上游 roBrowser ItemRandomOptionTable.js 全 192 条；%d=数值、%%=百分号
+  var ITIP_OPT_CN = {
+    1: "MaxHP +%d", 2: "MaxSP +%d", 3: "STR +%d", 4: "AGI +%d", 5: "VIT +%d", 6: "INT +%d", 7: "DEX +%d", 8: "LUK +%d",
+    9: "MaxHP +%d%%", 10: "MaxSP +%d%%", 11: "HP自然回复 +%d%%", 12: "SP自然回复 +%d%%",
+    13: "ATK +%d%%", 14: "MATK +%d%%", 15: "ASPD +%d", 16: "攻击后延迟 -%d%%",
+    17: "ATK +%d", 18: "HIT +%d", 19: "MATK +%d", 20: "DEF +%d", 21: "MDEF +%d", 22: "FLEE +%d",
+    23: "完全回避 +%d", 24: "CRIT +%d",
+    25: "无属性抗性 +%d%%", 26: "水属性抗性 +%d%%", 27: "地属性抗性 +%d%%", 28: "火属性抗性 +%d%%",
+    29: "风属性抗性 +%d%%", 30: "毒属性抗性 +%d%%", 31: "圣属性抗性 +%d%%", 32: "暗属性抗性 +%d%%",
+    33: "念属性抗性 +%d%%", 34: "不死属性抗性 +%d%%", 35: "全属性抗性 +%d%%",
+    36: "受到无属性伤害 -%d%%", 37: "对无属性怪物伤害 +%d%%",
+    38: "受到水属性伤害 -%d%%", 39: "对水属性怪物伤害 +%d%%",
+    40: "受到地属性伤害 -%d%%", 41: "对地属性怪物伤害 +%d%%",
+    42: "受到火属性伤害 -%d%%", 43: "对火属性怪物伤害 +%d%%",
+    44: "受到风属性伤害 -%d%%", 45: "对风属性怪物伤害 +%d%%",
+    46: "受到毒属性伤害 -%d%%", 47: "对毒属性怪物伤害 +%d%%",
+    48: "受到圣属性伤害 -%d%%", 49: "对圣属性怪物伤害 +%d%%",
+    50: "受到暗属性伤害 -%d%%", 51: "对暗属性怪物伤害 +%d%%",
+    52: "受到念属性伤害 -%d%%", 53: "对念属性怪物伤害 +%d%%",
+    54: "受到不死属性伤害 -%d%%", 55: "对不死属性怪物伤害 +%d%%",
+    56: "受到无属性魔法伤害 -%d%%", 57: "对无属性怪物魔法伤害 +%d%%",
+    58: "受到水属性魔法伤害 -%d%%", 59: "对水属性怪物魔法伤害 +%d%%",
+    60: "受到地属性魔法伤害 -%d%%", 61: "对地属性怪物魔法伤害 +%d%%",
+    62: "受到火属性魔法伤害 -%d%%", 63: "对火属性怪物魔法伤害 +%d%%",
+    64: "受到风属性魔法伤害 -%d%%", 65: "对风属性怪物魔法伤害 +%d%%",
+    66: "受到毒属性魔法伤害 -%d%%", 67: "对毒属性怪物魔法伤害 +%d%%",
+    68: "受到圣属性魔法伤害 -%d%%", 69: "对圣属性怪物魔法伤害 +%d%%",
+    70: "受到暗属性魔法伤害 -%d%%", 71: "对暗属性怪物魔法伤害 +%d%%",
+    72: "受到念属性魔法伤害 -%d%%", 73: "对念属性怪物魔法伤害 +%d%%",
+    74: "受到不死属性魔法伤害 -%d%%", 75: "对不死属性怪物魔法伤害 +%d%%",
+    76: "防具属性：无", 77: "防具属性：水", 78: "防具属性：地", 79: "防具属性：火", 80: "防具属性：风",
+    81: "防具属性：毒", 82: "防具属性：圣", 83: "防具属性：暗", 84: "防具属性：念", 85: "防具属性：不死",
+    86: "防具属性：全属性",
+    87: "受到无形怪伤害 -%d%%", 88: "受到不死怪伤害 -%d%%", 89: "受到动物怪伤害 -%d%%", 90: "受到植物怪伤害 -%d%%",
+    91: "受到昆虫怪伤害 -%d%%", 92: "受到鱼贝怪伤害 -%d%%", 93: "受到恶魔怪伤害 -%d%%", 94: "受到人型怪伤害 -%d%%",
+    95: "受到天使怪伤害 -%d%%", 96: "受到龙族怪伤害 -%d%%",
+    97: "对无形怪伤害 +%d%%", 98: "对不死怪伤害 +%d%%", 99: "对动物怪伤害 +%d%%", 100: "对植物怪伤害 +%d%%",
+    101: "对昆虫怪伤害 +%d%%", 102: "对鱼贝怪伤害 +%d%%", 103: "对恶魔怪伤害 +%d%%", 104: "对人型怪伤害 +%d%%",
+    105: "对天使怪伤害 +%d%%", 106: "对龙族怪伤害 +%d%%",
+    107: "对无形怪魔法伤害 +%d%%", 108: "对不死怪魔法伤害 +%d%%", 109: "对动物怪魔法伤害 +%d%%", 110: "对植物怪魔法伤害 +%d%%",
+    111: "对昆虫怪魔法伤害 +%d%%", 112: "对鱼贝怪魔法伤害 +%d%%", 113: "对恶魔怪魔法伤害 +%d%%", 114: "对人型怪魔法伤害 +%d%%",
+    115: "对天使怪魔法伤害 +%d%%", 116: "对龙族怪魔法伤害 +%d%%",
+    117: "对无形怪CRIT +%d", 118: "对不死怪CRIT +%d", 119: "对动物怪CRIT +%d", 120: "对植物怪CRIT +%d",
+    121: "对昆虫怪CRIT +%d", 122: "对鱼贝怪CRIT +%d", 123: "对恶魔怪CRIT +%d", 124: "对人型怪CRIT +%d",
+    125: "对天使怪CRIT +%d", 126: "对龙族怪CRIT +%d",
+    127: "无视无形怪DEF %d%%", 128: "无视不死怪DEF %d%%", 129: "无视动物怪DEF %d%%", 130: "无视植物怪DEF %d%%",
+    131: "无视昆虫怪DEF %d%%", 132: "无视鱼贝怪DEF %d%%", 133: "无视恶魔怪DEF %d%%", 134: "无视人型怪DEF %d%%",
+    135: "无视天使怪DEF %d%%", 136: "无视龙族怪DEF %d%%",
+    137: "无视无形怪MDEF %d%%", 138: "无视不死怪MDEF %d%%", 139: "无视动物怪MDEF %d%%", 140: "无视植物怪MDEF %d%%",
+    141: "无视昆虫怪MDEF %d%%", 142: "无视鱼贝怪MDEF %d%%", 143: "无视恶魔怪MDEF %d%%", 144: "无视人型怪MDEF %d%%",
+    145: "无视天使怪MDEF %d%%", 146: "无视龙族怪MDEF %d%%",
+    147: "对普通怪伤害 +%d%%", 148: "对BOSS怪伤害 +%d%%",
+    149: "受到普通怪伤害 -%d%%", 150: "受到BOSS怪伤害 -%d%%",
+    151: "对普通怪魔法伤害 +%d%%", 152: "对BOSS怪魔法伤害 +%d%%",
+    153: "无视普通怪DEF %d%%", 154: "无视BOSS怪DEF %d%%",
+    155: "无视普通怪MDEF %d%%", 156: "无视BOSS怪MDEF %d%%",
+    157: "对小型怪伤害 +%d%%", 158: "对中型怪伤害 +%d%%", 159: "对大型怪伤害 +%d%%",
+    160: "受到小型怪伤害 -%d%%", 161: "受到中型怪伤害 -%d%%", 162: "受到大型怪伤害 -%d%%",
+    163: "武器体型惩罚无效",
+    164: "暴击伤害 +%d%%", 165: "受到暴击伤害 -%d%%",
+    166: "远距离物理伤害 +%d%%", 167: "受到远距离物理伤害 -%d%%",
+    168: "治愈技能效果 +%d%%", 169: "受到治愈效果 +%d%%",
+    170: "变动咏唱时间 -%d%%", 171: "技能后延迟 -%d%%", 172: "SP消耗 -%d%%",
+    173: "攻击时吸收HP", 174: "攻击时吸收SP",
+    175: "武器属性：无", 176: "武器属性：水", 177: "武器属性：地", 178: "武器属性：火", 179: "武器属性：风",
+    180: "武器属性：毒", 181: "武器属性：圣", 182: "武器属性：暗", 183: "武器属性：念", 184: "武器属性：不死",
+    185: "战斗中不会损坏（武器）", 186: "战斗中不会损坏（防具）",
+    187: "对小型怪魔法伤害 +%d%%", 188: "对中型怪魔法伤害 +%d%%", 189: "对大型怪魔法伤害 +%d%%",
+    190: "受到小型怪魔法伤害 -%d%%", 191: "受到中型怪魔法伤害 -%d%%", 192: "受到大型怪魔法伤害 -%d%%"
+  };
   function itipOptText(o) {
+    var id = parseInt(o.index, 10);
+    var cn = ITIP_OPT_CN[id];
+    if (cn) return cn.replace(/%d/g, String(o.value)).replace(/%%/g, "%");
     var nm = null;
-    try { var db = itipDB(); if (db && typeof db.getOptionName === "function") nm = db.getOptionName(o.index); } catch (e) {}
+    try { var db = itipDB(); if (db && typeof db.getOptionName === "function") nm = db.getOptionName(id); } catch (e) {}
     if (nm && nm !== "UNKNOWN RANDOM OPTION") return String(nm).replace(/%d/g, String(o.value)).replace(/%%/g, "%");
-    return "词条#" + o.index + " 值" + o.value;
+    return "词条#" + id + " 值" + o.value;
   }
   function itipOptList(item) {
     var out = [];
@@ -11233,14 +11307,14 @@
         for (var k = 0; k <= 4; k++) {
           var ix = Number(ops["Index" + k] || 0);
           if (!ix) continue;
-          out.push(itipOptText({ index: ix, value: Number(ops["Value" + k] || 0), param: Number(ops["Param" + k] || 0) }));
+          out.push({ id: ix, text: itipOptText({ index: ix, value: Number(ops["Value" + k] || 0), param: Number(ops["Param" + k] || 0) }) });
         }
         return out;
       }
       for (var i = 1; i <= 5; i++) {
         var o = ops[i];
         if (!o || !o.index) continue;
-        out.push(itipOptText(o));
+        out.push({ id: Number(o.index), text: itipOptText(o) });
       }
     } catch (e) {}
     return out;
@@ -11333,7 +11407,15 @@
       L.push('<div style="color:#7fd1ff;font-weight:bold">' + itipEsc(head) + "</div>");
       L.push('<div style="color:#8f9bb3">物品 ID ' + itid + "</div>");
       if (opts.length) {
-        L.push('<div style="color:#c9a0ff;margin-top:3px">' + opts.map(function (s) { return "· " + itipEsc(s); }).join("<br>") + "</div>");
+        // V2.16.25：属性类词条（175-186）单独一行绿色显示——它是鉴定前唯一能看到的那条，最该突出
+        var elemLines = [], otherLines = [];
+        for (var oi3 = 0; oi3 < opts.length; oi3++) {
+          var oe = opts[oi3];
+          if (oe.id >= 175 && oe.id <= 186) elemLines.push("· " + itipEsc(oe.text));
+          else otherLines.push("· " + itipEsc(oe.text));
+        }
+        if (elemLines.length) L.push('<div style="color:#7ef0a8;margin-top:3px">' + elemLines.join("<br>") + "</div>");
+        if (otherLines.length) L.push('<div style="color:#c9a0ff;margin-top:3px">' + otherLines.join("<br>") + "</div>");
       } else if (!ident) {
         L.push('<div style="color:#8f9bb3;margin-top:3px">（无随机词条）</div>');
       }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.17.1
+// @version      2.17.2
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.17.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.17.2"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -552,11 +552,12 @@
     "#dsh-ro-panel .resize-h{position:absolute;right:0;bottom:0;width:20px;height:20px;cursor:nwse-resize;z-index:5;display:flex;align-items:flex-end;justify-content:flex-end;padding:4px}" +
     "#dsh-ro-panel .resize-h::after{content:'';display:block;width:9px;height:9px;border-right:2px solid #7d93b3;border-bottom:2px solid #7d93b3;border-bottom-right-radius:3px;opacity:.8}" +
     "#dsh-ro-panel .resize-h:hover::after{border-color:#1d4ed8}" +
-    "#dsh-ball{position:fixed;right:28px;bottom:80px;z-index:2147483647;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#1d4ed8);box-shadow:0 6px 18px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.35);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:grab;transition:transform .15s,box-shadow .15s;opacity:.8}" +
-    "#dsh-ball:hover{transform:scale(1.06);opacity:1}" +
-    "#dsh-ball .ico{font-size:18px;line-height:1}" +
-    "#dsh-ball .txt{font-size:10px;font-weight:700;letter-spacing:1px;margin-top:2px}" +
-    "#dsh-ball .dot{position:absolute;top:4px;right:4px;width:12px;height:12px;border-radius:50%;background:#22c55e;border:2px solid #1d4ed8}" +
+    // V2.17.2 悬浮球：波利 GIF（41x39 / 4 帧动图 / 16 色，base64 内嵌保持动画）+ 右下角「助」字角标
+    "#dsh-ball{position:fixed;right:28px;bottom:80px;z-index:2147483647;width:56px;height:56px;display:flex;align-items:center;justify-content:center;cursor:grab;background:none;border:0;box-shadow:none;opacity:.92;transition:transform .15s,opacity .15s}" +
+    "#dsh-ball:hover{transform:scale(1.08);opacity:1}" +
+    "#dsh-ball img{display:block;width:46px;height:44px;image-rendering:pixelated;filter:drop-shadow(0 2px 4px rgba(0,0,0,.65));pointer-events:none;-webkit-user-drag:none}" +
+    "#dsh-ball .zhu{position:absolute;right:-2px;bottom:-2px;width:20px;height:20px;border-radius:50%;background:linear-gradient(160deg,#f0a0b8,#d1567c);border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.6);color:#fff;font:700 11px/16px 'Microsoft YaHei',Arial,sans-serif;text-align:center;text-shadow:0 1px 1px rgba(0,0,0,.5);pointer-events:none}" +
+    "#dsh-ball .dot{position:absolute;top:2px;right:2px;width:10px;height:10px;border-radius:50%;background:#22c55e;border:2px solid #fff;box-shadow:0 1px 2px rgba(0,0,0,.5)}" +
     "#dsh-mini{position:fixed;top:12px;right:12px;z-index:2147483647;display:block;background:#2f6fde;border:1px solid #1f5cc9;color:#fff;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600}" +
     "#dsh-mini:hover{background:#3d7de8}" +
     // 侧边抽屉（V1.7.0：战斗页/技能页的 内挂模式/助手模式 配置块滑入右侧抽屉）
@@ -1921,10 +1922,11 @@
     }
   } catch (e) {}
 
-  // 悬浮球
-  var ball = $("div", "", '<span class="ico">🧙</span><span class="txt">RO</span><span class="dot"></span>');
+  // 悬浮球（V2.17.2：波利 GIF + 右下角「助」字角标；GIF 走 data URI 所以动画保留）
+  var BALL_GIF = "data:image/gif;base64,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";
+  var ball = $("div", "", '<img src="' + BALL_GIF + '" alt=""><span class="zhu">助</span><span class="dot"></span>');
   ball.id = "dsh-ball";
-  ball.title = "点击展开助手面板";
+  ball.title = "点击展开功能菜单";
   document.documentElement.appendChild(ball);
   ball.style.display = "none";
   // 悬浮球事件隔离：点球展开面板那一下不能穿透到游戏（防角色误走）

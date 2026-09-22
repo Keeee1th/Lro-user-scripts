@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.16.25
+// @version      2.16.26
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.16.25"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.16.26"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -3201,6 +3201,14 @@
       var cn = BUFF_STATUS_CN[key.toLowerCase()] || BUFF_STATUS_CN[key] ||
         BUFF_DEBUFF_CN[key.toLowerCase()] || BUFF_DEBUFF_CN[key] || "";
       var tryN = cn ? cn.toUpperCase() : up;
+      // V2.16.26 修：本服实测值与客户端 StatusConst 表不一致时，以实测为准。
+      // 旧写法把实测修正放在「兜底2」，而 StatusConst 优先命中，导致修正永远轮不到
+      // （典型：圣母之祈福本服实测 473=ASSUMPTIO2，客户端表 ASSUMPTIO=110 → 永远判「不在身」空放）。
+      var MEASURED = { "ASSUMPTIO": 473, "KYRIE": 19 };
+      try {
+        if (typeof MEASURED[tryN] === "number") return MEASURED[tryN];
+        if (tryN !== up && typeof MEASURED[up] === "number") return MEASURED[up];
+      } catch (eM) {}
       // V2.12.4 重构：探查日志证实本服 StatusConst 键=英文状态名、值=EFST 图标ID，与 StatusIcons.update 同源
       //（实测 ALL_RIDING=613/SIT=622 一一对应）。故 StatusConst 运行时查询优先（权威），
       // 硬编码表与日志补充表 DSH_EFST_EXTRA 仅作 StatusConst 模块不可用时的兜底。
@@ -3255,12 +3263,19 @@
       var orig = SI.update;
       if (typeof orig !== "function") { dshSIState = "no-update"; return; }
       window.__dshSIHook = true;
-      SI.update = function (stId, active, layer, dur) {
+      // V2.16.26 修：客户端真实签名是 update(index, state, life)——第 3 个参数才是剩余时间，
+      // 旧代码读的是第 4 个（永远是 undefined）→ 所有 buff 剩余时间都被当成固定 30 秒。
+      SI.update = function (stId, active, life) {
         try {
           stId = parseInt(stId, 10);
           if (!isNaN(stId)) {
             var now = Date.now();
-            if (active) { dshLearnStatus(stId); buffActive[stId] = { on: true, endAt: dur === 9999 || dur == null ? Infinity : now + (dur || 30000), seenAt: now }; try { for (var qi = 0; qi < askList.length; qi++) { var qs = askList[qi]; if (qs && qs.st && buffStId(qs.st) === stId) qs.missCnt = 0; } } catch (qe) {} }
+            var ms = Number(life);
+            var endAt;
+            if (ms === 9999) endAt = Infinity;                        // 官方用 9999 表示无限
+            else if (!isFinite(ms) || ms <= 0) endAt = now + 30000;   // 拿不到时间就退回 30 秒（不早于旧行为）
+            else endAt = now + Math.max(ms, 30000);                   // 有真实剩余时间就用它（下限 30 秒防误判）
+            if (active) { dshLearnStatus(stId); buffActive[stId] = { on: true, endAt: endAt, seenAt: now, life: ms }; try { for (var qi = 0; qi < askList.length; qi++) { var qs = askList[qi]; if (qs && qs.st && buffStId(qs.st) === stId) qs.missCnt = 0; } } catch (qe) {} }
             else if (buffActive[stId]) { buffActive[stId].on = false; buffActive[stId].endAt = 0; buffActive[stId].seenAt = now; }
           }
         } catch (e) {}
@@ -11657,6 +11672,45 @@
     }, true);
     document.addEventListener("scroll", itipHide, true);
   } catch (e) {}
+  // V2.16.26 自动技能探查：把辅助技能配置 + 判活表 + 开关/SP 一起上报，定位「不触发释放」
+  var ASKP = { sig: "", at: 0 };
+  function askProbe() {
+    try {
+      if (!clientReady()) return;
+      var now = Date.now();
+      var en = $id("dsh-asken") ? !!$id("dsh-asken").checked : null;
+      var intv = $id("dsh-askint") ? $id("dsh-askint").value : null;
+      var spGuard = $id("dsh-asksp") ? $id("dsh-asksp").value : null;
+      var spPct = null;
+      try {
+        var ent = CLIENT.SS && CLIENT.SS.Entity;
+        var mx = ent && ent.life ? (ent.life.sp_max != null ? ent.life.sp_max : ent.life.maxsp) : 0;
+        if (mx > 0) spPct = Math.round((ent.life.sp != null ? ent.life.sp : 0) / mx * 1000) / 10;
+      } catch (e0) {}
+      var list = [];
+      for (var i = 0; i < askList.length; i++) {
+        var s = askList[i];
+        var rs = -1, on = null;
+        try { if (s.st) { rs = buffStId(s.st); on = (rs >= 0) ? buffStateOn(rs) : null; } } catch (e2) {}
+        list.push({ i: i, skid: s.skid, lv: s.lv, name: s.name, st: s.st, stInv: !!s.stInv, missCnt: s.missCnt || 0,
+          lastAgoSec: s.lastAt ? Math.round((now - s.lastAt) / 1000) : null, resolvedStId: rs, stOn: on });
+      }
+      var ba = [];
+      for (var k in buffActive) {
+        try { ba.push({ id: Number(k), on: !!buffActive[k].on, life: buffActive[k].life,
+          endInSec: buffActive[k].endAt === Infinity ? "inf" : Math.round((buffActive[k].endAt - now) / 1000),
+          seenAgoSec: Math.round((now - buffActive[k].seenAt) / 1000) }); } catch (e3) {}
+      }
+      var sig = JSON.stringify(list) + "|" + ba.length + "|" + en + "|" + spPct;
+      if (sig === ASKP.sig && now - ASKP.at < 60000) return;
+      ASKP.sig = sig; ASKP.at = now;
+      var learned = null;
+      try { learned = JSON.parse(localStorage.getItem("dsh_ro_skill_status_v1") || "{}"); } catch (e4) {}
+      ingest({ type: "itemprobe", kind: "ask", ver: VER, map: getMapName(), askEn: en, askIntv: intv, askSpGuard: spGuard,
+        spPct: spPct, siHook: (typeof dshSIState !== "undefined" ? dshSIState : null), list: list, buffActive: ba, learned: learned, ts: new Date().toISOString() });
+    } catch (e) {}
+  }
+  setInterval(function () { try { askProbe(); } catch (e) {} }, 15000);
   setInterval(function () { try { itipHookOut(); } catch (e) {} }, 2000);
   setInterval(function () { try { itipProbeInv(); itipProbeDom(); } catch (e) {} }, 3000);
   setInterval(function () {

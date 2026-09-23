@@ -101,7 +101,7 @@ th{color:#5a6a7a;font-weight:400}
 <div class="log" id="log"></div>
 
 <script>
-var S = { acct: [], nodes: [], cmds: {}, so: {}, scripts: [], events: [], since: 0, sel: null, tab: 'ov' };
+var S = { acct: [], nodes: [], workers: [], cmds: {}, so: {}, scripts: [], events: [], since: 0, sel: null, tab: 'ov' };
 var ONLINE_MS = 60000;
 
 function $(s){return document.querySelector(s)}
@@ -181,26 +181,23 @@ function renderOv(){
      +'<div class="kv"><span>等级</span><span>'+(n.lv!=null?("Lv"+n.lv+(n.raw&&n.raw.stat&&n.raw.stat.job?" · "+esc(n.raw.stat.job):"")):"—")+'</span></div>'
      +'<div class="kv"><span>Zeny</span><span>'+(n.zeny!=null?Number(n.zeny).toLocaleString():"—")+'</span></div>'
      +'<div class="kv"><span>当前脚本</span><span>'+(n.script?esc(n.script.name||n.script.id)+' ('+n.step+')':'—')+'</span></div>'
-     +'<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">'
-     +'<button class="b pri" data-act="run" data-id="'+esc(n.id)+'">运行脚本</button>'
-     +'<button class="b" data-act="stop" data-id="'+esc(n.id)+'">停止</button>'
-     +'<button class="b" data-act="login" data-id="'+esc(n.id)+'">上线</button>'
-     +'<button class="b" data-act="logout" data-id="'+esc(n.id)+'">下线</button>'
-     +'</div>'
+     +(n.kind==="headless"?('<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">'
+     +'<button class="b" data-act="stop" data-id="'+esc(n.id)+'">停止任务</button>'
+     +'<button class="b" data-act="logout" data-id="'+esc(n.id)+'">退出角色</button>'
+     +'</div>'):'<div class="mut" style="margin-top:6px">浏览器端尚未接入命令通道，只显示状态。</div>')
      +(n.mobs&&n.mobs.length?('<div class="mut" style="margin-top:5px">视野内：'+n.mobs.slice(0,6).map(function(m){return esc(m.name)+"("+m.dist+")"}).join(" ")+'</div>'):'')
      +'</div>';
   }
-  $("#ovbody").innerHTML='<div class="tip">数据来自中枢真实上报（<b>/api/acct/state</b> + <b>/api/node/state</b>）。「上线/下线/运行脚本」会写进指令队列，等对应节点接入后执行。</div><div class="grid">'+g+'</div>';
+  $("#ovbody").innerHTML='<div class="tip">数据来自中枢真实上报。浏览器端当前只显示状态；无头端启动由进程管理器负责，运行脚本请到「脚本库」选择明确模板。</div><div class="grid">'+g+'</div>';
   Array.prototype.forEach.call($("#ovbody").querySelectorAll("button[data-act]"),function(b){
     b.onclick=function(){
       var id=b.getAttribute("data-id"),act=b.getAttribute("data-act"),n=findNode(id);
       var cmd=null;
-      if(act==="run")cmd={do:"run",script:null};
-      else if(act==="stop")cmd={do:"stop"};
-      else if(act==="login")cmd={do:"login",account:n.account};
+      if(act==="stop")cmd={do:"stop"};
       else if(act==="logout")cmd={do:"logout",account:n.account};
-      post("/api/cmd",{node:n.raw.id||n.id,cmd:cmd}).then(function(r){
-        lg("下发指令 → "+n.account+" "+JSON.stringify(cmd)+(r.ok?" (seq "+r.seq+")":" 失败"));
+      if(!cmd)return;
+      post("/api/cmd",{node:n.raw.id,cmd:cmd}).then(function(r){
+        lg("下发指令 → "+n.account+" "+JSON.stringify(cmd)+(r.ok?" ("+r.commandId+")":" 失败"));
         loadEvents();
       });
     };
@@ -244,8 +241,9 @@ function renderSc(){
   $("#schint").textContent=n?("目标："+(n.char||n.account)+" ("+n.kind+")"):"先在左侧选一个节点";
   $("#scrun").onclick=function(){
     if(!n){lg("没有选中节点","s");return}
-    post("/api/cmd",{node:n.raw.id||n.id,cmd:{do:"run",script:cur.templateId}}).then(function(r){
-      lg("下发脚本「"+cur.name+"」→ "+(n.char||n.account)+(r.ok?" (seq "+r.seq+")":" 失败"),"u");loadEvents();
+    if(n.kind!=="headless"){lg("浏览器端尚未接入命令通道","s");return}
+    post("/api/cmd",{node:n.raw.id,cmd:{do:"run",script:cur.templateId}}).then(function(r){
+      lg("下发脚本「"+cur.name+"」→ "+(n.char||n.account)+(r.ok?" ("+r.commandId+")":" 失败"),"u");loadEvents();
     });
   };
   $("#scsave").onclick=function(){
@@ -262,10 +260,10 @@ function renderRun(){
   }
   var q="",keys=Object.keys(S.cmds||{});
   for(var j=0;j<keys.length;j++){var c=S.cmds[keys[j]];
-    q+='<tr><td>'+esc(keys[j])+'</td><td>seq '+c.seq+'</td><td>'+esc(JSON.stringify(c.cmd))+'</td><td>'+Math.round((Date.now()-c.ts)/1000)+' 秒前</td></tr>';
+    q+='<tr><td>'+esc(keys[j])+'</td><td>'+esc(c.status||"queued")+'<br><span class="mut">'+esc((c.id||"").slice(0,8))+'</span></td><td>'+esc(JSON.stringify(c.cmd))+'</td><td>'+Math.round((Date.now()-(c.createdAt||Date.now()))/1000)+' 秒前</td></tr>';
   }
   $("#runbody").innerHTML='<div class="box"><h3>正在运行</h3>'+(any?'<table><tr><th>角色</th><th>脚本</th><th>进度</th><th>状态</th><th></th></tr>'+rows+'</table>':'<div class="mut">当前没有脚本在跑。</div>')+'</div>'
-   +'<div class="box" style="margin-top:8px"><h3>待执行指令队列（每个节点只保留最新一条）</h3>'+(keys.length?'<table><tr><th>节点</th><th>序号</th><th>指令</th><th>下发时间</th></tr>'+q+'</table>':'<div class="mut">队列为空。</div>')+'</div>';
+   +'<div class="box" style="margin-top:8px"><h3>待执行指令队列（每个节点只保留最新一条）</h3>'+(keys.length?'<table><tr><th>节点</th><th>状态</th><th>指令</th><th>下发时间</th></tr>'+q+'</table>':'<div class="mut">队列为空。</div>')+'</div>';
   Array.prototype.forEach.call($("#runbody").querySelectorAll("[data-k]"),function(b){
     b.onclick=function(){post("/api/cmd",{node:b.getAttribute("data-k"),cmd:{do:"stop"}}).then(function(){lg("已下发停止","i");loadEvents()})};
   });
@@ -279,7 +277,8 @@ function renderEv(){
   $("#evbody").innerHTML='<div class="box"><h3>事件流（中枢 /api/events）</h3>'+(rows?'<table><tr><th>时间</th><th>节点</th><th>内容</th></tr>'+rows+'</table>':'<div class="mut">暂无事件。</div>')+'</div>';
 }
 function renderSt(){
-  api("/api/acct/accounts").then(function(r){
+  Promise.all([api("/api/acct/accounts"),api("/api/worker")]).then(function(rr){
+    var r=rr[0];S.workers=rr[1].workers||[];
     var rows="";
     for(var i=0;i<(r.accounts||[]).length;i++){var a=r.accounts[i];
       var n=null,all=allNodes();
@@ -291,7 +290,10 @@ function renderSt(){
         +'<td>'+(a.hasPass?"******":'<span style="color:#c0392b">缺密码</span>')+'</td>'
         +'<td>'+(a.enabled?'启用':'停用')+'</td></tr>';
     }
-    $("#stbody").innerHTML='<div class="tip">账号表存在本机 diag-collect/acct-accounts.json（仓库外），面板只读展示。改账号请编辑那个文件，或在 /acct 页面里改。</div>'
+    var wr="";for(var wi=0;wi<S.workers.length;wi++){var w=S.workers[wi];wr+='<tr><td>'+esc(w.id)+'</td><td>'+esc(w.account)+'</td><td>'+esc(w.status)+'</td><td>'+(w.pid||'—')+'</td><td><button class="b" data-wa="'+(w.status==="stopped"?'start':'stop')+'" data-wid="'+esc(w.id)+'">'+(w.status==="stopped"?'启动进程':'停止进程')+'</button></td></tr>';}
+    $("#stbody").innerHTML='<div class="tip">启动 worker 进程只进入待命状态，不会登录游戏。登录仍需对明确节点单独下发命令。</div>'
+     +'<div class="box"><h3>无头 worker</h3>'+(wr?'<table><tr><th>ID</th><th>账号</th><th>状态</th><th>PID</th><th></th></tr>'+wr+'</table>':'<div class="mut">尚无 worker 配置；配置保存在 diag-collect/workers.json。</div>')+'</div>'
+     +'<div class="tip" style="margin-top:8px">账号表存在本机 diag-collect/acct-accounts.json（仓库外），面板只读展示。改账号请编辑那个文件，或在 /acct 页面里改。</div>'
      +'<div class="box"><h3>账号表</h3><table><tr><th>账号</th><th>备注</th><th>线路</th><th>客户端在线</th><th>官方验证</th><th>密码</th><th>启用</th></tr>'+rows+'</table></div>'
      +'<div class="box" style="margin-top:8px"><h3>中枢信息</h3>'
      +'<div class="row"><span class="nm">中枢地址</span><span>127.0.0.1:8899</span></div>'
@@ -300,6 +302,7 @@ function renderSt(){
      +'<div class="row"><span class="nm">待执行指令</span><span>'+Object.keys(S.cmds||{}).length+'</span></div>'
      +'<div class="row"><span class="nm">脚本库</span><span>'+S.scripts.length+' 个</span></div>'
      +'</div>';
+    Array.prototype.forEach.call($("#stbody").querySelectorAll("[data-wa]"),function(b){b.onclick=function(){post("/api/worker",{action:b.getAttribute("data-wa"),id:b.getAttribute("data-wid")}).then(function(r2){lg(r2.ok?"worker 操作已提交":"worker 操作失败："+r2.err,r2.ok?"b":"s");renderSt();});};});
   });
 }
 function renderAll(){renderList();renderOv();renderSc();renderRun();renderEv();renderSt();}
@@ -342,7 +345,7 @@ Array.prototype.forEach.call(document.querySelectorAll(".tabs button"),function(
 $("#refresh").onclick=function(){poll();api("/api/script").then(function(r){S.scripts=r.scripts||[];renderSc()});lg("手动刷新","i")};
 $("#stopall").onclick=function(){
   var all=allNodes(),n=0;
-  for(var i=0;i<all.length;i++){post("/api/cmd",{node:all[i].raw.id||all[i].id,cmd:{do:"stop"}});n++}
+  for(var i=0;i<all.length;i++){if(all[i].kind==="headless"){post("/api/cmd",{node:all[i].raw.id,cmd:{do:"stop"}});n++}}
   lg("紧急停止：已向 "+n+" 个节点下发","s");loadEvents();
 };
 api("/api/script").then(function(r){S.scripts=r.scripts||[];renderSc()});

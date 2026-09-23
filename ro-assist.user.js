@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.24.1
+// @version      2.25.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.24.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.25.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -1093,8 +1093,7 @@
 
   var panel = $("div", "", '<div class="hd"><b>仙境传说 V' + VER + ' · 助手</b><span class="hbtns">' +
     '<span class="st" id="dsh-st" style="color:#cfe0ff;font-size:11px"></span>' +
-    '<button class="hbtn" id="dsh-min" title="缩成悬浮球">▁</button>' +
-
+    '<button class="hbtn" id="dsh-min" title="缩成悬浮球">▁</button></span></div>' +
     '<div class="tabs">' + tabsHtml + '</div>' +
     // 登录信息折叠框（原登录页取消后迁至面板顶部、橘色信息=角色状态条正上方）
     '<details id="dsh-loginbox" style="margin:6px 8px 0"><summary style="cursor:pointer;color:#b45309;font-size:12px;font-weight:bold;display:flex;align-items:center;gap:8px"><span>登录 · 展开/收起</span><button id="dsh-recenter" title="面板回中" style="margin-left:auto;flex:0 0 auto;color:#b45309;background:rgba(255,255,255,.55);border:1px solid #d9a441;border-radius:5px;padding:1px 8px;font-size:11px;cursor:pointer;font-weight:600">回中</button></summary>' +
@@ -4565,14 +4564,15 @@
         if (!fire) continue;
         // 重新找背包 index（可能已变动）
         var inv = findInventory();
-        var idx = it.index;
+        var idx = -1, found = false;
         if (inv) {
           for (var k = 0; k < inv.length; k++) {
             var ik = inv[k] || {};
-            if (ik.ITID === it.itid || ik.itemid === it.itid) { idx = ik.index != null ? ik.index : k; break; }
+            if (ik.ITID === it.itid || ik.itemid === it.itid) { idx = ik.index != null ? ik.index : k; found = true; break; }
           }
         }
-        if (idx < 0) { if (it.cond === "hp") potNoPotion = true; continue; } // V2.21.0：无红药标记（瀑布用）
+        if (!found || idx < 0) { if (it.cond === "hp") potNoPotion = true; continue; } // 不复用陈旧格号，防止误用已换位的其他道具
+        it.index = idx;
         if (it.cond === "hp") potNoPotion = false;
         useItemByIndex(idx);
         it.last = now;
@@ -8217,10 +8217,10 @@
           var lv2 = learnedSkillLv(sid2);
           if (lv2 <= 0) continue;
           try {
-            // 补状态技能自身也可能需要气弹（如爆气需5球）→ 先递归补
+            // 补状态技能自身也可能需要气弹（如爆气需5球）；改用明确球数，避免原条件未写球数时无限自调用。
             var subReq = skillReq(sid2);
             if (subReq && subReq[2] > 0 && st.spheres < subReq[2]) {
-              if (castStatusPrep(condStr, order)) return true;
+              return castStatusPrep("球" + subReq[2], order);
             }
             var ps2 = new CLIENT.PS.CZ.USE_SKILL();
             ps2.SKID = sid2;
@@ -9723,7 +9723,11 @@
       for (var j = 0; j < inv.length; j++) {
         var it = inv[j] || {};
         if (it.ITID != null && (it.type === 4 || it.type === 5 || it.itemType === 4 || it.itemType === 5)) {
-          sellList.push({ index: it.index != null ? it.index : j, amount: it.amount || it.count || 1, ITID: it.ITID });
+          var equipped = !!(it.IsEquipped || it.WearState || it.wearState || it.equipped);
+          var refined = Number(it.RefiningLevel || it.refiningLevel || it.refine || 0) > 0;
+          var slotted = false; try { if (it.slot) for (var sk in it.slot) { if (Number(it.slot[sk]) > 0) { slotted = true; break; } } } catch (e2) {}
+          var special = slotted || Number(it.nRandomOptionCnt || 0) > 0 || Number(it.enchantgrade || 0) > 0;
+          if (!equipped && !refined && !special) sellList.push({ index: it.index != null ? it.index : j, amount: it.amount || it.count || 1, ITID: it.ITID });
         }
       }
       if (!sellList.length) { $id("dsh-cleanlog").textContent = "背包里没有可卖的装备类物品"; return; }
@@ -10117,6 +10121,8 @@
           txCap.n++;
         } catch (eD) {}
       }
+      if (DPS_PKTS.indexOf(op) >= 0) dpsOnRawDamage(bytes, op);
+      if (op === 0x80) scrOnRawVanish(bytes);
       if (op === 183) onMenuList(bytes);
       else if (op === 180) onSayDialog(bytes);
       else if (op === 182) onCloseDialog();
@@ -10689,9 +10695,8 @@
   //   NOTIFY_ACT 系列（138 NOTIFY_ACT / 139 NOTIFY_ACT_POSITION / 737 NOTIFY_ACT2 / 2248 NOTIFY_ACT3）
   //     → GID=攻击者, targetGID=受击者, damage, count
   //   NOTIFY_SKILL 系列（276 / 478）→ SKID, AID=攻击者, targetID=受击者, damage, count（自带技能ID，最准）
-  // 只用 NM.hookPacket 挂回调（与杀怪统计 0x80 同一条通道），不拦包不改包。
+  // 复用既有 WebSocket 入站链 dispatchInbound：只读原始包，不占用客户端 hookPacket 单槽。
   var DPS_PKTS = [138, 139, 737, 2248, 276, 478];
-  var dpsHooked = false;
   var dps = {
     total: 0, hits: 0, crit: 0, max: 0, taken: 0, raw: 0, mine: 0,
     startAt: 0, lastAt: 0,
@@ -10748,17 +10753,17 @@
       rec.dmg += tot; rec.hits += cnt;
     } catch (e) {}
   }
-  function dpsHook() {
-    if (dpsHooked) return true;
+  function dpsOnRawDamage(bytes, op) {
     try {
-      var NM = CLIENT.NM || (window.require && window.require("Network/NetworkManager"));
-      if (!NM || typeof NM.hookPacket !== "function") return false;
-      for (var i = 0; i < DPS_PKTS.length; i++) {
-        (function (pid) { try { NM.hookPacket(pid, function (pkt) { dpsOnDamage(pkt); }); } catch (e) {} })(DPS_PKTS[i]);
-      }
-      dpsHooked = true;
-      return true;
-    } catch (e) { return false; }
+      var dv = new DataView(bytes), pkt;
+      if (op === 138 && bytes.byteLength >= 29) pkt = { GID: dv.getUint32(2, true), targetGID: dv.getUint32(6, true), damage: dv.getInt16(22, true), count: dv.getInt16(24, true) };
+      else if (op === 139 && bytes.byteLength >= 23) pkt = { GID: dv.getUint32(2, true), targetGID: dv.getUint32(6, true), damage: dv.getInt16(18, true), count: dv.getInt16(20, true) };
+      else if (op === 737 && bytes.byteLength >= 33) pkt = { GID: dv.getUint32(2, true), targetGID: dv.getUint32(6, true), damage: dv.getInt32(22, true), count: dv.getInt16(26, true) };
+      else if (op === 2248 && bytes.byteLength >= 34) pkt = { GID: dv.getUint32(2, true), targetGID: dv.getUint32(6, true), damage: dv.getInt32(22, true), count: dv.getInt16(27, true) };
+      else if (op === 276 && bytes.byteLength >= 31) pkt = { SKID: dv.getUint16(2, true), AID: dv.getUint32(4, true), targetID: dv.getUint32(8, true), damage: dv.getInt16(24, true), count: dv.getInt16(28, true) };
+      else if (op === 478 && bytes.byteLength >= 33) pkt = { SKID: dv.getUint16(2, true), AID: dv.getUint32(4, true), targetID: dv.getUint32(8, true), damage: dv.getInt32(24, true), count: dv.getInt16(30, true) };
+      if (pkt) dpsOnDamage(pkt);
+    } catch (e) {}
   }
   function dpsNum(n) { try { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ","); } catch (e) { return String(n); } }
   function dpsRate(total, t0, t1) {
@@ -10811,7 +10816,7 @@
       var duEl = $id("dsh-dps-dur");
       if (duEl) duEl.textContent = dps.startAt ? (Math.round(((dps.lastAt || now) - dps.startAt) / 1000) + " 秒") : "0 秒";
       var stEl = $id("dsh-dps-state");
-      if (stEl) stEl.textContent = dpsHooked ? ("已挂钩 " + DPS_PKTS.length + " 类伤害包 · 收到 " + dps.raw + " 个（自己 " + dps.mine + " 个）") : "未挂钩（客户端未就绪，登录后自动重试）";
+      if (stEl) stEl.textContent = "收包监听 " + DPS_PKTS.length + " 类伤害包 · 收到 " + dps.raw + " 个（自己 " + dps.mine + " 个）";
       dpsRenderSkills();
     } catch (e) {}
   }
@@ -11201,7 +11206,6 @@
         hookDisconnect();
         hookStatusIcons(); // V1.7.5 方案A：buff 状态判活 hook（登录后可重试，幂等）
         try { partyHook(); } catch (e) {} // V2.23.0 队伍血条 hook（幂等，重复调用无副作用）
-        try { dpsHook(); } catch (e) {} // V2.24.0 伤害包 hook（幂等，只装一次）
         try { fwRestore(); } catch (e) {} // V2.23.0 上次开着的浮窗自动恢复
         // V2.5.0：后台标签隐藏时跳过纯 UI 渲染（每秒全量重绘的 statbar/监控/状态表/提示/怪表），后台挂机只保功能逻辑，降 CPU/GC
         if (!UI_BG) {
@@ -11865,13 +11869,24 @@
   function scrSave(a) { try { localStorage.setItem(SCRIPTS_KEY, JSON.stringify(a)); } catch (e) {} }
   function scrValidate(obj) {
     if (!obj || typeof obj !== "object") return { ok: false, err: "顶层须为对象 {templateId, version, steps[]}" };
-    if (typeof obj.templateId !== "string" || !obj.templateId.trim()) return { ok: false, err: "缺少 templateId（脚本名）" };
-    if (!Array.isArray(obj.steps) || !obj.steps.length) return { ok: false, err: "steps 须为非空数组" };
+    if (typeof obj.templateId !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(obj.templateId)) return { ok: false, err: "templateId 只能是 1-64 位字母/数字/_/-" };
+    if (!Array.isArray(obj.steps) || !obj.steps.length || obj.steps.length > 500) return { ok: false, err: "steps 须为 1-500 项数组" };
     for (var i = 0; i < obj.steps.length; i++) {
-      var s = obj.steps[i];
+      var s = obj.steps[i], p = s && s.params;
       if (!s || typeof s !== "object") return { ok: false, err: "steps[" + i + "] 须为对象" };
-      if (SCR_ACTIONS.indexOf(s.action) < 0) return { ok: false, err: "steps[" + i + "].action 非法: " + s.action + "（白名单: " + SCR_ACTIONS.join("/") + "）" };
+      if (SCR_ACTIONS.indexOf(s.action) < 0) return { ok: false, err: "steps[" + i + "].action 非法: " + s.action };
+      if (p != null && (typeof p !== "object" || Array.isArray(p))) return { ok: false, err: "steps[" + i + "].params 须为对象" };
       if (s.onFail && ["skip", "alert", "stop"].indexOf(s.onFail) < 0) return { ok: false, err: "steps[" + i + "].onFail 非法" };
+      if (s.timeoutMs != null && (!isFinite(s.timeoutMs) || s.timeoutMs < 0 || s.timeoutMs > 3600000)) return { ok: false, err: "steps[" + i + "].timeoutMs 非法" };
+      if (s.retry != null && (!Number.isInteger(s.retry) || s.retry < 0 || s.retry > 100)) return { ok: false, err: "steps[" + i + "].retry 非法" };
+      if (s.action === "walk" && (!p || !isFinite(p.x) || !isFinite(p.y))) return { ok: false, err: "steps[" + i + "] walk 缺少 x/y" };
+      if (s.action === "teleport" && (!p || typeof p.map !== "string" || !p.map)) return { ok: false, err: "steps[" + i + "] teleport 缺少 map" };
+      if (s.action === "loop") {
+        if (!p || !Number.isInteger(p.back) || p.back < 1 || p.back > obj.steps.length) return { ok: false, err: "steps[" + i + "] loop.back 越界" };
+        if (!Number.isInteger(p.maxLoops) || p.maxLoops < 1 || p.maxLoops > 100000) return { ok: false, err: "steps[" + i + "] loop.maxLoops 非法" };
+        if (!s.until || typeof s.until !== "object") return { ok: false, err: "steps[" + i + "] loop 须提供顶层 until" };
+      }
+      if (s.action === "ifWeight" && p && p.goto != null && (!Number.isInteger(p.goto) || p.goto < 1 || p.goto > obj.steps.length)) return { ok: false, err: "steps[" + i + "] ifWeight.goto 越界" };
     }
     return { ok: true, script: obj };
   }
@@ -11919,7 +11934,8 @@
   }
   function scrGetPos() { try { var ent = CLIENT.SS && CLIENT.SS.Entity; return ent && ent.position; } catch (e) { return null; } }
   function scrCheckArrive(step) {
-    var a = step.arrive || {};
+    if (!step.arrive) return step.action !== "walk" && step.action !== "teleport";
+    var a = step.arrive;
     if (a.map) {
       var cur = getMapName();
       if (!cur || String(cur).toLowerCase() !== String(a.map).toLowerCase()) return false;
@@ -11955,7 +11971,7 @@
     { id: "ammo",     name: "箭矢子弹",   lo: 1750,  hi: 1799   },
     { id: "armor",    name: "防具",       lo: 2100,  hi: 2699   },
     { id: "card",     name: "卡片",       lo: 4001,  hi: 4999   },
-    { id: "pet",      name: "宠物相关",   lo: 5000,  hi: 5999   },
+    { id: "pet",      name: "宠物蛋",     lo: 9001,  hi: 9099   },
     { id: "material", name: "收藏品材料", lo: 7000,  hi: 7999   },
     { id: "cash",     name: "商城特殊",   lo: 10000, hi: 999999 }
   ];
@@ -11968,7 +11984,7 @@
     return null;
   }
   function scrItemName(id) {
-    try { if (typeof itemName === "function") { var n = itemName(id); if (n) return String(n); } } catch (e) {}
+    try { if (typeof getItemName === "function") { var n = getItemName(id); if (n) return String(n); } } catch (e) {}
     try { var db = window.__ITEM_NAMES__; if (db && db[id]) return String(db[id]); } catch (e) {}
     return "ID" + id;
   }
@@ -12014,8 +12030,8 @@
   // ---- 击杀计数：默认只算自己打死的 ----
   // 来源：助手自动战斗的当前目标 zLastTargetGID / 锁定目标 zLock.gid（30 秒内有效）
   // 脚本根字段 killNearby:true → 改成「玩家 12 格内任何怪死亡都算」，用于配合游戏内挂战斗
-  var scrKill = { total: 0, byGid: {}, byName: {}, atk: {}, name: {}, pos: {}, nearby: false };
-  function scrKillReset() { scrKill = { total: 0, byGid: {}, byName: {}, atk: {}, name: {}, pos: {}, nearby: !!scrKill.nearby }; }
+  var scrKill = { total: 0, byMobId: {}, byName: {}, atk: {}, name: {}, mobId: {}, pos: {}, nearby: false };
+  function scrKillReset() { scrKill = { total: 0, byMobId: {}, byName: {}, atk: {}, name: {}, mobId: {}, pos: {}, nearby: !!scrKill.nearby }; }
   function scrPos() { try { var e = CLIENT.SS && CLIENT.SS.Entity; return (e && e.position) ? e.position : null; } catch (e2) { return null; } }
   function scrKillSample() {
     try {
@@ -12033,44 +12049,36 @@
       EM.forEach(function (e) {
         try {
           if (e && e.objecttype === 5 && e.GID) {
-            scrKill.name[e.GID] = e.name || e.displayName || ("GID" + e.GID);
+            scrKill.name[e.GID] = (e.display && e.display.name) || e.name || e.displayName || ("GID" + e.GID);
+            scrKill.mobId[e.GID] = e._job != null ? Number(e._job) : (e.job != null ? Number(e.job) : (e.mobId != null ? Number(e.mobId) : null));
             if (e.position) scrKill.pos[e.GID] = [e.position[0], e.position[1]];
           }
         } catch (e2) {}
       });
     } catch (e) {}
   }
-  function scrHookVanish() {
+  function scrOnRawVanish(bytes) {
     try {
-      if (window.__dshScrVanish) return true;
-      var NM = CLIENT.NM || (window.require && window.require("Network/NetworkManager"));
-      if (!NM || typeof NM.hookPacket !== "function") return false;
-      NM.hookPacket(0x80, function (pkt) {   // ZC.NOTIFY_VANISH：type=1 死亡消失
-        try {
-          if (!pkt || pkt.type !== 1) return;
-          var gid = pkt.GID, mine = !!scrKill.atk[gid];
-          if (!mine) {
-            if (!scrKill.nearby) return;
-            var pp = scrPos(), mp = scrKill.pos[gid];
-            if (!pp || !mp) return;
-            if (Math.abs(pp[0] - mp[0]) + Math.abs(pp[1] - mp[1]) > 12) return;
-          }
-          var nm = scrKill.name[gid] || ("GID" + gid);
-          scrKill.total++;
-          scrKill.byGid[gid] = (scrKill.byGid[gid] || 0) + 1;
-          scrKill.byName[nm] = (scrKill.byName[nm] || 0) + 1;
-          delete scrKill.atk[gid];
-        } catch (e) {}
-      });
-      window.__dshScrVanish = true;
-      return true;
-    } catch (e) { return false; }
+      if (bytes.byteLength < 7) return;
+      var dv = new DataView(bytes), gid = dv.getUint32(2, true), type = dv.getUint8(6);
+      if (type !== 1) return;
+      var mine = !!scrKill.atk[gid];
+      if (!mine) {
+        if (!scrKill.nearby) return;
+        var pp = scrPos(), mp = scrKill.pos[gid];
+        if (!pp || !mp || Math.abs(pp[0] - mp[0]) + Math.abs(pp[1] - mp[1]) > 12) return;
+      }
+      var nm = scrKill.name[gid] || ("GID" + gid), mid = scrKill.mobId[gid];
+      scrKill.total++;
+      if (mid != null) scrKill.byMobId[mid] = (scrKill.byMobId[mid] || 0) + 1;
+      scrKill.byName[nm] = (scrKill.byName[nm] || 0) + 1;
+      delete scrKill.atk[gid];
+    } catch (e) {}
   }
   (function scrKillInit() {
     var t = 0;
     setInterval(function () {
       t++;
-      if (!window.__dshScrVanish) scrHookVanish();
       scrKillSample();
       if (t % 3 === 0) scrKillScan();
     }, 700);
@@ -12098,51 +12106,52 @@
       var hasItem = (cond.item != null) || Array.isArray(cond.items) || Array.isArray(cond.range) || cond.keyword || cond["class"];
       if (hasItem) {
         var needI = cond.itemCount != null ? parseInt(cond.itemCount, 10) : (cond.count != null ? parseInt(cond.count, 10) : 1);
-        if (scrQtyBySpec(cond, !!cond.dropOnly) < needI) return false;
+        var haveI = scrQtyBySpec(cond, !!cond.dropOnly), cmpI = cond.compare || "gte";
+        if (cmpI === "lte" ? haveI > needI : (cmpI === "eq" ? haveI !== needI : haveI < needI)) return false;
       }
       var needK = cond.killCount != null ? parseInt(cond.killCount, 10) : (cond.count != null ? parseInt(cond.count, 10) : 1);
       if (cond.kill != null && (scrKill.byName[String(cond.kill)] || 0) < needK) return false;
-      if (cond.killId != null && (scrKill.byGid[parseInt(cond.killId, 10)] || 0) < needK) return false;
+      if (cond.killId != null && (scrKill.byMobId[parseInt(cond.killId, 10)] || 0) < needK) return false;
       if (cond.killAny != null && scrKill.total < parseInt(cond.killAny, 10)) return false;
       if (cond.weight != null) { var wp = scrWeightPct(); if (wp == null || wp < parseFloat(cond.weight)) return false; }
       if (cond.zeny != null) { var z = scrZeny(); if (z == null || z < parseInt(cond.zeny, 10)) return false; }
-      if (cond.time != null) { var el = scrRun.startedAt ? (Date.now() - scrRun.startedAt) / 1000 : 0; if (el < parseFloat(cond.time)) return false; }
+      if (cond.time != null) { var el = scrRun.stepStartedAt ? (Date.now() - scrRun.stepStartedAt) / 1000 : 0; if (el < parseFloat(cond.time)) return false; }
       return true;
     } catch (e) { return false; }
   }
-  // 存仓：把匹配的背包物品发进仓库（CZ.MOVE_ITEM_FROM_BODY_TO_STORE 0xf3）
+  function scrStorageReady() {
+    try { var st = CLIENT.SS && (CLIENT.SS.Storage || CLIENT.SS.storage); return !!st; } catch (e) { return false; }
+  }
+  // 存仓按队列逐项发送；每项间隔 250ms，并在发送前确认仓库仍处于打开状态。
   function scrStore(p) {
     try {
-      var inv = scrInvList(), sent = 0, specs = Array.isArray(p.items) ? p.items.map(function (x) { return parseInt(x, 10); }) : null;
+      if (!scrStorageReady()) { scrLogLine("store: 仓库未打开，拒绝发送"); return; }
+      var inv = scrInvList(), queue = [], specs = Array.isArray(p.items) ? p.items.map(function (x) { return parseInt(x, 10); }) : null;
       var clsDef = null;
       if (p["class"]) { for (var c = 0; c < SCR_CLASSES.length; c++) { if (SCR_CLASSES[c].id === p["class"]) clsDef = SCR_CLASSES[c]; } }
       for (var i = 0; i < inv.length; i++) {
         var id = scrInvId(inv[i]); if (id == null) continue;
-        var hit = false;
-        if (p.item != null && id === parseInt(p.item, 10)) hit = true;
-        if (!hit && specs && specs.indexOf(id) >= 0) hit = true;
-        if (!hit && Array.isArray(p.range) && id >= p.range[0] && id <= p.range[1]) hit = true;
-        if (!hit && clsDef && id >= clsDef.lo && id <= clsDef.hi) hit = true;
-        if (!hit && p.keyword && scrItemName(id).indexOf(String(p.keyword)) >= 0) hit = true;
+        var hit = (p.item != null && id === parseInt(p.item, 10)) || (specs && specs.indexOf(id) >= 0) || (Array.isArray(p.range) && id >= p.range[0] && id <= p.range[1]) || (clsDef && id >= clsDef.lo && id <= clsDef.hi) || (p.keyword && scrItemName(id).indexOf(String(p.keyword)) >= 0);
         if (!hit) continue;
-        var idx = scrInvIdx(inv[i]);
-        if (idx == null) { scrLogLine("store: 取不到 " + scrItemName(id) + " 的背包格号，跳过"); continue; }
-        var pkt = new CLIENT.PS.CZ.MOVE_ITEM_FROM_BODY_TO_STORE();
-        pkt.index = idx;
-        pkt.count = p.count != null ? parseInt(p.count, 10) : scrInvQty(inv[i]);
-        CLIENT.NM.sendPacket(pkt);
-        sent++;
-        if (p.max != null && sent >= parseInt(p.max, 10)) break;
+        var idx = scrInvIdx(inv[i]); if (idx == null) continue;
+        queue.push({ index: idx, id: id, count: p.count != null ? Math.min(parseInt(p.count, 10), scrInvQty(inv[i])) : scrInvQty(inv[i]) });
+        if (p.max != null && queue.length >= parseInt(p.max, 10)) break;
       }
-      scrLogLine("store: 已发送存仓 " + sent + " 件" + (sent ? "" : "（没有匹配物品）") + "（需先在游戏里打开仓库窗口）");
+      if (!queue.length) { scrLogLine("store: 没有匹配物品"); return; }
+      (function sendNext(n) {
+        if (n >= queue.length) { scrLogLine("store: 已发送存仓 " + queue.length + " 项"); return; }
+        if (!scrStorageReady()) { scrLogLine("store: 仓库已关闭，停止余下 " + (queue.length - n) + " 项"); return; }
+        var q = queue[n], pkt = new CLIENT.PS.CZ.MOVE_ITEM_FROM_BODY_TO_STORE(); pkt.index = q.index; pkt.count = q.count; CLIENT.NM.sendPacket(pkt);
+        setTimeout(function () { sendNext(n + 1); }, 250);
+      })(0);
     } catch (e) { scrLogLine("store 异常: " + e.message); }
   }
   // 循环：条件达成或到上限就结束，否则跳回指定步（back 为步号，从 1 开始）
   function scrDoLoop(step) {
     var lp = step.params || {};
     scrRun.loops = (scrRun.loops || 0) + 1;
-    if (scrCondMet(lp.until)) { scrLogLine("循环条件已达成（第 " + scrRun.loops + " 轮）→ 结束脚本"); scrFinish(true, "条件达成"); return; }
-    if (lp.maxLoops && scrRun.loops >= parseInt(lp.maxLoops, 10)) { scrLogLine("达到最大循环 " + lp.maxLoops + " 次 → 结束脚本"); scrFinish(true, "达到上限"); return; }
+    if (scrCondMet(step.until)) { scrLogLine("循环条件已达成（第 " + scrRun.loops + " 轮）→ 继续下一步"); scrNextStep(); return; }
+    if (lp.maxLoops && scrRun.loops >= parseInt(lp.maxLoops, 10)) { scrLogLine("达到最大循环 " + lp.maxLoops + " 次但条件未达成"); if (step.onFail === "skip" || step.onFail === "alert") scrNextStep(); else scrFinish(false, "循环达到上限"); return; }
     var back = Math.max(0, (lp.back != null ? parseInt(lp.back, 10) : 1) - 1);
     var steps = scrRun.script.steps;
     for (var i = back; i < steps.length; i++) { try { delete steps[i]._started; } catch (e) {} }
@@ -12223,6 +12232,7 @@
     } catch (e) {}
     if (!step._started) {
       step._started = Date.now();
+      scrRun.stepStartedAt = step._started;
       step._tries = 0;
       scrLogLine("[" + (i + 1) + "/" + script.steps.length + "] " + step.action + (step.params && step.params.map ? " " + step.params.map : "") + (step.params && step.params.x != null ? " (" + step.params.x + "," + step.params.y + ")" : ""));
       scrDoAction(step);
@@ -12241,6 +12251,7 @@
       if (step._tries <= retry) {
         scrLogLine("步 " + (i + 1) + " 超时,重试 " + step._tries + "/" + retry);
         step._started = Date.now();
+        scrRun.stepStartedAt = step._started;
         scrDoAction(step);
       } else {
         scrLogLine("步 " + (i + 1) + " 超时(" + maxT + "ms),onFail=" + (step.onFail || "skip"));
@@ -12252,6 +12263,7 @@
   }
   function scrNextStep() {
     scrRun.stepIndex++;
+    scrRun.stepStartedAt = 0;
     scrSetState("运行中… " + scrRun.stepIndex + "/" + scrRun.script.steps.length, "ok");
   }
   function scrFinish(ok, msg) {
@@ -12275,7 +12287,6 @@
     scrRun.baseline = scrSnapshotInv();
     scrKillReset();
     scrKill.nearby = !!scrRun.script.killNearby;
-    scrHookVanish();
     scrSetState("运行中… 0/" + scrRun.script.steps.length, "ok");
     scrLogLine("执行 " + scrRun.script.templateId + " (v" + (scrRun.script.version || 1) + ")");
     scrRun.running = true;

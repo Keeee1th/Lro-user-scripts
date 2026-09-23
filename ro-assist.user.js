@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.23.0
+// @version      2.24.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.23.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.24.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -562,7 +562,7 @@
     "#dsh-ro-panel .switch{display:inline-flex;align-items:center;gap:4px;cursor:pointer;color:#3c4d66;font-size:13px}" +
     "#dsh-ro-panel .switch input{accent-color:#2f6fde;width:13px;height:13px;flex:none}" +
     "#dsh-ro-panel .tag{font-size:11px;color:#fff;background:#64748b;border-radius:999px;padding:0 7px;flex:none}" +
-    "#dsh-ro-panel .tag.blue{background:#2f6fde}#dsh-ro-panel .tag.green{background:#1f9d4d}" +
+    "#dsh-ro-panel .tag.blue{background:#2f6fde}#dsh-ro-panel .tag.green{background:#1f9d4d}#dsh-ro-panel .tag.red{background:#c0392b}" +  // V2.24.0 首领标记
     "#dsh-ro-panel [style*=\"font-size:10px;\"]{font-size:11px!important}" +
     "#dsh-ro-panel [style*=\"font-size:11px;\"]{font-size:12px!important}" +
     "#dsh-ro-panel [style*=\"font-size:12px;\"]{font-size:13px!important}" +
@@ -772,6 +772,7 @@
       '<button class="sub-tab" data-sub="ap-pet">宠物投喂</button>' +
       '<button class="sub-tab" data-sub="ap-hl">物品标色</button>' +
       '<button class="sub-tab" data-sub="ap-mvp">MVP计时</button>' +
+      '<button class="sub-tab" data-sub="ap-dps">战斗统计</button>' +
       '<button class="sub-tab" data-sub="ap-inv">仓库查询</button>' +
       '<button class="sub-tab" data-sub="ap-scr">脚本执行</button>' +
       '<button class="sub-tab" data-sub="ap-item">物品</button>' +
@@ -929,7 +930,6 @@
       '<div class="box"><div class="b-hd">已锁定 <button class="ghost" id="dsh-lockclear" style="flex:0 0 auto;padding:0 8px;font-size:11px">清空锁定</button><span class="tag green" id="dsh-lockcount" style="float:right">0 种</span></div><div id="dsh-locklist" style="font-size:11px">未锁定（勾选本图怪物或侦查扫描到的怪）</div>' +
       '<div class="log" style="margin-top:2px">锁定后自动切换目标：优先级=勾选怪 &gt; 最近 &gt; 血最少</div></div>' +
       '</div>' +
-      '<div class="row"><span class="st" style="font-size:10px">本图怪物锁定已独立成功能菜单里的「本图怪物锁定」页（悬浮球 → 本图怪物锁定）</span></div>' +
       '<div class="row"><input id="dsh-mobsearch" type="text" placeholder="搜索怪物名/ID…（全量图鉴）">' +
       '<button class="ghost" id="dsh-mobsearchbtn" style="flex:0 0 auto">搜索</button>' +
       '<button class="ghost" id="dsh-mobsearchclr" style="flex:0 0 auto">清空</button></div>' +
@@ -951,6 +951,43 @@
       '<div id="dsh-bag-clean" style="font-size:11px"></div>' +
       '</div>' +
       '</div>' +
+      // 子页9：战斗统计（伤害统计 + 首领警报，V2.24.0）
+      '<div class="sub-page" data-subpage="ap-dps">' +
+      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">伤害统计（本场 / 全程 · 技能占比）</span>' +
+      '<button class="ghost" id="dsh-fw-btn-dps" data-fw="dps" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
+      '<div id="dsh-fw-dps">' +
+      '<div class="row"><span class="lb">本场</span><span class="st" id="dsh-dps-curname" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">未开打</span>' +
+      '<span class="tag blue" id="dsh-dps-curdps" style="flex:0 0 auto">—</span></div>' +
+      '<div class="row"><span class="st" id="dsh-dps-curtxt" style="font-size:11px">本场伤害 0 · 命中 0</span></div>' +
+      '<div class="sec">全程</div>' +
+      '<div class="row"><span class="lb">总伤害</span><span class="st" id="dsh-dps-total">0</span>' +
+      '<span class="lb" style="margin-left:auto">秒伤</span><span class="st" id="dsh-dps-dps">0</span></div>' +
+      '<div class="row"><span class="lb">命中</span><span class="st" id="dsh-dps-hits">0</span>' +
+      '<span class="lb" style="margin-left:auto">暴击</span><span class="st" id="dsh-dps-crit">0</span>' +
+      '<span class="lb" style="margin-left:auto">最高</span><span class="st" id="dsh-dps-max">0</span></div>' +
+      '<div class="row"><span class="lb">承受</span><span class="st" id="dsh-dps-taken">0</span>' +
+      '<span class="lb" style="margin-left:auto">时长</span><span class="st" id="dsh-dps-dur">0 秒</span></div>' +
+      '<div class="sec">技能占比</div>' +
+      '<div id="dsh-dps-skills" style="font-size:11px;max-height:150px;overflow:auto"><span class="st">暂无数据</span></div>' +
+      '<div class="row"><button class="ghost" id="dsh-dps-reset-cur" style="flex:1">清零本场</button>' +
+      '<button class="ghost" id="dsh-dps-reset-all" style="flex:1">清零全程</button></div>' +
+      '<div class="row"><span class="st" id="dsh-dps-state" style="font-size:10px">等待伤害包…</span></div>' +
+      '<div class="log">数据来自客户端伤害包，只统计自己打出去的伤害（含承受伤害）。技能归属优先用技能伤害包自带的技能 ID，没有就按最近一次施法回执的时间窗匹配，仍取不到则归到「普攻」。</div>' +
+      '</div>' +
+      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">首领警报（MVP / BOSS 出现提示）</span>' +
+      '<button class="ghost" id="dsh-fw-btn-boss" data-fw="boss" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
+      '<div id="dsh-fw-boss">' +
+      '<div class="row"><span class="lb">警报距离</span><input id="dsh-boss-range" type="number" value="30" min="3" max="80" style="flex:0 0 48px">' +
+      '<span style="color:#5a6b7f">格（范围内才弹提示）</span></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-boss-toast" type="checkbox" checked>弹动作提示条</label>' +
+      '<span class="st" id="dsh-boss-count" style="margin-left:auto">0 只</span></div>' +
+      '<div class="sec">本图首领</div>' +
+      '<div id="dsh-boss-list" style="font-size:11px;max-height:150px;overflow:auto"><span class="st">未检测到首领（换图或靠近后自动刷新）</span></div>' +
+      '<div class="sec">最近警报</div>' +
+      '<div id="dsh-boss-log" style="font-size:11px;max-height:90px;overflow:auto"><span class="st">暂无</span></div>' +
+      '<div class="log">首领判定用客户端怪物数据库的 MvpDropsNum 字段（就是 BOSS 瞬移用的那套，全服约 126 只），不做地图级兜底。同一只首领 60 秒内只提醒一次。总开关默认关闭，需要时在功能菜单里勾上。</div>' +
+      '</div>' +
+      '</div>' +
       '<div class="sub-page" data-subpage="ap-sync">' +
       '<div class="sec">同步器（多账号联动 · 默认关）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-sync-en" type="checkbox">启用同步器（同时开始上报状态到中心）</label></div>' +
@@ -959,7 +996,6 @@
       '<div class="row"><span class="lb">轮询间隔</span><input id="dsh-sync-int" type="number" value="15" min="1" max="120" style="flex:0 0 48px">' +
       '<span style="color:#5a6b7f">秒（从号调小=同步更快，1~120）</span></div>' +
       '<div class="row"><span class="st" id="dsh-sync-state" style="font-size:11px">同步器关闭</span></div>' +
-      '<div class="row"><span class="st">画质、画面效果、多开帧率限制已移到独立模块：功能菜单 → 画面性能</span></div>' +
       '<div class="log">主号点地板/点NPC → 中心广播 → 从号自动执行（地图相同才动）。间隔=取回广播的频率：从号设 1~3 秒几乎实时跟随；中心有未执行指令时自动加速到 3 秒。设置按角色自动保存。</div>' +
       '</div>' +
       '</div></div>',
@@ -1699,6 +1735,8 @@
     fwReg("perf", "画面性能", function () { return document.getElementById("dsh-fw-perf"); });
     fwReg("tgt", "当前目标", function () { return document.getElementById("dsh-fw-tgt"); });
     fwReg("party", "队伍血条", function () { return document.getElementById("dsh-fw-party"); });
+  fwReg("dps", "伤害统计", function () { return document.getElementById("dsh-fw-dps"); });   // V2.24.0
+  fwReg("boss", "首领警报", function () { return document.getElementById("dsh-fw-boss"); }); // V2.24.0
     panel.addEventListener("click", function (ev) {
       try {
         var b = ev.target && ev.target.closest ? ev.target.closest("[data-fw]") : null;
@@ -1725,36 +1763,67 @@
     } catch (e) {}
     return roModC;
   }
-  function roModOn(id) { var m = roMods(); return m[id] === undefined ? true : !!m[id]; }
+  // V2.24.0：新增 defOff —— 表里标了 defOff 的功能（首领警报）默认关闭，其余默认开启。
+  function roModOn(id) {
+    var m = roMods();
+    if (m[id] === undefined) {
+      for (var i = 0; i < RO_MODULES.length; i++) { if (RO_MODULES[i].id === id) return !RO_MODULES[i].defOff; }
+      return true;
+    }
+    return !!m[id];
+  }
+  function roModPage(id) {
+    for (var i = 0; i < RO_MODULES.length; i++) { if (RO_MODULES[i].id === id) return RO_MODULES[i].page || null; }
+    return null;
+  }
   function roModSet(id, on) {
     roMods()[id] = !!on;
     try { localStorage.setItem(RO_MOD_KEY, JSON.stringify(roMods())); } catch (e) {}
     try { roMenuRender(); } catch (e) {}
   }
+  // V2.24.0：功能菜单即主面板（一级）。原带页签的大面板降级为「设置页」容器，
+  //   5 个页签各占菜单一行（kind:"page"，点「打开」= 开面板并切到该页），菜单里不再有「主面板」行。
   var RO_MODULES = [
-    { id: "panel", name: "主面板",          kind: "panel" },
-    { id: "np",    name: "内挂自动战斗",    kind: "act", noToggle: true },
-    { id: "zhu",   name: "助手自动战斗",    kind: "act", noToggle: true },
-    { id: "mlock", name: "本图怪物锁定",    kind: "fw" },
-    { id: "tp",    name: "传送功能",        kind: "fw" },
-    { id: "zhu2",  name: "助手战斗设置",    kind: "fw" },
-    { id: "aid",   name: "战斗辅助",        kind: "fw" },
-    { id: "item",  name: "物品 · 拾取与整理", kind: "fw" },
-    { id: "perf",  name: "画面性能",        kind: "fw" },
-    { id: "tgt",   name: "当前目标",        kind: "fw" },
-    { id: "party", name: "队伍血条",        kind: "fw" },
-    { id: "mvp",   name: "MVP 计时",        kind: "custom" },
-    { id: "zhud",  name: "战斗监控横条",    kind: "custom" },
-    { id: "ztip",  name: "动作提示条",      kind: "custom", noToggle: true }
+    { id: "page-nei",      name: "内挂模式",         kind: "page", page: "nei",      sec: "设置页" },
+    { id: "page-zhu",      name: "助手模式",         kind: "page", page: "zhu",      sec: "设置页" },
+    { id: "page-assist",   name: "辅助",             kind: "page", page: "assist",   sec: "设置页" },
+    { id: "page-teleport", name: "传送",             kind: "page", page: "teleport", sec: "设置页" },
+    { id: "page-system",   name: "系统",             kind: "page", page: "system",   sec: "设置页" },
+    { id: "mlock", name: "本图怪物锁定",    kind: "fw", sec: "功能窗口" },
+    { id: "tp",    name: "传送功能",        kind: "fw", sec: "功能窗口" },
+    { id: "zhu2",  name: "助手战斗设置",    kind: "fw", sec: "功能窗口" },
+    { id: "aid",   name: "战斗辅助",        kind: "fw", sec: "功能窗口" },
+    { id: "item",  name: "物品 · 拾取与整理", kind: "fw", sec: "功能窗口" },
+    { id: "perf",  name: "画面性能",        kind: "fw", sec: "功能窗口" },
+    { id: "tgt",   name: "当前目标",        kind: "fw", sec: "功能窗口" },
+    { id: "party", name: "队伍血条",        kind: "fw", sec: "功能窗口" },
+    { id: "dps",   name: "伤害统计",        kind: "fw", sec: "功能窗口" },
+    { id: "boss",  name: "首领警报",        kind: "fw", sec: "功能窗口", defOff: true },
+    { id: "mvp",   name: "MVP 计时",        kind: "custom", sec: "功能窗口" },
+    { id: "zhud",  name: "战斗监控横条",    kind: "custom", sec: "功能窗口" },
+    { id: "ztip",  name: "动作提示条",      kind: "custom", noToggle: true, sec: "功能窗口" },
+    { id: "np",    name: "内挂自动战斗",    kind: "act", noToggle: true, sec: "动作" },
+    { id: "zhu",   name: "助手自动战斗",    kind: "act", noToggle: true, sec: "动作" }
   ];
   function roModEl(id) {
-    if (id === "panel") return document.getElementById("dsh-ro-panel");
+    if (roModPage(id) || id === "panel") return document.getElementById("dsh-ro-panel");
     if (id === "mvp") return document.getElementById("dsh-mvp-timers");
     if (id === "zhud") return document.getElementById("dsh-ro-z-hud");
     if (id === "ztip") return document.getElementById("dsh-ztip");
     return document.getElementById("dsh-fw-" + id);
   }
+  function roPanelOpen() {
+    var p = document.getElementById("dsh-ro-panel");
+    return !!(p && p.style.display !== "none");
+  }
   function roModIsOpen(id) {
+    var pg = roModPage(id);
+    if (pg) {
+      // 设置页行：面板开着且当前停在这一页才算「已打开」
+      if (!roPanelOpen()) return false;
+      var act = panel.querySelector(".page.active");
+      return !!(act && act.getAttribute("data-page") === pg);
+    }
     if (id === "panel" || id === "mvp" || id === "zhud" || id === "ztip") {
       var e2 = roModEl(id);
       return !!(e2 && e2.style.display !== "none");
@@ -1762,6 +1831,15 @@
     return !!fwOpenIds[id];
   }
   function roModOpen(id) {
+    var pg = roModPage(id);
+    if (pg) {
+      // V2.24.0 设置页行 = 打开大面板并切到该页签（面板本身不重建，位置/缩放/透明度照旧）
+      saved.collapsed = false; try { saveSaved(saved); } catch (e) {}
+      try { applyCollapse(false); } catch (e) {}
+      try { switchPage(pg); } catch (e) {}
+      try { roBringFront(document.getElementById("dsh-ro-panel")); } catch (e) {}
+      return;
+    }
     if (id === "np" || id === "zhu") return;   // 纯动作类（只有快捷键，没有窗口）
     if (id === "panel") { saved.collapsed = false; try { saveSaved(saved); } catch (e) {} applyCollapse(false); try { roBringFront(document.getElementById("dsh-ro-panel")); } catch (e) {} return; }
     if (id === "mvp") { var m = roModEl("mvp"); if (m) { m.style.display = "flex"; try { roBringFront(m); } catch (e) {} } return; }
@@ -1771,12 +1849,17 @@
     try { roBringFront(roModEl(id)); } catch (e) {}  // V2.19.0：打开就置顶
   }
   function roModClose(id) {
+    var pg = roModPage(id);
+    if (pg) {
+      saved.collapsed = true; try { saveSaved(saved); } catch (e) {}
+      try { applyCollapse(true); } catch (e) {}
+      return;
+    }
     if (id === "np" || id === "zhu") return;   // 纯动作类（只有快捷键，没有窗口）
     if (id === "panel") { saved.collapsed = true; try { saveSaved(saved); } catch (e) {} applyCollapse(true); return; }
     if (id === "mvp" || id === "zhud" || id === "ztip") { var e3 = roModEl(id); if (e3) e3.style.display = "none"; return; }
     if (fwOpenIds[id]) fwToggle(id);
   }
-  function roModToggle(id) { if (roModIsOpen(id)) roModClose(id); else roModOpen(id); }
 
   var roMenuEl = null;
   function roMenuBuild() {
@@ -1848,19 +1931,34 @@
     rbBtn.addEventListener("click", function () { try { location.reload(); } catch (e) {} });
     rbRow.appendChild(rbBtn);
     body.appendChild(rbRow);
+    var lastSec = null;
     for (var i = 0; i < RO_MODULES.length; i++) {
       (function (m) {
+        // V2.24.0：分区小标题（设置页 / 功能窗口 / 动作）
+        if (m.sec && m.sec !== lastSec) {
+          lastSec = m.sec;
+          var sd = document.createElement("div"); sd.className = "ro-sec"; sd.style.marginTop = "7px";
+          sd.textContent = m.sec;
+          body.appendChild(sd);
+        }
         var row = document.createElement("div"); row.className = "ro-row";
         var lab = document.createElement("label");
         lab.style.cssText = "display:flex;align-items:center;gap:4px;flex:1;min-width:0;cursor:pointer;";
-        var cb = document.createElement("input"); cb.type = "checkbox"; cb.className = "ro-cb";
-        cb.checked = roModOn(m.id);
-        cb.addEventListener("change", function () {
-          roModSet(m.id, cb.checked);
-          if (!cb.checked) { try { roModClose(m.id); } catch (e) {} }
-        });
         var nm = document.createElement("span"); nm.className = "nm"; nm.textContent = m.name;
-        lab.appendChild(cb); lab.appendChild(nm); row.appendChild(lab);
+        if (m.kind === "page") {
+          // 设置页没有「总开关」语义：留一个与勾选框等宽的占位，保证功能名左对齐
+          var sp = document.createElement("span"); sp.style.cssText = "flex:none;width:13px;height:13px;";
+          lab.appendChild(sp);
+        } else {
+          var cb = document.createElement("input"); cb.type = "checkbox"; cb.className = "ro-cb";
+          cb.checked = roModOn(m.id);
+          cb.addEventListener("change", function () {
+            roModSet(m.id, cb.checked);
+            if (!cb.checked) { try { roModClose(m.id); } catch (e) {} }
+          });
+          lab.appendChild(cb);
+        }
+        lab.appendChild(nm); row.appendChild(lab);
         // V2.18.0 键位按钮：左键设置/重设，右键清除
         var kb = document.createElement("button"); kb.type = "button";
         kb.style.cssText = "min-width:54px;max-width:104px;height:18px;padding:0 5px;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
@@ -2272,13 +2370,18 @@
       if (!migDone && Object.keys(hkCfg).length === 0) {
         var o1 = JSON.parse(localStorage.getItem(HK_KEY1) || "{}");
         if (o1 && (o1.hotkey || o1.hotkeyNp || o1.hotkeyZhu)) {
-          if (o1.hotkey) hkCfg.panel = o1.hotkey;
+          if (o1.hotkey) hkCfg["page-assist"] = o1.hotkey;  // V2.24.0：主面板行取消，旧键位归到「辅助」设置页
           if (o1.hotkeyNp) hkCfg.np = o1.hotkeyNp;
           if (o1.hotkeyZhu) hkCfg.zhu = o1.hotkeyZhu;
           hkSave();
         }
       }
     } catch (e) {}
+    // V2.24.0：菜单里「主面板」行已取消，历史遗留的 panel 键位改挂到「辅助」设置页（不丢用户设过的键）
+    try {
+      if (hkCfg.panel && !hkCfg["page-assist"]) { hkCfg["page-assist"] = hkCfg.panel; hkSave(); }
+      if (hkCfg.panel) { delete hkCfg.panel; hkSave(); }
+    } catch (e4) {}
     try { localStorage.setItem("dsh_ro_hotkeys_mig", "1"); } catch (e0) {}
     return hkCfg;
   }
@@ -10048,6 +10151,7 @@
       var skid = dv.getUint16(14, true);
       var dly = dv.getUint32(20, true);
       if (skid > 0) skillDelay[skid] = dly;
+      if (skid > 0) { try { dpsOnSkill(skid); } catch (e5) {} } // V2.24.0：伤害统计的技能归属兜底
       // V2.16.7：RTT 估算（发包→收2842回执时间差，滑动平均，供 skillCdMs 延迟补偿）
       if (skid > 0 && zSkillSentAt[skid]) {
         var rtt = Date.now() - zSkillSentAt[skid];
@@ -10571,6 +10675,221 @@
       '<span class="st" style="flex:0 0 auto">' + (dead ? "死亡" : (hm > 0 ? (h + "/" + hm) : "—")) + '</span></div>' +
       '<div style="height:8px;border:1px solid #b8c6d4;background:#eef3fa;border-radius:2px;overflow:hidden"><i style="display:block;height:100%;width:' + (dead ? 100 : pct) + '%;background:' + col + '"></i></div></div>';
   }
+  // ================= V2.24.0 伤害统计 =================
+  // 数据源：客户端伤害包。字段名有两套，必须都吃：
+  //   NOTIFY_ACT 系列（138 NOTIFY_ACT / 139 NOTIFY_ACT_POSITION / 737 NOTIFY_ACT2 / 2248 NOTIFY_ACT3）
+  //     → GID=攻击者, targetGID=受击者, damage, count
+  //   NOTIFY_SKILL 系列（276 / 478）→ SKID, AID=攻击者, targetID=受击者, damage, count（自带技能ID，最准）
+  // 只用 NM.hookPacket 挂回调（与杀怪统计 0x80 同一条通道），不拦包不改包。
+  var DPS_PKTS = [138, 139, 737, 2248, 276, 478];
+  var dpsHooked = false;
+  var dps = {
+    total: 0, hits: 0, crit: 0, max: 0, taken: 0, raw: 0, mine: 0,
+    startAt: 0, lastAt: 0,
+    cur: { gid: 0, name: "", total: 0, hits: 0, startAt: 0, lastAt: 0 },
+    skills: {}, lastSkill: 0, lastSkillAt: 0
+  };
+  function dpsSelfAid() { try { return (CLIENT.SS && CLIENT.SS.AID) || 0; } catch (e) { return 0; } }
+  function dpsEntName(gid) {
+    try {
+      var EM = window.require && window.require("Renderer/EntityManager");
+      var e = (EM && EM.get) ? EM.get(gid) : null;
+      if (!e) return "";
+      return (e.display && e.display.name) || e.displayName || e.name || "";
+    } catch (e2) { return ""; }
+  }
+  // 施法回执（2842 USESKILL_ACK3）里拿到技能ID → 给随后的伤害包做归属兜底
+  function dpsOnSkill(skid) { try { if (skid > 0) { dps.lastSkill = skid; dps.lastSkillAt = Date.now(); } } catch (e) {} }
+  function dpsResetCur() { dps.cur = { gid: 0, name: "", total: 0, hits: 0, startAt: 0, lastAt: 0 }; }
+  function dpsResetAll() {
+    dps.total = 0; dps.hits = 0; dps.crit = 0; dps.max = 0; dps.taken = 0; dps.mine = 0;
+    dps.startAt = 0; dps.lastAt = 0; dps.skills = {};
+    dpsResetCur();
+    dpsRenderSkills();
+  }
+  function dpsOnDamage(pkt) {
+    try {
+      if (!pkt) return;
+      dps.raw++;
+      var aid = dpsSelfAid();
+      if (!aid) return;
+      var gid = (pkt.GID != null) ? pkt.GID : pkt.AID;
+      var tg = (pkt.targetGID != null) ? pkt.targetGID : pkt.targetID;
+      var dmg = Number(pkt.damage);
+      if (!isFinite(dmg) || !dmg) return;
+      var cnt = Number(pkt.count); if (!isFinite(cnt) || cnt < 1) cnt = 1;
+      var now = Date.now();
+      if (tg === aid && gid !== aid) { if (dmg > 0) dps.taken += dmg * cnt; return; }  // 自己挨打
+      if (gid !== aid) return;      // 只统计自己打出去的
+      if (dmg < 0) return;          // 负数=治疗/异常，不计入伤害
+      dps.mine++;
+      var tot = dmg * cnt;          // count = 这一包里的连击段数
+      dps.total += tot; dps.hits += cnt; dps.max = Math.max(dps.max, dmg);
+      if (cnt > 1) dps.crit++;
+      if (!dps.startAt) dps.startAt = now;
+      dps.lastAt = now;
+      if (tg && tg !== dps.cur.gid) {
+        dps.cur = { gid: tg, name: dpsEntName(tg), total: 0, hits: 0, startAt: now, lastAt: now };
+      }
+      if (!dps.cur.name && dps.cur.gid) dps.cur.name = dpsEntName(dps.cur.gid);
+      dps.cur.total += tot; dps.cur.hits += cnt; dps.cur.lastAt = now;
+      var sk = (pkt.SKID > 0) ? pkt.SKID : ((now - dps.lastSkillAt < 1500) ? dps.lastSkill : 0);
+      var key = sk ? ("s" + sk) : "melee";
+      var rec = dps.skills[key] || (dps.skills[key] = { dmg: 0, hits: 0 });
+      rec.dmg += tot; rec.hits += cnt;
+    } catch (e) {}
+  }
+  function dpsHook() {
+    if (dpsHooked) return true;
+    try {
+      var NM = CLIENT.NM || (window.require && window.require("Network/NetworkManager"));
+      if (!NM || typeof NM.hookPacket !== "function") return false;
+      for (var i = 0; i < DPS_PKTS.length; i++) {
+        (function (pid) { try { NM.hookPacket(pid, function (pkt) { dpsOnDamage(pkt); }); } catch (e) {} })(DPS_PKTS[i]);
+      }
+      dpsHooked = true;
+      return true;
+    } catch (e) { return false; }
+  }
+  function dpsNum(n) { try { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ","); } catch (e) { return String(n); } }
+  function dpsRate(total, t0, t1) {
+    if (!t0 || !t1 || t1 <= t0) return 0;
+    var sec = (t1 - t0) / 1000;
+    if (sec < 1) sec = 1;
+    return Math.round(total / sec);
+  }
+  function dpsRenderSkills() {
+    try {
+      var el = $id("dsh-dps-skills");
+      if (!el) return;
+      var keys = Object.keys(dps.skills);
+      if (!keys.length) { el.innerHTML = '<span class="st">暂无数据</span>'; return; }
+      keys.sort(function (a, b) { return dps.skills[b].dmg - dps.skills[a].dmg; });
+      var max = dps.skills[keys[0]].dmg || 1;
+      var all = 0; for (var i = 0; i < keys.length; i++) all += dps.skills[keys[i]].dmg;
+      var html = "";
+      var top = keys.slice(0, 8);
+      for (var j = 0; j < top.length; j++) {
+        var k = top[j], rec = dps.skills[k];
+        var nm = (k === "melee") ? "普攻" : (getSkillNameById(parseInt(k.slice(1), 10)) || ("技能" + k.slice(1)));
+        var pct = all > 0 ? Math.round(rec.dmg / all * 100) : 0;
+        var w = Math.max(2, Math.round(rec.dmg / max * 100));
+        html += '<div style="display:flex;align-items:center;gap:5px;margin:2px 0">' +
+          '<span style="flex:0 0 96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + nm + '</span>' +
+          '<span style="flex:1;height:8px;border:1px solid #b8c6d4;background:#eef3fa;border-radius:2px;overflow:hidden"><i style="display:block;height:100%;width:' + w + '%;background:#6f9ad0"></i></span>' +
+          '<span style="flex:0 0 84px;text-align:right;color:#5a6b7f">' + dpsNum(rec.dmg) + " (" + pct + '%)</span></div>';
+      }
+      el.innerHTML = html;
+    } catch (e) {}
+  }
+  function renderDps() {
+    try {
+      if (!roModOn("dps")) return;
+      var probe = $id("dsh-dps-total");
+      if (!probe || probe.offsetParent === null) return;   // 页面没打开、浮窗也没开 → 不碰 DOM
+      var now = Date.now();
+      var cur = dps.cur;
+      var nmEl = $id("dsh-dps-curname"); if (nmEl) nmEl.textContent = cur.name || (cur.gid ? ("目标 " + cur.gid) : "未开打");
+      var cdEl = $id("dsh-dps-curdps"); if (cdEl) cdEl.textContent = cur.total ? (dpsNum(dpsRate(cur.total, cur.startAt, cur.lastAt || now)) + " /秒") : "—";
+      var ctEl = $id("dsh-dps-curtxt");
+      if (ctEl) ctEl.textContent = "本场伤害 " + dpsNum(cur.total) + " · 命中 " + cur.hits + " 段";
+      var tEl = $id("dsh-dps-total"); if (tEl) tEl.textContent = dpsNum(dps.total);
+      var dEl = $id("dsh-dps-dps"); if (dEl) dEl.textContent = dpsNum(dpsRate(dps.total, dps.startAt, dps.lastAt || now));
+      var hEl = $id("dsh-dps-hits"); if (hEl) hEl.textContent = String(dps.hits);
+      var cEl = $id("dsh-dps-crit"); if (cEl) cEl.textContent = String(dps.crit);
+      var mEl = $id("dsh-dps-max"); if (mEl) mEl.textContent = dpsNum(dps.max);
+      var kEl = $id("dsh-dps-taken"); if (kEl) kEl.textContent = dpsNum(dps.taken);
+      var duEl = $id("dsh-dps-dur");
+      if (duEl) duEl.textContent = dps.startAt ? (Math.round(((dps.lastAt || now) - dps.startAt) / 1000) + " 秒") : "0 秒";
+      var stEl = $id("dsh-dps-state");
+      if (stEl) stEl.textContent = dpsHooked ? ("已挂钩 " + DPS_PKTS.length + " 类伤害包 · 收到 " + dps.raw + " 个（自己 " + dps.mine + " 个）") : "未挂钩（客户端未就绪，登录后自动重试）";
+      dpsRenderSkills();
+    } catch (e) {}
+  }
+  (function dpsBind() {
+    try {
+      var a = $id("dsh-dps-reset-cur"), b = $id("dsh-dps-reset-all");
+      if (a) a.addEventListener("click", function () { dpsResetCur(); setStatus("伤害统计：本场已清零", "st"); });
+      if (b) b.addEventListener("click", function () { dpsResetAll(); setStatus("伤害统计：全程已清零", "st"); });
+    } catch (e) {}
+  })();
+
+  // 首领警报挂在 masterTick（1 秒一次，后台标签也跑）——报警不能因为切走标签页就失效；
+  //   DOM 刷新在 bossRender 里自带可见性判断。
+  masterTickReg(function () { try { bossTick(); } catch (e) {} });
+
+  // ================= V2.24.0 首领警报 =================
+  // 判定与 BOSS 瞬移同一口径：mob_db.MvpDropsNum > 0（全服约 126 只），不做地图级兜底。
+  var bossLast = {};
+  var bossList = [];
+  var bossLogs = [];
+  function bossScan() {
+    var out = [];
+    try {
+      var EM = window.require && window.require("Renderer/EntityManager");
+      if (!EM || !EM.forEach) return out;
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      var dbx = null; try { dbx = getMobDb(); } catch (e0) {}
+      EM.forEach(function (e) {
+        try {
+          if (e.objecttype !== 5) return;
+          if (e.isDeath || e.remove_tick) return;
+          if (e.ACTION && e.action != null && e.action === e.ACTION.DIE) return;
+          var mid = e._job != null ? e._job : (e.job != null ? e.job : null);
+          if (mid == null) return;
+          var mb = dbx && dbx[mid];
+          if (!mb || !(mb.MvpDropsNum > 0)) return;
+          var d = -1;
+          if (ent && ent.position && e.position) d = Math.abs(e.position[0] - ent.position[0]) + Math.abs(e.position[1] - ent.position[1]);
+          out.push({ gid: e.GID, mid: mid, dist: d, name: getMobName(mid) || (e.display && e.display.name) || ("怪 " + mid) });
+        } catch (e2) {}
+      });
+    } catch (e3) {}
+    return out;
+  }
+  function bossTick() {
+    try {
+      if (!roModOn("boss")) return;
+      bossList = bossScan();
+      var rng = 30;
+      var rEl = $id("dsh-boss-range"); if (rEl) { var v = parseInt(rEl.value, 10); if (v > 0) rng = v; }
+      var toast = true;
+      var tEl = $id("dsh-boss-toast"); if (tEl) toast = !!tEl.checked;
+      var now = Date.now();
+      for (var i = 0; i < bossList.length; i++) {
+        var b = bossList[i];
+        if (b.dist < 0 || b.dist > rng) continue;
+        if (bossLast[b.mid] && now - bossLast[b.mid] < 60000) continue;  // 同一只 60 秒内只提醒一次
+        bossLast[b.mid] = now;
+        bossLogs.unshift(new Date().toLocaleTimeString() + "　" + b.name + "　" + b.dist + " 格");
+        if (bossLogs.length > 20) bossLogs.pop();
+        if (toast) { try { setStatus("首领警报：" + b.name + "（" + b.dist + " 格）", "warn"); } catch (e1) {} }
+        try { console.log("[BOSS] " + b.name + " mid=" + b.mid + " dist=" + b.dist); } catch (e2) {}
+      }
+      bossRender();
+    } catch (e) {}
+  }
+  function bossRender() {
+    try {
+      var el = $id("dsh-boss-list");
+      if (!el || el.offsetParent === null) return;
+      var cEl = $id("dsh-boss-count"); if (cEl) cEl.textContent = bossList.length + " 只";
+      if (!bossList.length) { el.innerHTML = '<span class="st">未检测到首领（换图或靠近后自动刷新）</span>'; }
+      else {
+        var html = "";
+        for (var i = 0; i < bossList.length; i++) {
+          var b = bossList[i];
+          html += '<div class="list-item"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + roEscTxt(b.name) +
+            '</span><span class="tag red" style="flex:0 0 auto">首领</span>' +
+            '<span style="flex:0 0 48px;text-align:right;color:#5a6b7f">' + (b.dist >= 0 ? b.dist + " 格" : "?") + '</span></div>';
+        }
+        el.innerHTML = html;
+      }
+      var lEl = $id("dsh-boss-log");
+      if (lEl) lEl.innerHTML = bossLogs.length ? bossLogs.map(function (t) { return '<div class="list-item">' + roEscTxt(t) + '</div>'; }).join("") : '<span class="st">暂无</span>';
+    } catch (e) {}
+  }
+
   // V1.7.6 当前状态查看器：buffActive 判活环（服务器通知）+ 实体字段状态，2s 刷新
   var _stNameRev = null;
   var _stNameEnRev = null;
@@ -10873,6 +11192,7 @@
         hookDisconnect();
         hookStatusIcons(); // V1.7.5 方案A：buff 状态判活 hook（登录后可重试，幂等）
         try { partyHook(); } catch (e) {} // V2.23.0 队伍血条 hook（幂等，重复调用无副作用）
+        try { dpsHook(); } catch (e) {} // V2.24.0 伤害包 hook（幂等，只装一次）
         try { fwRestore(); } catch (e) {} // V2.23.0 上次开着的浮窗自动恢复
         // V2.5.0：后台标签隐藏时跳过纯 UI 渲染（每秒全量重绘的 statbar/监控/状态表/提示/怪表），后台挂机只保功能逻辑，降 CPU/GC
         if (!UI_BG) {
@@ -10880,6 +11200,7 @@
           renderZMonitor();
           renderTgt(); // V2.23.0 当前目标窗口
           renderParty(); // V2.23.0 队伍血条
+          renderDps(); // V2.24.0 伤害统计
           renderStatusView(); // V1.7.6 当前状态查看器（buff/debuff 判活环 + 实体字段）
           renderZTip(); // V1.7.6 悬浮动作提示（镜像 setStatus + 动作 + 停顿秒数）
           renderMapMobs();

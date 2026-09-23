@@ -48,3 +48,50 @@ test('raw vanish counts own kill and ignores unrelated death',()=>{
   assert.equal(scrKill.total,1);assert.equal(scrKill.byMobId[1002],1);assert.equal(scrKill.byName.Poring,1);
   const other=new ArrayBuffer(7),b=new DataView(other);b.setUint32(2,99,true);b.setUint8(6,1);ctx.fn(other);assert.equal(scrKill.total,1);
 });
+
+test('default shortcut opens menu and migrates old panel binding',()=>{
+  const code=extract('  var HK_KEY2 =','  function hkSave()');
+  const store=new Map([['dsh_ro_hotkeys_v2',JSON.stringify({panel:{ctrl:true,alt:true,shift:false,meta:false,key:'KeyQ'}})]]);
+  const localStorage={getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v)};
+  const ctx={localStorage,JSON,Object};vm.createContext(ctx);vm.runInContext(code+';this.fn=hkLoad',ctx);
+  const cfg=ctx.fn();assert.equal(cfg.menu.key,'KeyQ');assert.equal(cfg.menu.ctrl,true);assert.equal(cfg.menu.alt,true);assert.equal(cfg.panel,undefined);
+  assert.ok(source.includes('if (id === "menu") { roMenuToggle(); return; }'));
+});
+
+test('in-game battle checkbox overrides stale chat state',()=>{
+  const code=extract('  function npBattleState() {','  function setBattle(on)');
+  const ctx={npReadPanelState:()=>false,readChatBattle:()=>true,npHuntOn:true};vm.createContext(ctx);vm.runInContext(code+';this.fn=npBattleState',ctx);
+  assert.equal(ctx.fn(),false);ctx.npReadPanelState=()=>null;assert.equal(ctx.fn(),true);ctx.readChatBattle=()=>null;ctx.npHuntOn=false;assert.equal(ctx.fn(),false);
+});
+
+test('parsed damage tap preserves game callback and counts total once',()=>{
+  const damageCode=extract('  function dpsOnDamage(pkt) {','  function dpsOnRawDamage(bytes, op) {');
+  const tapCode=extract('  function dpsInstallTap() {','  function dpsNum(n)');
+  const callbacks={},packets=[138,139,737,2248,276,478].map(id=>({id}));let gameCalls=0;
+  const nm={hookPacket(packet,cb){callbacks[packet.id]=cb;}};
+  const ctx={Date,isFinite,Number,Math,DPS_PKTS:[138,139,737,2248,276,478],dpsSource:'waiting',dpsTapInstalled:false,
+    CLIENT:{NM:nm},clientReady:()=>true,window:{require:n=>n==='Engine/MapEngine/Entity'?()=>packets.forEach(p=>nm.hookPacket(p,()=>{gameCalls++})):null},
+    dps:{total:0,hits:0,crit:0,max:0,taken:0,raw:0,mine:0,startAt:0,lastAt:0,cur:{gid:0,name:'',total:0,hits:0,startAt:0,lastAt:0},skills:{},lastSkill:0,lastSkillAt:0},
+    dpsSelfAid:()=>10,dpsEntName:()=>'',};
+  vm.createContext(ctx);vm.runInContext(damageCode+tapCode+';this.install=dpsInstallTap;this.hit=dpsOnDamage',ctx);
+  assert.equal(ctx.install(),true);callbacks[138]({GID:10,targetGID:20,damage:300,count:3,action:0});
+  assert.equal(gameCalls,1);assert.equal(ctx.dps.total,300);assert.equal(ctx.dps.hits,3);assert.equal(ctx.dps.max,100);assert.equal(ctx.dps.raw,1);
+  assert.equal(ctx.install(),false);
+});
+
+test('shop sell rows use inventory tooltip path',()=>{
+  const code=extract('  function itipShopSide(el) {','  function itipOver(e) {');
+  const sell={querySelector:s=>s==='.WinSell'?{}:null};
+  const input={closest:s=>s==='#NpcStore'?sell:(s==='#NpcStore .InputWindow'?{}:null)};
+  const ctx={getComputedStyle:()=>({display:'block',visibility:'visible'})};vm.createContext(ctx);vm.runInContext(code+';this.side=itipShopSide;this.sell=itipShopSellMode',ctx);
+  assert.equal(ctx.side(input),'input');assert.equal(ctx.sell(input),true);
+  ctx.getComputedStyle=()=>({display:'none',visibility:'visible'});assert.equal(ctx.sell(input),false);
+});
+
+test('teleport shortcuts are profile scoped and capped',()=>{
+  assert.ok(source.includes('profiles[k].saved.teleportPoints'));
+  assert.ok(source.includes('list.length >= 20'));
+  assert.ok(source.includes('teleportToMap(p.map, function () { walkToXY(p.x, p.y'));
+  assert.ok(source.includes('data-tpp-edit'));
+  assert.ok(source.includes('data-tpp-del'));
+});

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.25.0
+// @version      2.26.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.25.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.26.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -885,27 +885,6 @@
       '<div class="sec">② 指定 ID 拾取（怪物掉落树 · 点选物品加入）</div>' +
       '<div class="row"><span class="lb">当前地图</span><span class="st" id="dsh-pickmap" style="flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—（未进图）</span>' +
       '<button class="ghost" id="dsh-pickmapbtn" style="flex:0 0 auto">本图怪物掉落</button></div>' +
-      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">画面性能（降画质 · 关光影特效 · 多开锁帧）</span>' +
-      '<button class="ghost" id="dsh-fw-btn-perf" data-fw="perf" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
-      '<div id="dsh-fw-perf">' +
-      '<div class="row"><label class="switch"><input id="dsh-perf-on" type="checkbox" checked>启用画面优化（默认开启）</label><span class="st" id="dsh-perf-state" style="margin-left:auto"></span></div>' +
-      '<div class="sec">渲染分辨率</div>' +
-      '<div class="row"><span class="lb">画质</span><select id="dsh-perf-q" style="flex:0 0 108px">' +
-      '<option value="100">100%（原画）</option><option value="80">80%</option><option value="70">70%</option>' +
-      '<option value="60">60%</option><option value="50" selected>50%（默认）</option><option value="40">40%</option><option value="30">30%</option></select>' +
-      '<span class="st">越低越省，画面越糊</span></div>' +
-      '<div class="sec">画面效果（关掉更省）</div>' +
-      '<div class="row"><label class="switch"><input id="dsh-perf-fog" type="checkbox">雾气</label>' +
-      '<label class="switch"><input id="dsh-perf-lightmap" type="checkbox">光照贴图</label></div>' +
-      '<div class="row"><label class="switch"><input id="dsh-perf-effect" type="checkbox">技能特效</label>' +
-      '<label class="switch"><input id="dsh-perf-mineffect" type="checkbox" checked>自己的特效</label></div>' +
-      '<div class="row"><label class="switch"><input id="dsh-perf-miss" type="checkbox" checked>Miss 文字</label></div>' +
-      '<div class="sec">多开帧率</div>' +
-      '<div class="row"><label class="switch"><input id="dsh-perf-fpslock" type="checkbox">限制帧率</label>' +
-      '<input id="dsh-perf-fps" type="number" value="15" min="5" max="30" step="5" style="flex:0 0 44px"><span class="st">帧/秒（多开挂机建议 10~15）</span></div>' +
-      '<div class="log">画质 = 按百分比渲染再拉回原尺寸，50 就是半分辨率渲染，帧率提升最明显。效果开关直接改客户端渲染设置，改完立即生效（个别开关重进地图才彻底生效）。设置写进客户端存档，重开游戏依然有效。关掉总开关会自动还原成原始画质与效果。</div>' +
-      '<div class="row"><button class="ghost" id="dsh-perf-apply" style="flex:1">重新应用（立即生效）</button></div>' +
-      '</div>' +
       '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">当前目标（正在打谁 · 血量 · 距离）</span>' +
       '<button class="ghost" id="dsh-fw-btn-tgt" data-fw="tgt" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
       '<div id="dsh-fw-tgt">' +
@@ -920,8 +899,7 @@
       '<button class="ghost" id="dsh-fw-btn-party" data-fw="party" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
       '<div id="dsh-fw-party">' +
       '<div class="row"><label class="switch"><input id="dsh-party-self" type="checkbox" checked>包含自己</label><span class="st" id="dsh-party-count" style="margin-left:auto">0 人</span></div>' +
-      '<div id="dsh-party-list"><span class="st">加入队伍后这里显示队员血条。</span></div>' +
-      '<div class="log">队员血量直接读客户端队伍组件（不额外发包）。组队挂机时用来看谁快没血了。</div>' +
+      '<div id="dsh-party-list"><span class="st">暂无队伍成员</span></div>' +
       '</div>' +
       '<div id="dsh-fw-mlock">' +
       '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">怪物锁定目录（只打勾选的怪）</span><button class="ghost" id="dsh-fw-btn-mlock" data-fw="mlock" style="flex:0 0 auto;padding:0 8px;font-size:11px">⧉ 浮窗</button></div>' +
@@ -979,7 +957,7 @@
       '<div id="dsh-fw-boss">' +
       '<div class="row"><span class="lb">警报距离</span><input id="dsh-boss-range" type="number" value="30" min="3" max="80" style="flex:0 0 48px">' +
       '<span style="color:#5a6b7f">格（范围内才弹提示）</span></div>' +
-      '<div class="row"><label class="switch"><input id="dsh-boss-toast" type="checkbox" checked>弹动作提示条</label>' +
+      '<div class="row"><label class="switch"><input id="dsh-boss-toast" type="checkbox" checked>顶部文字提示</label>' +
       '<span class="st" id="dsh-boss-count" style="margin-left:auto">0 只</span></div>' +
       '<div class="sec">本图首领</div>' +
       '<div id="dsh-boss-list" style="font-size:11px;max-height:150px;overflow:auto"><span class="st">未检测到首领（换图或靠近后自动刷新）</span></div>' +
@@ -1027,6 +1005,11 @@
       '<div class="row" style="margin-top:6px;gap:7px"><button class="ghost" id="dsh-mvcur" style="flex:0 0 auto">填入当前位置</button>' +
       '<button id="dsh-mvgo" style="flex:0 0 auto">走路过去</button><button class="ghost" id="dsh-mvstop" style="flex:0 0 auto">停止</button>' +
       '<span class="st" id="dsh-mvlog" style="font-size:11px"></span></div>' +
+      '<div class="sec">快捷传送点（当前角色 · 最多 20 条）</div>' +
+      '<div class="row"><input id="dsh-tpp-name" type="text" maxlength="24" placeholder="地点名称" style="flex:1 1 110px;min-width:80px">' +
+      '<button class="ghost" id="dsh-tpp-current" style="flex:0 0 auto">登记当前位置</button><button id="dsh-tpp-save" style="flex:0 0 auto">保存</button></div>' +
+      '<div id="dsh-tpp-list" style="max-height:180px;overflow:auto"><span class="st">暂无快捷传送点</span></div>' +
+      '<div class="st" id="dsh-tpp-msg" style="font-size:11px"></div>' +
       '</div>' +
       '<div class="sec">回城清理（半自动）</div>' +
       '<div class="row" style="flex-wrap:wrap;gap:6px"><button id="dsh-tp-town" style="flex:0 0 auto">回城</button><button class="ghost" id="dsh-scan-npc" style="flex:0 0 auto">扫描NPC</button><button class="ghost" id="dsh-go-npc" style="flex:0 0 auto">走到选中</button><button class="ghost" id="dsh-talk-npc" style="flex:0 0 auto">点NPC对话</button><button class="ghost" id="dsh-sell" style="flex:0 0 auto">卖装备</button></div>' +
@@ -1043,6 +1026,14 @@
       '<textarea id="dsh-txout" style="width:100%;height:110px;font-size:10px;font-family:monospace" readonly placeholder="点「导出出站序列」后这里出现内容"></textarea>' +
       '<div class="row" style="margin-top:6px;align-items:center;gap:6px"><span class="lb" style="min-width:0;margin:0">选第</span><input id="dsh-menu-num" type="number" min="0" value="0" style="flex:0 0 48px;padding:3px 6px"><span class="lb" style="margin:0">项</span><button id="dsh-menu-choose" style="flex:0 0 auto">发 CHOOSE_MENU</button><button class="ghost" id="dsh-menu-next" style="flex:0 0 auto">下一段</button></div>',
     system: '' +
+      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">画面性能</span>' +
+      '<button class="ghost" id="dsh-fw-btn-perf" data-fw="perf" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
+      '<div id="dsh-fw-perf">' +
+      '<div class="row"><label class="switch"><input id="dsh-perf-on" type="checkbox" checked>启用画面优化</label><span class="st" id="dsh-perf-state" style="margin-left:auto"></span></div>' +
+      '<div class="row"><span class="lb">画质</span><select id="dsh-perf-q" style="flex:0 0 108px"><option value="100">100%（原画）</option><option value="80">80%</option><option value="70">70%</option><option value="60">60%</option><option value="50" selected>50%（默认）</option><option value="40">40%</option><option value="30">30%</option></select>' +
+      '<label class="switch"><input id="dsh-perf-fpslock" type="checkbox">锁帧</label><input id="dsh-perf-fps" type="number" value="15" min="5" max="30" step="5" style="flex:0 0 44px"></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-perf-fog" type="checkbox">雾气</label><label class="switch"><input id="dsh-perf-lightmap" type="checkbox">光照</label><label class="switch"><input id="dsh-perf-effect" type="checkbox">技能特效</label><label class="switch"><input id="dsh-perf-mineffect" type="checkbox" checked>自身特效</label><label class="switch"><input id="dsh-perf-miss" type="checkbox" checked>Miss</label></div>' +
+      '<div class="row"><button class="ghost" id="dsh-perf-apply" style="flex:1">立即应用</button></div></div>' +
       '<div class="row"><span class="lb">数据源</span><span id="dsh-datasrc">检测中…</span></div>' +
       '<div class="row"><span class="lb">角色</span><span id="dsh-chr">未登录</span></div>' +
       '<div class="sec">仓库读取配置</div>' +
@@ -1689,6 +1680,7 @@
     } catch (e) {}
   }
   function fwToggle(id) { try { console.log("[FW-DIAG] fwToggle id=" + id + " currentlyOpen=" + !!fwOpenIds[id]); if (fwOpenIds[id]) fwClose(id); else fwOpen(id); } catch (e) { console.log("[FW-DIAG] fwToggle error: " + e.message); } }
+  function fwCloseAll() { for (var id in fwOpenIds) if (fwOpenIds[id]) fwClose(id); }
   // V2.23.0：浮窗开启状态持久化 —— 挂机时重开客户端后「当前目标/队伍血条」等浮窗自动回来
   var fwRestored = false;
   function fwPersist() {
@@ -1784,7 +1776,7 @@
   //   点「打开」= 展开大面板，之后所有交互都在旧面板内进行（5 个页签 + 9 个子页签照旧）。
   //   kind 仍标 "page" 只是为了让渲染层不给它画「总开关」勾选框（面板没有开/关语义）。
   var RO_MODULES = [
-    { id: "panel", name: "旧版设置界面", kind: "page", sec: "界面" },
+    { id: "menu",  name: "功能菜单快捷键",  kind: "menu", noToggle: true, sec: "常用" },
     { id: "mlock", name: "本图怪物锁定",    kind: "fw", sec: "功能窗口" },
     { id: "tp",    name: "传送功能",        kind: "fw", sec: "功能窗口" },
     { id: "zhu2",  name: "助手战斗设置",    kind: "fw", sec: "功能窗口" },
@@ -1799,7 +1791,8 @@
     { id: "zhud",  name: "战斗监控横条",    kind: "custom", sec: "功能窗口" },
     { id: "ztip",  name: "动作提示条",      kind: "custom", noToggle: true, sec: "功能窗口" },
     { id: "np",    name: "内挂自动战斗",    kind: "act", noToggle: true, sec: "动作" },
-    { id: "zhu",   name: "助手自动战斗",    kind: "act", noToggle: true, sec: "动作" }
+    { id: "zhu",   name: "助手自动战斗",    kind: "act", noToggle: true, sec: "动作" },
+    { id: "panel", name: "高级设置",          kind: "page", sec: "高级" }
   ];
   function roModEl(id) {
     if (roModPage(id) || id === "panel") return document.getElementById("dsh-ro-panel");
@@ -1820,6 +1813,7 @@
       var act = panel.querySelector(".page.active");
       return !!(act && act.getAttribute("data-page") === pg);
     }
+    if (id === "menu") { var mn = roMenuEl || document.getElementById("dsh-ro-menu"); return !!(mn && mn.style.display !== "none"); }
     if (id === "panel" || id === "mvp" || id === "zhud" || id === "ztip") {
       var e2 = roModEl(id);
       return !!(e2 && e2.style.display !== "none");
@@ -1836,8 +1830,9 @@
       try { roBringFront(document.getElementById("dsh-ro-panel")); } catch (e) {}
       return;
     }
+    if (id === "menu") { var mn = roMenuBuild(); if (mn) { mn.style.display = "flex"; roMenuRender(); try { roBringFront(mn); } catch (e) {} } return; }
     if (id === "np" || id === "zhu") return;   // 纯动作类（只有快捷键，没有窗口）
-    if (id === "panel") { saved.collapsed = false; try { saveSaved(saved); } catch (e) {} applyCollapse(false); try { roBringFront(document.getElementById("dsh-ro-panel")); } catch (e) {} return; }
+    if (id === "panel") { fwCloseAll(); saved.collapsed = false; try { saveSaved(saved); } catch (e) {} applyCollapse(false); try { roBringFront(document.getElementById("dsh-ro-panel")); } catch (e) {} return; }
     if (id === "mvp") { var m = roModEl("mvp"); if (m) { m.style.display = "flex"; try { roBringFront(m); } catch (e) {} } return; }
     if (id === "zhud") { try { ensureZHud(); if (zHudEl) zHudEl.style.display = ""; } catch (e) {} return; }
     if (id === "ztip") { try { ensureZTip(); if (zTipEl) zTipEl.style.display = ""; } catch (e) {} return; }
@@ -1851,6 +1846,7 @@
       try { applyCollapse(true); } catch (e) {}
       return;
     }
+    if (id === "menu") { var mn = roMenuBuild(); if (mn) mn.style.display = "none"; return; }
     if (id === "np" || id === "zhu") return;   // 纯动作类（只有快捷键，没有窗口）
     if (id === "panel") { saved.collapsed = true; try { saveSaved(saved); } catch (e) {} applyCollapse(true); return; }
     if (id === "mvp" || id === "zhud" || id === "ztip") { var e3 = roModEl(id); if (e3) e3.style.display = "none"; return; }
@@ -1944,8 +1940,8 @@
         var lab = document.createElement("label");
         lab.style.cssText = "display:flex;align-items:center;gap:4px;flex:1;min-width:0;cursor:pointer;";
         var nm = document.createElement("span"); nm.className = "nm"; nm.textContent = m.name;
-        if (m.kind === "page") {
-          // 无「总开关」语义的行（旧版设置界面）：留一个与勾选框等宽的占位，保证功能名左对齐
+        if (m.kind === "page" || m.kind === "menu") {
+          // 无「总开关」语义的行：留一个与勾选框等宽的占位，保证功能名左对齐
           var sp = document.createElement("span"); sp.style.cssText = "flex:none;width:13px;height:13px;";
           lab.appendChild(sp);
         } else {
@@ -2144,10 +2140,10 @@
     var t = e.target.closest && e.target.closest(".tab");
     if (t) switchPage(t.getAttribute("data-page"));
   });
-  // 子标签切换（战斗/传送页）
-  panel.addEventListener("click", function (e) {
+  // 子标签切换统一委托到 document：区块移进独立浮窗后仍可切页。
+  document.addEventListener("click", function (e) {
     var st = e.target.closest && e.target.closest(".sub-tab");
-    if (!st) return;
+    if (!st || !inAssistantUI(st)) return;
     // V2.21.0：向上找同时含 .sub-page 的容器（页内 / 浮窗里都能切）
     var host = st.parentNode;
     while (host && host.querySelector && !host.querySelector(".sub-page")) host = host.parentNode;
@@ -2325,7 +2321,9 @@
   function qswPaint() {
     try {
       var bn = $id("dsh-qs-nei"), bz = $id("dsh-qs-zhu");
-      if (bn) { bn.className = "qs" + (npHuntOn ? " on" : ""); bn.title = "内挂自动战斗：" + (npHuntOn ? "已开（点击关闭）" : "已关（点击开启）"); }
+      var neiOn = npBattleState();
+      npHuntOn = neiOn;
+      if (bn) { bn.className = "qs" + (neiOn ? " on" : ""); bn.title = "内挂自动战斗：" + (neiOn ? "已开（点击关闭）" : "已关（点击开启）"); }
       if (bz) { bz.className = "qs" + (zRunning ? " on" : ""); bz.title = "助手自动战斗：" + (zRunning ? "已开（点击停止）" : "已关（点击启动）"); }
     } catch (e) {}
   }
@@ -2333,7 +2331,7 @@
     var qswNei = $id("dsh-qs-nei"), qswZhu = $id("dsh-qs-zhu");
     if (qswNei) qswNei.addEventListener("click", function (ev) {
       ev.stopPropagation(); ev.preventDefault();
-      try { setBattle(!npHuntOn); } catch (e) {}
+      try { setBattle(!npBattleState()); } catch (e) {}
       qswPaint();
     });
     if (qswZhu) qswZhu.addEventListener("click", function (ev) {
@@ -2359,7 +2357,7 @@
   // 捕获态 hkTarget：null|panel|np|zhu；三组存全局独立 key（V2.13.0 起所有角色共用，刷新/换角色不丢）
   // ============ V2.18.0 快捷键系统（泛化：RO_MODULES 里每个功能都能绑一个键）============
   // 存储 dsh_ro_hotkeys_v2 = { "<模块id>": {ctrl,alt,shift,meta,key} }
-  // 旧版 dsh_ro_hotkeys_v1 的三个固定键（hotkey / hotkeyNp / hotkeyZhu）首次自动迁移到 panel / np / zhu
+  // 旧版 dsh_ro_hotkeys_v1 的三个固定键（hotkey / hotkeyNp / hotkeyZhu）首次自动迁移到 menu / np / zhu
   var HK_KEY2 = "dsh_ro_hotkeys_v2";
   var HK_KEY1 = "dsh_ro_hotkeys_v1";
   var hkCfg = null;
@@ -2378,17 +2376,22 @@
       if (!migDone && Object.keys(hkCfg).length === 0) {
         var o1 = JSON.parse(localStorage.getItem(HK_KEY1) || "{}");
         if (o1 && (o1.hotkey || o1.hotkeyNp || o1.hotkeyZhu)) {
-          if (o1.hotkey) hkCfg.panel = o1.hotkey;  // V2.24.1：旧「面板」键位归到「旧版设置界面」行
+          if (o1.hotkey) hkCfg.menu = o1.hotkey;
           if (o1.hotkeyNp) hkCfg.np = o1.hotkeyNp;
           if (o1.hotkeyZhu) hkCfg.zhu = o1.hotkeyZhu;
           hkSave();
         }
       }
     } catch (e) {}
-    // V2.24.1：菜单行 id 回到 panel。2.24.0 曾把旧「主面板」键位挪到 page-assist，这里搬回来（不丢用户设过的键）
+    // V2.26.0：默认 Ctrl+Alt+Q 改开功能菜单；用户自设的其它高级面板键位保留。
     try {
-      if (hkCfg["page-assist"] && !hkCfg.panel) { hkCfg.panel = hkCfg["page-assist"]; hkSave(); }
-      if (hkCfg["page-assist"]) { delete hkCfg["page-assist"]; hkSave(); }
+      var oldMenuKey = hkCfg.menu || hkCfg["page-assist"];
+      var panelKey = hkCfg.panel;
+      if (!oldMenuKey && panelKey && panelKey.ctrl && panelKey.alt && !panelKey.shift && !panelKey.meta && panelKey.key === "KeyQ") { oldMenuKey = panelKey; delete hkCfg.panel; }
+      if (!oldMenuKey) oldMenuKey = { ctrl: true, alt: true, shift: false, meta: false, key: "KeyQ" };
+      hkCfg.menu = oldMenuKey;
+      if (hkCfg["page-assist"]) delete hkCfg["page-assist"];
+      hkSave();
     } catch (e4) {}
     try { localStorage.setItem("dsh_ro_hotkeys_mig", "1"); } catch (e0) {}
     return hkCfg;
@@ -2463,6 +2466,7 @@
   }
   function hkAction(id) {
     if (!roModOn(id)) { setStatus("「" + hkName(id) + "」功能已关闭，快捷键不响应", "warn"); return; }
+    if (id === "menu") { roMenuToggle(); return; }
     if (id === "panel") { hkToggle(); return; }
     if (id === "np") { npToggleFight(); return; }
     if (id === "zhu") { zToggleFight(); return; }
@@ -5675,12 +5679,17 @@
       }
     } catch (e) {}
   }
+  function npBattleState() {
+    var panelState = npReadPanelState();
+    if (panelState !== null) return panelState;
+    var chatState = readChatBattle();
+    if (chatState !== null) return chatState;
+    return !!npHuntOn;
+  }
   function setBattle(on) {
-    // 判断真实状态：优先聊天窗绿色字（服务器回执「开启/关闭自动战斗」），读不到再回落内挂面板 checkbox。
-    // 内挂开关是单一 toggle：点一次翻转一次，点前必须判断，否则把已开翻成关。
-    var real = readChatBattle();
-    if (real === null) real = npReadPanelState();
-    dshDiag("set-battle", { on: on, chat: real, panel: npReadPanelState() });
+    // 当前 checkbox 是权威状态；聊天回执只在面板不可读时兜底。
+    var real = npBattleState();
+    dshDiag("set-battle", { on: on, real: real, panel: npReadPanelState(), chat: readChatBattle() });
     if (real === !!on) {
       npHuntOn = !!on;
       setStatus("内挂自动战斗已处于" + (on ? "开启" : "关闭") + "状态，无需重复操作", "ok");
@@ -5693,9 +5702,15 @@
     if (!btn) { try { btn = document.querySelector(".setAutokey, .content.attack .openattack, .openattack"); } catch (e) {} }
     if (!btn) { setStatus("未找到内挂开关，请先打开内挂窗口", "err"); return; }
     try { btn.click(); } catch (e) {}
-    npHuntOn = !!on; // 已 toggle 一次 → 本地认为到达目标状态
-    setStatus("内挂自动战斗已切换为" + (on ? "开启" : "关闭") + (real === null ? "（按绿色字/面板推断）" : ""), "ok");
-    tlog("setBattle on=" + on + " chatReal=" + real);
+    npHuntOn = !!on;
+    setStatus("已请求" + (on ? "开启" : "关闭") + "内挂自动战斗，正在校准", "ok");
+    setTimeout(function () {
+      var actual = npBattleState();
+      npHuntOn = actual;
+      qswPaint();
+      setStatus("内挂自动战斗：" + (actual ? "已开启" : "已关闭") + (actual === !!on ? "" : "（未切换到目标状态）"), actual === !!on ? "ok" : "warn");
+    }, 350);
+    tlog("setBattle on=" + on + " real=" + real);
   }
   $id("dsh-battleon").addEventListener("click", function () { setBattle(true); });
   $id("dsh-battleoff").addEventListener("click", function () { setBattle(false); });
@@ -9596,6 +9611,78 @@
       } catch (e) { clearInterval(iv); }
     }, 800);
   }
+  // 角色独立快捷传送点：复用现有角色档案，不另建 localStorage 键。
+  var tpPointEdit = -1, tpPointProfile = "";
+  function tpPoints() {
+    try {
+      var k = activeProfileKey(); ensureProfile(k);
+      var list = profiles[k].saved.teleportPoints;
+      if (!Array.isArray(list)) list = profiles[k].saved.teleportPoints = [];
+      return list;
+    } catch (e) { return []; }
+  }
+  function tpPointSaveList() {
+    try { var k = activeProfileKey(); ensureProfile(k); profiles[k].saved.teleportPoints = tpPoints().slice(0, 20); profiles[k].lastAt = Date.now(); saveProfiles(); } catch (e) {}
+  }
+  function tpPointMsg(text) { var el = $id("dsh-tpp-msg"); if (el) el.textContent = text || ""; }
+  function tpPointRender() {
+    var box = $id("dsh-tpp-list"); if (!box) return;
+    var list = tpPoints();
+    if (!list.length) { box.innerHTML = '<span class="st">暂无快捷传送点</span>'; return; }
+    var html = "";
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i];
+      html += '<div class="prow"><span class="pidx">' + (i + 1) + '</span><span class="pnm">' + roEscTxt(p.name) + '</span>' +
+        '<span class="st" style="flex:0 0 auto">' + roEscTxt(p.map) + ' (' + p.x + ',' + p.y + ')</span>' +
+        '<button class="ghost" data-tpp-go="' + i + '">前往</button><button class="ghost" data-tpp-edit="' + i + '">修改</button><button class="ghost" data-tpp-del="' + i + '">删除</button></div>';
+    }
+    box.innerHTML = html;
+  }
+  function tpPointGo(p) {
+    if (!p) return;
+    var cur = getMapName();
+    if (cur && normMapKey(cur) === normMapKey(p.map)) walkToXY(p.x, p.y, null, "dsh-mvlog");
+    else teleportToMap(p.map, function () { walkToXY(p.x, p.y, null, "dsh-mvlog"); });
+    tpPointMsg("前往 " + p.name + "：" + p.map + " (" + p.x + "," + p.y + ")");
+  }
+  $id("dsh-tpp-current").addEventListener("click", function () {
+    mvCurMap();
+    var nm = $id("dsh-tpp-name");
+    if (nm && !nm.value.trim()) nm.value = getMapNameCn() || getMapName() || "当前位置";
+    tpPointMsg("已填入当前位置，确认名称后点保存");
+  });
+  $id("dsh-tpp-save").addEventListener("click", function () {
+    var name = ($id("dsh-tpp-name").value || "").trim();
+    var map = ($id("dsh-mvmap").value || getMapName() || "").trim();
+    var x = parseInt($id("dsh-mvx").value, 10), y = parseInt($id("dsh-mvy").value, 10);
+    if (!name || !map || isNaN(x) || isNaN(y)) { tpPointMsg("请填写名称、地图和 X/Y"); return; }
+    var list = tpPoints();
+    if (tpPointEdit < 0 && list.length >= 20) { tpPointMsg("当前角色最多保存 20 个点"); return; }
+    var rec = { name: name.slice(0, 24), map: map, x: x, y: y };
+    if (tpPointEdit >= 0 && tpPointEdit < list.length) list[tpPointEdit] = rec; else list.push(rec);
+    tpPointEdit = -1; $id("dsh-tpp-save").textContent = "保存"; $id("dsh-tpp-name").value = "";
+    tpPointSaveList(); tpPointRender(); tpPointMsg("已保存快捷传送点");
+  });
+  $id("dsh-tpp-list").addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest("button"); if (!b) return;
+    var list = tpPoints(), i;
+    if (b.hasAttribute("data-tpp-go")) { i = parseInt(b.getAttribute("data-tpp-go"), 10); tpPointGo(list[i]); return; }
+    if (b.hasAttribute("data-tpp-edit")) {
+      i = parseInt(b.getAttribute("data-tpp-edit"), 10); var p = list[i]; if (!p) return;
+      tpPointEdit = i; $id("dsh-tpp-name").value = p.name; $id("dsh-mvmap").value = p.map; $id("dsh-mvx").value = p.x; $id("dsh-mvy").value = p.y;
+      $id("dsh-tpp-save").textContent = "保存修改"; tpPointMsg("正在修改：" + p.name); return;
+    }
+    if (b.hasAttribute("data-tpp-del")) {
+      i = parseInt(b.getAttribute("data-tpp-del"), 10); if (i < 0 || i >= list.length) return;
+      var old = list.splice(i, 1)[0]; tpPointEdit = -1; $id("dsh-tpp-save").textContent = "保存";
+      tpPointSaveList(); tpPointRender(); tpPointMsg("已删除：" + old.name);
+    }
+  });
+  tpPointRender();
+  masterTickReg(function () {
+    var k = activeProfileKey();
+    if (k !== tpPointProfile) { tpPointProfile = k; tpPointEdit = -1; tpPointRender(); }
+  });
   $id("dsh-mvcur").addEventListener("click", mvCurMap);
   $id("dsh-mvstop").addEventListener("click", stopWalkXY);
   $id("dsh-mvgo").addEventListener("click", function () {
@@ -10121,7 +10208,7 @@
           txCap.n++;
         } catch (eD) {}
       }
-      if (DPS_PKTS.indexOf(op) >= 0) dpsOnRawDamage(bytes, op);
+      if (DPS_PKTS.indexOf(op) >= 0 && dpsSource !== "parsed") dpsOnRawDamage(bytes, op);
       if (op === 0x80) scrOnRawVanish(bytes);
       if (op === 183) onMenuList(bytes);
       else if (op === 180) onSayDialog(bytes);
@@ -10680,7 +10767,7 @@
       var sig = cnt + "|" + rows.join("");
       if (sig === partySig) return; // 没变化不重绘（1 秒一次也不制造垃圾）
       partySig = sig;
-      box.innerHTML = rows.length ? rows.join("") : '<span class="st">加入队伍后这里显示队员血条。</span>';
+      box.innerHTML = rows.length ? rows.join("") : '<span class="st">暂无队伍成员</span>';
     } catch (e) {}
   }
   function partyRowHtml(name, h, hm, pct, dead) {
@@ -10695,8 +10782,9 @@
   //   NOTIFY_ACT 系列（138 NOTIFY_ACT / 139 NOTIFY_ACT_POSITION / 737 NOTIFY_ACT2 / 2248 NOTIFY_ACT3）
   //     → GID=攻击者, targetGID=受击者, damage, count
   //   NOTIFY_SKILL 系列（276 / 478）→ SKID, AID=攻击者, targetID=受击者, damage, count（自带技能ID，最准）
-  // 复用既有 WebSocket 入站链 dispatchInbound：只读原始包，不占用客户端 hookPacket 单槽。
+  // 优先从客户端已解析的伤害包旁听；WebSocket 原始链仅作登录前兼容兜底。
   var DPS_PKTS = [138, 139, 737, 2248, 276, 478];
+  var dpsSource = "waiting", dpsTapInstalled = false;
   var dps = {
     total: 0, hits: 0, crit: 0, max: 0, taken: 0, raw: 0, mine: 0,
     startAt: 0, lastAt: 0,
@@ -10733,12 +10821,12 @@
       if (!isFinite(dmg) || !dmg) return;
       var cnt = Number(pkt.count); if (!isFinite(cnt) || cnt < 1) cnt = 1;
       var now = Date.now();
-      if (tg === aid && gid !== aid) { if (dmg > 0) dps.taken += dmg * cnt; return; }  // 自己挨打
+      if (tg === aid && gid !== aid) { if (dmg > 0) dps.taken += dmg; return; }  // 包内 damage 已是整次总伤害
       if (gid !== aid) return;      // 只统计自己打出去的
       if (dmg < 0) return;          // 负数=治疗/异常，不计入伤害
       dps.mine++;
-      var tot = dmg * cnt;          // count = 这一包里的连击段数
-      dps.total += tot; dps.hits += cnt; dps.max = Math.max(dps.max, dmg);
+      var tot = dmg;                // 客户端按 damage/count 显示每段，damage 本身是整次总伤害
+      dps.total += tot; dps.hits += cnt; dps.max = Math.max(dps.max, dmg / cnt);
       if (cnt > 1) dps.crit++;
       if (!dps.startAt) dps.startAt = now;
       dps.lastAt = now;
@@ -10762,8 +10850,34 @@
       else if (op === 2248 && bytes.byteLength >= 34) pkt = { GID: dv.getUint32(2, true), targetGID: dv.getUint32(6, true), damage: dv.getInt32(22, true), count: dv.getInt16(27, true) };
       else if (op === 276 && bytes.byteLength >= 31) pkt = { SKID: dv.getUint16(2, true), AID: dv.getUint32(4, true), targetID: dv.getUint32(8, true), damage: dv.getInt16(24, true), count: dv.getInt16(28, true) };
       else if (op === 478 && bytes.byteLength >= 33) pkt = { SKID: dv.getUint16(2, true), AID: dv.getUint32(4, true), targetID: dv.getUint32(8, true), damage: dv.getInt32(24, true), count: dv.getInt16(30, true) };
-      if (pkt) dpsOnDamage(pkt);
+      if (pkt) { dpsSource = "raw"; dpsOnDamage(pkt); }
     } catch (e) {}
+  }
+  function dpsInstallTap() {
+    try {
+      if (!clientReady() || !CLIENT.NM || dpsTapInstalled) return false;
+      var nm = CLIENT.NM, originalHook = nm.hookPacket;
+      if (typeof originalHook !== "function") return false;
+      if (originalHook.__dshDpsHook) { dpsTapInstalled = true; dpsSource = "parsed"; return true; }
+      nm.hookPacket = function (packet, callback) {
+        if (packet && DPS_PKTS.indexOf(Number(packet.id)) >= 0 && typeof callback === "function" && !callback.__dshDpsTap) {
+          var gameCallback = callback;
+          callback = function (pkt) {
+            try { dpsSource = "parsed"; dpsOnDamage(pkt); } catch (e0) {}
+            return gameCallback.apply(this, arguments);
+          };
+          callback.__dshDpsTap = true;
+        }
+        return originalHook.call(this, packet, callback);
+      };
+      nm.hookPacket.__dshDpsHook = true;
+      dpsTapInstalled = true;
+      // 当前地图的回调早于 document-idle 已登记；只重跑一次注册函数让六个现有槽位经过旁路。
+      var entityEngine = window.require && window.require("Engine/MapEngine/Entity");
+      if (typeof entityEngine === "function") entityEngine();
+      dpsSource = "parsed";
+      return true;
+    } catch (e) { dpsTapInstalled = false; return false; }
   }
   function dpsNum(n) { try { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ","); } catch (e) { return String(n); } }
   function dpsRate(total, t0, t1) {
@@ -10816,12 +10930,14 @@
       var duEl = $id("dsh-dps-dur");
       if (duEl) duEl.textContent = dps.startAt ? (Math.round(((dps.lastAt || now) - dps.startAt) / 1000) + " 秒") : "0 秒";
       var stEl = $id("dsh-dps-state");
-      if (stEl) stEl.textContent = "收包监听 " + DPS_PKTS.length + " 类伤害包 · 收到 " + dps.raw + " 个（自己 " + dps.mine + " 个）";
+      if (stEl) stEl.textContent = "监听：" + (dpsSource === "parsed" ? "客户端伤害回调" : (dpsSource === "raw" ? "原始收包" : "等待客户端")) + " · 收到 " + dps.raw + " 个（自己 " + dps.mine + " 个）";
       dpsRenderSkills();
     } catch (e) {}
   }
   (function dpsBind() {
     try {
+      dpsInstallTap();
+      masterTickReg(function () { if (!dpsTapInstalled) dpsInstallTap(); });
       var a = $id("dsh-dps-reset-cur"), b = $id("dsh-dps-reset-all");
       if (a) a.addEventListener("click", function () { dpsResetCur(); setStatus("伤害统计：本场已清零", "st"); });
       if (b) b.addEventListener("click", function () { dpsResetAll(); setStatus("伤害统计：全程已清零", "st"); });
@@ -10837,6 +10953,20 @@
   var bossLast = {};
   var bossList = [];
   var bossLogs = [];
+  var bossAlertTimer = 0;
+  function bossAlert(text) {
+    var el = document.getElementById("dsh-boss-alert");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "dsh-boss-alert";
+      el.setAttribute("data-dsh-ui", "1");
+      el.style.cssText = "position:fixed;z-index:2147483647;top:18px;left:50%;transform:translateX(-50%);max-width:min(760px,90vw);padding:6px 14px;border:1px solid #b66b12;border-radius:3px;background:rgba(35,22,8,.88);color:#ffd36a;font:700 16px/1.4 Microsoft YaHei,Arial,sans-serif;text-align:center;text-shadow:0 1px 2px #000;pointer-events:none;display:none";
+      document.body.appendChild(el);
+    }
+    el.textContent = text; el.style.display = "block";
+    clearTimeout(bossAlertTimer);
+    bossAlertTimer = setTimeout(function () { el.style.display = "none"; }, 4000);
+  }
   function bossScan() {
     var out = [];
     try {
@@ -10877,7 +11007,7 @@
         bossLast[b.mid] = now;
         bossLogs.unshift(new Date().toLocaleTimeString() + "　" + b.name + "　" + b.dist + " 格");
         if (bossLogs.length > 20) bossLogs.pop();
-        if (toast) { try { setStatus("首领警报：" + b.name + "（" + b.dist + " 格）", "warn"); } catch (e1) {} }
+        if (toast) { try { bossAlert("首领出现：" + b.name + " · " + b.dist + " 格"); } catch (e1) {} }
         try { console.log("[BOSS] " + b.name + " mid=" + b.mid + " dist=" + b.dist); } catch (e2) {}
       }
       bossRender();
@@ -12908,6 +13038,23 @@
       return L.join("");
     } catch (e) { return ""; }
   }
+  function itipShopSide(el) {
+    try {
+      if (!el || !el.closest || !el.closest("#NpcStore")) return "";
+      if (el.closest("#NpcStore .InputWindow")) return "input";
+      if (el.closest("#NpcStore .OutputWindow")) return "output";
+    } catch (e) {}
+    return "";
+  }
+  function itipShopSellMode(el) {
+    try {
+      var store = el && el.closest && el.closest("#NpcStore");
+      var sell = store && store.querySelector(".WinSell");
+      if (!sell) return false;
+      var css = getComputedStyle(sell);
+      return css.display !== "none" && css.visibility !== "hidden";
+    } catch (e) { return false; }
+  }
   function itipOver(e) {
     try {
       if (!ITIP.on) return;
@@ -12918,8 +13065,8 @@
       if (!el) { itipHide(); return; }
       var html = "";
       if (itipIsShop(itipChain(el))) {
-        var isSell = false;
-        try { isSell = el.classList.contains("itemAvailable") || !!el.closest(".contentAvailable"); } catch (e1) {}
+        var side = itipShopSide(el);
+        var isSell = !!side && itipShopSellMode(el);
         var si = el.getAttribute("data-index");
         var inv = itipInvMap();
         var sItem = (si != null) ? inv[Number(si)] : null;

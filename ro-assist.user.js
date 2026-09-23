@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.26.0
+// @version      2.26.1
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.26.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.26.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -836,7 +836,7 @@
       '<div class="row"><span class="lb" style="min-width:52px">自定义高亮</span><input id="dsh-hlrule" type="text" placeholder="ID[颜色]逗号分隔，如 970[yellow]；回车添加" style="flex:1 1 auto;min-width:0"></div>' +
       '<div class="box"><div class="b-hd">高亮名单 <span class="tag blue" id="dsh-hlcount" style="float:right">0 条</span></div>' +
       '<div id="dsh-hllist" style="font-size:11px;max-height:110px;overflow:auto"><span class="st">空（输入 ID[颜色] 添加，赏金材料默认黄）</span></div></div>' +
-      '<div class="log">按赏金任务收集品清单（92 件，V2.6.5 按游戏内导出重建）给物品栏物品槽加金边框+数量变金（V1.8.4：选择器按实测物品栏结构 .item[data-itid] 重写，v0.13.10 探针取证）。仓库/装备槽无 itid 属性，暂不覆盖。</div>' +
+      '<div class="log">按赏金任务收集品清单（92 件，V2.6.5 按游戏内导出重建）给物品栏物品槽加金边框+数量变金（V1.8.4：选择器按实测物品栏结构 .item[data-itid] 重写，v0.13.10 探针取证）。仓库槽由助手按实例索引补充物品 ID 后同步标色；装备槽暂不覆盖。</div>' +
       '</div>' +
             '<div class="sub-page" data-subpage="ap-scr">' +
       '<div class="sec">脚本执行（导入 JSON 模板 · 白名单 8 类动作）</div>' +
@@ -1251,7 +1251,7 @@
   }
   function hlCss(id, col) {
     var def = HL_COLORS[col] || HL_COLORS.yellow;
-    return '.item[data-itid="' + id + '"]{border-left:3px solid ' + def.c + ' !important;outline:none !important;box-shadow:none !important;}';
+    return '.item[data-itid="' + id + '"],.item[data-dsh-itid="' + id + '"]{border-left:3px solid ' + def.c + ' !important;outline:none !important;box-shadow:none !important;}';
   }
   var bountyStyleEl = null;
   function applyBountyStyle(on) {
@@ -10567,8 +10567,9 @@
       var storageWinWasOpen = false;
       var storageObs = new MutationObserver(function () {
         try {
-          if (localStorage.getItem("dsh_ro_inventory_auto") === "false") return;
           var win = findStorageWindow();
+          if (win) storageDecorateDom(); // 切换仓库分类页会重建物品 DOM，需重新附加标色用的物品 ID。
+          if (localStorage.getItem("dsh_ro_inventory_auto") === "false") return;
           var isOpen = !!win;
           if (isOpen && !storageWinWasOpen) {
             console.log("[INV] MutationObserver 检测到仓库窗口打开");
@@ -11683,7 +11684,7 @@
   function findStorage() {
     // V2.12.0：优先读 hook 缓存（打开仓库时 setItems 已把全量数据深拷贝到 window.__dshStorageCache）
     try {
-      if (window.__dshStorageCache && Array.isArray(window.__dshStorageCache) && window.__dshStorageCache.length) {
+      if (Array.isArray(window.__dshStorageCache)) {
         return window.__dshStorageCache;
       }
     } catch (e) {}
@@ -12453,44 +12454,97 @@
     });
     scrRenderList();
   } catch (e) {}
-  // ---------------- 仓库数据源启动期 hook（V2.11.9-diag）----------------
-  // 游戏加载完 Storage 组件后立刻包装 setItems/addItem 等，打开仓库时能抓到物品数据流入
-  // V2.12.0：hook Storage 组件的 setItems，把仓库全量数据深拷贝到 window.__dshStorageCache
+  // ---------------- 仓库数据源启动期 hook（V2.26.1）----------------
+  // Storage 的权威列表在组件闭包里，外部读不到；镜像 setItems/addItem/removeItem，并在 onRemove 清空前最终落盘。
+  function storageClone(v) {
+    try { return JSON.parse(JSON.stringify(v)); } catch (e) { return v; }
+  }
+  function storageCacheSet(items) {
+    window.__dshStorageCache = storageClone(Array.isArray(items) ? items : []);
+    return window.__dshStorageCache;
+  }
+  function storageCacheAdd(item) {
+    var list = Array.isArray(window.__dshStorageCache) ? window.__dshStorageCache : [];
+    var idx = item && item.index;
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && String(list[i].index) === String(idx)) {
+        list[i].count = Number(list[i].count || 0) + Number(item.count || 0);
+        return list;
+      }
+    }
+    if (item) list.push(storageClone(item));
+    window.__dshStorageCache = list;
+    return list;
+  }
+  function storageCacheRemove(index, count) {
+    var list = Array.isArray(window.__dshStorageCache) ? window.__dshStorageCache : [];
+    for (var i = 0; i < list.length; i++) {
+      if (!list[i] || String(list[i].index) !== String(index)) continue;
+      var left = Number(list[i].count || 0) - Number(count || 0);
+      if (left > 0) list[i].count = left; else list.splice(i, 1);
+      break;
+    }
+    return list;
+  }
+  function storageDecorateDom() {
+    try {
+      var list = findStorage() || [], byIndex = {};
+      for (var i = 0; i < list.length; i++) if (list[i] && list[i].index != null) byIndex[String(list[i].index)] = list[i];
+      document.querySelectorAll('.Storage .item[data-index],#Storage .item[data-index],.storage .item[data-index]').forEach(function (el) {
+        var item = byIndex[String(el.getAttribute("data-index"))];
+        if (item && item.ITID != null) el.setAttribute("data-dsh-itid", String(item.ITID));
+        else el.removeAttribute("data-dsh-itid");
+      });
+    } catch (e) {}
+  }
+  function storageCacheChanged(finalRead) {
+    storageDecorateDom();
+    if (finalRead) readStorageAndInventory();
+  }
   function hookStorageEarly() {
     try {
-      if (!window.__dshStorageHookedEarly) {
-        if (!CLIENT.UI) { try { CLIENT.UI = window.require && window.require("UI/UIManager"); } catch (e) {} }
-        var UM = CLIENT.UI;
-        var inst = null;
-        if (UM) {
-          try { if (typeof UM.get === "function") inst = UM.get("Storage"); } catch (e) {}
-          if (!inst && UM.components) inst = UM.components.Storage || null;
-        }
-        if (!inst || typeof inst.setItems !== "function") return false;
-        window.__dshStorageHookedEarly = true;
-        var _origSetItems = inst.setItems;
-        inst.setItems = function () {
+      if (window.__dshStorageHookedEarly) return true;
+      if (!CLIENT.UI) { try { CLIENT.UI = window.require && window.require("UI/UIManager"); } catch (e) {} }
+      var UM = CLIENT.UI, inst = null;
+      if (UM) {
+        try { if (typeof UM.get === "function") inst = UM.get("Storage"); } catch (e) {}
+        if (!inst && UM.components) inst = UM.components.Storage || null;
+      }
+      if (!inst || typeof inst.setItems !== "function") return false;
+      window.__dshStorageHookedEarly = true;
+      var origSetItems = inst.setItems, origAddItem = inst.addItem, origRemoveItem = inst.removeItem, origOnRemove = inst.onRemove;
+      inst.setItems = function (items) {
+        var result = origSetItems.apply(this, arguments);
+        if (Array.isArray(items)) {
+          storageCacheSet(items);
+          console.log("[STORAGE] 仓库已缓存 " + items.length + " 件（V" + VER + "）");
+          storageCacheChanged(false);
           try {
-            var arr = arguments[0];
-            if (Array.isArray(arr)) {
-              window.__dshStorageCache = JSON.parse(JSON.stringify(arr));
-              console.log("[STORAGE] 仓库已缓存 " + arr.length + " 件（V" + VER + "）");
-              // V2.13.0：仓库数据流入即自动读取（不靠 DOM 选择器猜窗口；dsh_ro_inventory_auto=false 可关）
-              try {
-                if (localStorage.getItem("dsh_ro_inventory_auto") !== "false" && typeof onStorageWindowOpen === "function") {
-                  var now = Date.now();
-                  if (!window.__dshStorageLastTrig || now - window.__dshStorageLastTrig > 1500) {
-                    window.__dshStorageLastTrig = now;
-                    onStorageWindowOpen();
-                  }
-                }
-              } catch (e) {}
+            if (localStorage.getItem("dsh_ro_inventory_auto") !== "false" && typeof onStorageWindowOpen === "function") {
+              var now = Date.now();
+              if (!window.__dshStorageLastTrig || now - window.__dshStorageLastTrig > 1500) {
+                window.__dshStorageLastTrig = now;
+                onStorageWindowOpen();
+              }
             }
           } catch (e) {}
-          return _origSetItems.apply(this, arguments);
-        };
-        return true;
-      }
+        }
+        return result;
+      };
+      if (typeof origAddItem === "function") inst.addItem = function (item) {
+        var result = origAddItem.apply(this, arguments);
+        storageCacheAdd(item); storageCacheChanged(false);
+        return result;
+      };
+      if (typeof origRemoveItem === "function") inst.removeItem = function (index, count) {
+        var result = origRemoveItem.apply(this, arguments);
+        storageCacheRemove(index, count); storageCacheChanged(false);
+        return result;
+      };
+      if (typeof origOnRemove === "function") inst.onRemove = function () {
+        storageCacheChanged(true); // 必须在原 onRemove 清空组件闭包列表前保存最后状态。
+        return origOnRemove.apply(this, arguments);
+      };
       return true;
     } catch (e) { return false; }
   }
@@ -12852,7 +12906,7 @@
     137: "无视无形怪MDEF %d%%", 138: "无视不死怪MDEF %d%%", 139: "无视动物怪MDEF %d%%", 140: "无视植物怪MDEF %d%%",
     141: "无视昆虫怪MDEF %d%%", 142: "无视鱼贝怪MDEF %d%%", 143: "无视恶魔怪MDEF %d%%", 144: "无视人型怪MDEF %d%%",
     145: "无视天使怪MDEF %d%%", 146: "无视龙族怪MDEF %d%%",
-    147: "对普通怪伤害 +%d%%", 148: "对BOSS怪伤害 +%d%%",
+    147: "对普通怪伤害 +%d%%", 148: "对首领类魔物的物理伤害增加 %d%%",
     149: "受到普通怪伤害 -%d%%", 150: "受到BOSS怪伤害 -%d%%",
     151: "对普通怪魔法伤害 +%d%%", 152: "对BOSS怪魔法伤害 +%d%%",
     153: "无视普通怪DEF %d%%", 154: "无视BOSS怪DEF %d%%",
@@ -12869,7 +12923,8 @@
     180: "武器属性：毒", 181: "武器属性：圣", 182: "武器属性：暗", 183: "武器属性：念", 184: "武器属性：不死",
     185: "战斗中不会损坏（武器）", 186: "战斗中不会损坏（防具）",
     187: "对小型怪魔法伤害 +%d%%", 188: "对中型怪魔法伤害 +%d%%", 189: "对大型怪魔法伤害 +%d%%",
-    190: "受到小型怪魔法伤害 -%d%%", 191: "受到中型怪魔法伤害 -%d%%", 192: "受到大型怪魔法伤害 -%d%%"
+    190: "受到小型怪魔法伤害 -%d%%", 191: "受到中型怪魔法伤害 -%d%%", 192: "受到大型怪魔法伤害 -%d%%",
+    203: "最大负载增加 %d"
   };
   function itipOptText(o) {
     var id = parseInt(o.index, 10);
@@ -12932,6 +12987,17 @@
     for (var k in map) { var it = map[k]; if (it && String(it.ITID != null ? it.ITID : it.itemid) === String(itid)) return it; }
     return null;
   }
+  function itipStorageMap() {
+    var map = {}, list = findStorage() || [];
+    for (var i = 0; i < list.length; i++) {
+      var it = list[i];
+      if (it && typeof it === "object" && it.index != null) map[Number(it.index)] = it;
+    }
+    return map;
+  }
+  function itipIsStorage(el) {
+    try { return !!(el && el.closest && el.closest(".Storage,#Storage,.storage")); } catch (e) { return false; }
+  }
   // ---- 浮层 DOM ----
   function itipNode() {
     if (ITIP.el && ITIP.el.parentNode) return ITIP.el;
@@ -12978,9 +13044,9 @@
       var ident = !!item.IsIdentified;
       var opts = itipOptList(item);
       var cards = itipCardList(item);
-      if (ident && !opts.length && !cards.length && !priceObj) return ""; // 无隐藏信息 → 不弹
       var refined = Number(item.RefiningLevel || item.refine || 0);
       var grade = Number(item.enchantgrade || 0);
+      if (ident && !opts.length && !cards.length && !refined && !grade && !priceObj) return ""; // 无隐藏信息 → 不弹
       var L = [];
       if (!ident) L.push('<div style="color:#ffcf5c;font-weight:bold">未鉴定</div>');
       var head = "";
@@ -13071,6 +13137,11 @@
         var inv = itipInvMap();
         var sItem = (si != null) ? inv[Number(si)] : null;
         html = (isSell && sItem) ? itipBody(sItem, ITIP.sell[Number(si)] || null) : itipShopRow(el);
+      } else if (itipIsStorage(el)) {
+        var storageIndex = el.getAttribute("data-index");
+        var storageItem = (storageIndex != null) ? itipStorageMap()[Number(storageIndex)] : null;
+        if (!storageItem) { itipHide(); return; }
+        html = itipBody(storageItem, null); // 仓库只按实例 index 映射，同 ITID 装备不能互相替代。
       } else {
         var itid = el.getAttribute("data-itid");
         if (!itid) { itipHide(); return; }

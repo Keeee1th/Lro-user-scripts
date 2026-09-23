@@ -95,3 +95,42 @@ test('teleport shortcuts are profile scoped and capped',()=>{
   assert.ok(source.includes('data-tpp-edit'));
   assert.ok(source.includes('data-tpp-del'));
 });
+
+test('lastRO option texts include boss physical damage and max load',()=>{
+  const code=extract('  var ITIP_OPT_CN = {','  function itipOptList(item) {');
+  const ctx={parseInt,String,itipDB:()=>null};vm.createContext(ctx);vm.runInContext(code+';this.fn=itipOptText',ctx);
+  assert.equal(ctx.fn({index:148,value:12}),'对首领类魔物的物理伤害增加 12%');
+  assert.equal(ctx.fn({index:203,value:500}),'最大负载增加 500');
+});
+
+test('storage cache tracks transfers including empty final state',()=>{
+  const code=extract('  function storageClone(v) {','  function storageDecorateDom() {');
+  const ctx={window:{},JSON,Array,Number,String};vm.createContext(ctx);vm.runInContext(code+';this.set=storageCacheSet;this.add=storageCacheAdd;this.remove=storageCacheRemove',ctx);
+  ctx.set([{index:7,ITID:100,count:1,options:{Index0:148,Value0:10}},{index:8,ITID:100,count:1,options:{Index0:203,Value0:500}}]);
+  ctx.add({index:7,ITID:100,count:2});assert.equal(ctx.window.__dshStorageCache[0].count,3);
+  ctx.remove(7,3);assert.deepEqual(Array.from(ctx.window.__dshStorageCache,x=>x.index),[8]);
+  ctx.remove(8,1);assert.equal(ctx.window.__dshStorageCache.length,0);
+  assert.ok(Array.isArray(ctx.set([])));
+});
+
+test('warehouse maps identical ITIDs by exact instance index and colors rows',()=>{
+  const mapCode=extract('  function itipStorageMap() {','  // ---- 浮层 DOM ----');
+  const items=[{index:7,ITID:100,options:{Index0:148,Value0:10}},{index:8,ITID:100,options:{Index0:203,Value0:500}}];
+  const ctx={findStorage:()=>items};vm.createContext(ctx);vm.runInContext(mapCode+';this.map=itipStorageMap',ctx);
+  const mapped=ctx.map();assert.equal(mapped[7].options.Value0,10);assert.equal(mapped[8].options.Value0,500);
+  assert.ok(source.includes('else if (itipIsStorage(el))'));
+  assert.ok(source.includes('itipStorageMap()[Number(storageIndex)]'));
+  assert.ok(source.includes('.item[data-dsh-itid="'));
+});
+
+test('storage close saves synchronized cache before component removal',()=>{
+  const code=extract('  function storageClone(v) {','  (function () {');
+  let saved=null,removed=false;
+  const rows=[];const document={querySelectorAll:()=>rows};
+  const inst={setItems(){},addItem(){},removeItem(){},onRemove(){removed=true;}};
+  const ctx={window:{require:()=>null},CLIENT:{UI:{components:{Storage:inst}}},VER:'test',JSON,Array,Number,String,Date,console,document,
+    localStorage:{getItem:()=> 'true'},findStorage(){return ctx.window.__dshStorageCache;},readStorageAndInventory(){assert.equal(removed,false);saved=JSON.parse(JSON.stringify(ctx.window.__dshStorageCache));},onStorageWindowOpen(){}};
+  vm.createContext(ctx);vm.runInContext(code+';this.hook=hookStorageEarly',ctx);assert.equal(ctx.hook(),true);
+  inst.setItems([{index:3,ITID:501,count:2}]);inst.removeItem(3,1);inst.onRemove();
+  assert.equal(removed,true);assert.equal(saved[0].count,1);
+});

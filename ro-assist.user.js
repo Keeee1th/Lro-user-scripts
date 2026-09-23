@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.24.0
+// @version      2.24.1
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.24.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.24.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -1781,14 +1781,11 @@
     try { localStorage.setItem(RO_MOD_KEY, JSON.stringify(roMods())); } catch (e) {}
     try { roMenuRender(); } catch (e) {}
   }
-  // V2.24.0：功能菜单即主面板（一级）。原带页签的大面板降级为「设置页」容器，
-  //   5 个页签各占菜单一行（kind:"page"，点「打开」= 开面板并切到该页），菜单里不再有「主面板」行。
+  // V2.24.1：菜单里 5 个「设置页」行合并为一行「旧版设置界面」（id 沿用 panel）。
+  //   点「打开」= 展开大面板，之后所有交互都在旧面板内进行（5 个页签 + 9 个子页签照旧）。
+  //   kind 仍标 "page" 只是为了让渲染层不给它画「总开关」勾选框（面板没有开/关语义）。
   var RO_MODULES = [
-    { id: "page-nei",      name: "内挂模式",         kind: "page", page: "nei",      sec: "设置页" },
-    { id: "page-zhu",      name: "助手模式",         kind: "page", page: "zhu",      sec: "设置页" },
-    { id: "page-assist",   name: "辅助",             kind: "page", page: "assist",   sec: "设置页" },
-    { id: "page-teleport", name: "传送",             kind: "page", page: "teleport", sec: "设置页" },
-    { id: "page-system",   name: "系统",             kind: "page", page: "system",   sec: "设置页" },
+    { id: "panel", name: "旧版设置界面", kind: "page", sec: "界面" },
     { id: "mlock", name: "本图怪物锁定",    kind: "fw", sec: "功能窗口" },
     { id: "tp",    name: "传送功能",        kind: "fw", sec: "功能窗口" },
     { id: "zhu2",  name: "助手战斗设置",    kind: "fw", sec: "功能窗口" },
@@ -1860,6 +1857,9 @@
     if (id === "mvp" || id === "zhud" || id === "ztip") { var e3 = roModEl(id); if (e3) e3.style.display = "none"; return; }
     if (fwOpenIds[id]) fwToggle(id);
   }
+  // V2.24.1：恢复 2.24.0 误删的总调度。菜单每行的「打开」按钮与快捷键 hkAction 都调用它，
+  //   缺了它两者全部 ReferenceError → 表现为「所有打开都没反应、所有快捷键全失效」。
+  function roModToggle(id) { if (roModIsOpen(id)) roModClose(id); else roModOpen(id); }
 
   var roMenuEl = null;
   function roMenuBuild() {
@@ -1934,7 +1934,7 @@
     var lastSec = null;
     for (var i = 0; i < RO_MODULES.length; i++) {
       (function (m) {
-        // V2.24.0：分区小标题（设置页 / 功能窗口 / 动作）
+        // V2.24.0：分区小标题（V2.24.1 起为 界面 / 功能窗口 / 动作，通用区另有标题）
         if (m.sec && m.sec !== lastSec) {
           lastSec = m.sec;
           var sd = document.createElement("div"); sd.className = "ro-sec"; sd.style.marginTop = "7px";
@@ -1946,7 +1946,7 @@
         lab.style.cssText = "display:flex;align-items:center;gap:4px;flex:1;min-width:0;cursor:pointer;";
         var nm = document.createElement("span"); nm.className = "nm"; nm.textContent = m.name;
         if (m.kind === "page") {
-          // 设置页没有「总开关」语义：留一个与勾选框等宽的占位，保证功能名左对齐
+          // 无「总开关」语义的行（旧版设置界面）：留一个与勾选框等宽的占位，保证功能名左对齐
           var sp = document.createElement("span"); sp.style.cssText = "flex:none;width:13px;height:13px;";
           lab.appendChild(sp);
         } else {
@@ -2012,6 +2012,11 @@
     var info = document.createElement("div"); info.className = "ro-info";
     info.textContent = "当前视口 " + roVw() + "×" + roVh() + " · 实际缩放 " + Math.round(roScale() * 100) + "%";
     body.appendChild(info);
+    // V2.24.1：菜单底部灰色版本号（便于一眼确认油猴里装的是哪一版）
+    var vline = document.createElement("div"); vline.className = "ro-info";
+    vline.style.cssText = "color:#9a9a9a;margin-top:1px;";
+    vline.textContent = "仙境传说助手 v" + VER;
+    body.appendChild(vline);
   }
 
   // 鼠标→触摸模拟层：手机版（r=mn）游戏用 jquery.mobile-events 触摸事件驱动，只认触摸不认鼠标；
@@ -2345,7 +2350,11 @@
     if (ball.__dsDragged) { ball.__dsDragged = false; return; } // 拖动松手不弹菜单
     roMenuToggle();
   });
-  if (saved.collapsed) applyCollapse(true);
+  // V2.24.1：大面板降级为「旧版设置界面」入口 —— 启动不再自动弹出。
+  //   升级后首次运行 collapsed 是 undefined，按「收起」处理；用户从菜单打开过（collapsed=false）则下次仍展开。
+  //   必须把状态写回，否则快捷键 hkToggle 读到旧值会出现「按了没反应」。
+  if (saved.collapsed !== false) { saved.collapsed = true; try { saveSaved(saved); } catch (e) {} }
+  applyCollapse(!!saved.collapsed);
 
   // ---------------- 快捷键（V2.8.0 三组 · Switch 单键切换）：面板收起 / 内挂自动战斗 / 助手自动战斗 ----------------
   // 捕获态 hkTarget：null|panel|np|zhu；三组存全局独立 key（V2.13.0 起所有角色共用，刷新/换角色不丢）
@@ -2370,17 +2379,17 @@
       if (!migDone && Object.keys(hkCfg).length === 0) {
         var o1 = JSON.parse(localStorage.getItem(HK_KEY1) || "{}");
         if (o1 && (o1.hotkey || o1.hotkeyNp || o1.hotkeyZhu)) {
-          if (o1.hotkey) hkCfg["page-assist"] = o1.hotkey;  // V2.24.0：主面板行取消，旧键位归到「辅助」设置页
+          if (o1.hotkey) hkCfg.panel = o1.hotkey;  // V2.24.1：旧「面板」键位归到「旧版设置界面」行
           if (o1.hotkeyNp) hkCfg.np = o1.hotkeyNp;
           if (o1.hotkeyZhu) hkCfg.zhu = o1.hotkeyZhu;
           hkSave();
         }
       }
     } catch (e) {}
-    // V2.24.0：菜单里「主面板」行已取消，历史遗留的 panel 键位改挂到「辅助」设置页（不丢用户设过的键）
+    // V2.24.1：菜单行 id 回到 panel。2.24.0 曾把旧「主面板」键位挪到 page-assist，这里搬回来（不丢用户设过的键）
     try {
-      if (hkCfg.panel && !hkCfg["page-assist"]) { hkCfg["page-assist"] = hkCfg.panel; hkSave(); }
-      if (hkCfg.panel) { delete hkCfg.panel; hkSave(); }
+      if (hkCfg["page-assist"] && !hkCfg.panel) { hkCfg.panel = hkCfg["page-assist"]; hkSave(); }
+      if (hkCfg["page-assist"]) { delete hkCfg["page-assist"]; hkSave(); }
     } catch (e4) {}
     try { localStorage.setItem("dsh_ro_hotkeys_mig", "1"); } catch (e0) {}
     return hkCfg;

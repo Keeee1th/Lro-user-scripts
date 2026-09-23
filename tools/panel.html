@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>无头端控制台</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font:12px/1.6 "Microsoft YaHei",Arial,sans-serif;color:#111;background:#e9eef4;display:flex;flex-direction:column;overflow:hidden}
+.top{flex:none;display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;background:#fff;border-bottom:1px solid #7897b9}
+.top h1{font-size:13px;margin:0;font-weight:700}
+.top .sp{flex:1}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px;vertical-align:1px}
+.ok{background:#2ea44f}.bad{background:#c0392b}.warn{background:#e0a020}
+.mid{flex:1;display:flex;min-height:0}
+.side{flex:0 0 244px;background:#f4f7fa;border-right:1px solid #7897b9;overflow:auto;padding:6px}
+.side h2{font-size:11px;color:#4a6b8a;margin:8px 4px 4px;font-weight:700}
+.card{background:#fff;border:1px solid #b8c8d8;border-radius:3px;padding:5px 6px;margin-bottom:5px;cursor:pointer}
+.card:hover{border-color:#4a6b8a}
+.card.sel{border-color:#2f6fb0;box-shadow:0 0 0 1px #2f6fb0 inset;background:#eef5ff}
+.card .r1{display:flex;align-items:center;gap:4px}
+.card .nm{font-weight:700;font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tag{font-size:10px;padding:0 4px;border-radius:2px;border:1px solid;line-height:14px;flex:none}
+.t-b{color:#2f6fb0;border-color:#8fb4dc;background:#eaf2fb}
+.t-h{color:#7a4bb0;border-color:#c3a8e0;background:#f4ecfb}
+.card .r2{color:#5a6a7a;font-size:11px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.tabs{flex:none;display:flex;gap:2px;padding:5px 6px 0;background:#f4f7fa;border-bottom:1px solid #7897b9}
+.tabs button{font:inherit;padding:3px 12px;border:1px solid #b8c8d8;border-bottom:0;border-radius:3px 3px 0 0;background:#e6edf5;cursor:pointer}
+.tabs button.on{background:#fff;font-weight:700;border-color:#7897b9}
+.body{flex:1;overflow:auto;padding:8px;min-height:0}
+.log{flex:0 0 150px;border-top:1px solid #7897b9;background:#10161d;color:#c8d6e2;font:11px/1.55 Consolas,monospace;overflow:auto;padding:4px 6px}
+.log b{color:#7fd1a0;font-weight:400}.log i{color:#e0a020;font-style:normal}.log u{color:#7fb0e0;text-decoration:none}.log s{color:#e07a7a;text-decoration:none}.log em{color:#98a8b8;font-style:normal}
+.pane{display:none}.pane.on{display:block}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(262px,1fr));gap:8px}
+.box{background:#fff;border:1px solid #b8c8d8;border-radius:3px;padding:7px 9px}
+.box h3{margin:0 0 6px;font-size:12px;border-bottom:1px solid #dde5ee;padding-bottom:3px}
+.kv{display:flex;justify-content:space-between;gap:8px;padding:1px 0}
+.kv span:first-child{color:#5a6a7a}
+.bar{height:7px;background:#dde5ee;border-radius:2px;overflow:hidden;margin:3px 0 6px}
+.bar i{display:block;height:100%}
+.hp i{background:#2ea44f}.sp i{background:#2f6fb0}.wt i{background:#e0a020}
+button.b{font:inherit;padding:2px 9px;border:1px solid #b8c8d8;border-radius:3px;background:#f0f4f9;cursor:pointer}
+button.b:hover{background:#e2ebf5}
+button.b.pri{background:#2f6fb0;border-color:#2f6fb0;color:#fff}
+button.b.pri:hover{background:#27619c}
+button.b.dgr{background:#fdeceb;border-color:#e0b4b0;color:#a03028}
+button.b:disabled{opacity:.45;cursor:default}
+.row{display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px dashed #e6edf5}
+.row:last-child{border-bottom:0}
+.row .nm{flex:1}
+.row .nm em{color:#7a8899;font-style:normal;font-size:11px;margin-left:6px}
+.steps{counter-reset:s;margin:0;padding:0;list-style:none}
+.steps li{counter-increment:s;padding:2px 0 2px 20px;position:relative;color:#5a6a7a}
+.steps li:before{content:counter(s);position:absolute;left:0;top:3px;width:14px;height:14px;line-height:14px;text-align:center;border-radius:50%;background:#dde5ee;color:#5a6a7a;font-size:10px}
+.steps li.act{color:#111;font-weight:700}
+.steps li.act:before{background:#2f6fb0;color:#fff}
+pre{margin:0;background:#f6f8fb;border:1px solid #dde5ee;border-radius:3px;padding:6px;font:11px/1.5 Consolas,monospace;overflow:auto;max-height:280px}
+textarea{width:100%;height:280px;font:11px/1.5 Consolas,monospace;border:1px solid #b8c8d8;border-radius:3px;padding:6px;resize:vertical}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:3px 6px;border-bottom:1px solid #e6edf5}
+th{color:#5a6a7a;font-weight:400}
+.mut{color:#7a8899}
+.tip{background:#fffbe8;border:1px solid #e8d9a0;border-radius:3px;padding:5px 7px;color:#6a5a20;margin-bottom:8px}
+.sec{margin:10px 0 5px;font-weight:700;color:#4a6b8a;border-bottom:1px solid #dde5ee;padding-bottom:3px}
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>无头端控制台</h1>
+  <span class="mut">中枢 127.0.0.1:8899</span>
+  <span id="hubst"><span class="dot warn"></span>连接中…</span>
+  <span class="sp"></span>
+  <span class="mut" id="clock"></span>
+  <button class="b" id="refresh">立即刷新</button>
+  <button class="b dgr" id="stopall">全部停止</button>
+</div>
+
+<div class="mid">
+  <div class="side">
+    <h2>节点 · 浏览器端</h2><div id="lb"></div>
+    <h2>节点 · 无头端</h2><div id="lh"></div>
+  </div>
+  <div class="main">
+    <div class="tabs">
+      <button data-t="ov" class="on">总览</button>
+      <button data-t="sc">脚本库</button>
+      <button data-t="run">运行监视</button>
+      <button data-t="ev">事件流</button>
+      <button data-t="st">设置</button>
+    </div>
+    <div class="body">
+      <div class="pane on" id="p-ov"><div id="ovbody"></div></div>
+      <div class="pane" id="p-sc"><div id="scbody"></div></div>
+      <div class="pane" id="p-run"><div id="runbody"></div></div>
+      <div class="pane" id="p-ev"><div id="evbody"></div></div>
+      <div class="pane" id="p-st"><div id="stbody"></div></div>
+    </div>
+  </div>
+</div>
+<div class="log" id="log"></div>
+
+<script>
+var S = { acct: [], nodes: [], cmds: {}, so: {}, scripts: [], events: [], since: 0, sel: null, tab: 'ov' };
+var ONLINE_MS = 60000;
+
+function $(s){return document.querySelector(s)}
+function esc(s){return String(s==null?"":s).replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c]})}
+function hhmm(t){var d=new Date(t);return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2)+":"+("0"+d.getSeconds()).slice(-2)}
+function api(path,opt){
+  return fetch(path,opt).then(function(r){return r.json()});
+}
+function post(path,obj){
+  return api(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(obj)});
+}
+function lg(txt,cls){
+  var l=$("#log"),s=document.createElement("div");
+  s.innerHTML='<em>'+hhmm(Date.now())+'</em> '+(cls?("<"+cls+">"+esc(txt)+"</"+cls+">"):esc(txt));
+  l.appendChild(s);l.scrollTop=l.scrollHeight;
+  while(l.children.length>400)l.removeChild(l.firstChild);
+}
+// 节点统一视图：浏览器端来自 /api/acct/state，无头端来自 /api/node/state
+function allNodes(){
+  var out=[],i;
+  for(i=0;i<S.acct.length;i++){
+    var a=S.acct[i],st=a.stat||{};
+    out.push({id:"b:"+a.account,kind:"browser",account:a.account,char:st.name||"",map:st.map||"",x:null,y:null,
+      lv:st.lv,hp:st.hp,mhp:st.maxhp,sp:st.sp,msp:st.maxsp,wt:st.weight,mwt:st.maxWeight,zeny:st.zeny,
+      on:!!a.online,ts:a._serverTs,winInfo:a.winInfo||"",mobs:a.mobs||[],raw:a});
+  }
+  for(i=0;i<S.nodes.length;i++){
+    var n=S.nodes[i];
+    out.push({id:"h:"+n.id,kind:"headless",account:n.account,char:n.char||"",map:n.map||"",x:n.x,y:n.y,
+      lv:n.lv,hp:n.hp,mhp:n.mhp,sp:n.sp,msp:n.msp,wt:n.wt,mwt:n.mwt,zeny:n.zeny,
+      on:true,ts:n._ts,script:n.script,step:n.step,msg:n.msg||"",raw:n});
+  }
+  return out;
+}
+function findNode(id){var a=allNodes();for(var i=0;i<a.length;i++)if(a[i].id===id)return a[i];return null}
+
+function renderList(){
+  var all=allNodes(),b="",h="";
+  if(!S.sel&&all.length)S.sel=all[0].id;
+  for(var i=0;i<all.length;i++){
+    var n=all[i];
+    var fresh=n.ts&&(Date.now()-n.ts<ONLINE_MS);
+    var s='<div class="card'+(n.id===S.sel?" sel":"")+'" data-id="'+esc(n.id)+'">'
+      +'<div class="r1"><span class="dot '+(fresh&&n.on?"ok":"bad")+'"></span><span class="nm">'+esc(n.char||n.account)+'</span>'
+      +'<span class="tag '+(n.kind==="browser"?"t-b":"t-h")+'">'+(n.kind==="browser"?"浏览器":"无头端")+'</span></div>'
+      +'<div class="r2">'+esc(n.account)+' · '+esc(n.map||"—")+(n.x!=null?" ("+n.x+","+n.y+")":"")+'</div>'
+      +'<div class="r2">'+(n.script?('运行中：'+esc(n.script.name||n.script.id||"")+' '+n.step):(fresh&&n.on?'待命':(n.ts?'<span style="color:#c0392b">'+Math.round((Date.now()-n.ts)/1000)+' 秒无上报</span>':'<span style="color:#c0392b">未上报</span>')))+'</div>'
+      +'</div>';
+    if(n.kind==="browser")b+=s;else h+=s;
+  }
+  $("#lb").innerHTML=b||'<div class="mut" style="padding:4px">无（浏览器里开着 ro-assist 才会出现）</div>';
+  $("#lh").innerHTML=h||'<div class="mut" style="padding:4px">无（阶段 2 接无头端）</div>';
+  Array.prototype.forEach.call(document.querySelectorAll(".card"),function(c){
+    c.onclick=function(){S.sel=c.getAttribute("data-id");renderList();renderOv();renderRun();};
+  });
+}
+function bar(cls,v,m,label){
+  if(v==null||m==null||!m)return '<div class="kv"><span>'+label+'</span><span>—</span></div>';
+  return '<div class="kv"><span>'+label+'</span><span>'+v+' / '+m+'</span></div><div class="bar '+cls+'"><i style="width:'+Math.min(100,Math.round(v/m*100))+'%"></i></div>';
+}
+function renderOv(){
+  var all=allNodes(),g="",i;
+  if(!all.length){
+    $("#ovbody").innerHTML='<div class="tip">还没有节点上报。浏览器里打开游戏并开着 ro-assist（它会每 15 秒向 127.0.0.1:8899 上报一次），这里就会出现账号卡。</div>';
+    return;
+  }
+  for(i=0;i<all.length;i++){
+    var n=all[i];
+    var so=S.so[n.account]||null;
+    var fresh=n.ts&&(Date.now()-n.ts<ONLINE_MS);
+    g+='<div class="box"><h3>'+esc(n.char||"(未进图)")+' <span class="mut">'+esc(n.account)+'</span></h3>'
+     +'<div class="kv"><span>接入方式</span><span>'+(n.kind==="browser"?"浏览器端 (ro-assist)":"无头端 (node)")+'</span></div>'
+     +'<div class="kv"><span>上报</span><span>'+(fresh?'<span class="dot ok"></span>'+Math.round((Date.now()-n.ts)/1000)+' 秒前':'<span class="dot bad"></span>'+(n.ts?Math.round((Date.now()-n.ts)/1000)+' 秒前':'从未'))+'</span></div>'
+     +'<div class="kv"><span>官方在线验证</span><span>'+(so?(so.online?'<span class="dot ok"></span>在线 · '+esc(so.name||"")+" Lv"+esc(so.base_level):'<span class="dot bad"></span>'+esc(so.err||"离线")):'<span class="mut">未配置</span>')+'</span></div>'
+     +'<div class="kv"><span>位置</span><span>'+esc(n.map||"—")+(n.x!=null?" ("+n.x+","+n.y+")":"")+'</span></div>'
+     +bar("hp",n.hp,n.mhp,"HP")+bar("sp",n.sp,n.msp,"SP")+bar("wt",n.wt,n.mwt,"负重")
+     +'<div class="kv"><span>等级</span><span>'+(n.lv!=null?("Lv"+n.lv+(n.raw&&n.raw.stat&&n.raw.stat.job?" · "+esc(n.raw.stat.job):"")):"—")+'</span></div>'
+     +'<div class="kv"><span>Zeny</span><span>'+(n.zeny!=null?Number(n.zeny).toLocaleString():"—")+'</span></div>'
+     +'<div class="kv"><span>当前脚本</span><span>'+(n.script?esc(n.script.name||n.script.id)+' ('+n.step+')':'—')+'</span></div>'
+     +'<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">'
+     +'<button class="b pri" data-act="run" data-id="'+esc(n.id)+'">运行脚本</button>'
+     +'<button class="b" data-act="stop" data-id="'+esc(n.id)+'">停止</button>'
+     +'<button class="b" data-act="login" data-id="'+esc(n.id)+'">上线</button>'
+     +'<button class="b" data-act="logout" data-id="'+esc(n.id)+'">下线</button>'
+     +'</div>'
+     +(n.mobs&&n.mobs.length?('<div class="mut" style="margin-top:5px">视野内：'+n.mobs.slice(0,6).map(function(m){return esc(m.name)+"("+m.dist+")"}).join(" ")+'</div>'):'')
+     +'</div>';
+  }
+  $("#ovbody").innerHTML='<div class="tip">数据来自中枢真实上报（<b>/api/acct/state</b> + <b>/api/node/state</b>）。「上线/下线/运行脚本」会写进指令队列，等对应节点接入后执行。</div><div class="grid">'+g+'</div>';
+  Array.prototype.forEach.call($("#ovbody").querySelectorAll("button[data-act]"),function(b){
+    b.onclick=function(){
+      var id=b.getAttribute("data-id"),act=b.getAttribute("data-act"),n=findNode(id);
+      var cmd=null;
+      if(act==="run")cmd={do:"run",script:null};
+      else if(act==="stop")cmd={do:"stop"};
+      else if(act==="login")cmd={do:"login",account:n.account};
+      else if(act==="logout")cmd={do:"logout",account:n.account};
+      post("/api/cmd",{node:n.raw.id||n.id,cmd:cmd}).then(function(r){
+        lg("下发指令 → "+n.account+" "+JSON.stringify(cmd)+(r.ok?" (seq "+r.seq+")":" 失败"));
+        loadEvents();
+      });
+    };
+  });
+}
+function renderSc(){
+  if(!S.scripts.length){$("#scbody").innerHTML='<div class="tip">脚本库为空。</div>';return}
+  var sel=window.__sc||S.scripts[0].templateId;
+  var cur=null;
+  for(var i=0;i<S.scripts.length;i++)if(S.scripts[i].templateId===sel)cur=S.scripts[i];
+  if(!cur)cur=S.scripts[0];
+  var g="";
+  for(var j=0;j<S.scripts.length;j++){var s=S.scripts[j];
+    g+='<div class="box" style="cursor:pointer'+(s.templateId===cur.templateId?';border-color:#2f6fb0;box-shadow:0 0 0 1px #2f6fb0 inset':'')+'" data-sc="'+esc(s.templateId)+'">'
+     +'<h3>'+esc(s.name)+'</h3><div class="mut">'+esc(s.desc||"")+'</div>'
+     +'<div class="mut" style="margin-top:4px">'+(s.steps?s.steps.length:0)+' 步 · v'+(s.version||1)+' · '+esc(s.templateId)+'</div></div>';
+  }
+  var steps="";
+  for(var k=0;k<(cur.steps||[]).length;k++){
+    var st=cur.steps[k]||{},parts=[];
+    for(var key in (st.params||{}))parts.push(key+"="+JSON.stringify(st.params[key]));
+    if(st.arrive)parts.push("arrive="+JSON.stringify(st.arrive));
+    if(st.until)parts.push("until="+JSON.stringify(st.until));
+    steps+='<li>'+esc(st.action)+' <span class="mut">'+esc(parts.join(" "))+'</span></li>';
+  }
+  $("#scbody").innerHTML='<div class="tip">脚本只存本机（diag-collect/scripts.json，仓库外）。改完点「保存到中枢」。</div>'
+   +'<div class="grid">'+g+'</div>'
+   +'<div class="box" style="margin-top:8px"><h3>脚本详情 · '+esc(cur.name)+'</h3>'
+   +'<div style="display:flex;gap:10px;flex-wrap:wrap">'
+   +'<div style="flex:1 1 300px;min-width:260px"><ol class="steps">'+steps+'</ol>'
+   +'<div style="margin-top:6px;display:flex;gap:6px;align-items:center">'
+   +'<button class="b pri" id="scrun">下发到选中节点</button><span class="mut" id="schint"></span></div></div>'
+   +'<div style="flex:1 1 340px;min-width:280px"><div class="mut" style="margin-bottom:3px">JSON（可编辑）</div>'
+   +'<textarea id="scjson">'+esc(JSON.stringify(S.scripts,null,1))+'</textarea>'
+   +'<div style="margin-top:5px"><button class="b" id="scsave">保存到中枢</button></div></div>'
+   +'</div></div>';
+  Array.prototype.forEach.call($("#scbody").querySelectorAll("[data-sc]"),function(c){
+    c.onclick=function(){window.__sc=c.getAttribute("data-sc");renderSc();};
+  });
+  var n=findNode(S.sel);
+  $("#schint").textContent=n?("目标："+(n.char||n.account)+" ("+n.kind+")"):"先在左侧选一个节点";
+  $("#scrun").onclick=function(){
+    if(!n){lg("没有选中节点","s");return}
+    post("/api/cmd",{node:n.raw.id||n.id,cmd:{do:"run",script:cur.templateId}}).then(function(r){
+      lg("下发脚本「"+cur.name+"」→ "+(n.char||n.account)+(r.ok?" (seq "+r.seq+")":" 失败"),"u");loadEvents();
+    });
+  };
+  $("#scsave").onclick=function(){
+    var v=null;try{v=JSON.parse($("#scjson").value)}catch(e){lg("JSON 解析失败："+e.message,"s");return}
+    post("/api/script",v).then(function(r){
+      if(r.ok){S.scripts=v;lg("脚本库已保存（"+r.count+" 个）","b");renderSc();}else lg("保存失败："+r.err,"s");
+    });
+  };
+}
+function renderRun(){
+  var all=allNodes(),rows="",any=false;
+  for(var i=0;i<all.length;i++){var n=all[i];
+    if(n.script){any=true;rows+='<tr><td>'+esc(n.char||n.account)+'</td><td>'+esc(n.script.name||n.script.id)+'</td><td>第 '+n.step+' 步</td><td>'+esc(n.msg||"")+'</td><td><button class="b" data-k="'+esc(n.raw.id||n.id)+'">停止</button></td></tr>';}
+  }
+  var q="",keys=Object.keys(S.cmds||{});
+  for(var j=0;j<keys.length;j++){var c=S.cmds[keys[j]];
+    q+='<tr><td>'+esc(keys[j])+'</td><td>seq '+c.seq+'</td><td>'+esc(JSON.stringify(c.cmd))+'</td><td>'+Math.round((Date.now()-c.ts)/1000)+' 秒前</td></tr>';
+  }
+  $("#runbody").innerHTML='<div class="box"><h3>正在运行</h3>'+(any?'<table><tr><th>角色</th><th>脚本</th><th>进度</th><th>状态</th><th></th></tr>'+rows+'</table>':'<div class="mut">当前没有脚本在跑。</div>')+'</div>'
+   +'<div class="box" style="margin-top:8px"><h3>待执行指令队列（每个节点只保留最新一条）</h3>'+(keys.length?'<table><tr><th>节点</th><th>序号</th><th>指令</th><th>下发时间</th></tr>'+q+'</table>':'<div class="mut">队列为空。</div>')+'</div>';
+  Array.prototype.forEach.call($("#runbody").querySelectorAll("[data-k]"),function(b){
+    b.onclick=function(){post("/api/cmd",{node:b.getAttribute("data-k"),cmd:{do:"stop"}}).then(function(){lg("已下发停止","i");loadEvents()})};
+  });
+}
+function renderEv(){
+  var rows="";
+  for(var i=S.events.length-1;i>=0;i--){var e=S.events[i];
+    var cls=e.lv==="err"?"s":(e.lv==="cmd"?"u":(e.lv==="ok"?"b":"i"));
+    rows+='<tr><td class="mut">'+hhmm(e.t)+'</td><td>'+esc(e.node)+'</td><td><'+cls+'>'+esc(e.msg)+'</'+cls+'></td></tr>';
+  }
+  $("#evbody").innerHTML='<div class="box"><h3>事件流（中枢 /api/events）</h3>'+(rows?'<table><tr><th>时间</th><th>节点</th><th>内容</th></tr>'+rows+'</table>':'<div class="mut">暂无事件。</div>')+'</div>';
+}
+function renderSt(){
+  api("/api/acct/accounts").then(function(r){
+    var rows="";
+    for(var i=0;i<(r.accounts||[]).length;i++){var a=r.accounts[i];
+      var n=null,all=allNodes();
+      for(var k=0;k<all.length;k++)if(all[k].account===a.userid)n=all[k];
+      var so=S.so[a.userid];
+      rows+='<tr><td>'+esc(a.userid)+'</td><td>'+esc(a.note||"")+'</td><td>'+esc(a.nid)+'</td>'
+        +'<td>'+(n&&n.on&&n.ts&&(Date.now()-n.ts<ONLINE_MS)?'<span class="dot ok"></span>在线':'<span class="dot bad"></span>离线')+'</td>'
+        +'<td>'+(so&&so.online?'<span class="dot ok"></span>官方在线':'—')+'</td>'
+        +'<td>'+(a.hasPass?"******":'<span style="color:#c0392b">缺密码</span>')+'</td>'
+        +'<td>'+(a.enabled?'启用':'停用')+'</td></tr>';
+    }
+    $("#stbody").innerHTML='<div class="tip">账号表存在本机 diag-collect/acct-accounts.json（仓库外），面板只读展示。改账号请编辑那个文件，或在 /acct 页面里改。</div>'
+     +'<div class="box"><h3>账号表</h3><table><tr><th>账号</th><th>备注</th><th>线路</th><th>客户端在线</th><th>官方验证</th><th>密码</th><th>启用</th></tr>'+rows+'</table></div>'
+     +'<div class="box" style="margin-top:8px"><h3>中枢信息</h3>'
+     +'<div class="row"><span class="nm">中枢地址</span><span>127.0.0.1:8899</span></div>'
+     +'<div class="row"><span class="nm">浏览器端节点数</span><span>'+S.acct.length+'</span></div>'
+     +'<div class="row"><span class="nm">无头端节点数</span><span>'+S.nodes.length+'</span></div>'
+     +'<div class="row"><span class="nm">待执行指令</span><span>'+Object.keys(S.cmds||{}).length+'</span></div>'
+     +'<div class="row"><span class="nm">脚本库</span><span>'+S.scripts.length+' 个</span></div>'
+     +'</div>';
+  });
+}
+function renderAll(){renderList();renderOv();renderSc();renderRun();renderEv();renderSt();}
+
+function loadEvents(){
+  return api("/api/events?since="+S.since).then(function(r){
+    var ev=r.events||[];
+    for(var i=0;i<ev.length;i++){S.events.push(ev[i]);S.since=Math.max(S.since,ev[i].t);lg("["+ev[i].lv+"] "+(ev[i].node?ev[i].node+" ":"")+ev[i].msg,ev[i].lv==="err"?"s":(ev[i].lv==="cmd"?"u":(ev[i].lv==="ok"?"b":"i")));}
+    if(S.events.length>500)S.events=S.events.slice(-500);
+  });
+}
+function poll(){
+  Promise.all([
+    api("/api/acct/state").catch(function(){return null}),
+    api("/api/node/state").catch(function(){return null})
+  ]).then(function(r){
+    var okA=r[0],okN=r[1];
+    if(okA||okN){
+      $("#hubst").innerHTML='<span class="dot ok"></span>已连接';
+      if(okA){S.acct=okA.accounts||[];S.so=okA.serverOnline||{};}
+      if(okN){S.nodes=okN.nodes||[];S.cmds=okN.cmds||{};}
+      renderList();renderOv();renderRun();renderEv();
+      if(S.tab==="st")renderSt();
+    }else{
+      $("#hubst").innerHTML='<span class="dot bad"></span>连不上中枢';
+    }
+  });
+  loadEvents();
+  var d=new Date();$("#clock").textContent=hhmm(Date.now());
+}
+Array.prototype.forEach.call(document.querySelectorAll(".tabs button"),function(b){
+  b.onclick=function(){
+    Array.prototype.forEach.call(document.querySelectorAll(".tabs button"),function(x){x.classList.remove("on")});
+    b.classList.add("on");S.tab=b.getAttribute("data-t");
+    Array.prototype.forEach.call(document.querySelectorAll(".pane"),function(p){p.classList.remove("on")});
+    $("#p-"+S.tab).classList.add("on");
+    renderAll();
+  };
+});
+$("#refresh").onclick=function(){poll();api("/api/script").then(function(r){S.scripts=r.scripts||[];renderSc()});lg("手动刷新","i")};
+$("#stopall").onclick=function(){
+  var all=allNodes(),n=0;
+  for(var i=0;i<all.length;i++){post("/api/cmd",{node:all[i].raw.id||all[i].id,cmd:{do:"stop"}});n++}
+  lg("紧急停止：已向 "+n+" 个节点下发","s");loadEvents();
+};
+api("/api/script").then(function(r){S.scripts=r.scripts||[];renderSc()});
+poll();
+setInterval(poll,2000);
+setInterval(function(){api("/api/script").then(function(r){S.scripts=r.scripts||[]})},30000);
+</script>
+</body>
+</html>

@@ -124,6 +124,17 @@ try {
   ACCT_PAGE = '<!doctype html><html lang="zh-CN"><body><h1>总页面文件缺失</h1><p>缺少 tools/acct-page.html，请确认该文件存在。</p></body></html>';
 }
 
+// ---------------- 无头端控制台状态（模块作用域，跨请求共享）----------------
+var NODES_FILE = path.join(DIR, 'nodes.json');
+var SCRIPTS_FILE = path.join(DIR, 'scripts.json');
+var EVENT_FILE = path.join(DIR, 'panel-events.log');
+var NODES = {};
+try { NODES = JSON.parse(fs.readFileSync(NODES_FILE, 'utf8')) || {}; } catch (e) {}
+var CMDS = {};      // nodeId -> { seq, cmd, ts }，每个节点只保留最新一条
+var CMD_SEQ = 0;
+var EVENTS = [];    // 内存事件流，最多 500 条
+function saveNodes() { try { fs.writeFileSync(NODES_FILE, JSON.stringify(NODES)); } catch (e) {} }
+
 // ---------------- 路由 ----------------
 var server = http.createServer(function (req, res) {
   cors(res);
@@ -289,6 +300,179 @@ var server = http.createServer(function (req, res) {
     } else {
       json(res, 200, { ok: true, accounts: Object.keys(db2) });
     }
+    return;
+  }
+
+  // ================= 无头端控制台（阶段 1：中枢侧）=================
+  // 节点 = 浏览器端(ro-assist) 或 无头端(test-p24.mjs)，统一「上报 + 取指令」。
+  // 指令队列：每个节点只保留最新一条未确认指令（和 SYNC_OPS 同一套思路，用 seq 确认防重复）。
+  // 落盘全部在仓库外 diag-collect/（只存本机，不进公开仓库）。
+  // 状态变量一律在模块作用域声明（见上方「无头端控制台状态」）——
+  // 写在这个请求处理函数里会变成「每个请求重建一次」，队列和事件流会立刻丢。
+  function saveNodes() { try { fs.writeFileSync(NODES_FILE, JSON.stringify(NODES)); } catch (e) {} }
+  function ev(lv, nodeId, msg) {
+    var e = { t: Date.now(), lv: lv || 'info', node: nodeId || '', msg: String(msg == null ? '' : msg) };
+    EVENTS.push(e);
+    if (EVENTS.length > 500) EVENTS.splice(0, EVENTS.length - 500);
+    try { fs.appendFileSync(EVENT_FILE, JSON.stringify(e) + '\n'); } catch (e2) {}
+  }
+  // 脚本库默认种子（只在文件不存在时写入；之后一律读本地文件）
+  // 脚本格式与 ro-assist 脚本执行器完全一致：{ templateId, version, name, desc, steps[] }
+  // 每步：{ action, params, arrive?, until?, timeoutMs?, retry?, onFail? }
+  // action 白名单：teleport / walk / battleOn / battleOff / useItem / stopMove / check / talk / loop / ifWeight / store
+  // 条件 until / loop.until（两类，AND）：
+  //   物品类 { item:ID | items:[] | range:[lo,hi] | keyword:"卡片" | class:"card", count:N, mode:"any|all", dropOnly:true }
+  //   杀怪类 { kill:"怪名" | killId:GID | killAny:N, killCount:N }
+  //   辅助   { weight:80, zeny:N, time:秒 }
+  // 官方 ITID 类别：potion 501-699 / etc 700-999 / weapon 1100-1749 / ammo 1750-1799 /
+  //                armor 2100-2699 / card 4001-4999 / pet 5000-5999 / material 7000-7999 / cash 10000+
+  var SCRIPT_SEED = [
+    { templateId: "farm_item", version: 1, name: "自动刷指定物品", desc: "传送到指定地图刷怪，凑够指定物品就回城存仓", killNearby: false,
+      steps: [
+        { action: "teleport", params: { map: "moc_fild16" }, arrive: { map: "moc_fild16" }, timeoutMs: 30000, retry: 1, onFail: "stop" },
+        { action: "walk", params: { x: 212, y: 88 }, arrive: { x: 212, y: 88, dist: 2 }, timeoutMs: 30000, retry: 2, onFail: "stop" },
+        { action: "battleOn", params: {} },
+        { action: "loop", params: { back: 3, maxLoops: 200, until: { "class": "material", count: 30, dropOnly: true } } },
+        { action: "battleOff", params: {} },
+        { action: "ifWeight", params: { over: 80, goto: 7 } },
+        { action: "walk", params: { x: 120, y: 70 }, arrive: { x: 120, y: 70, dist: 2 }, timeoutMs: 30000, retry: 2, onFail: "skip" },
+        { action: "teleport", params: { map: "geffen" }, arrive: { map: "geffen" }, timeoutMs: 30000, retry: 1, onFail: "skip" },
+        { action: "store", params: { "class": "material" } }
+      ] },
+    { templateId: "farm_kill", version: 1, name: "自动刷指定怪", desc: "按杀怪数量判断，杀够指定怪就停（只算自己打死的）",
+      steps: [
+        { action: "teleport", params: { map: "moc_fild16" }, arrive: { map: "moc_fild16" }, timeoutMs: 30000, retry: 1, onFail: "stop" },
+        { action: "walk", params: { x: 212, y: 88 }, arrive: { x: 212, y: 88, dist: 2 }, timeoutMs: 30000, retry: 2, onFail: "stop" },
+        { action: "battleOn", params: {} },
+        { action: "loop", params: { back: 3, maxLoops: 500, until: { kill: "沙漠幼狼", killCount: 50 } } },
+        { action: "battleOff", params: {} }
+      ] },
+    { templateId: "bounty_gef", version: 1, name: "自动做赏金任务", desc: "吉芬赏金猎人：接任务 → 打怪 → 回城交付，循环",
+      steps: [
+        { action: "teleport", params: { map: "geffen" }, arrive: { map: "geffen" }, timeoutMs: 30000, retry: 1, onFail: "stop" },
+        { action: "walk", params: { x: 124, y: 73 }, arrive: { x: 124, y: 73, dist: 3 }, timeoutMs: 30000, retry: 2, onFail: "stop" },
+        { action: "talk", params: { npc: "赏金猎人#gef" }, timeoutMs: 8000, retry: 2, onFail: "stop" },
+        { action: "check", params: {}, until: { time: 3 } },
+        { action: "loop", params: { back: 3, maxLoops: 60, until: { item: 7054, count: 10, dropOnly: true } } },
+        { action: "talk", params: { npc: "赏金猎人#gef" }, timeoutMs: 8000, retry: 2, onFail: "skip" }
+      ] },
+    { templateId: "move_item", version: 1, name: "自动转移物品", desc: "把指定物品从本角色转到仓库（先打开仓库窗口）",
+      steps: [
+        { action: "check", params: {}, until: { item: 7054, count: 1 } },
+        { action: "store", params: { item: 7054, count: 10 } },
+        { action: "check", params: {}, until: { time: 2 } },
+        { action: "loop", params: { back: 1, maxLoops: 50, until: { item: 7054, count: 0 } } }
+      ] }
+  ];
+  function loadScripts() {
+    var t = null;
+    try { t = fs.readFileSync(SCRIPTS_FILE, 'utf8'); } catch (e) { t = null; }
+    if (t == null) {
+      try { fs.writeFileSync(SCRIPTS_FILE, JSON.stringify(SCRIPT_SEED, null, 1)); } catch (e) {}
+      return SCRIPT_SEED;
+    }
+    try { return JSON.parse(t) || []; } catch (e) { return []; }
+  }
+  function saveScripts(list) { try { fs.writeFileSync(SCRIPTS_FILE, JSON.stringify(list, null, 1)); } catch (e) {} }
+
+  // 节点上报 + 取指令：POST /api/node/report
+  // body: { node:{id,kind,account,char,map,x,y,hp,mhp,sp,msp,wt,mwt,zeny,script,step,msg}, acked:12 }
+  if (url === '/api/node/report' && req.method === 'POST') {
+    readBody(req, function (body) {
+      var d = null;
+      try { d = JSON.parse(body); } catch (e) { json(res, 400, { ok: false, err: 'bad json' }); return; }
+      var n = d && d.node;
+      if (!n || !n.id) { json(res, 400, { ok: false, err: 'need node.id' }); return; }
+      n._ts = Date.now();
+      var isNew = !NODES[n.id];
+      NODES[n.id] = n;
+      saveNodes();
+      if (isNew) ev('info', n.id, '节点上线 ' + (n.account || '') + ' / ' + (n.char || ''));
+      var acked = (typeof d.acked === 'number') ? d.acked : 0;
+      var c = CMDS[n.id];
+      var out = null;
+      if (c && c.seq > acked) out = { seq: c.seq, cmd: c.cmd };
+      else if (c) { delete CMDS[n.id]; }
+      json(res, 200, { ok: true, ts: n._ts, cmd: out });
+    });
+    return;
+  }
+
+  // 面板读节点表：GET /api/node/state
+  if (url === '/api/node/state') {
+    var nowN = Date.now(), kk = Object.keys(NODES), lst = [], ch = false;
+    for (var ni = 0; ni < kk.length; ni++) {
+      var nn = NODES[kk[ni]];
+      if (!nn || !nn._ts || nowN - nn._ts > 24 * 3600 * 1000) { delete NODES[kk[ni]]; ch = true; continue; }
+      lst.push(nn);
+    }
+    if (ch) saveNodes();
+    json(res, 200, { ts: nowN, nodes: lst, cmds: CMDS });
+    return;
+  }
+
+  // 下发指令：POST /api/cmd   body: { node:'h1', cmd:{ do:'run', script:'bounty' } }
+  if (url === '/api/cmd' && req.method === 'POST') {
+    readBody(req, function (body) {
+      var d2 = null;
+      try { d2 = JSON.parse(body); } catch (e) { json(res, 400, { ok: false, err: 'bad json' }); return; }
+      if (!d2 || !d2.node || !d2.cmd) { json(res, 400, { ok: false, err: 'need node + cmd' }); return; }
+      var seq = ++CMD_SEQ;
+      CMDS[d2.node] = { seq: seq, cmd: d2.cmd, ts: Date.now() };
+      ev('cmd', d2.node, '下发 ' + JSON.stringify(d2.cmd));
+      json(res, 200, { ok: true, seq: seq });
+    });
+    return;
+  }
+
+  // 指令结果回执：POST /api/cmd/ack   body: { node:'h1', seq:12, ok:true, msg:'...' }
+  if (url === '/api/cmd/ack' && req.method === 'POST') {
+    readBody(req, function (body) {
+      var d3 = null;
+      try { d3 = JSON.parse(body); } catch (e) { json(res, 400, { ok: false, err: 'bad json' }); return; }
+      if (!d3 || !d3.node) { json(res, 400, { ok: false, err: 'need node' }); return; }
+      var c3 = CMDS[d3.node];
+      if (c3 && (!d3.seq || c3.seq <= d3.seq)) delete CMDS[d3.node];
+      ev(d3.ok === false ? 'err' : 'ok', d3.node, (d3.ok === false ? '执行失败: ' : '执行完成: ') + (d3.msg || ''));
+      json(res, 200, { ok: true });
+    });
+    return;
+  }
+
+  // 事件流：GET /api/events?since=<ts>
+  if (url === '/api/events') {
+    var qs = require('url').parse(req.url, true).query;
+    var since = parseInt(qs.since || '0', 10) || 0;
+    json(res, 200, { ts: Date.now(), events: EVENTS.filter(function (e4) { return e4.t > since; }) });
+    return;
+  }
+
+  // 脚本库：GET 读取 / POST 覆盖保存
+  if (url === '/api/script') {
+    if (req.method === 'GET') { json(res, 200, { ok: true, scripts: loadScripts() }); return; }
+    if (req.method === 'POST') {
+      readBody(req, function (body) {
+        var d4 = null;
+        try { d4 = JSON.parse(body); } catch (e) { json(res, 400, { ok: false, err: 'bad json' }); return; }
+        var list4 = Array.isArray(d4) ? d4 : (d4 && Array.isArray(d4.scripts) ? d4.scripts : null);
+        if (!list4) { json(res, 400, { ok: false, err: 'need scripts array' }); return; }
+        saveScripts(list4);
+        ev('info', '', '脚本库已保存（' + list4.length + ' 个）');
+        json(res, 200, { ok: true, count: list4.length });
+      });
+      return;
+    }
+    json(res, 405, { ok: false, err: 'method' });
+    return;
+  }
+
+  // 面板页：GET /panel
+  if (url === '/panel' || url === '/panel/') {
+    var pg = null;
+    try { pg = fs.readFileSync(path.join(__dirname, 'panel.html'), 'utf8'); } catch (e) { pg = null; }
+    if (!pg) pg = '<!doctype html><html lang="zh-CN"><body><h1>缺少 tools/panel.html</h1></body></html>';
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(pg);
     return;
   }
 

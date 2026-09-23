@@ -91,9 +91,33 @@ test('shop sell rows use inventory tooltip path',()=>{
 test('teleport shortcuts are profile scoped and capped',()=>{
   assert.ok(source.includes('profiles[k].saved.teleportPoints'));
   assert.ok(source.includes('list.length >= 20'));
-  assert.ok(source.includes('teleportToMap(p.map, function () { walkToXY(p.x, p.y'));
+  assert.ok(source.includes('else gptTeleport(p.map, p.x, p.y);'));
   assert.ok(source.includes('data-tpp-edit'));
   assert.ok(source.includes('data-tpp-del'));
+});
+
+test('GPT teleport builds random-map and exact-coordinate commands',()=>{
+  const code=extract('  function gptSubmit(text) {','  function teleportToMap(map, onArrive) {');
+  const sent=[];const ctx={window:{requirejs:null,require:null},document:{querySelectorAll:()=>[]},String,Number,Math,isFinite,mvLog(){}};
+  vm.createContext(ctx);vm.runInContext(code+';gptSubmit=function(text){sent.push(text);return true};this.teleport=gptTeleport',Object.assign(ctx,{sent}));
+  assert.equal(ctx.teleport('prontera'),true);
+  assert.equal(ctx.teleport('prontera',152,94),true);
+  assert.deepEqual(sent,['请带我去 prontera','请带我去 prontera 152 94 这个坐标']);
+});
+
+test('all teleport entry points avoid legacy airship and world-map clicks',()=>{
+  assert.ok(!source.includes('PRIVATE_AIRSHIP_REQUEST'));
+  assert.ok(!source.includes('document.querySelector(".gogogo")'));
+  assert.ok(source.includes('case "teleport": gptTeleport(p.map, p.x, p.y);'));
+  assert.ok(source.includes('status(gptTeleport(map) ? "GPT 传送请求已提交'));
+  assert.ok(source.includes('var ok = gptTeleport("prontera")'));
+});
+
+test('floating windows handle sub-tabs before event isolation stops bubbling',()=>{
+  assert.ok(source.includes('function onSubTabClick(e)'));
+  assert.ok(source.includes('panel.addEventListener("click", onSubTabClick, false)'));
+  assert.ok(source.includes('body.addEventListener("click", onSubTabClick, false)'));
+  assert.ok(!source.includes('子标签切换统一委托到 document'));
 });
 
 test('lastRO option texts include boss physical damage and max load',()=>{

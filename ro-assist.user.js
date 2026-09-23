@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.26.1
+// @version      2.26.2
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.26.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.26.2"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -988,7 +988,7 @@
       '<button class="sub-tab" data-sub="bk-mvp">BOSS</button></div>' +
       '<div id="dsh-book" style="font-size:11px;max-height:180px;overflow:auto"><div class="st">书本数据读取中…（logsTable 6分类×线路）</div></div>' +
       '<div id="dsh-fw-tp">' +
-      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">世界地图传送 + 坐标走路</span><button class="ghost" id="dsh-fw-btn-tp" data-fw="tp" style="flex:0 0 auto;padding:0 8px;font-size:11px">⧉ 浮窗</button></div>' +
+      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">GPT 地图传送 + 坐标前往</span><button class="ghost" id="dsh-fw-btn-tp" data-fw="tp" style="flex:0 0 auto;padding:0 8px;font-size:11px">⧉ 浮窗</button></div>' +
       '<div class="row"><span class="lb">世界</span><select id="dsh-world" style="flex:0 0 100px"><option value="黑暗大陆">黑暗大陆</option><option value="次元大陆">次元大陆</option><option value="局部地图01">局部地图01</option><option value="局部地图02">局部地图02</option></select>' +
       '<button id="dsh-tp" style="flex:0 0 auto">传送</button><span class="st" id="dsh-tpmsg"></span></div>' +
       '<div class="row" style="align-items:center;flex-wrap:wrap;gap:7px 7px"><span class="lb" style="min-width:34px;margin:0">地图</span>' +
@@ -997,13 +997,13 @@
       '<div id="dsh-maplist" style="display:none;position:absolute;top:calc(100% + 3px);left:0;right:0;z-index:99;background:#fff;border:1px solid #b8c6d4;border-radius:4px;max-height:180px;overflow:auto;box-shadow:0 3px 8px rgba(0,0,0,.18)"></div></div></div>' +
       '<div class="row" style="margin-top:8px;gap:7px"><button class="ghost" id="dsh-mapload" style="flex:0 0 auto">读地图</button><button id="dsh-tp-map" style="flex:0 0 auto">传送</button><button class="ghost" id="dsh-tp-walk" style="flex:0 0 auto">走去</button><span class="st" id="dsh-tpmsg2" style="font-size:11px"></span></div>' +
       '<div class="st" id="dsh-route" style="font-size:11px;margin-top:6px">路线：-</div>' +
-      '<div class="sec">坐标走路（指定 xy / 跨图落点）</div>' +
+      '<div class="sec">指定坐标（同图走路 / 跨图 GPT 直达）</div>' +
       '<div class="row" style="align-items:center;flex-wrap:wrap;gap:7px"><span class="lb" style="min-width:34px;margin:0">地图</span>' +
       '<input id="dsh-mvmap" type="text" placeholder="地图英文名·留空=当前图" autocomplete="off" style="flex:1 1 140px;min-width:100px;padding:3px 6px">' +
       '<span class="lb" style="min-width:14px;margin:0">X</span><input id="dsh-mvx" type="number" placeholder="x" style="flex:0 0 56px;padding:3px 6px">' +
       '<span class="lb" style="min-width:14px;margin:0">Y</span><input id="dsh-mvy" type="number" placeholder="y" style="flex:0 0 56px;padding:3px 6px"></div>' +
       '<div class="row" style="margin-top:6px;gap:7px"><button class="ghost" id="dsh-mvcur" style="flex:0 0 auto">填入当前位置</button>' +
-      '<button id="dsh-mvgo" style="flex:0 0 auto">走路过去</button><button class="ghost" id="dsh-mvstop" style="flex:0 0 auto">停止</button>' +
+      '<button id="dsh-mvgo" style="flex:0 0 auto">前往</button><button class="ghost" id="dsh-mvstop" style="flex:0 0 auto">停止</button>' +
       '<span class="st" id="dsh-mvlog" style="font-size:11px"></span></div>' +
       '<div class="sec">快捷传送点（当前角色 · 最多 20 条）</div>' +
       '<div class="row"><input id="dsh-tpp-name" type="text" maxlength="24" placeholder="地点名称" style="flex:1 1 110px;min-width:80px">' +
@@ -1609,6 +1609,7 @@
         "background:var(--dsh-close) no-repeat;background-size:11px 11px;cursor:pointer;font-size:0;line-height:0;color:transparent;";
       var body = document.createElement("div");
       body.className = "ro-fw-body";
+      body.addEventListener("click", onSubTabClick, false);
       body.style.cssText = "overflow:auto;flex:1 1 auto;min-height:0;padding:5px;border-top:1px solid #7897b9;background:#fff;color:#111;font:13px/1.6 'Microsoft YaHei',system-ui,sans-serif;";
       // V2.22.0：浮窗内容被移到面板外，挂在 #dsh-ro-panel 下的样式全部失效（浮窗一直是裸样式）。
       // 这里把同一份 PANEL_CSS 的作用域整体换成 .ro-fw-body 注入浮窗，保证浮窗与面板观感一致。
@@ -2140,19 +2141,18 @@
     var t = e.target.closest && e.target.closest(".tab");
     if (t) switchPage(t.getAttribute("data-page"));
   });
-  // 子标签切换统一委托到 document：区块移进独立浮窗后仍可切页。
-  document.addEventListener("click", function (e) {
+  // 子标签监听放在面板/浮窗内部；根节点会阻止事件冒泡到 document，不能依赖 document 委托。
+  function onSubTabClick(e) {
     var st = e.target.closest && e.target.closest(".sub-tab");
     if (!st || !inAssistantUI(st)) return;
-    // V2.21.0：向上找同时含 .sub-page 的容器（页内 / 浮窗里都能切）
     var host = st.parentNode;
     while (host && host.querySelector && !host.querySelector(".sub-page")) host = host.parentNode;
     if (!host) return;
     host.querySelectorAll(".sub-tab").forEach(function (t) { t.classList.toggle("active", t === st); });
     host.querySelectorAll(".sub-page").forEach(function (p) { p.classList.toggle("active", p.getAttribute("data-subpage") === st.getAttribute("data-sub")); });
-    // 传送页书本按分类重渲染
-    if (host.querySelector("#dsh-book")) { try { renderBook(); } catch (e) {} }
-  });
+    if (host.querySelector("#dsh-book")) { try { renderBook(); } catch (err) {} }
+  }
+  panel.addEventListener("click", onSubTabClick, false);
 
   // ---------------- 拖动（标题栏 + 悬浮球 + 拉伸手柄）----------------
   function dragEl(el, onmove, scaleFn, onEnd) {
@@ -7085,7 +7085,7 @@
       if (pendingPick) { try { zMon.action = "拾取物品中"; } catch (e) {} return; } // V2.15.16：有拾取任务在身 → 寻怪让位（防拾取移动包被寻怪覆盖）
       var ent = CLIENT.SS.Entity;
       if (!ent || !ent.position) return;
-      // V2.16.8 换图检测 + 反向走回（走路跨图）；反向走 8s 没回图 → 世界地图传送回启动图
+      // V2.16.8 换图检测 + 反向走回（走路跨图）；反向走 8s 没回图 → GPT 传送回启动图
       try {
         var curKeyB = getMapName();
         if (zWalkState.startMap && curKeyB && normMapKey(curKeyB) !== normMapKey(zWalkState.startMap)) {
@@ -9298,14 +9298,12 @@
       for (var i = 0; i < subs.length; i++) if (subs[i].classList.contains("active")) active = subs[i].getAttribute("data-sub");
       var it = tbl[catMap[active]] && tbl[catMap[active]][key];
       if (!it) { setStatus("书本条目不存在", "err"); return; }
-      // 尝试私人飞艇（map#x#y）；失败则走 path 步行
+      // 书本坐标统一交给 GPT 传送；不再发送私人飞艇包。
       if (it.outset && it.outset.length >= 3 && clientReady()) {
-        var p = new CLIENT.PS.CZ.PRIVATE_AIRSHIP_REQUEST();
-        p.mapname = it.outset[0]; p.x = it.outset[1]; p.y = it.outset[2];
-        p.type = 1; p.itemid = 14527;
-        CLIENT.NM.sendPacket(p);
-        setStatus("书本前往: " + (it.npc || "") + "（飞艇，耗会员卡14527）", "ok");
-        tlog("book-goto " + (it.npc || ""));
+        if (gptTeleport(it.outset[0], it.outset[1], it.outset[2])) {
+          setStatus("书本前往: " + (it.npc || "") + "（GPT 指定坐标）", "ok");
+          tlog("book-goto-gpt " + (it.npc || ""));
+        }
         return;
       }
       if (it.path && it.path.length && clientReady()) {
@@ -9320,7 +9318,7 @@
     } catch (e) { setStatus("前往异常: " + e.message, "err"); }
   }
 
-  // ---------------- 世界地图传送（v1.7.5 输入联想版）----------------
+  // ---------------- GPT 地图传送（保留 v1.7.5 地图输入联想）----------------
   var mapCache = []; // {map:"prontera", cn:"普隆德拉"} 已读取地图缓存（持久化 saved.mapCache）
   try { if (Array.isArray(saved.mapCache) && saved.mapCache.length) mapCache = saved.mapCache.map(function (x) { return { map: String(x.map || ""), cn: String(x.cn || "") }; }); } catch (e) {}
   function mapCn(map) {
@@ -9386,23 +9384,9 @@
   });
   $id("dsh-tp").addEventListener("click", function () {
     try {
-      var world = $id("dsh-world").value;
-      var wsel = document.querySelector(".bigworld select, select[data-id], .container select");
-      var clicked = false;
-      if (wsel && wsel.options.length) {
-        for (var i = 0; i < wsel.options.length; i++) {
-          if (wsel.options[i].textContent === world || wsel.options[i].value === world) {
-            wsel.selectedIndex = i;
-            try { wsel.dispatchEvent(new Event("change", { bubbles: true })); } catch (e) {}
-            clicked = true;
-            break;
-          }
-        }
-      }
-      var go = document.querySelector(".gogogo");
-      if (go) { go.click(); clicked = true; }
-      $id("dsh-tpmsg").textContent = clicked ? "已执行（查看游戏内结果）" : "未找到传送窗口：请先在游戏内打开世界地图一次";
-      if (!clicked) console.log("[RO助手] 传送定位: .bigworld=" + !!document.querySelector(".bigworld") + " .gogogo=" + !!document.querySelector(".gogogo"));
+      var world = ($id("dsh-world").value || "").trim();
+      var ok = gptTeleport(world);
+      $id("dsh-tpmsg").textContent = ok ? "GPT 传送请求已提交 → " + world : "GPT 传送提交失败";
     } catch (e) { $id("dsh-tpmsg").textContent = "传送异常: " + e.message; }
   });
   // 从元素提取地图名（data-map / id / 背景图 map/*.png·bmp）——PC .bigworld td 与手机嗅探共用
@@ -9519,14 +9503,10 @@
   }
   $id("dsh-tp-map").addEventListener("click", function () {
     try {
-      var m = $id("dsh-map").value;
-      if (!m) { $id("dsh-tpmsg2").textContent = "先点「读地图」选择目标地图"; return; }
-      var cell = findMapCell(m);
-      var clicked = false;
-      if (cell) { try { cell.click(); clicked = true; } catch (e) {} }
-      var go = document.querySelector(".gogogo");
-      if (go) { try { go.click(); clicked = true; } catch (e) {} }
-      $id("dsh-tpmsg2").textContent = clicked ? "已前往 " + m : "未找到世界地图窗口：请先在游戏内打开世界地图";
+      var m = ($id("dsh-map").value || "").trim();
+      if (!m) { $id("dsh-tpmsg2").textContent = "先选择或输入目标地图"; return; }
+      var ok = gptTeleport(m);
+      $id("dsh-tpmsg2").textContent = ok ? "GPT 传送请求已提交 → " + m : "GPT 传送提交失败";
     } catch (e) { $id("dsh-tpmsg2").textContent = "前往异常: " + e.message; }
   });
   $id("dsh-tp-walk").addEventListener("click", function () {
@@ -9585,18 +9565,37 @@
       mvLog("已填入当前图 " + (mm || "?") + " 坐标 (" + cpos + ")");
     } catch (e) { mvLog("填入失败: " + e.message); }
   }
-  // 世界地图 .gogogo 免费传送：findMapCell 点目标图格子 + 点 .gogogo → 轮询 getMapName 变目标图（超时 20s）
-  function teleportToMap(map, onArrive) {
-    var t0 = Date.now();
-    var clicked = false;
+  // GPT 频道是 lastRO 自带能力：沿用聊天组件切换频道与 submit 流程，不自行构造传送包。
+  function gptSubmit(text) {
     try {
-      var cell = findMapCell(map);
-      if (cell) { try { cell.click(); clicked = true; } catch (e) {} }
-      var go = document.querySelector(".gogogo");
-      if (go) { try { go.click(); clicked = true; } catch (e) {} }
-    } catch (e) {}
-    if (!clicked) { mvLog("传送失败：未定位世界地图窗口（请先游戏内打开一次世界地图）"); return; }
-    mvLog("传送中 → " + map + " …");
+      var req = window.requirejs || window.require;
+      if (!req || !req.defined || !req.defined("UI/Components/ChatBox/ChatBox")) return false;
+      var chat = req("UI/Components/ChatBox/ChatBox");
+      if (!chat || !chat.ui || !chat.TYPE || !chat.TYPE.GPTA || typeof chat.submit !== "function") return false;
+      chat.ui.find(".input .filter").trigger("click");
+      var menu = document.querySelectorAll("#ContextMenu .menu div"), gpt = null;
+      for (var i = 0; i < menu.length; i++) if ((menu[i].textContent || "").trim() === "GPT") { gpt = menu[i]; break; }
+      if (!gpt) return false;
+      gpt.click();
+      chat.ui.find(".input .username").val("");
+      chat.ui.find(".input .message").val(text);
+      chat.submit();
+      return true;
+    } catch (e) { return false; }
+  }
+  function gptTeleport(map, x, y, onArrive) {
+    map = String(map || "").trim();
+    var hasXY = x != null && y != null && isFinite(Number(x)) && isFinite(Number(y));
+    if (!map) { mvLog("GPT 传送失败：地图名为空"); return false; }
+    var text = "请带我去 " + map + (hasXY ? " " + Math.floor(Number(x)) + " " + Math.floor(Number(y)) + " 这个坐标" : "");
+    if (!gptSubmit(text)) { mvLog("GPT 传送失败：聊天组件或 GPT 频道未就绪"); return false; }
+    mvLog("GPT 传送请求已提交 → " + map + (hasXY ? " (" + Math.floor(Number(x)) + "," + Math.floor(Number(y)) + ")" : "（随机落点）"));
+    if (typeof onArrive === "function") waitTeleportMap(map, onArrive);
+    return true;
+  }
+  function teleportToMap(map, onArrive) { return gptTeleport(map, null, null, onArrive); }
+  function waitTeleportMap(map, onArrive) {
+    var t0 = Date.now();
     var iv = setInterval(function () {
       try {
         var cur = getMapName();
@@ -9642,7 +9641,7 @@
     if (!p) return;
     var cur = getMapName();
     if (cur && normMapKey(cur) === normMapKey(p.map)) walkToXY(p.x, p.y, null, "dsh-mvlog");
-    else teleportToMap(p.map, function () { walkToXY(p.x, p.y, null, "dsh-mvlog"); });
+    else gptTeleport(p.map, p.x, p.y);
     tpPointMsg("前往 " + p.name + "：" + p.map + " (" + p.x + "," + p.y + ")");
   }
   $id("dsh-tpp-current").addEventListener("click", function () {
@@ -9696,7 +9695,7 @@
       if (sameMap) {
         walkToXY(x, y, null, "dsh-mvlog");
       } else {
-        teleportToMap(want, function () { walkToXY(x, y, null, "dsh-mvlog"); });
+        gptTeleport(want, x, y);
       }
     } catch (e) { mvLog("走路异常: " + e.message); }
   });
@@ -9707,13 +9706,8 @@
   var selNpc = null; // 当前选中的 NPC {GID,name,pos}
   $id("dsh-tp-town").addEventListener("click", function () {
     try {
-      var clicked = false;
-      var cell = document.querySelector('.bigworld td[data-map="prontera"], .bigworld td[data-map="map_prontera"], td[data-map*="pron"]');
-      if (cell) { try { cell.click(); clicked = true; } catch (e) {} }
-      var go = document.querySelector(".gogogo");
-      if (go) { try { go.click(); clicked = true; } catch (e) {} }
-      $id("dsh-tpmsg2").textContent = clicked ? "回城指令已发" : "未定位到世界地图：请先在游戏内打开世界地图";
-      if (!clicked) console.log("[RO助手] 回城定位: 城镇格子=" + !!cell + " gogogo=" + !!go);
+      var ok = gptTeleport("prontera");
+      $id("dsh-tpmsg2").textContent = ok ? "GPT 回城请求已提交" : "GPT 回城提交失败";
     } catch (e) { $id("dsh-tpmsg2").textContent = "回城异常: " + e.message; }
   });
   $id("dsh-scan-npc").addEventListener("click", function () {
@@ -12313,7 +12307,7 @@
     var p = step.params || {};
     try {
       switch (step.action) {
-        case "teleport": teleportToMap(p.map); break;
+        case "teleport": gptTeleport(p.map, p.x, p.y); break;
         case "walk": walkToXY(p.x, p.y, null, "dsh-scr-log"); break;
         case "battleOn": setBattle(true); break;
         case "battleOff": setBattle(false); break;
@@ -12704,28 +12698,14 @@
       line.appendChild(info); mvpTimerBody.appendChild(line);
     });
   }
-  var mvpTravel = null;
   function mvpTeleport(map) {
     if (!/^[a-z0-9_]{1,15}$/i.test(map)) return;
     function status(text) { if (mvpActionStatus) mvpActionStatus.textContent = text; }
     function current() { return String(getMapName() || "").replace(/\.gat$/i, "").toLowerCase(); }
-    if (mvpTravel) { status("正在前往 " + mvpTravel.map + "，请等待结果"); return; }
     if (!clientReady()) { status("传送失败：客户端未就绪，请先进入游戏"); return; }
     if (current() === map.toLowerCase()) { status("已在目标地图 " + map); return; }
     try {
-      var Packet = CLIENT.PS && CLIENT.PS.CZ && CLIENT.PS.CZ.PRIVATE_AIRSHIP_REQUEST;
-      if (typeof Packet !== "function") { status("当前客户端缺少传送接口 PRIVATE_AIRSHIP_REQUEST"); return; }
-      // 与本地 Online.js 世界地图确认按钮一致：mapname + itemid=14527，其他字段沿用默认值。
-      var pkt = new Packet(); pkt.mapname = map; pkt.itemid = 14527;
-      CLIENT.NM.sendPacket(pkt);
-      status("传送请求已发送 → " + map + "，等待游戏确认…");
-      var started = Date.now();
-      mvpTravel = { map: map, timer: setInterval(function () {
-        var arrived = current() === map.toLowerCase();
-        if (!arrived && Date.now() - started < 20000) return;
-        clearInterval(mvpTravel.timer); mvpTravel = null;
-        status(arrived ? "已到达 " + map : "未到达 " + map + "；请查看游戏提示（地图限制或传送条件）");
-      }, 500) };
+      status(gptTeleport(map) ? "GPT 传送请求已提交 → " + map : "GPT 传送提交失败");
     } catch (e) { status("传送失败：" + e.message); }
   }
   function mvpInit() {

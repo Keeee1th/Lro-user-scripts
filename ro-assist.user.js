@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.22.0
+// @version      2.23.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.22.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.23.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -884,6 +884,44 @@
       '<div class="sec">② 指定 ID 拾取（怪物掉落树 · 点选物品加入）</div>' +
       '<div class="row"><span class="lb">当前地图</span><span class="st" id="dsh-pickmap" style="flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—（未进图）</span>' +
       '<button class="ghost" id="dsh-pickmapbtn" style="flex:0 0 auto">本图怪物掉落</button></div>' +
+      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">画面性能（降画质 · 关光影特效 · 多开锁帧）</span>' +
+      '<button class="ghost" id="dsh-fw-btn-perf" data-fw="perf" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
+      '<div id="dsh-fw-perf">' +
+      '<div class="row"><label class="switch"><input id="dsh-perf-on" type="checkbox" checked>启用画面优化（默认开启）</label><span class="st" id="dsh-perf-state" style="margin-left:auto"></span></div>' +
+      '<div class="sec">渲染分辨率</div>' +
+      '<div class="row"><span class="lb">画质</span><select id="dsh-perf-q" style="flex:0 0 108px">' +
+      '<option value="100">100%（原画）</option><option value="80">80%</option><option value="70">70%</option>' +
+      '<option value="60">60%</option><option value="50" selected>50%（默认）</option><option value="40">40%</option><option value="30">30%</option></select>' +
+      '<span class="st">越低越省，画面越糊</span></div>' +
+      '<div class="sec">画面效果（关掉更省）</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-perf-fog" type="checkbox">雾气</label>' +
+      '<label class="switch"><input id="dsh-perf-lightmap" type="checkbox">光照贴图</label></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-perf-effect" type="checkbox">技能特效</label>' +
+      '<label class="switch"><input id="dsh-perf-mineffect" type="checkbox" checked>自己的特效</label></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-perf-miss" type="checkbox" checked>Miss 文字</label></div>' +
+      '<div class="sec">多开帧率</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-perf-fpslock" type="checkbox">限制帧率</label>' +
+      '<input id="dsh-perf-fps" type="number" value="15" min="5" max="30" step="5" style="flex:0 0 44px"><span class="st">帧/秒（多开挂机建议 10~15）</span></div>' +
+      '<div class="log">画质 = 按百分比渲染再拉回原尺寸，50 就是半分辨率渲染，帧率提升最明显。效果开关直接改客户端渲染设置，改完立即生效（个别开关重进地图才彻底生效）。设置写进客户端存档，重开游戏依然有效。关掉总开关会自动还原成原始画质与效果。</div>' +
+      '<div class="row"><button class="ghost" id="dsh-perf-apply" style="flex:1">重新应用（立即生效）</button></div>' +
+      '</div>' +
+      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">当前目标（正在打谁 · 血量 · 距离）</span>' +
+      '<button class="ghost" id="dsh-fw-btn-tgt" data-fw="tgt" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
+      '<div id="dsh-fw-tgt">' +
+      '<div class="row"><span id="dsh-tgt-name" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">未锁定目标</span>' +
+      '<span class="tag blue" id="dsh-tgt-dist" style="flex:0 0 auto">—</span></div>' +
+      '<div class="row"><span style="flex:1;height:9px;border:1px solid #b8c6d4;background:#eef3fa;border-radius:2px;overflow:hidden"><i id="dsh-tgt-hp" style="display:block;height:100%;width:0%;background:#8a97a8"></i></span>' +
+      '<span class="st" id="dsh-tgt-hptxt" style="flex:0 0 96px;text-align:right">—</span></div>' +
+      '<div class="row"><span class="st" id="dsh-tgt-extra" style="font-size:11px">—</span></div>' +
+      '<div class="log">显示助手当前锁定的目标：名字 / 血量 / 距离 / 状态。挂机时用来确认有没有打错怪。</div>' +
+      '</div>' +
+      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">队伍血条（队员血量）</span>' +
+      '<button class="ghost" id="dsh-fw-btn-party" data-fw="party" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
+      '<div id="dsh-fw-party">' +
+      '<div class="row"><label class="switch"><input id="dsh-party-self" type="checkbox" checked>包含自己</label><span class="st" id="dsh-party-count" style="margin-left:auto">0 人</span></div>' +
+      '<div id="dsh-party-list"><span class="st">加入队伍后这里显示队员血条。</span></div>' +
+      '<div class="log">队员血量直接读客户端队伍组件（不额外发包）。组队挂机时用来看谁快没血了。</div>' +
+      '</div>' +
       '<div id="dsh-fw-mlock">' +
       '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">怪物锁定目录（只打勾选的怪）</span><button class="ghost" id="dsh-fw-btn-mlock" data-fw="mlock" style="flex:0 0 auto;padding:0 8px;font-size:11px">⧉ 浮窗</button></div>' +
       '<details style="margin:4px 0" open><summary>本图怪物锁定（读当前地图怪物表 · 勾选=锁定）</summary>' +
@@ -921,8 +959,7 @@
       '<div class="row"><span class="lb">轮询间隔</span><input id="dsh-sync-int" type="number" value="15" min="1" max="120" style="flex:0 0 48px">' +
       '<span style="color:#5a6b7f">秒（从号调小=同步更快，1~120）</span></div>' +
       '<div class="row"><span class="st" id="dsh-sync-state" style="font-size:11px">同步器关闭</span></div>' +
-      '<div class="row"><label class="switch"><input id="dsh-savemem" type="checkbox">省内存模式（画质50 + 关特效/雾/光照 · 多开省内存）</label></div>' +
-      '<div class="row"><label class="switch"><input id="dsh-fpslock" type="checkbox">多开帧率限制</label><input id="dsh-fps" type="number" value="15" min="5" max="30" step="5" style="flex:0 0 44px"><span style="color:#5a6b7f">帧（挂机多开锁帧省 CPU，建议 10~15）</span></div>' +
+      '<div class="row"><span class="st">画质、画面效果、多开帧率限制已移到独立模块：功能菜单 → 画面性能</span></div>' +
       '<div class="log">主号点地板/点NPC → 中心广播 → 从号自动执行（地图相同才动）。间隔=取回广播的频率：从号设 1~3 秒几乎实时跟随；中心有未执行指令时自动加速到 3 秒。设置按角色自动保存。</div>' +
       '</div>' +
       '</div></div>',
@@ -990,7 +1027,10 @@
       '<div class="sec">面板</div>' +
       '<div class="row"><span class="lb">状态</span><span id="dsh-status" class="warn">等待启动…</span></div>' +
       '<div class="row"><span class="lb">大小</span><span class="st">右下角 ↘ 拖动手柄可拉伸</span></div>' +
-      '<div class="row"><span class="lb">快捷键</span><span class="st">已全部移到「功能菜单」里逐个功能设置（点悬浮球打开菜单，每行右侧的键位按钮）</span></div>' +
+      '<div class="row"><span class="lb">快捷键</span><span class="st">在「功能菜单」里逐个功能设置（点悬浮球打开菜单，每行右侧的键位按钮）</span></div>' +
+      '<div class="sec">键位检测</div>' +
+      '<div class="row"><span class="st" id="dsh-hkprobe" style="font-size:11px;word-break:break-all">最近按键：还没有收到按键（把浏览器标签页点到最前面再按）</span></div>' +
+      '<div class="log">按任意键会显示在这里：键码 / 按键 / 修饰键 / 是否命中功能。用来判断快捷键问题是「收不到按键」还是「判定错了」。命中但功能没反应，说明该功能的总开关被关掉了。</div>' +
       '<div class="log">V2.18.0：快捷键改为在「功能菜单」里按功能设置 —— 左键点键位按钮 → 按下组合键（支持 Ctrl/Alt/Shift/Win + 键，功能键 F1~F12 也可）；Esc 取消；右键键位按钮清除；20 秒不按自动取消。所有快捷键都是单键切换（按一次开、再按一次关）。同一组合不可重复绑定；功能总开关关掉后该功能的快捷键也不响应；输入框内打字时不触发。注意：浏览器标签页必须在最前面才收得到按键。</div>' +
       '<div class="sec">登录验证自动过</div>' +
       '<div class="row"><label class="switch"><input id="dsh-capauto" type="checkbox" checked>自动过验证</label><span class="st" id="dsh-capstate" style="font-size:10px;margin-left:auto">待命</span></div>' +
@@ -1593,6 +1633,7 @@
       st.body.appendChild(st.host);
       win.style.display = "flex";
       fwOpenIds[id] = true;
+      fwPersist();
       try { var b = document.getElementById("dsh-fw-btn-" + id); if (b) b.textContent = "收回"; } catch (e) {}
       try { localStorage.setItem("dsh_ro_fwpos", JSON.stringify((function () { var m = {}; for (var k in fwState) { var w = fwState[k].win; if (w) m[k] = { l: w.offsetLeft, t: w.offsetTop }; } return m; })())); } catch (e) {}
     } catch (e) {}
@@ -1608,10 +1649,28 @@
       var win = st.win;
       if (win) win.style.display = "none";
       fwOpenIds[id] = false;
-      try { var b = document.getElementById("dsh-fw-btn-" + id); if (b) b.textContent = "⧉ 浮窗"; } catch (e) {}
+      fwPersist();
+      try { var b = document.getElementById("dsh-fw-btn-" + id); if (b) b.textContent = "浮窗"; } catch (e) {}
     } catch (e) {}
   }
   function fwToggle(id) { try { console.log("[FW-DIAG] fwToggle id=" + id + " currentlyOpen=" + !!fwOpenIds[id]); if (fwOpenIds[id]) fwClose(id); else fwOpen(id); } catch (e) { console.log("[FW-DIAG] fwToggle error: " + e.message); } }
+  // V2.23.0：浮窗开启状态持久化 —— 挂机时重开客户端后「当前目标/队伍血条」等浮窗自动回来
+  var fwRestored = false;
+  function fwPersist() {
+    try {
+      var m = {};
+      for (var k in fwOpenIds) { if (fwOpenIds[k]) m[k] = 1; }
+      localStorage.setItem("dsh_ro_fwopen_v1", JSON.stringify(m));
+    } catch (e) {}
+  }
+  function fwRestore() {
+    if (fwRestored) return;
+    fwRestored = true;
+    try {
+      var m = JSON.parse(localStorage.getItem("dsh_ro_fwopen_v1") || "{}");
+      for (var k in m) { if (m[k] && roModOn(k) && !fwOpenIds[k]) { try { fwOpen(k); } catch (e) {} } }
+    } catch (e) {}
+  }
   // 注册区块：getEl 返回要浮窗化的容器节点（其父容器为原位）
   function fwReg(id, title, getEl) {
     try { console.log("[FW-DIAG] fwReg id=" + id + " title=" + title); if (!fwState[id]) fwState[id] = {}; fwState[id].title = title; fwState[id].getEl = getEl; var el = getEl(); if (el) { fwState[id].host = el; console.log("[FW-DIAG] fwReg id=" + id + " host found"); } else { console.log("[FW-DIAG] fwReg id=" + id + " host NOT found"); } } catch (e) { console.log("[FW-DIAG] fwReg error: " + e.message); }
@@ -1637,6 +1696,9 @@
     });
     // V2.15.1 物品（拾取+背包整理）浮窗：标准浮窗（可拖动/透明/×收回）
     fwReg("item", "物品 · 拾取+背包整理", function () { return document.getElementById("dsh-fw-item"); });
+    fwReg("perf", "画面性能", function () { return document.getElementById("dsh-fw-perf"); });
+    fwReg("tgt", "当前目标", function () { return document.getElementById("dsh-fw-tgt"); });
+    fwReg("party", "队伍血条", function () { return document.getElementById("dsh-fw-party"); });
     panel.addEventListener("click", function (ev) {
       try {
         var b = ev.target && ev.target.closest ? ev.target.closest("[data-fw]") : null;
@@ -1678,6 +1740,9 @@
     { id: "zhu2",  name: "助手战斗设置",    kind: "fw" },
     { id: "aid",   name: "战斗辅助",        kind: "fw" },
     { id: "item",  name: "物品 · 拾取与整理", kind: "fw" },
+    { id: "perf",  name: "画面性能",        kind: "fw" },
+    { id: "tgt",   name: "当前目标",        kind: "fw" },
+    { id: "party", name: "队伍血条",        kind: "fw" },
     { id: "mvp",   name: "MVP 计时",        kind: "custom" },
     { id: "zhud",  name: "战斗监控横条",    kind: "custom" },
     { id: "ztip",  name: "动作提示条",      kind: "custom", noToggle: true }
@@ -2200,7 +2265,11 @@
       if (o && typeof o === "object") hkCfg = o;
     } catch (e) {}
     try {
-      if (!hkCfg.panel && !hkCfg.np && !hkCfg.zhu) {
+      var migDone = false;
+      try { migDone = localStorage.getItem("dsh_ro_hotkeys_mig") === "1"; } catch (e0) {}
+      // V2.23.0：迁移只做一次。旧逻辑是「三个键位都空就重新导入旧数据」，
+      // 导致用户清除键位后一刷新又被旧数据复活。
+      if (!migDone && Object.keys(hkCfg).length === 0) {
         var o1 = JSON.parse(localStorage.getItem(HK_KEY1) || "{}");
         if (o1 && (o1.hotkey || o1.hotkeyNp || o1.hotkeyZhu)) {
           if (o1.hotkey) hkCfg.panel = o1.hotkey;
@@ -2210,6 +2279,7 @@
         }
       }
     } catch (e) {}
+    try { localStorage.setItem("dsh_ro_hotkeys_mig", "1"); } catch (e0) {}
     return hkCfg;
   }
   function hkSave() { try { localStorage.setItem(HK_KEY2, JSON.stringify(hkCfg || {})); } catch (e) {} }
@@ -2245,7 +2315,16 @@
   function hkIsTyping(e) {
     try {
       var el = e.target;
-      return !!(el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable));
+      if (!el) return false;
+      if (el.isContentEditable) return true;
+      if (el.tagName === "TEXTAREA") return true;
+      if (el.tagName === "INPUT") {
+        // V2.23.0：只有文本类输入框才屏蔽快捷键。旧版把所有 INPUT 都算「正在打字」，
+        // 导致点过面板里任意一个勾选框后焦点留在复选框上，之后所有快捷键全部失灵。
+        var t = String(el.type || "text").toLowerCase();
+        return t === "text" || t === "number" || t === "password" || t === "search" || t === "email" || t === "tel" || t === "url";
+      }
+      return false;
     } catch (e2) { return false; }
   }
   function hkToggle() {
@@ -2318,23 +2397,51 @@
         setStatus("「" + hkName(curT) + "」快捷键已设为 " + hkLabel(h), "ok");
         return;
       }
+      if (e.repeat) return; // V2.23.0：按住不放的连发不再重复触发（旧版会把内挂开关连点发包几十次）
       if (hkIsTyping(e)) return; // 打字/输入框聚焦时不响应
       if (e.key === "Control" || e.key === "Alt" || e.key === "Shift" || e.key === "Meta") return;
       var cfg = hkLoad();
+      var hit = null;
       for (var id in cfg) {
         var hh = cfg[id];
         if (!hh || !hh.key) continue;
-        var match = (hh.ctrl === (e.ctrlKey || e.metaKey)) && (hh.alt === !!e.altKey) && (hh.shift === !!e.shiftKey) &&
+        // V2.23.0：四个修饰键各自独立严格比对。旧版把 Ctrl 和 Win 混在一起比，
+        // 导致 Win 组合永远按不出来、而 Win+K 会误触发绑在 Ctrl+K 上的功能。
+        var match = (!!hh.ctrl === !!e.ctrlKey) && (!!hh.alt === !!e.altKey) && (!!hh.shift === !!e.shiftKey) && (!!hh.meta === !!e.metaKey) &&
           ((hh.key === (e.code || e.key)) || (hh.key === e.key));
         if (!match) continue;
         e.preventDefault();
         e.stopPropagation();
         hkAction(id);
+        hit = id;
         break;
       }
+      if (!hit) hkProbe(e, null);
     } catch (e3) {}
   }, true);
 
+  // V2.23.0 键位检测：记录最近 3 次按键，显示在系统页 —— 用来区分「收不到按键」和「收到了但判定错」
+  var hkProbeLog = [];
+  function hkProbe(e, hitId) {
+    try {
+      var s = "键码 " + (e.code || e.key || "?") + " / " + (e.key || "?");
+      if (e.ctrlKey) s += " +Ctrl";
+      if (e.altKey) s += " +Alt";
+      if (e.shiftKey) s += " +Shift";
+      if (e.metaKey) s += " +Win";
+      s += hitId ? (" → 命中「" + hkName(hitId) + "」") : " → 未绑定";
+      hkProbeLog.unshift(s);
+      if (hkProbeLog.length > 3) hkProbeLog.length = 3;
+      renderHkProbe();
+    } catch (e2) {}
+  }
+  function renderHkProbe() {
+    try {
+      var el = document.getElementById("dsh-hkprobe");
+      if (!el || el.offsetParent === null) return; // 系统页没打开时不碰 DOM（不拖累游戏帧率）
+      el.textContent = hkProbeLog.length ? ("最近按键：" + hkProbeLog.join("　|　")) : "最近按键：还没有收到按键（把浏览器标签页点到最前面再按）";
+    } catch (e2) {}
+  }
   // 悬浮球自动靠边：窗口尺寸变化时保持球在视口内（贴边不丢失）
   function snapBallToEdge() {
     try {
@@ -2626,7 +2733,9 @@
       var fp0 = syncOpFinger(sync.op);
       if (fp0 && syncBCLast[fp0] && (Date.now() - syncBCLast[fp0]) < 10000) { syncAcked = Math.max(syncAcked, sync.seq); return; }
       if (syncCfg().mode === "master") { syncAcked = sync.seq; return; } // 只当主号 → 直接确认跳过
-      var op = sync.op, myMap = syncMapKey(), opMap = String(op.map || "").replace(/\.gat$/i, "").toLowerCase();
+      var op = sync.op;
+      if (op.type === "perf") { perfPull(op); syncAcked = Math.max(syncAcked, sync.seq); return; } // V2.23.0：画面性能设置随同步器联动
+      var myMap = syncMapKey(), opMap = String(op.map || "").replace(/\.gat$/i, "").toLowerCase();
       var ok = false;
       if (op.type === "move" && opMap === myMap && isFinite(op.x) && isFinite(op.y)) {
         ok = walkToXY(op.x, op.y, null, "dsh-synclog");
@@ -2651,6 +2760,7 @@
   function syncExecOp(op) {
     try {
       if (!op) return false;
+      if (op.type === "perf") { perfPull(op); return true; } // V2.23.0：画面性能设置随同步器联动
       var myMap = syncMapKey(), opMap = String(op.map || "").replace(/\.gat$/i, "").toLowerCase();
       if (opMap !== myMap) return true; // 地图不同：确认跳过
       var ok = false;
@@ -2738,42 +2848,132 @@
       startAcctReport(); // V2.15.14 上报始终开启，与同步器开关解耦
     } catch (e) {}
   }
-  // ---------------- 省内存模式（V2.15.15）：降画质 + 关特效/雾/光照，多开省内存 ----------------
-  var savememOld = null; // 开启时记录原画质，关闭时恢复
-  function savememApply() {
+  // ---------------- 画面性能（V2.23.0：原「省内存模式」拆细 + 默认开启 + 多窗口跟随）----------------
+  //   画质 = Preferences/Graphics.quality（百分比渲染分辨率）；效果 = Preferences/Map 的 5 个开关
+  var PERF_ORIG_KEY = "dsh_ro_perf_orig";
+  var perfOrig = null;
+  function perfCfg() {
+    var u = (saved && saved.ui) || {};
+    var q = parseInt(u["dsh-perf-q"], 10);
+    if (!(q >= 20 && q <= 100)) q = 50;
+    return {
+      on: u["dsh-perf-on"] === undefined ? true : !!u["dsh-perf-on"],
+      q: q,
+      fog: !!u["dsh-perf-fog"],
+      lightmap: !!u["dsh-perf-lightmap"],
+      effect: !!u["dsh-perf-effect"],
+      mineffect: u["dsh-perf-mineffect"] === undefined ? true : !!u["dsh-perf-mineffect"],
+      miss: u["dsh-perf-miss"] === undefined ? true : !!u["dsh-perf-miss"]
+    };
+  }
+  function perfOrigGet() {
+    if (perfOrig) return perfOrig;
+    try { perfOrig = JSON.parse(localStorage.getItem(PERF_ORIG_KEY) || "null"); } catch (e) { perfOrig = null; }
+    return perfOrig;
+  }
+  function renderPerfState() {
     try {
-      var on = !!(saved.ui && saved.ui["dsh-savemem"]);
+      var el = $id("dsh-perf-state");
+      if (!el) return;
+      var c = perfCfg();
+      el.textContent = c.on ? ("已开 · 画质 " + c.q + "%") : "已关（原画质）";
+    } catch (e) {}
+  }
+  function perfApply(silent) {
+    try {
+      var c = perfCfg();
+      // 默认开启：首次运行把默认值写回角色档，保证复选框显示与判定一致
+      if (saved && saved.ui && saved.ui["dsh-perf-on"] === undefined) {
+        saved.ui["dsh-perf-on"] = true;
+        try { saveSaved(saved); } catch (e) {}
+      }
       var GS = requireDB("Preferences/Graphics");
       var MP = requireDB("Preferences/Map");
       var CF = requireDB("Core/Configs");
-      if (on) {
-        if (savememOld === null && GS && GS.quality != null) savememOld = GS.quality;
-        if (GS) { GS.quality = 50; try { GS.save(); } catch (e) {} }
-        if (CF) { try { CF.set("quality", 50); } catch (e) {} }
-        if (MP) { MP.effect = false; MP.fog = false; MP.lightmap = false; try { MP.save(); } catch (e) {} }
-        var R1 = requireDB("Renderer/Renderer");
-        if (R1 && R1.resize) { try { R1.resize(); } catch (e) {} }
-        try { setStatus("省内存模式已开：画质50 + 特效/雾/光照关闭", "ok"); } catch (e) {}
-      } else {
-        var q = (savememOld != null) ? savememOld : 100; savememOld = null;
-        if (GS) { GS.quality = q; try { GS.save(); } catch (e) {} }
-        if (CF) { try { CF.set("quality", q); } catch (e) {} }
-        if (MP) { MP.effect = true; MP.fog = true; MP.lightmap = true; try { MP.save(); } catch (e) {} }
-        var R2 = requireDB("Renderer/Renderer");
-        if (R2 && R2.resize) { try { R2.resize(); } catch (e) {} }
+      var o = perfOrigGet();
+      if (!o) {
+        o = { q: (GS && GS.quality != null) ? GS.quality : 100,
+              fog: MP ? (MP.fog !== false) : true, lightmap: MP ? (MP.lightmap !== false) : true,
+              effect: MP ? (MP.effect !== false) : true, mineffect: MP ? (MP.mineffect !== false) : true,
+              miss: MP ? (MP.miss !== false) : true };
+        perfOrig = o;
+        try { localStorage.setItem(PERF_ORIG_KEY, JSON.stringify(o)); } catch (e) {}
+      }
+      var q = c.on ? c.q : o.q;
+      if (GS) { GS.quality = q; try { GS.save(); } catch (e) {} }
+      if (CF) { try { CF.set("quality", q); } catch (e) {} }
+      if (MP) {
+        MP.fog = c.on ? c.fog : o.fog;
+        MP.lightmap = c.on ? c.lightmap : o.lightmap;
+        MP.effect = c.on ? c.effect : o.effect;
+        MP.mineffect = c.on ? c.mineffect : o.mineffect;
+        MP.miss = c.on ? c.miss : o.miss;
+        try { MP.save(); } catch (e) {}
+      }
+      var R = requireDB("Renderer/Renderer");
+      if (R && R.resize) { try { R.resize(); } catch (e) {} }
+      renderPerfState();
+      if (!silent) setStatus(c.on ? ("画面优化已开：画质 " + q + "% · 特效" + (c.effect ? "开" : "关") + " · 雾" + (c.fog ? "开" : "关") + " · 光照" + (c.lightmap ? "开" : "关"))
+                                 : ("画面优化已关：已还原原始画质 " + o.q + "%"), "ok");
+    } catch (e) {}
+  }
+  // 客户端画质/效果存在浏览器本地（localStorage 的 Graphics / Map），同一浏览器所有窗口共用。
+  // 其他窗口改了设置 → 本窗口从存档重新拉取并让渲染器重算画布（不写回，避免互相打架）。
+  function perfPull(p) {
+    try {
+      var GS = requireDB("Preferences/Graphics");
+      var MP = requireDB("Preferences/Map");
+      var g = null, m = null;
+      if (p) { g = { quality: p.q }; m = p; }
+      else {
+        try { g = JSON.parse(localStorage.getItem("Graphics") || "null"); } catch (e) {}
+        try { m = JSON.parse(localStorage.getItem("Map") || "null"); } catch (e) {}
+      }
+      if (GS && g && g.quality != null) GS.quality = g.quality;
+      if (MP && m) {
+        if (m.fog != null) MP.fog = !!m.fog;
+        if (m.lightmap != null) MP.lightmap = !!m.lightmap;
+        if (m.effect != null) MP.effect = !!m.effect;
+        if (m.mineffect != null) MP.mineffect = !!m.mineffect;
+        if (m.miss != null) MP.miss = !!m.miss;
+      }
+      var R = requireDB("Renderer/Renderer");
+      if (R && R.resize) { try { R.resize(); } catch (e) {} }
+    } catch (e) {}
+  }
+  function perfSave() {
+    try { captureAll(); } catch (e) {}
+    perfApply(true);
+    try {
+      if (syncCfg().en) {
+        var c = perfCfg();
+        syncBCBroadcast({ type: "perf", q: c.on ? c.q : perfOrigGet().q, fog: c.on ? c.fog : true,
+          lightmap: c.on ? c.lightmap : true, effect: c.on ? c.effect : true,
+          mineffect: c.on ? c.mineffect : true, miss: c.on ? c.miss : true });
       }
     } catch (e) {}
   }
+  function perfBind(id, ev, fn) { try { var el = $id(id); if (el) el.addEventListener(ev, fn); } catch (e) {} }
+  perfBind("dsh-perf-on", "change", perfSave);
+  perfBind("dsh-perf-q", "change", perfSave);
+  perfBind("dsh-perf-fog", "change", perfSave);
+  perfBind("dsh-perf-lightmap", "change", perfSave);
+  perfBind("dsh-perf-effect", "change", perfSave);
+  perfBind("dsh-perf-mineffect", "change", perfSave);
+  perfBind("dsh-perf-miss", "change", perfSave);
+  perfBind("dsh-perf-apply", "click", function () { perfApply(false); });
+  try { window.addEventListener("storage", function (ev) { if (ev && (ev.key === "Graphics" || ev.key === "Map")) perfPull(null); }); } catch (e) {}
+  try { renderPerfState(); } catch (e) {}
   $id("dsh-sync-en").addEventListener("change", function () { try { captureAll(); } catch (e) {} syncApplyRuntime(); renderSyncState(); });
   $id("dsh-sync-mode").addEventListener("change", function () { try { captureAll(); } catch (e) {} renderSyncState(); });
   $id("dsh-sync-int").addEventListener("change", function () { try { captureAll(); } catch (e) {} renderSyncState(); });
-  $id("dsh-savemem").addEventListener("change", function () { try { captureAll(); } catch (e) {} savememApply(); });
+  // （V2.23.0：原「省内存模式」已拆到独立模块「画面性能」，控件与监听都移到那边）
   // ---------------- 多开帧率限制（V2.15.20）：包装 Renderer._render 跳帧节流——多开挂机时每窗口满帧渲染拖垮 GPU 进程（整 Chrome 卡），锁帧后渲染成本按比例下降 --------------
   var fpsLockWrapped = null; // 已包装的渲染函数引用（防重复包装/便于恢复）
   var fpsLockOrigRender = null;
   function fpsLockApply() {
     try {
-      var on = !!(saved.ui && saved.ui["dsh-fpslock"]);
+      var on = !!(saved.ui && saved.ui["dsh-perf-fpslock"]);
       var R = requireDB("Renderer/Renderer");
       if (!R || typeof R._render !== "function") return;
       if (on) {
@@ -2783,7 +2983,7 @@
         var wrap = function () {
           try {
             var now = Date.now();
-            var fpsEl = $id("dsh-fps");
+            var fpsEl = $id("dsh-perf-fps");
             var fps = fpsEl ? (parseInt(fpsEl.value, 10) || 15) : 15;
             fps = Math.max(5, Math.min(30, fps));
             var gap = 1000 / fps;
@@ -2798,7 +2998,7 @@
         };
         R._render = wrap;
         fpsLockWrapped = wrap;
-        try { setStatus("多开帧率限制已开：" + ($id("dsh-fps") ? $id("dsh-fps").value : 15) + " 帧/秒", "ok"); } catch (e) {}
+        try { setStatus("多开帧率限制已开：" + ($id("dsh-perf-fps") ? $id("dsh-perf-fps").value : 15) + " 帧/秒", "ok"); } catch (e) {}
       } else if (fpsLockWrapped) {
         if (R._render === fpsLockWrapped && fpsLockOrigRender) R._render = fpsLockOrigRender;
         fpsLockWrapped = null; fpsLockOrigRender = null;
@@ -2806,8 +3006,8 @@
       }
     } catch (e) {}
   }
-  $id("dsh-fpslock").addEventListener("change", function () { try { captureAll(); } catch (e) {} fpsLockApply(); });
-  $id("dsh-fps").addEventListener("change", function () { try { captureAll(); } catch (e) {} });
+  perfBind("dsh-perf-fpslock", "change", function () { try { captureAll(); } catch (e) {} fpsLockApply(); });
+  perfBind("dsh-perf-fps", "change", function () { try { captureAll(); } catch (e) {} });
   renderSyncState();
 
   // ---------------- 当前窗口账号信息（单账号 · saved 为准）----------------
@@ -3033,7 +3233,8 @@
     ["dsh-petfeedhp2", "v"], ["dsh-petfeedint2", "v"], ["dsh-peten2", "c"],
     ["dsh-followtarget", "v"], ["dsh-followdist", "v"], ["dsh-followen", "c"],
     ["dsh-itempick", "v"], ["dsh-itemcond", "v"], ["dsh-itemcondval", "v"], ["dsh-itemen", "c"],
-    ["dsh-lootprob", "v"], ["dsh-openpick", "c"], ["dsh-picken", "c"], ["dsh-pickwalk", "c"], ["dsh-picksafe", "c"], ["dsh-bountyhl", "c"], ["dsh-bgkeep", "c"], ["dsh-capauto", "c"], ["dsh-capwait", "v"], ["dsh-z-rein", "c"], ["dsh-sync-en", "c"], ["dsh-savemem", "c"], ["dsh-fpslock", "c"], ["dsh-fps", "v"], ["dsh-sync-mode", "v"], ["dsh-sync-int", "v"]
+    ["dsh-lootprob", "v"], ["dsh-openpick", "c"], ["dsh-picken", "c"], ["dsh-pickwalk", "c"], ["dsh-picksafe", "c"], ["dsh-bountyhl", "c"], ["dsh-bgkeep", "c"], ["dsh-capauto", "c"], ["dsh-capwait", "v"], ["dsh-z-rein", "c"], ["dsh-sync-en", "c"], ["dsh-sync-mode", "v"], ["dsh-sync-int", "v"],
+    ["dsh-perf-on", "c"], ["dsh-perf-q", "v"], ["dsh-perf-fog", "c"], ["dsh-perf-lightmap", "c"], ["dsh-perf-effect", "c"], ["dsh-perf-mineffect", "c"], ["dsh-perf-miss", "c"], ["dsh-perf-fpslock", "c"], ["dsh-perf-fps", "v"]
   ];
   function captureAll() {
     try {
@@ -3099,7 +3300,7 @@
       applyProfileUI();
       try { fillZhuQoaskill(); } catch (e) {} // V2.16.7：切档后重填解围下拉（新角色已学技能，清掉旧角色技能）
       try { syncApplyRuntime(); renderSyncState(); } catch (e) {} // V2.15.10：切档后同步器按新档配置启停
-      try { savememApply(); } catch (e) {} // V2.15.15：切档后按新档省内存开关生效
+      try { perfApply(true); } catch (e) {} // V2.23.0：切档后按新档画面优化设置生效
       renderWinInfo(); renderLockList(); renderAskList();
       lastCharGid = gid;
       setStatus("已加载角色档 " + nm + "（ID" + gid + "）", "ok");
@@ -10260,6 +10461,116 @@
     } catch (e) {}
   }
 
+  // ================= V2.23.0 战斗功能移植：当前目标 + 队伍血条 =================
+  function roEscTxt(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  // ---- 当前目标：显示助手当前锁定的怪（名字 / 血量 / 距离 / 状态）----
+  function renderTgt() {
+    try {
+      var nm = $id("dsh-tgt-name");
+      if (!nm) return;
+      var dist = $id("dsh-tgt-dist"), hp = $id("dsh-tgt-hp"), hpt = $id("dsh-tgt-hptxt"), ex = $id("dsh-tgt-extra");
+      var gid = (zLock && zLock.gid) ? zLock.gid : null;
+      if (!gid) {
+        nm.textContent = (zLock && zLock.done) ? "已击杀待命" : "未锁定目标";
+        if (dist) dist.textContent = "—";
+        if (hp) { hp.style.width = "0%"; hp.style.background = "#8a97a8"; }
+        if (hpt) hpt.textContent = "—";
+        if (ex) ex.textContent = zRunning ? "助手自动战斗中" : "助手未运行";
+        return;
+      }
+      var ent = null;
+      try { var EM = window.require && window.require("Renderer/EntityManager"); if (EM && EM.get) ent = EM.get(gid); } catch (e0) {}
+      nm.textContent = (ent && ent.display && ent.display.name) || zLock.name || ("GID " + gid);
+      if (dist) dist.textContent = (zLock.dist != null ? (zLock.dist + " 格") : "—");
+      var h = 0, hm = 0;
+      if (ent && ent.life) { h = Number(ent.life.hp) || 0; hm = Number(ent.life.hp_max) || 0; }
+      var pct = hm > 0 ? Math.max(0, Math.min(100, Math.round(h / hm * 100))) : 0;
+      if (hp) { hp.style.width = pct + "%"; hp.style.background = pct > 50 ? "#2e9e4f" : (pct > 20 ? "#d39a1e" : "#c0392b"); }
+      if (hpt) hpt.textContent = hm > 0 ? (h + " / " + hm + "（" + pct + "%）") : "血量未知";
+      if (ex) {
+        var bits = [];
+        if (ent && ent._job != null) bits.push("JOB " + ent._job);
+        bits.push(zLock.reactive ? "还击中" : "攻击中");
+        if (zMon && zMon.action) bits.push("动作 " + zMon.action);
+        ex.textContent = bits.join(" · ");
+      }
+    } catch (e) {}
+  }
+  // ---- 队伍血条：hook 客户端队伍组件，拿队员名单与血量（不额外发包）----
+  var partyMembers = {};
+  var partyHookedMod = null;
+  var partySig = "";
+  function partyUpsert(m) {
+    try {
+      if (!m || m.AID == null) return;
+      var k = String(Math.floor(Number(m.AID) || 0));
+      if (!k || k === "0") return;
+      var o = partyMembers[k] || (partyMembers[k] = { AID: k, name: "", job: 0, hp: 0, maxhp: 0, dead: false });
+      if (m.characterName) o.name = String(m.characterName);
+      else if (m.name) o.name = String(m.name);
+      if (m.job != null) o.job = Number(m.job) || 0;
+      if (m.hp != null) o.hp = Number(m.hp) || 0;
+      if (m.maxhp != null) o.maxhp = Number(m.maxhp) || 0;
+      if (m.life) { if (m.life.hp != null) o.hp = Number(m.life.hp) || 0; if (m.life.hp_max != null) o.maxhp = Number(m.life.hp_max) || 0; }
+      if (m.state != null) o.dead = !!Number(m.state);
+    } catch (e) {}
+  }
+  function partyHook() {
+    try {
+      var PF = requireDB("UI/Components/PartyFriends/PartyFriends");
+      if (!PF || partyHookedMod === PF || typeof PF.setParty !== "function") return;
+      partyHookedMod = PF;
+      var oSet = PF.setParty, oAdd = PF.addPartyMember, oDel = PF.removePartyMember, oLife = PF.updateMemberLife, oDead = PF.updateMemberDead;
+      PF.setParty = function (g, list) { try { partyMembers = {}; if (list && list.length) for (var i = 0; i < list.length; i++) partyUpsert(list[i]); } catch (e) {} return oSet.apply(this, arguments); };
+      if (typeof oAdd === "function") PF.addPartyMember = function (m) { try { partyUpsert(m); } catch (e) {} return oAdd.apply(this, arguments); };
+      if (typeof oDel === "function") PF.removePartyMember = function (aid) { try { delete partyMembers[String(Math.floor(Number(aid) || 0))]; } catch (e) {} return oDel.apply(this, arguments); };
+      if (typeof oLife === "function") PF.updateMemberLife = function (aid, cv, hp, mx) { try { partyUpsert({ AID: aid, hp: hp, maxhp: mx }); } catch (e) {} return oLife.apply(this, arguments); };
+      if (typeof oDead === "function") PF.updateMemberDead = function (aid, dead) { try { partyUpsert({ AID: aid, state: dead ? 1 : 0 }); } catch (e) {} return oDead.apply(this, arguments); };
+    } catch (e) {}
+  }
+  function renderParty() {
+    try {
+      var box = $id("dsh-party-list");
+      if (!box) return;
+      var selfEl = $id("dsh-party-self");
+      var withSelf = selfEl ? !!selfEl.checked : true;
+      var ss = CLIENT.SS || {};
+      var myAid = (ss.AID != null) ? String(Math.floor(Number(ss.AID) || 0)) : "";
+      var rows = [], cnt = 0;
+      var selfEnt = ss.Entity;
+      if (withSelf && selfEnt && selfEnt.life) {
+        cnt++;
+        var sh = Number(selfEnt.life.hp) || 0, shm = Number(selfEnt.life.hp_max) || 0;
+        var spct = shm > 0 ? Math.round(sh / shm * 100) : 0;
+        rows.push(partyRowHtml("（自己）" + ((selfEnt.display && selfEnt.display.name) || ""), sh, shm, spct, false));
+      }
+      for (var k in partyMembers) {
+        var o = partyMembers[k];
+        if (!o) continue;
+        if (!withSelf && myAid && o.AID === myAid) continue;
+        if (myAid && o.AID === myAid) continue; // 自己已单独渲染（客户端不推送自己的血条更新）
+        cnt++;
+        var hm = Math.max(0, o.maxhp), hh = Math.max(0, Math.min(hm || o.hp, o.hp));
+        var p2 = hm > 0 ? Math.round(hh / hm * 100) : 0;
+        rows.push(partyRowHtml(o.name || ("AID " + o.AID), hh, hm, p2, !!o.dead));
+      }
+      var ct = $id("dsh-party-count");
+      if (ct) ct.textContent = cnt + " 人";
+      var sig = cnt + "|" + rows.join("");
+      if (sig === partySig) return; // 没变化不重绘（1 秒一次也不制造垃圾）
+      partySig = sig;
+      box.innerHTML = rows.length ? rows.join("") : '<span class="st">加入队伍后这里显示队员血条。</span>';
+    } catch (e) {}
+  }
+  function partyRowHtml(name, h, hm, pct, dead) {
+    var col = dead ? "#7a8797" : (pct > 50 ? "#2e9e4f" : (pct > 20 ? "#d39a1e" : "#c0392b"));
+    return '<div class="prow" style="flex-direction:column;align-items:stretch;gap:2px">' +
+      '<div style="display:flex;align-items:center;gap:6px"><span class="pnm">' + roEscTxt(name) + '</span>' +
+      '<span class="st" style="flex:0 0 auto">' + (dead ? "死亡" : (hm > 0 ? (h + "/" + hm) : "—")) + '</span></div>' +
+      '<div style="height:8px;border:1px solid #b8c6d4;background:#eef3fa;border-radius:2px;overflow:hidden"><i style="display:block;height:100%;width:' + (dead ? 100 : pct) + '%;background:' + col + '"></i></div></div>';
+  }
   // V1.7.6 当前状态查看器：buffActive 判活环（服务器通知）+ 实体字段状态，2s 刷新
   var _stNameRev = null;
   var _stNameEnRev = null;
@@ -10561,10 +10872,14 @@
         }
         hookDisconnect();
         hookStatusIcons(); // V1.7.5 方案A：buff 状态判活 hook（登录后可重试，幂等）
+        try { partyHook(); } catch (e) {} // V2.23.0 队伍血条 hook（幂等，重复调用无副作用）
+        try { fwRestore(); } catch (e) {} // V2.23.0 上次开着的浮窗自动恢复
         // V2.5.0：后台标签隐藏时跳过纯 UI 渲染（每秒全量重绘的 statbar/监控/状态表/提示/怪表），后台挂机只保功能逻辑，降 CPU/GC
         if (!UI_BG) {
           renderStatbar();
           renderZMonitor();
+          renderTgt(); // V2.23.0 当前目标窗口
+          renderParty(); // V2.23.0 队伍血条
           renderStatusView(); // V1.7.6 当前状态查看器（buff/debuff 判活环 + 实体字段）
           renderZTip(); // V1.7.6 悬浮动作提示（镜像 setStatus + 动作 + 停顿秒数）
           renderMapMobs();
@@ -10698,7 +11013,7 @@
       if (ev.data === "ready") {
         state.ready = true;
         setStatus("客户端已就绪", "ok");
-        try { savememApply(); } catch (e) {} // V2.15.15：客户端就绪后应用省内存模式（此刻渲染器可用）
+        try { perfApply(true); } catch (e) {} // V2.23.0：客户端就绪后应用画面优化（此刻渲染器可用）
         try { fpsLockApply(); } catch (e) {} // V2.15.20：客户端就绪后应用多开帧率限制（此刻渲染器可用）
         tlog("client-ready");
       }
@@ -11215,7 +11530,7 @@
 
   // ---------------- V2.7.0 脚本执行器（导入 JSON 模板 · 白名单 8 类动作） ----------------
   var SCRIPTS_KEY = "dsh_scripts";
-  var SCR_ACTIONS = ["teleport", "walk", "battleOn", "battleOff", "useItem", "stopMove", "check", "talk"];
+  var SCR_ACTIONS = ["teleport", "walk", "battleOn", "battleOff", "useItem", "stopMove", "check", "talk", "loop", "ifWeight", "store"];
   function scrLoad() { try { var a = JSON.parse(localStorage.getItem(SCRIPTS_KEY) || "[]"); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
   function scrSave(a) { try { localStorage.setItem(SCRIPTS_KEY, JSON.stringify(a)); } catch (e) {} }
   function scrValidate(obj) {
@@ -11298,18 +11613,230 @@
     } catch (e) {}
     return true;
   }
+  // ================= V2.24.0 脚本条件系统（官方 ID 段分类 + 击杀计数 + 循环）=================
+  // 判断条件分两类（用户 2026-12 明确要求）：
+  //   ①物品类：识别掉落/背包里的是不是我需要的——单个 ID、多个 ID、ID 段、名字关键字、官方类别
+  //   ②杀怪类：杀够指定怪的数量（默认只算自己打死的）
+  // 官方 ITID 段（复兴后口径）。哪条分错了改这张表就行。
+  var SCR_CLASSES = [
+    { id: "potion",   name: "药水消耗",   lo: 501,   hi: 699    },
+    { id: "etc",      name: "杂物材料",   lo: 700,   hi: 999    },
+    { id: "weapon",   name: "武器",       lo: 1100,  hi: 1749   },
+    { id: "ammo",     name: "箭矢子弹",   lo: 1750,  hi: 1799   },
+    { id: "armor",    name: "防具",       lo: 2100,  hi: 2699   },
+    { id: "card",     name: "卡片",       lo: 4001,  hi: 4999   },
+    { id: "pet",      name: "宠物相关",   lo: 5000,  hi: 5999   },
+    { id: "material", name: "收藏品材料", lo: 7000,  hi: 7999   },
+    { id: "cash",     name: "商城特殊",   lo: 10000, hi: 999999 }
+  ];
+  function scrClassOf(id) {
+    id = parseInt(id, 10);
+    if (isNaN(id)) return null;
+    for (var sci = 0; sci < SCR_CLASSES.length; sci++) {
+      if (id >= SCR_CLASSES[sci].lo && id <= SCR_CLASSES[sci].hi) return SCR_CLASSES[sci];
+    }
+    return null;
+  }
+  function scrItemName(id) {
+    try { if (typeof itemName === "function") { var n = itemName(id); if (n) return String(n); } } catch (e) {}
+    try { var db = window.__ITEM_NAMES__; if (db && db[id]) return String(db[id]); } catch (e) {}
+    return "ID" + id;
+  }
+  function scrInvList() { try { return findInventory() || []; } catch (e) { return []; } }
+  function scrInvId(it) { var v = it ? (it.ITID != null ? it.ITID : it.itemid) : null; var n = parseInt(v, 10); return isNaN(n) ? null : n; }
+  function scrInvQty(it) { if (!it) return 0; var v = (it.amount != null ? it.amount : (it.count != null ? it.count : 1)); return parseInt(v, 10) || 0; }
+  function scrInvIdx(it) { if (!it) return null; var v = (it.index != null ? it.index : (it.idx != null ? it.idx : it.slot)); return v == null ? null : parseInt(v, 10); }
+  // 背包基线快照（dropOnly 用：只算本次挂机新掉进包的，不算老存货）
+  function scrSnapshotInv() {
+    var m = {}, inv = scrInvList();
+    for (var si = 0; si < inv.length; si++) { var id = scrInvId(inv[si]); if (id != null) m[id] = (m[id] || 0) + scrInvQty(inv[si]); }
+    return m;
+  }
+  // 按条件规格统计背包数量
+  //   {item:ID} {items:[..],mode:"any|all"} {range:[lo,hi]} {keyword:"卡片"} {class:"card"} {dropOnly:true}
+  function scrQtyBySpec(sp, dropOnly) {
+    if (!sp) return 0;
+    var inv = scrInvList(), base = (dropOnly || sp.dropOnly) ? (scrRun.baseline || {}) : null;
+    var ids = null, i;
+    if (sp.item != null) ids = [parseInt(sp.item, 10)];
+    else if (Array.isArray(sp.items)) { ids = []; for (i = 0; i < sp.items.length; i++) ids.push(parseInt(sp.items[i], 10)); }
+    var rng = (Array.isArray(sp.range) && sp.range.length >= 2) ? [parseInt(sp.range[0], 10), parseInt(sp.range[1], 10)] : null;
+    var kw = sp.keyword ? String(sp.keyword) : null;
+    var clsDef = null;
+    if (sp["class"]) { for (i = 0; i < SCR_CLASSES.length; i++) { if (SCR_CLASSES[i].id === sp["class"]) clsDef = SCR_CLASSES[i]; } }
+    var per = {}, sum = 0;
+    for (i = 0; i < inv.length; i++) {
+      var id = scrInvId(inv[i]); if (id == null) continue;
+      var hit = false;
+      if (ids && ids.indexOf(id) >= 0) hit = true;
+      if (!hit && rng && id >= rng[0] && id <= rng[1]) hit = true;
+      if (!hit && clsDef && id >= clsDef.lo && id <= clsDef.hi) hit = true;
+      if (!hit && kw && scrItemName(id).indexOf(kw) >= 0) hit = true;
+      if (!hit) continue;
+      var q = scrInvQty(inv[i]);
+      if (base) q = Math.max(0, q - (base[id] || 0));
+      per[id] = (per[id] || 0) + q; sum += q;
+    }
+    if (ids && sp.mode === "any") { var mx = 0; for (i = 0; i < ids.length; i++) mx = Math.max(mx, per[ids[i]] || 0); return mx; }
+    if (ids && sp.mode === "all") { var mn = null; for (i = 0; i < ids.length; i++) { var v = per[ids[i]] || 0; mn = (mn == null || v < mn) ? v : mn; } return mn == null ? 0 : mn; }
+    return sum;
+  }
+  // ---- 击杀计数：默认只算自己打死的 ----
+  // 来源：助手自动战斗的当前目标 zLastTargetGID / 锁定目标 zLock.gid（30 秒内有效）
+  // 脚本根字段 killNearby:true → 改成「玩家 12 格内任何怪死亡都算」，用于配合游戏内挂战斗
+  var scrKill = { total: 0, byGid: {}, byName: {}, atk: {}, name: {}, pos: {}, nearby: false };
+  function scrKillReset() { scrKill = { total: 0, byGid: {}, byName: {}, atk: {}, name: {}, pos: {}, nearby: !!scrKill.nearby }; }
+  function scrPos() { try { var e = CLIENT.SS && CLIENT.SS.Entity; return (e && e.position) ? e.position : null; } catch (e2) { return null; } }
+  function scrKillSample() {
+    try {
+      var now = Date.now(), g = null;
+      try { g = zLastTargetGID; } catch (e) {}
+      if (g) scrKill.atk[g] = now;
+      try { if (zLock && zLock.gid) scrKill.atk[zLock.gid] = now; } catch (e) {}
+      var ks = Object.keys(scrKill.atk);
+      for (var i = 0; i < ks.length; i++) { if (now - scrKill.atk[ks[i]] > 30000) delete scrKill.atk[ks[i]]; }
+    } catch (e) {}
+  }
+  function scrKillScan() {
+    try {
+      var EM = window.require("Renderer/EntityManager");
+      EM.forEach(function (e) {
+        try {
+          if (e && e.objecttype === 5 && e.GID) {
+            scrKill.name[e.GID] = e.name || e.displayName || ("GID" + e.GID);
+            if (e.position) scrKill.pos[e.GID] = [e.position[0], e.position[1]];
+          }
+        } catch (e2) {}
+      });
+    } catch (e) {}
+  }
+  function scrHookVanish() {
+    try {
+      if (window.__dshScrVanish) return true;
+      var NM = CLIENT.NM || (window.require && window.require("Network/NetworkManager"));
+      if (!NM || typeof NM.hookPacket !== "function") return false;
+      NM.hookPacket(0x80, function (pkt) {   // ZC.NOTIFY_VANISH：type=1 死亡消失
+        try {
+          if (!pkt || pkt.type !== 1) return;
+          var gid = pkt.GID, mine = !!scrKill.atk[gid];
+          if (!mine) {
+            if (!scrKill.nearby) return;
+            var pp = scrPos(), mp = scrKill.pos[gid];
+            if (!pp || !mp) return;
+            if (Math.abs(pp[0] - mp[0]) + Math.abs(pp[1] - mp[1]) > 12) return;
+          }
+          var nm = scrKill.name[gid] || ("GID" + gid);
+          scrKill.total++;
+          scrKill.byGid[gid] = (scrKill.byGid[gid] || 0) + 1;
+          scrKill.byName[nm] = (scrKill.byName[nm] || 0) + 1;
+          delete scrKill.atk[gid];
+        } catch (e) {}
+      });
+      window.__dshScrVanish = true;
+      return true;
+    } catch (e) { return false; }
+  }
+  (function scrKillInit() {
+    var t = 0;
+    setInterval(function () {
+      t++;
+      if (!window.__dshScrVanish) scrHookVanish();
+      scrKillSample();
+      if (t % 3 === 0) scrKillScan();
+    }, 700);
+  })();
+  function scrWeightPct() {
+    try {
+      var wv = document.querySelector(".weight_value"), wt = document.querySelector(".weight_total");
+      if (wv && wt) {
+        var a = parseFloat(wv.textContent), b = parseFloat(wt.textContent);
+        if (!isNaN(a) && !isNaN(b) && b > 0) return a / b * 100;
+      }
+      var e = CLIENT.SS && CLIENT.SS.Entity;
+      if (e) {
+        var w = (e.weight != null ? e.weight : null), mw = (e.maxWeight || e.maxweight);
+        if (w != null && mw) return w / mw * 100;
+      }
+    } catch (e2) {}
+    return null;
+  }
+  function scrZeny() { try { return (CLIENT.SS && CLIENT.SS.zeny != null) ? CLIENT.SS.zeny : null; } catch (e) { return null; } }
+  // 条件求值：对象里写的每一项都要满足（AND）
+  function scrCondMet(cond) {
+    if (!cond) return true;
+    try {
+      var hasItem = (cond.item != null) || Array.isArray(cond.items) || Array.isArray(cond.range) || cond.keyword || cond["class"];
+      if (hasItem) {
+        var needI = cond.itemCount != null ? parseInt(cond.itemCount, 10) : (cond.count != null ? parseInt(cond.count, 10) : 1);
+        if (scrQtyBySpec(cond, !!cond.dropOnly) < needI) return false;
+      }
+      var needK = cond.killCount != null ? parseInt(cond.killCount, 10) : (cond.count != null ? parseInt(cond.count, 10) : 1);
+      if (cond.kill != null && (scrKill.byName[String(cond.kill)] || 0) < needK) return false;
+      if (cond.killId != null && (scrKill.byGid[parseInt(cond.killId, 10)] || 0) < needK) return false;
+      if (cond.killAny != null && scrKill.total < parseInt(cond.killAny, 10)) return false;
+      if (cond.weight != null) { var wp = scrWeightPct(); if (wp == null || wp < parseFloat(cond.weight)) return false; }
+      if (cond.zeny != null) { var z = scrZeny(); if (z == null || z < parseInt(cond.zeny, 10)) return false; }
+      if (cond.time != null) { var el = scrRun.startedAt ? (Date.now() - scrRun.startedAt) / 1000 : 0; if (el < parseFloat(cond.time)) return false; }
+      return true;
+    } catch (e) { return false; }
+  }
+  // 存仓：把匹配的背包物品发进仓库（CZ.MOVE_ITEM_FROM_BODY_TO_STORE 0xf3）
+  function scrStore(p) {
+    try {
+      var inv = scrInvList(), sent = 0, specs = Array.isArray(p.items) ? p.items.map(function (x) { return parseInt(x, 10); }) : null;
+      var clsDef = null;
+      if (p["class"]) { for (var c = 0; c < SCR_CLASSES.length; c++) { if (SCR_CLASSES[c].id === p["class"]) clsDef = SCR_CLASSES[c]; } }
+      for (var i = 0; i < inv.length; i++) {
+        var id = scrInvId(inv[i]); if (id == null) continue;
+        var hit = false;
+        if (p.item != null && id === parseInt(p.item, 10)) hit = true;
+        if (!hit && specs && specs.indexOf(id) >= 0) hit = true;
+        if (!hit && Array.isArray(p.range) && id >= p.range[0] && id <= p.range[1]) hit = true;
+        if (!hit && clsDef && id >= clsDef.lo && id <= clsDef.hi) hit = true;
+        if (!hit && p.keyword && scrItemName(id).indexOf(String(p.keyword)) >= 0) hit = true;
+        if (!hit) continue;
+        var idx = scrInvIdx(inv[i]);
+        if (idx == null) { scrLogLine("store: 取不到 " + scrItemName(id) + " 的背包格号，跳过"); continue; }
+        var pkt = new CLIENT.PS.CZ.MOVE_ITEM_FROM_BODY_TO_STORE();
+        pkt.index = idx;
+        pkt.count = p.count != null ? parseInt(p.count, 10) : scrInvQty(inv[i]);
+        CLIENT.NM.sendPacket(pkt);
+        sent++;
+        if (p.max != null && sent >= parseInt(p.max, 10)) break;
+      }
+      scrLogLine("store: 已发送存仓 " + sent + " 件" + (sent ? "" : "（没有匹配物品）") + "（需先在游戏里打开仓库窗口）");
+    } catch (e) { scrLogLine("store 异常: " + e.message); }
+  }
+  // 循环：条件达成或到上限就结束，否则跳回指定步（back 为步号，从 1 开始）
+  function scrDoLoop(step) {
+    var lp = step.params || {};
+    scrRun.loops = (scrRun.loops || 0) + 1;
+    if (scrCondMet(lp.until)) { scrLogLine("循环条件已达成（第 " + scrRun.loops + " 轮）→ 结束脚本"); scrFinish(true, "条件达成"); return; }
+    if (lp.maxLoops && scrRun.loops >= parseInt(lp.maxLoops, 10)) { scrLogLine("达到最大循环 " + lp.maxLoops + " 次 → 结束脚本"); scrFinish(true, "达到上限"); return; }
+    var back = Math.max(0, (lp.back != null ? parseInt(lp.back, 10) : 1) - 1);
+    var steps = scrRun.script.steps;
+    for (var i = back; i < steps.length; i++) { try { delete steps[i]._started; } catch (e) {} }
+    scrLogLine("第 " + scrRun.loops + " 轮完成 → 回到第 " + (back + 1) + " 步");
+    scrRun.stepIndex = back;
+  }
+  // 负重分支：超过阈值就跳到指定步（goto 为步号，从 1 开始），否则继续下一步
+  function scrDoIfWeight(step) {
+    var p = step.params || {}, wp = scrWeightPct(), over = p.over != null ? parseFloat(p.over) : 80;
+    if (wp != null && wp >= over) {
+      var go = Math.max(0, (p.goto != null ? parseInt(p.goto, 10) : 1) - 1);
+      scrLogLine("负重 " + wp.toFixed(1) + "% ≥ " + over + "% → 跳到第 " + (go + 1) + " 步");
+      scrRun.stepIndex = go;
+    } else {
+      scrLogLine("负重 " + (wp == null ? "读不到" : wp.toFixed(1) + "%") + " < " + over + "% → 继续");
+      scrRun.stepIndex++;
+    }
+  }
   function scrCheckUntil(step) {
     var u = step.until;
     if (!u) return true;
     try {
-      var inv = findInventory();
-      if (!inv) return false;
-      var qty = 0;
-      for (var i = 0; i < inv.length; i++) {
-        var it = inv[i] || {};
-        if (it.ITID === u.item || it.itemid === u.item) qty += (it.amount || it.count || 1);
-      }
-      return qty >= (u.amount || 1);
+      if (u.count == null && u.amount != null) u.count = u.amount; // 兼容旧写法 {item, amount}
+      return scrCondMet(u);
     } catch (e) { return false; }
   }
   function scrDoAction(step) {
@@ -11324,6 +11851,8 @@
         case "stopMove": stopWalkXY(); break;
         case "check": scrLogLine("check: map=" + getMapName() + " pos=" + (scrGetPos() ? Math.floor(scrGetPos()[0]) + "," + Math.floor(scrGetPos()[1]) : "?")); break;
         case "talk": scrTalkNpc(p.npc); break;
+        case "store": scrStore(p); break;
+        case "loop": case "ifWeight": break; // 由 scrTick 直接处理，不走这里
       }
     } catch (e) { scrLogLine("动作异常: " + e.message); }
   }
@@ -11367,6 +11896,8 @@
       step._tries = 0;
       scrLogLine("[" + (i + 1) + "/" + script.steps.length + "] " + step.action + (step.params && step.params.map ? " " + step.params.map : "") + (step.params && step.params.x != null ? " (" + step.params.x + "," + step.params.y + ")" : ""));
       scrDoAction(step);
+      if (step.action === "loop") { scrDoLoop(step); return; }
+      if (step.action === "ifWeight") { scrDoIfWeight(step); return; }
       if (step.action === "stopMove" || step.action === "check") {
         if (scrCheckUntil(step)) scrNextStep();
         return;
@@ -11398,6 +11929,7 @@
     if (scrRun.timer) { clearInterval(scrRun.timer); scrRun.timer = null; }
     scrSetState(ok ? "完成" : (msg || "已停止"), ok ? "ok" : "warn");
     scrLogLine(ok ? "脚本执行完成" : (msg || "已停止"));
+    try { if (scrKill.total) scrLogLine("本次击杀 " + scrKill.total + " 只（只算自己打死的）"); } catch (e) {}
   }
   function scrRunScript(idx) {
     if (scrRun.running) { scrRun.stop = true; if (scrRun.timer) { clearInterval(scrRun.timer); scrRun.timer = null; } scrRun.running = false; }
@@ -11408,6 +11940,12 @@
     scrRun.script = JSON.parse(JSON.stringify(v.script));
     scrRun.script.steps.forEach(function (st) { try { delete st._started; } catch (e) {} });
     scrRun.stepIndex = 0; scrRun.stop = false;
+    scrRun.loops = 0;
+    scrRun.startedAt = Date.now();
+    scrRun.baseline = scrSnapshotInv();
+    scrKillReset();
+    scrKill.nearby = !!scrRun.script.killNearby;
+    scrHookVanish();
     scrSetState("运行中… 0/" + scrRun.script.steps.length, "ok");
     scrLogLine("执行 " + scrRun.script.templateId + " (v" + (scrRun.script.version || 1) + ")");
     scrRun.running = true;

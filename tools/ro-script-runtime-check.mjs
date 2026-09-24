@@ -113,11 +113,39 @@ test('all teleport entry points avoid legacy airship and world-map clicks',()=>{
   assert.ok(source.includes('var ok = gptTeleport("prontera")'));
 });
 
-test('floating windows handle sub-tabs before event isolation stops bubbling',()=>{
-  assert.ok(source.includes('function onSubTabClick(e)'));
-  assert.ok(source.includes('panel.addEventListener("click", onSubTabClick, false)'));
-  assert.ok(source.includes('body.addEventListener("click", onSubTabClick, false)'));
-  assert.ok(!source.includes('子标签切换统一委托到 document'));
+test('assistant battle sub-tabs switch only their direct sibling pages',()=>{
+  const code=extract('  function onSubTabClick(e) {','  panel.addEventListener("click", onSubTabClick, false)');
+  function classes(...names){const s=new Set(names);return {contains:n=>s.has(n),toggle(n,on){on?s.add(n):s.delete(n)},has:n=>s.has(n)}}
+  function node(cls,attrs={}){return {classList:classes(...cls.split(' ').filter(Boolean)),attrs,children:[],parentNode:null,style:{},getAttribute(n){return this.attrs[n]??null},querySelector(){return null},closest(sel){if(sel==='.sub-tab'&&this.classList.contains('sub-tab'))return this;if(sel==='[data-dsh-ui="1"]'||sel==='[id^="dsh-"]')return this.uiRoot||null;return null}}}
+  const host=node('host'),tabs=node('sub-tabs'),battle=node('sub-tab active',{'data-sub':'zs-battle'}),skill=node('sub-tab',{'data-sub':'zs-skill'}),near=node('sub-tab',{'data-sub':'zs-near'}),p1=node('sub-page active',{'data-subpage':'zs-battle'}),p2=node('sub-page',{'data-subpage':'zs-skill'}),p3=node('sub-page',{'data-subpage':'zs-near'}),nested=node('sub-page active',{'data-subpage':'other'});
+  host.children=[tabs,p1,p2,p3,nested];tabs.parentNode=host;tabs.children=[battle,skill,near];for(const x of tabs.children){x.parentNode=tabs;x.uiRoot=host}for(const x of [p1,p2,p3,nested])x.parentNode=host;
+  const ctx={inAssistantUI:()=>true,renderBook(){throw new Error('not expected')}};vm.createContext(ctx);vm.runInContext(code+';this.fn=onSubTabClick',ctx);
+  const event={target:skill};ctx.fn(event);
+  assert.equal(skill.classList.has('active'),true);assert.equal(battle.classList.has('active'),false);
+  assert.equal(p2.classList.has('active'),true);assert.equal(p2.style.display,'block');assert.equal(p1.style.display,'none');
+  assert.equal(nested.classList.has('active'),false);assert.equal(event.__dshSubHandled,true);
+  assert.ok(source.includes('zhu2TabsRoot.addEventListener("click", onSubTabClick, false)'));
+});
+
+test('same-map coordinate routing normalizes map prefixes and extensions',()=>{
+  const code=extract('  function normMapKey(m) {','  // V2.13.0');const ctx={String};vm.createContext(ctx);vm.runInContext(code+';this.fn=normMapKey',ctx);
+  for(const name of ['prontera','prontera.gat','prontera.rsw','map_prontera'])assert.equal(ctx.fn(name),'prontera');
+  assert.equal(ctx.fn('geffen.gat'),'geffen');
+  assert.ok(source.includes('normMapKey(want) === normMapKey(cur)'));
+  assert.ok(!source.includes('want.toLowerCase() === cur.toLowerCase()'));
+});
+
+test('skill scheduler reports cooldown and 300ms margin yields to imminent skill',()=>{
+  const castCode=extract('  function castOrderSkill(order, target) {','  $id("dsh-z-on")');
+  const now=Date.now(),sent=[];const ctx={Date,Math,CLIENT:{SS:{Entity:{GID:1,position:[0,0]}},PS:{CZ:{USE_SKILL:function(){}}},NM:{sendPacket:p=>sent.push(p)}},zCastIdx:0,zUseCounts:{},zLockCounts:{},skillNextAt:{10:now+250},zSkillSentAt:{},zLastCastAt:0,zLastCastSkid:0,btDiagOn:false,
+    clampSkillLv:()=>1,dshCastSkip(){},tlog(){},$id:()=>({checked:false}),skillReq:()=>null,skillTypeBits:()=>0,getSkillRange:()=>9,dshCastMark(){},skillCdMs:()=>250,dshDiag(){},checkSkillCond:()=>({ok:true}),castStatusPrep:()=>false};
+  vm.createContext(ctx);vm.runInContext(castCode+';this.cast=castOrderSkill',ctx);const order=[{skid:10,lv:1,uses:0,lock:0,prob:100,cond:'',cd:0}];
+  assert.equal(ctx.cast(order,{GID:2,position:[1,0]}),'wait-cd');
+  const gapCode=extract('  function skillNextGap(order) {','  function castOrderSkill(order, target) {');vm.runInContext(gapCode+';this.gap=skillNextGap',ctx);
+  const gap=ctx.gap(order);assert.ok(gap>0&&gap<=300);assert.equal(gap<=300,true);
+  ctx.skillNextAt[10]=Date.now()+700;assert.equal(ctx.gap(order)>300,true);
+  ctx.skillNextAt[10]=0;assert.equal(ctx.cast(order,{GID:2,position:[1,0]}),true);assert.equal(sent.length,1);
+  assert.equal(ctx.cast([],{GID:2,position:[1,0]}),'none');
 });
 
 test('lastRO option texts include boss physical damage and max load',()=>{

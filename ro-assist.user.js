@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.26.2
+// @version      2.26.3
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.26.2"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.26.3"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -2141,18 +2141,40 @@
     var t = e.target.closest && e.target.closest(".tab");
     if (t) switchPage(t.getAttribute("data-page"));
   });
-  // 子标签监听放在面板/浮窗内部；根节点会阻止事件冒泡到 document，不能依赖 document 委托。
+  // 子标签只切换同一组的直接兄弟页；不再向上猜测“第一个含 .sub-page 的祖先”，避免复杂页/浮窗选错作用域。
   function onSubTabClick(e) {
+    if (e.__dshSubHandled) return;
     var st = e.target.closest && e.target.closest(".sub-tab");
     if (!st || !inAssistantUI(st)) return;
-    var host = st.parentNode;
-    while (host && host.querySelector && !host.querySelector(".sub-page")) host = host.parentNode;
-    if (!host) return;
-    host.querySelectorAll(".sub-tab").forEach(function (t) { t.classList.toggle("active", t === st); });
-    host.querySelectorAll(".sub-page").forEach(function (p) { p.classList.toggle("active", p.getAttribute("data-subpage") === st.getAttribute("data-sub")); });
-    if (host.querySelector("#dsh-book")) { try { renderBook(); } catch (err) {} }
+    var tabs = st.parentNode;
+    if (!tabs || !(tabs.classList && tabs.classList.contains("sub-tabs")) && !(tabs.classList && tabs.classList.contains("a-nav"))) return;
+    var host = tabs.parentNode;
+    if (tabs.classList.contains("a-nav")) {
+      for (var hi = 0; host && hi < host.children.length; hi++) {
+        if (host.children[hi].classList && host.children[hi].classList.contains("a-body")) { host = host.children[hi]; break; }
+      }
+    }
+    if (!host || !host.children) return;
+    var key = st.getAttribute("data-sub");
+    for (var i = 0; i < tabs.children.length; i++) {
+      var t = tabs.children[i];
+      if (t.classList && t.classList.contains("sub-tab")) t.classList.toggle("active", t === st);
+    }
+    for (var j = 0; j < host.children.length; j++) {
+      var p = host.children[j];
+      if (p.classList && p.classList.contains("sub-page")) {
+        var active = p.getAttribute("data-subpage") === key;
+        p.classList.toggle("active", active);
+        p.style.display = active ? "block" : "none";
+      }
+    }
+    e.__dshSubHandled = true;
+    if (host.querySelector && host.querySelector("#dsh-book")) { try { renderBook(); } catch (err) {} }
   }
   panel.addEventListener("click", onSubTabClick, false);
+  // 助手战斗设置根节点随 DOM 一起移入浮窗；监听绑在自身，面板/浮窗两种位置都稳定生效。
+  var zhu2TabsRoot = $id("dsh-fw-zhu2");
+  if (zhu2TabsRoot) zhu2TabsRoot.addEventListener("click", onSubTabClick, false);
 
   // ---------------- 拖动（标题栏 + 悬浮球 + 拉伸手柄）----------------
   function dragEl(el, onmove, scaleFn, onEnd) {
@@ -8265,7 +8287,8 @@
         if (o.uses > 0 && (zUseCounts[o.skid] || 0) >= o.uses) continue;  // 本轮次数已满
         if (o.lock > 0 && (zLockCounts[o.skid] || 0) >= o.lock) continue; // 每怪次数已满
         var nx = skillNextAt[o.skid] || 0;
-        var gap = nx > now ? (nx - now) : 0;
+        if (nx <= now) continue; // 已就绪/无冷却不属于“还差多久”，避免前置被挡的就绪技能把余量误算成0
+        var gap = nx - now;
         if (gap < min) min = gap;
       }
       return min;
@@ -8296,6 +8319,7 @@
     var prereqEn = $id("dsh-prereq") ? $id("dsh-prereq").checked : true;
     var blocked = null; // 第一个前置不满足的技能（{o, condStr}，合流阶段才补它的前置）
     var walkSk = null;  // 第一个前置满足但超射程的技能（无射程内可放时才走近）
+    var cooling = false; // 至少一个仍可用的技能处于独立冷却；最终返回 wait-cd 供300ms让位判断
     // V1.7.5 轮换游标：上一轮从 0 扫、第一个满足条件的技能恒占位 → 拖拽顺序无效、后面的技能永远轮不到。
     //   改为从 zCastIdx（上次命中技能的下一格，循环）开始扫：顺序列表决定轮换次序，每个技能都能轮到。
     var orderLen = order.length;
@@ -8310,12 +8334,6 @@
         tlog("cast-sk " + o.skid + " 未学，跳过");
         continue;
       }
-      // V2.15.28 每技能独立 CD：未到下次可释放时间 → 跳过（不卡整条链，其他技能照常评估）
-      if (skillNextAt[o.skid] && Date.now() < skillNextAt[o.skid]) {
-        dshCastSkip(o.skid, "冷却" + Math.ceil((skillNextAt[o.skid] - Date.now()) / 1000) + "s");
-        tlog("cast-sk " + o.skid + " 独立冷却中，跳过");
-        continue;
-      }
       // 释放次数上限（V1.7.0 · OpenKore maxUses）：uses>0 且本轮已释放≥上限 → 本轮跳过
       if (o.uses > 0 && (zUseCounts[o.skid] || 0) >= o.uses) {
         dshCastSkip(o.skid, "次数上限" + o.uses);
@@ -8326,12 +8344,6 @@
       if (o.lock > 0 && (zLockCounts[o.skid] || 0) >= o.lock) {
         dshCastSkip(o.skid, "锁定次数" + o.lock);
         tlog("cast-sk " + o.skid + " 已达锁定次数" + o.lock + "，跳过");
-        continue;
-      }
-      // 释放百分比：prob 0-100，随机不命中 → 跳过该技能（试下一个）
-      if (o.prob < 100 && Math.random() * 100 >= o.prob) {
-        dshCastSkip(o.skid, "概率" + o.prob);
-        tlog("cast-sk " + o.skid + " 概率" + o.prob + "%未命中，跳过");
         continue;
       }
       // 自动前置：技能无手写 cond 时，从释放需求表推导（如阿修罗→"球5,Explosionspirits"）
@@ -8351,6 +8363,19 @@
           if (!blocked) blocked = { o: o, condStr: condStr };
           continue;
         }
+      }
+      // 只有次数/锁定/前置都仍可用的技能才算“冷却中”，避免不可释放技能误触发300ms让位。
+      if (skillNextAt[o.skid] && Date.now() < skillNextAt[o.skid]) {
+        cooling = true;
+        dshCastSkip(o.skid, "冷却" + Math.ceil((skillNextAt[o.skid] - Date.now()) / 1000) + "s");
+        tlog("cast-sk " + o.skid + " 独立冷却中，跳过");
+        continue;
+      }
+      // 释放百分比只在技能已就绪后判定；冷却中的技能必须稳定报告 wait-cd。
+      if (o.prob < 100 && Math.random() * 100 >= o.prob) {
+        dshCastSkip(o.skid, "概率" + o.prob);
+        tlog("cast-sk " + o.skid + " 概率" + o.prob + "%未命中，跳过");
+        continue;
       }
       var bits = skillTypeBits(o.skid);
       var isSelf = bits != null ? ((bits & 4) === 4) : false; // SELF=4；无类型信息按非自身处理
@@ -8405,6 +8430,8 @@
     if (blocked) {
       if (castStatusPrep(blocked.condStr, order)) { zLastCastAt = Date.now(); zLastCastSkid = 0; return true; } // V2.15.28：补状态技能已在内部记 skillNextAt 独立 CD（zLastCast* 仅兼容旧引用）
     }
+    // 有候选技能仍在独立冷却 → 明确返回 wait-cd，让外层按300ms余量决定等技能还是补普攻。
+    if (cooling) return "wait-cd";
     // 全部技能被状态前置挡住且补状态节流/不可用 → 等（外层 wait 分支穿插普攻）
     return "wait";
   }
@@ -9691,7 +9718,7 @@
       if (isNaN(x) || isNaN(y)) { mvLog("先填 X/Y（可点「填入当前位置」）"); return; }
       var want = ($id("dsh-mvmap").value || "").trim();
       var cur = getMapName();
-      var sameMap = !want || !cur || want === cur || (want.toLowerCase() === cur.toLowerCase());
+      var sameMap = !want || !cur || normMapKey(want) === normMapKey(cur);
       if (sameMap) {
         walkToXY(x, y, null, "dsh-mvlog");
       } else {

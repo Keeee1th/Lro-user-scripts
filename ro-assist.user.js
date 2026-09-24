@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.27.0
+// @version      2.28.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.27.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.28.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -933,28 +933,34 @@
       '<div id="dsh-bag-clean" style="font-size:11px"></div>' +
       '</div>' +
       '</div>' +
-      // 子页9：战斗统计（伤害统计 + 首领警报，V2.24.0）
+      // 子页9：战斗统计（伤害统计 + 首领警报，V2.28.0）
       '<div class="sub-page" data-subpage="ap-dps">' +
-      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">伤害统计（本场 / 全程 · 技能占比）</span>' +
+      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">伤害统计（本次登录 · 技能混伤）</span>' +
       '<button class="ghost" id="dsh-fw-btn-dps" data-fw="dps" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
       '<div id="dsh-fw-dps">' +
-      '<div class="row"><span class="lb">本场</span><span class="st" id="dsh-dps-curname" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">未开打</span>' +
+      '<div class="row"><span class="lb">当前目标</span><span class="st" id="dsh-dps-curname" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">未开打</span>' +
       '<span class="tag blue" id="dsh-dps-curdps" style="flex:0 0 auto">—</span></div>' +
-      '<div class="row"><span class="st" id="dsh-dps-curtxt" style="font-size:11px">本场伤害 0 · 命中 0</span></div>' +
-      '<div class="sec">全程</div>' +
+      '<div class="row"><span class="st" id="dsh-dps-curtxt" style="font-size:11px">目标伤害 0 · 伤害段数 0</span></div>' +
+      '<div class="sec">本次登录</div>' +
       '<div class="row"><span class="lb">总伤害</span><span class="st" id="dsh-dps-total">0</span>' +
-      '<span class="lb" style="margin-left:auto">秒伤</span><span class="st" id="dsh-dps-dps">0</span></div>' +
-      '<div class="row"><span class="lb">命中</span><span class="st" id="dsh-dps-hits">0</span>' +
-      '<span class="lb" style="margin-left:auto">暴击</span><span class="st" id="dsh-dps-crit">0</span>' +
-      '<span class="lb" style="margin-left:auto">最高</span><span class="st" id="dsh-dps-max">0</span></div>' +
+      '<span class="lb" style="margin-left:auto">有效DPS</span><span class="st" id="dsh-dps-dps">0</span></div>' +
+      '<div class="row"><span class="lb">物理技能</span><span class="st" id="dsh-dps-physical">0 / 0 DPS</span>' +
+      '<span class="lb" style="margin-left:auto">魔法技能</span><span class="st" id="dsh-dps-magical">0 / 0 DPS</span></div>' +
+      '<div class="row"><span class="lb">普攻</span><span class="st" id="dsh-dps-melee">0 / 0 DPS</span>' +
+      '<span class="lb" style="margin-left:auto">特殊/未知</span><span class="st" id="dsh-dps-other">0 / 0 DPS</span></div>' +
+      '<div class="row"><span class="lb">伤害段数</span><span class="st" id="dsh-dps-hits">0</span>' +
+      '<span class="lb" style="margin-left:auto">多段次数</span><span class="st" id="dsh-dps-multi">0</span>' +
+      '<span class="lb" style="margin-left:auto">最高单段</span><span class="st" id="dsh-dps-max">0</span></div>' +
       '<div class="row"><span class="lb">承受</span><span class="st" id="dsh-dps-taken">0</span>' +
-      '<span class="lb" style="margin-left:auto">时长</span><span class="st" id="dsh-dps-dur">0 秒</span></div>' +
+      '<span class="lb" style="margin-left:auto">登录均值</span><span class="st" id="dsh-dps-session">0 DPS</span></div>' +
+      '<div class="row"><span class="lb">登录时长</span><span class="st" id="dsh-dps-dur">0 秒</span>' +
+      '<span class="lb" style="margin-left:auto">有效战斗</span><span class="st" id="dsh-dps-active">0 秒</span></div>' +
       '<div class="sec">技能占比</div>' +
-      '<div id="dsh-dps-skills" style="font-size:11px;max-height:150px;overflow:auto"><span class="st">暂无数据</span></div>' +
-      '<div class="row"><button class="ghost" id="dsh-dps-reset-cur" style="flex:1">清零本场</button>' +
-      '<button class="ghost" id="dsh-dps-reset-all" style="flex:1">清零全程</button></div>' +
-      '<div class="row"><span class="st" id="dsh-dps-state" style="font-size:10px">等待伤害包…</span></div>' +
-      '<div class="log">数据来自客户端伤害包，只统计自己打出去的伤害（含承受伤害）。技能归属优先用技能伤害包自带的技能 ID，没有就按最近一次施法回执的时间窗匹配，仍取不到则归到「普攻」。</div>' +
+      '<div id="dsh-dps-skills" style="font-size:11px;max-height:170px;overflow:auto"><span class="st">暂无数据</span></div>' +
+      '<div class="row"><button class="ghost" id="dsh-dps-reset-cur" style="flex:1">清零当前目标</button>' +
+      '<button class="ghost" id="dsh-dps-reset-all" style="flex:1">清零本次统计</button></div>' +
+      '<div class="row"><span class="st" id="dsh-dps-state" style="font-size:10px">等待客户端伤害回调…</span></div>' +
+      '<div class="log">数据只保留在本次网页登录的内存中，不写浏览器存储。普攻独立计算；技能类型按 rAthena Type 字段分为物理、魔法、特殊、未知。10 秒无伤害自动切分有效战斗。</div>' +
       '</div>' +
       '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">首领警报（MVP / BOSS 出现提示）</span>' +
       '<button class="ghost" id="dsh-fw-btn-boss" data-fw="boss" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
@@ -10302,7 +10308,7 @@
           txCap.n++;
         } catch (eD) {}
       }
-      if (DPS_PKTS.indexOf(op) >= 0 && dpsSource !== "parsed") dpsOnRawDamage(bytes, op);
+      if (DPS_PKTS.indexOf(op) >= 0 && !dpsParsedSeen) dpsOnRawDamage(bytes, op);
       if (op === 0x80) scrOnRawVanish(bytes);
       if (op === 183) onMenuList(bytes);
       else if (op === 180) onSayDialog(bytes);
@@ -10894,19 +10900,21 @@
       '<span class="st" style="flex:0 0 auto">' + (dead ? "死亡" : (hm > 0 ? (h + "/" + hm) : "—")) + '</span></div>' +
       '<div style="height:8px;border:1px solid #b8c6d4;background:#eef3fa;border-radius:2px;overflow:hidden"><i style="display:block;height:100%;width:' + (dead ? 100 : pct) + '%;background:' + col + '"></i></div></div>';
   }
-  // ================= V2.24.0 伤害统计 =================
-  // 数据源：客户端伤害包。字段名有两套，必须都吃：
-  //   NOTIFY_ACT 系列（138 NOTIFY_ACT / 139 NOTIFY_ACT_POSITION / 737 NOTIFY_ACT2 / 2248 NOTIFY_ACT3）
-  //     → GID=攻击者, targetGID=受击者, damage, count
-  //   NOTIFY_SKILL 系列（276 / 478）→ SKID, AID=攻击者, targetID=受击者, damage, count（自带技能ID，最准）
-  // 优先从客户端已解析的伤害包旁听；WebSocket 原始链仅作登录前兼容兜底。
+  // ================= V2.28.0 本次登录伤害统计 =================
+  // 优先旁听客户端已解析伤害回调；rAthena skill_db_re.yml 的 Type 字段用于技能物理/魔法/特殊分类。
+  // 普攻单独统计，不并入物理技能；所有数据只驻留内存，不写 localStorage。
   var DPS_PKTS = [138, 139, 737, 2248, 276, 478];
-  var dpsSource = "waiting", dpsTapInstalled = false;
+  var DPS_IDLE_MS = 10000, DPS_SKILL_LIMIT = 64;
+  var DPS_TYPE_RANGES = { physical: "2-3,5,7-8,22-23,42,45-50,52-53,55-65,94-114,121,126,132-141,145-150,153,155,158-160,170-172,174,176-191,199,206,210-212,214-219,226,229-230,234-237,249-253,257-260,262-263,265-274,284,315-316,323-324,337-338,344-348,355-360,365,368,370-372,376,378-380,382-384,387,390,394,397-399,406,412-421,424-426,428-430,459,476-477,479-480,485-486,490,495,499,502-506,508,511-525,527-528,530,654-658,660-662,673,679,714-715,717,726,728,731-733,740-741,749,764-765,768,1001-1005,1009,1012-1013,1015-1016,2002-2006,2008,2017,2020,2022-2023,2029-2031,2033-2034,2036-2037,2055,2233,2236,2242-2244,2246,2256-2261,2267,2278-2280,2284,2288,2304,2307-2308,2310,2312,2314,2317,2319-2320,2323-2324,2326-2330,2332,2336-2337,2342-2344,2426,2476-2477,2481-2484,2491,2497,2516-2520,2553-2554,2557,2559,2561-2562,2565-2567,2569-2572,2576,2579-2581,2587,2592-2595,3002-3007,3009-3010,3028,5001,5003-5004,5006,5019,5021,5032-5034,5036,5043,5046,5202,5204-5205,5208-5211,5213,5241,5243-5245,5248-5253,5263,5265-5266,5277,5283,5286-5287,5289,5291-5292,5294-5296,5298,5307-5310,5314-5316,5320,5322,5326,5329-5335,5340-5343,5353-5355,5382,5403-5415,5435-5437,5451-5454,5465-5474,5477,5480-5487,5493-5494,5500-5504,5506,6001-6006,6502-6504,6506-6514,6519-6520,8009,8012,8019-8020,8028-8031,8036-8039,8041,8044,8050-8051,8053-8054,8056,8201-8208,8212,8214-8220,8223,8225,8233,8241,8401,8427,8429,8432-8435,8437,8439-8440,8442,8601-8602,8605", magical: "10-21,24-35,54,66-81,83-93,156-157,161-169,192,196,198,200,202-204,207-209,254,275-283,285-303,317,339-341,361-364,366-367,373,375,400,403-405,427,431-434,445,447-458,460-472,482,484,494,507,532,534-542,653,669-671,675-676,689-691,693,697,706,708-709,711-712,718-720,723-724,727,729,736-737,739,742,744-745,769-770,1006,1008,1014,1017-1019,2038-2048,2050-2053,2056-2057,2201-2207,2209-2230,2275,2299-2302,2321,2413-2414,2424,2443-2444,2446-2450,2452-2455,2465-2468,2485,2515,2543,2596-2609,2612,3019-3020,5026,5028,5042,5045,5047,5050-5051,5053,5072,5214-5227,5229-5237,5264,5267,5273-5274,5279,5284,5306,5319,5321,5356-5357,5369-5373,5380,5383,5389-5393,5422,5424-5432,5439-5442,5444-5448,5455-5462,5475-5476,5478-5479,5488-5492,5495,5499,5505,5507,6505,6515-6518,6521-6522,8001,8013-8014,8024-8026,8034,8047-8048,8057,8222,8224,8226-8231,8234,8236-8240,8403,8425-8426,8428,8430-8431,8436,8438,8441,8445,8448,8451,8454,8457", special: "115-120,122-125,127-131,152,173,175,195,306-313,318-322,325-330,354,369,381,395,411,444,488-489,500-501,526,544,722,734,780,783,1010-1011,2238-2239,2249-2254,2479-2480,2489,2555,2582,2610,3008,5015,5030,8011,8016,8209-8211,8213" };
+  var dpsTypeCache = {};
+  var dpsSource = "waiting", dpsTapInstalled = false, dpsParsedSeen = false;
+  function dpsEmptyCur() { return { gid: 0, name: "", total: 0, hits: 0, startAt: 0, lastAt: 0 }; }
+  function dpsEmptyTotals() { return { physical: 0, magical: 0, melee: 0, special: 0, unknown: 0 }; }
   var dps = {
-    total: 0, hits: 0, crit: 0, max: 0, taken: 0, raw: 0, mine: 0,
-    startAt: 0, lastAt: 0,
-    cur: { gid: 0, name: "", total: 0, hits: 0, startAt: 0, lastAt: 0 },
-    skills: {}, lastSkill: 0, lastSkillAt: 0
+    total: 0, hits: 0, multi: 0, max: 0, taken: 0, raw: 0, mine: 0, aid: 0,
+    sessionAt: 0, startAt: 0, lastAt: 0, activeMs: 0, segmentAt: 0, segmentLastAt: 0,
+    cur: dpsEmptyCur(), types: dpsEmptyTotals(), skills: {}, lastSkill: 0, lastSkillAt: 0,
+    lastSig: "", lastSigAt: 0
   };
   function dpsSelfAid() { try { return (CLIENT.SS && CLIENT.SS.AID) || 0; } catch (e) { return 0; } }
   function dpsEntName(gid) {
@@ -10917,45 +10925,99 @@
       return (e.display && e.display.name) || e.displayName || e.name || "";
     } catch (e2) { return ""; }
   }
-  // 施法回执（2842 USESKILL_ACK3）里拿到技能ID → 给随后的伤害包做归属兜底
+  function dpsRangeHas(spec, skid) {
+    var parts = String(spec || "").split(",");
+    for (var i = 0; i < parts.length; i++) {
+      var ab = parts[i].split("-"), a = parseInt(ab[0], 10), b = ab.length > 1 ? parseInt(ab[1], 10) : a;
+      if (skid >= a && skid <= b) return true;
+    }
+    return false;
+  }
+  function dpsSkillType(skid) {
+    skid = Number(skid) || 0;
+    if (!skid) return "melee";
+    if (dpsTypeCache[skid]) return dpsTypeCache[skid];
+    try {
+      var DB = CLIENT.DB || requireDB("DB/DBManager");
+      var si = DB && typeof DB.getSkillInfo === "function" ? DB.getSkillInfo(skid) : null;
+      if (!si && !_skillInfoCache) _skillInfoCache = requireDB("DB/Skills/SkillInfo");
+      if (!si && _skillInfoCache) si = _skillInfoCache[skid];
+      var raw = si && (si.Type || si.DamageType || si.damageType || si.AttackType || si.attackType || si.SkillType || si.skillType);
+      raw = raw == null ? "" : String(raw).toLowerCase();
+      if (/weapon|physical/.test(raw)) return (dpsTypeCache[skid] = "physical");
+      if (/magic/.test(raw)) return (dpsTypeCache[skid] = "magical");
+      if (/misc|special/.test(raw)) return (dpsTypeCache[skid] = "special");
+    } catch (e) {}
+    var keys = ["physical", "magical", "special"];
+    for (var i = 0; i < keys.length; i++) if (dpsRangeHas(DPS_TYPE_RANGES[keys[i]], skid)) return (dpsTypeCache[skid] = keys[i]);
+    return (dpsTypeCache[skid] = "unknown");
+  }
+  // 施法回执（2842 USESKILL_ACK3）仅给不带 SKID 的 ACT 包做 1.5 秒归属兜底。
   function dpsOnSkill(skid) { try { if (skid > 0) { dps.lastSkill = skid; dps.lastSkillAt = Date.now(); } } catch (e) {} }
-  function dpsResetCur() { dps.cur = { gid: 0, name: "", total: 0, hits: 0, startAt: 0, lastAt: 0 }; }
-  function dpsResetAll() {
-    dps.total = 0; dps.hits = 0; dps.crit = 0; dps.max = 0; dps.taken = 0; dps.mine = 0;
-    dps.startAt = 0; dps.lastAt = 0; dps.skills = {};
-    dpsResetCur();
-    dpsRenderSkills();
+  function dpsResetCur() { dps.cur = dpsEmptyCur(); }
+  function dpsResetAll(now) {
+    now = now || Date.now();
+    dps.total = 0; dps.hits = 0; dps.multi = 0; dps.max = 0; dps.taken = 0; dps.raw = 0; dps.mine = 0;
+    dps.sessionAt = now; dps.startAt = 0; dps.lastAt = 0; dps.activeMs = 0; dps.segmentAt = 0; dps.segmentLastAt = 0;
+    dps.types = dpsEmptyTotals(); dps.skills = {}; dps.lastSkill = 0; dps.lastSkillAt = 0; dps.lastSig = ""; dps.lastSigAt = 0;
+    dpsResetCur(); dpsRenderSkills();
+  }
+  function dpsSessionSync(now) {
+    var aid = dpsSelfAid();
+    if (!aid) {
+      if (dps.aid) { dpsResetAll(now || Date.now()); dps.aid = 0; }
+      return 0;
+    }
+    if (aid !== dps.aid) { dpsResetAll(now || Date.now()); dps.aid = aid; }
+    return aid;
+  }
+  function dpsActiveMs(now) {
+    var ms = dps.activeMs;
+    if (dps.segmentAt) ms += Math.max(0, Math.min((dps.segmentLastAt || now) - dps.segmentAt, DPS_IDLE_MS));
+    return ms;
+  }
+  function dpsTouchSegment(now) {
+    if (dps.segmentAt && now - dps.segmentLastAt > DPS_IDLE_MS) {
+      dps.activeMs += Math.max(0, dps.segmentLastAt - dps.segmentAt);
+      dps.segmentAt = 0;
+    }
+    if (!dps.segmentAt) dps.segmentAt = now;
+    dps.segmentLastAt = now;
   }
   function dpsOnDamage(pkt) {
     try {
       if (!pkt) return;
       dps.raw++;
-      var aid = dpsSelfAid();
+      var aid = dpsSessionSync(Date.now());
       if (!aid) return;
-      var gid = (pkt.GID != null) ? pkt.GID : pkt.AID;
-      var tg = (pkt.targetGID != null) ? pkt.targetGID : pkt.targetID;
+      var gid = Number((pkt.GID != null) ? pkt.GID : pkt.AID) || 0;
+      var tg = Number((pkt.targetGID != null) ? pkt.targetGID : pkt.targetID) || 0;
       var dmg = Number(pkt.damage);
       if (!isFinite(dmg) || !dmg) return;
       var cnt = Number(pkt.count); if (!isFinite(cnt) || cnt < 1) cnt = 1;
-      var now = Date.now();
-      if (tg === aid && gid !== aid) { if (dmg > 0) dps.taken += dmg; return; }  // 包内 damage 已是整次总伤害
-      if (gid !== aid) return;      // 只统计自己打出去的
-      if (dmg < 0) return;          // 负数=治疗/异常，不计入伤害
+      var now = Date.now(), skid = Number(pkt.SKID) || 0;
+      var sig = [gid, tg, dmg, cnt, skid].join(":");
+      if (sig === dps.lastSig && now - dps.lastSigAt <= 2) return;
+      dps.lastSig = sig; dps.lastSigAt = now;
+      if (!dps.sessionAt) dps.sessionAt = now;
+      if (tg === aid && gid !== aid) { if (dmg > 0) dps.taken += dmg; return; }
+      if (gid !== aid || dmg < 0) return;
       dps.mine++;
-      var tot = dmg;                // 客户端按 damage/count 显示每段，damage 本身是整次总伤害
-      dps.total += tot; dps.hits += cnt; dps.max = Math.max(dps.max, dmg / cnt);
-      if (cnt > 1) dps.crit++;
+      dps.total += dmg; dps.hits += cnt; dps.max = Math.max(dps.max, dmg / cnt);
+      if (cnt > 1) dps.multi++;
       if (!dps.startAt) dps.startAt = now;
-      dps.lastAt = now;
-      if (tg && tg !== dps.cur.gid) {
-        dps.cur = { gid: tg, name: dpsEntName(tg), total: 0, hits: 0, startAt: now, lastAt: now };
-      }
+      dps.lastAt = now; dpsTouchSegment(now);
+      if (tg && tg !== dps.cur.gid) dps.cur = { gid: tg, name: dpsEntName(tg), total: 0, hits: 0, startAt: now, lastAt: now };
       if (!dps.cur.name && dps.cur.gid) dps.cur.name = dpsEntName(dps.cur.gid);
-      dps.cur.total += tot; dps.cur.hits += cnt; dps.cur.lastAt = now;
-      var sk = (pkt.SKID > 0) ? pkt.SKID : ((now - dps.lastSkillAt < 1500) ? dps.lastSkill : 0);
-      var key = sk ? ("s" + sk) : "melee";
-      var rec = dps.skills[key] || (dps.skills[key] = { dmg: 0, hits: 0 });
-      rec.dmg += tot; rec.hits += cnt;
+      dps.cur.total += dmg; dps.cur.hits += cnt; dps.cur.lastAt = now;
+      var exact = skid > 0;
+      // 无 SKID 的 ACT 包按普攻统计，避免施法后紧接普攻被错误并入物理/魔法技能。
+      var key = skid ? ("s" + skid) : "melee";
+      if (!dps.skills[key] && Object.keys(dps.skills).length >= DPS_SKILL_LIMIT) key = "other";
+      var type = key === "melee" ? "melee" : (key === "other" ? "unknown" : dpsSkillType(skid));
+      var rec = dps.skills[key] || (dps.skills[key] = { dmg: 0, hits: 0, type: type, exact: 0, inferred: 0 });
+      rec.dmg += dmg; rec.hits += cnt; if (exact) rec.exact += dmg; else if (skid) rec.inferred += dmg;
+      dps.types[type] = (dps.types[type] || 0) + dmg;
     } catch (e) {}
   }
   function dpsOnRawDamage(bytes, op) {
@@ -10980,7 +11042,7 @@
         if (packet && DPS_PKTS.indexOf(Number(packet.id)) >= 0 && typeof callback === "function" && !callback.__dshDpsTap) {
           var gameCallback = callback;
           callback = function (pkt) {
-            try { dpsSource = "parsed"; dpsOnDamage(pkt); } catch (e0) {}
+            try { dpsParsedSeen = true; dpsSource = "parsed"; dpsOnDamage(pkt); } catch (e0) {}
             return gameCallback.apply(this, arguments);
           };
           callback.__dshDpsTap = true;
@@ -10989,75 +11051,70 @@
       };
       nm.hookPacket.__dshDpsHook = true;
       dpsTapInstalled = true;
-      // 当前地图的回调早于 document-idle 已登记；只重跑一次注册函数让六个现有槽位经过旁路。
+      // 当前地图回调已登记，重跑无副作用的登记函数，使现有六个伤害槽位进入旁路。
       var entityEngine = window.require && window.require("Engine/MapEngine/Entity");
       if (typeof entityEngine === "function") entityEngine();
-      dpsSource = "parsed";
+      dpsSource = dpsParsedSeen ? "parsed" : "ready";
       return true;
     } catch (e) { dpsTapInstalled = false; return false; }
   }
   function dpsNum(n) { try { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ","); } catch (e) { return String(n); } }
-  function dpsRate(total, t0, t1) {
-    if (!t0 || !t1 || t1 <= t0) return 0;
-    var sec = (t1 - t0) / 1000;
-    if (sec < 1) sec = 1;
-    return Math.round(total / sec);
-  }
+  function dpsRate(total, ms) { return total > 0 ? Math.round(total / Math.max(1, ms / 1000)) : 0; }
+  function dpsDur(ms) { var s = Math.max(0, Math.round(ms / 1000)); return s >= 3600 ? (Math.floor(s / 3600) + "时" + Math.floor(s % 3600 / 60) + "分") : (s >= 60 ? (Math.floor(s / 60) + "分" + s % 60 + "秒") : (s + " 秒")); }
+  function dpsTypeLabel(type) { return { physical: "物理", magical: "魔法", melee: "普攻", special: "特殊", unknown: "未知" }[type] || "未知"; }
   function dpsRenderSkills() {
     try {
-      var el = $id("dsh-dps-skills");
-      if (!el) return;
+      var el = $id("dsh-dps-skills"); if (!el) return;
       var keys = Object.keys(dps.skills);
       if (!keys.length) { el.innerHTML = '<span class="st">暂无数据</span>'; return; }
       keys.sort(function (a, b) { return dps.skills[b].dmg - dps.skills[a].dmg; });
-      var max = dps.skills[keys[0]].dmg || 1;
-      var all = 0; for (var i = 0; i < keys.length; i++) all += dps.skills[keys[i]].dmg;
-      var html = "";
-      var top = keys.slice(0, 8);
-      for (var j = 0; j < top.length; j++) {
-        var k = top[j], rec = dps.skills[k];
-        var nm = (k === "melee") ? "普攻" : (getSkillNameById(parseInt(k.slice(1), 10)) || ("技能" + k.slice(1)));
-        var pct = all > 0 ? Math.round(rec.dmg / all * 100) : 0;
-        var w = Math.max(2, Math.round(rec.dmg / max * 100));
+      var max = dps.skills[keys[0]].dmg || 1, html = "", shown = keys.slice(0, 8), shownDmg = 0;
+      for (var i = 0; i < shown.length; i++) shownDmg += dps.skills[shown[i]].dmg;
+      for (var j = 0; j < shown.length; j++) {
+        var k = shown[j], rec = dps.skills[k];
+        var nm = k === "melee" ? "普攻" : (k === "other" ? "其他技能" : (getSkillNameById(parseInt(k.slice(1), 10)) || ("技能" + k.slice(1))));
+        var pct = dps.total > 0 ? Math.round(rec.dmg / dps.total * 100) : 0, w = Math.max(2, Math.round(rec.dmg / max * 100));
+        var confidence = rec.inferred > 0 ? (rec.exact > 0 ? "混合归属" : "推断归属") : "精确归属";
+        if (k === "melee" || k === "other") confidence = "";
         html += '<div style="display:flex;align-items:center;gap:5px;margin:2px 0">' +
-          '<span style="flex:0 0 96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + nm + '</span>' +
+          '<span title="' + dpsTypeLabel(rec.type) + (confidence ? (" · " + confidence) : "") + '" style="flex:0 0 112px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + roEscTxt(nm) + ' <i style="font-style:normal;color:#7a8797">[' + dpsTypeLabel(rec.type) + ']</i></span>' +
           '<span style="flex:1;height:8px;border:1px solid #b8c6d4;background:#eef3fa;border-radius:2px;overflow:hidden"><i style="display:block;height:100%;width:' + w + '%;background:#6f9ad0"></i></span>' +
           '<span style="flex:0 0 84px;text-align:right;color:#5a6b7f">' + dpsNum(rec.dmg) + " (" + pct + '%)</span></div>';
       }
+      var rest = dps.total - shownDmg; if (rest > 0) html += '<div class="st">其余技能：' + dpsNum(rest) + '</div>';
       el.innerHTML = html;
     } catch (e) {}
   }
   function renderDps() {
     try {
       if (!roModOn("dps")) return;
-      var probe = $id("dsh-dps-total");
-      if (!probe || probe.offsetParent === null) return;   // 页面没打开、浮窗也没开 → 不碰 DOM
-      var now = Date.now();
-      var cur = dps.cur;
+      var probe = $id("dsh-dps-total"); if (!probe || probe.offsetParent === null) return;
+      var now = Date.now(), cur = dps.cur, activeMs = dpsActiveMs(now), sessionMs = dps.sessionAt ? now - dps.sessionAt : 0;
       var nmEl = $id("dsh-dps-curname"); if (nmEl) nmEl.textContent = cur.name || (cur.gid ? ("目标 " + cur.gid) : "未开打");
-      var cdEl = $id("dsh-dps-curdps"); if (cdEl) cdEl.textContent = cur.total ? (dpsNum(dpsRate(cur.total, cur.startAt, cur.lastAt || now)) + " /秒") : "—";
-      var ctEl = $id("dsh-dps-curtxt");
-      if (ctEl) ctEl.textContent = "本场伤害 " + dpsNum(cur.total) + " · 命中 " + cur.hits + " 段";
-      var tEl = $id("dsh-dps-total"); if (tEl) tEl.textContent = dpsNum(dps.total);
-      var dEl = $id("dsh-dps-dps"); if (dEl) dEl.textContent = dpsNum(dpsRate(dps.total, dps.startAt, dps.lastAt || now));
-      var hEl = $id("dsh-dps-hits"); if (hEl) hEl.textContent = String(dps.hits);
-      var cEl = $id("dsh-dps-crit"); if (cEl) cEl.textContent = String(dps.crit);
-      var mEl = $id("dsh-dps-max"); if (mEl) mEl.textContent = dpsNum(dps.max);
-      var kEl = $id("dsh-dps-taken"); if (kEl) kEl.textContent = dpsNum(dps.taken);
-      var duEl = $id("dsh-dps-dur");
-      if (duEl) duEl.textContent = dps.startAt ? (Math.round(((dps.lastAt || now) - dps.startAt) / 1000) + " 秒") : "0 秒";
+      var cdEl = $id("dsh-dps-curdps"); if (cdEl) cdEl.textContent = cur.total ? (dpsNum(dpsRate(cur.total, (cur.lastAt || now) - cur.startAt)) + " /秒") : "—";
+      var ctEl = $id("dsh-dps-curtxt"); if (ctEl) ctEl.textContent = "目标伤害 " + dpsNum(cur.total) + " · 伤害段数 " + cur.hits;
+      $id("dsh-dps-total").textContent = dpsNum(dps.total);
+      $id("dsh-dps-dps").textContent = dpsNum(dpsRate(dps.total, activeMs));
+      $id("dsh-dps-physical").textContent = dpsNum(dps.types.physical) + " / " + dpsNum(dpsRate(dps.types.physical, activeMs)) + " DPS";
+      $id("dsh-dps-magical").textContent = dpsNum(dps.types.magical) + " / " + dpsNum(dpsRate(dps.types.magical, activeMs)) + " DPS";
+      $id("dsh-dps-melee").textContent = dpsNum(dps.types.melee) + " / " + dpsNum(dpsRate(dps.types.melee, activeMs)) + " DPS";
+      $id("dsh-dps-other").textContent = dpsNum(dps.types.special + dps.types.unknown) + " / " + dpsNum(dpsRate(dps.types.special + dps.types.unknown, activeMs)) + " DPS";
+      $id("dsh-dps-hits").textContent = String(dps.hits); $id("dsh-dps-multi").textContent = String(dps.multi);
+      $id("dsh-dps-max").textContent = dpsNum(dps.max); $id("dsh-dps-taken").textContent = dpsNum(dps.taken);
+      $id("dsh-dps-session").textContent = dpsNum(dpsRate(dps.total, sessionMs)) + " DPS";
+      $id("dsh-dps-dur").textContent = dpsDur(sessionMs); $id("dsh-dps-active").textContent = dpsDur(activeMs);
       var stEl = $id("dsh-dps-state");
-      if (stEl) stEl.textContent = "监听：" + (dpsSource === "parsed" ? "客户端伤害回调" : (dpsSource === "raw" ? "原始收包" : "等待客户端")) + " · 收到 " + dps.raw + " 个（自己 " + dps.mine + " 个）";
+      if (stEl) stEl.textContent = "监听：" + (dpsSource === "parsed" ? "客户端已解析回调" : (dpsSource === "raw" ? "原始收包兜底" : (dpsSource === "ready" ? "旁路已安装，等待伤害" : "等待客户端"))) + " · 收到 " + dps.raw + " 个（自己 " + dps.mine + " 个）";
       dpsRenderSkills();
     } catch (e) {}
   }
   (function dpsBind() {
     try {
       dpsInstallTap();
-      masterTickReg(function () { if (!dpsTapInstalled) dpsInstallTap(); });
+      masterTickReg(function () { var now = Date.now(); if (!dpsTapInstalled) dpsInstallTap(); dpsSessionSync(now); if (dps.segmentAt && now - dps.segmentLastAt > DPS_IDLE_MS) { dps.activeMs += Math.max(0, dps.segmentLastAt - dps.segmentAt); dps.segmentAt = 0; } });
       var a = $id("dsh-dps-reset-cur"), b = $id("dsh-dps-reset-all");
-      if (a) a.addEventListener("click", function () { dpsResetCur(); setStatus("伤害统计：本场已清零", "st"); });
-      if (b) b.addEventListener("click", function () { dpsResetAll(); setStatus("伤害统计：全程已清零", "st"); });
+      if (a) a.addEventListener("click", function () { dpsResetCur(); setStatus("伤害统计：当前目标已清零", "st"); });
+      if (b) b.addEventListener("click", function () { if (window.confirm("确定清零本次登录的全部伤害统计？")) { dpsResetAll(); setStatus("伤害统计：本次统计已清零", "st"); } });
     } catch (e) {}
   })();
 

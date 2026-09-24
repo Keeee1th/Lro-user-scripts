@@ -64,19 +64,45 @@ test('in-game battle checkbox overrides stale chat state',()=>{
   assert.equal(ctx.fn(),false);ctx.npReadPanelState=()=>null;assert.equal(ctx.fn(),true);ctx.readChatBattle=()=>null;ctx.npHuntOn=false;assert.equal(ctx.fn(),false);
 });
 
-test('parsed damage tap preserves game callback and counts total once',()=>{
-  const damageCode=extract('  function dpsOnDamage(pkt) {','  function dpsOnRawDamage(bytes, op) {');
+test('DPS classifies skill fields and keeps normal attacks separate',()=>{
+  const code=extract('  function dpsEmptyCur() {','  function dpsOnRawDamage(bytes, op) {');
+  let now=1000;const ctx={Date:{now:()=>now},isFinite,Number,Math,Object,String,parseInt,DPS_IDLE_MS:10000,DPS_SKILL_LIMIT:64,
+    DPS_TYPE_RANGES:{physical:'5,46-48',magical:'13-17',special:'115'},dpsTypeCache:{},CLIENT:{DB:{getSkillInfo:id=>id===999?{Type:'Magic'}:null},SS:{AID:10}},window:{require:()=>null},requireDB:()=>null,_skillInfoCache:null,
+    dpsSource:'waiting',dpsTapInstalled:false,getSkillNameById:()=>'',dpsRenderSkills(){},dpsSelfAid:()=>10,dpsEntName:()=>''};
+  vm.createContext(ctx);vm.runInContext(code+';this.hit=dpsOnDamage;this.kind=dpsSkillType;this.reset=dpsResetAll;this.active=dpsActiveMs',ctx);
+  ctx.reset(now);ctx.dps.aid=10;ctx.hit({SKID:5,AID:10,targetID:20,damage:300,count:3});
+  now=2000;ctx.hit({SKID:13,AID:10,targetID:20,damage:200,count:1});
+  now=3000;ctx.hit({GID:10,targetGID:20,damage:100,count:1});
+  assert.equal(ctx.kind(5),'physical');assert.equal(ctx.kind(13),'magical');assert.equal(ctx.kind(999),'magical');
+  assert.equal(ctx.dps.types.physical,300);assert.equal(ctx.dps.types.magical,200);assert.equal(ctx.dps.types.melee,100);
+  assert.equal(ctx.dps.total,600);assert.equal(ctx.dps.hits,5);assert.equal(ctx.dps.multi,1);assert.equal(ctx.dps.max,200);
+  assert.equal(ctx.dps.skills.melee.dmg,100);assert.equal(ctx.dps.skills.s5.exact,300);
+});
+
+test('DPS combat segments exclude idle gaps and reset session memory',()=>{
+  const code=extract('  function dpsEmptyCur() {','  function dpsOnRawDamage(bytes, op) {');
+  let now=1000;const ctx={Date:{now:()=>now},isFinite,Number,Math,Object,String,parseInt,DPS_IDLE_MS:10000,DPS_SKILL_LIMIT:64,
+    DPS_TYPE_RANGES:{physical:'5',magical:'13',special:'115'},dpsTypeCache:{},CLIENT:{DB:null,SS:{AID:10}},window:{require:()=>null},requireDB:()=>null,_skillInfoCache:null,
+    getSkillNameById:()=>'',dpsRenderSkills(){},dpsSelfAid:()=>10,dpsEntName:()=>''};
+  vm.createContext(ctx);vm.runInContext(code+';this.hit=dpsOnDamage;this.reset=dpsResetAll;this.active=dpsActiveMs',ctx);
+  ctx.reset(now);ctx.dps.aid=10;ctx.hit({SKID:5,AID:10,targetID:20,damage:100,count:1});
+  now=4000;ctx.hit({SKID:5,AID:10,targetID:20,damage:100,count:1});assert.equal(ctx.active(now),3000);
+  now=20000;ctx.hit({SKID:13,AID:10,targetID:21,damage:200,count:1});assert.equal(ctx.dps.activeMs,3000);assert.equal(ctx.active(now),3000);
+  now=22000;assert.equal(ctx.active(now),3000);ctx.reset(now);
+  assert.equal(ctx.dps.total,0);assert.equal(ctx.dps.activeMs,0);assert.equal(ctx.dps.sessionAt,22000);assert.deepEqual(Object.keys(ctx.dps.skills),[]);
+  ctx.dps.aid=10;ctx.CLIENT.SS.AID=0;ctx.hit({SKID:5,AID:10,targetID:20,damage:100,count:1});assert.equal(ctx.dps.aid,0);
+  now=23000;ctx.CLIENT.SS.AID=10;ctx.hit({SKID:5,AID:10,targetID:20,damage:100,count:1});assert.equal(ctx.dps.sessionAt,23000);assert.equal(ctx.dps.total,100);
+});
+
+test('parsed damage tap preserves game callback and installs once',()=>{
   const tapCode=extract('  function dpsInstallTap() {','  function dpsNum(n)');
-  const callbacks={},packets=[138,139,737,2248,276,478].map(id=>({id}));let gameCalls=0;
+  const callbacks={},packets=[138,139,737,2248,276,478].map(id=>({id}));let gameCalls=0,dpsCalls=0;
   const nm={hookPacket(packet,cb){callbacks[packet.id]=cb;}};
-  const ctx={Date,isFinite,Number,Math,DPS_PKTS:[138,139,737,2248,276,478],dpsSource:'waiting',dpsTapInstalled:false,
-    CLIENT:{NM:nm},clientReady:()=>true,window:{require:n=>n==='Engine/MapEngine/Entity'?()=>packets.forEach(p=>nm.hookPacket(p,()=>{gameCalls++})):null},
-    dps:{total:0,hits:0,crit:0,max:0,taken:0,raw:0,mine:0,startAt:0,lastAt:0,cur:{gid:0,name:'',total:0,hits:0,startAt:0,lastAt:0},skills:{},lastSkill:0,lastSkillAt:0},
-    dpsSelfAid:()=>10,dpsEntName:()=>'',};
-  vm.createContext(ctx);vm.runInContext(damageCode+tapCode+';this.install=dpsInstallTap;this.hit=dpsOnDamage',ctx);
-  assert.equal(ctx.install(),true);callbacks[138]({GID:10,targetGID:20,damage:300,count:3,action:0});
-  assert.equal(gameCalls,1);assert.equal(ctx.dps.total,300);assert.equal(ctx.dps.hits,3);assert.equal(ctx.dps.max,100);assert.equal(ctx.dps.raw,1);
-  assert.equal(ctx.install(),false);
+  const ctx={DPS_PKTS:[138,139,737,2248,276,478],dpsSource:'waiting',dpsTapInstalled:false,dpsParsedSeen:false,CLIENT:{NM:nm},clientReady:()=>true,
+    dpsOnDamage(){dpsCalls++},window:{require:n=>n==='Engine/MapEngine/Entity'?()=>packets.forEach(p=>nm.hookPacket(p,()=>{gameCalls++})):null}};
+  vm.createContext(ctx);vm.runInContext(tapCode+';this.install=dpsInstallTap',ctx);
+  assert.equal(ctx.install(),true);callbacks[138]({GID:10,targetGID:20,damage:300,count:3});
+  assert.equal(gameCalls,1);assert.equal(dpsCalls,1);assert.equal(ctx.dpsParsedSeen,true);assert.equal(ctx.dpsSource,'parsed');assert.equal(ctx.install(),false);
 });
 
 test('shop sell rows use inventory tooltip path',()=>{
@@ -228,9 +254,9 @@ test('target UI distinguishes game focus assistant lock and attack list',()=>{
   assert.ok(source.includes('攻击名单（只主动攻击勾选的怪）'));
 });
 
-test('version constants agree at v2.27.0 and feedback is visible',()=>{
+test('version constants agree at v2.28.0 and feedback is visible',()=>{
   const meta=source.match(/@version\s+(\S+)/)?.[1], runtime=source.match(/var VER = "([^"]+)"/)?.[1];
-  assert.equal(meta,'2.27.0');assert.equal(runtime,meta);
+  assert.equal(meta,'2.28.0');assert.equal(runtime,meta);
   assert.ok(source.includes('function roFeedback(text, cls)'));
   assert.ok(source.includes('id = "dsh-feedback"'));
 });

@@ -186,3 +186,51 @@ test('storage close saves synchronized cache before component removal',()=>{
   inst.setItems([{index:3,ITID:501,count:2}]);inst.removeItem(3,1);inst.onRemove();
   assert.equal(removed,true);assert.equal(saved[0].count,1);
 });
+
+test('v2.27 floating windows derive state from DOM and retry restore',()=>{
+  assert.ok(source.includes('function fwActualOpen(id)'));
+  assert.ok(source.includes('host.parentNode === st.body'));
+  assert.ok(source.includes('fwRefreshHosts(id);'));
+  assert.ok(source.includes('if (!fwSyncState(id))'));
+  assert.ok(source.includes('fwRestoreTries >= FW_RESTORE_MAX'));
+  assert.ok(source.includes('document.createComment("dsh-fw-origin:" + id)'));
+  assert.ok(source.includes('st.origin.parentNode.insertBefore(st.host, st.origin.nextSibling)'));
+  assert.ok(!source.includes('return !!fwOpenIds[id]'));
+  assert.ok(!source.includes('fwReg("mvp"'));
+});
+
+test('floating actual-state rejects stale and hidden windows',()=>{
+  const code=extract('  function fwActualOpen(id) {','  function fwSyncState(id)');
+  const ctx={fwState:{}};vm.createContext(ctx);vm.runInContext(code+';this.fn=fwActualOpen',ctx);
+  const body={},host={parentNode:body},win={parentNode:{},style:{display:'flex'}};
+  ctx.fwState.x={win,body,host};assert.equal(ctx.fn('x'),true);
+  win.style.display='none';assert.equal(ctx.fn('x'),false);
+  win.style.display='flex';host.parentNode={};assert.equal(ctx.fn('x'),false);
+  ctx.fwState.x.win=null;assert.equal(ctx.fn('x'),false);
+});
+
+test('safe monster references reject injected IDs',()=>{
+  const code=extract('  function mobRefUrl(site, mid) {','  function gameFocusMob()');
+  const ctx={String,encodeURIComponent};vm.createContext(ctx);vm.runInContext(code+';this.fn=mobRefUrl',ctx);
+  assert.equal(ctx.fn('dvg',1002),'https://ro.dvg.cn/monsterinfo.php?id=1002');
+  assert.equal(ctx.fn('ro321','1002'),'https://ro.ro321.com/index.php?page=re_mob_db&mob_id=1002');
+  for(const bad of ['',0,-1,'1.2','1&x=1','javascript:1','12345678901'])assert.equal(ctx.fn('dvg',bad),'');
+  assert.equal(ctx.fn('evil',1002),'');
+  assert.ok(source.includes('target="_blank" rel="noopener noreferrer"'));
+});
+
+test('target UI distinguishes game focus assistant lock and attack list',()=>{
+  assert.ok(source.includes('id="dsh-game-tgt"'));
+  assert.ok(source.includes('助手锁定'));
+  assert.ok(source.includes('id="dsh-tgt-list"'));
+  assert.ok(source.includes('EM.getFocusEntity'));
+  assert.ok(source.includes('游戏目标与助手锁定不同'));
+  assert.ok(source.includes('攻击名单（只主动攻击勾选的怪）'));
+});
+
+test('version constants agree at v2.27.0 and feedback is visible',()=>{
+  const meta=source.match(/@version\s+(\S+)/)?.[1], runtime=source.match(/var VER = "([^"]+)"/)?.[1];
+  assert.equal(meta,'2.27.0');assert.equal(runtime,meta);
+  assert.ok(source.includes('function roFeedback(text, cls)'));
+  assert.ok(source.includes('id = "dsh-feedback"'));
+});

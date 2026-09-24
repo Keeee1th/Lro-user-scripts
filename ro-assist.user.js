@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.26.3
+// @version      2.27.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.26.3"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.27.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -481,6 +481,7 @@
   //  面板（分页式 · v1.6 重构）
   // ============================================================
   var PANEL_CSS =
+    ":root{--dsh-primary:#2f6fde;--dsh-primary-dark:#1d4ed8;--dsh-success:#1f9d4d;--dsh-danger:#d64545;--dsh-warning:#c77a00;--dsh-text:#16202c;--dsh-muted:#5a6b7f;--dsh-border:#c7d3e6;--dsh-surface:#f4f7fc;--dsh-surface-2:#eef2f8;--dsh-radius:6px;--dsh-gap:8px}" +
     "#dsh-ro-panel{position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:2147483647;width:400px;height:640px;min-width:300px;min-height:360px;max-height:92vh;" +
     "background:rgba(244,247,252,.93);border:2px solid #1f9d4d;border-radius:12px;color:#16202c;" +
     "font:13px/1.6 'Microsoft YaHei',system-ui,sans-serif;" +
@@ -885,15 +886,18 @@
       '<div class="sec">② 指定 ID 拾取（怪物掉落树 · 点选物品加入）</div>' +
       '<div class="row"><span class="lb">当前地图</span><span class="st" id="dsh-pickmap" style="flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—（未进图）</span>' +
       '<button class="ghost" id="dsh-pickmapbtn" style="flex:0 0 auto">本图怪物掉落</button></div>' +
-      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">当前目标（正在打谁 · 血量 · 距离）</span>' +
+      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">目标状态</span>' +
       '<button class="ghost" id="dsh-fw-btn-tgt" data-fw="tgt" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
       '<div id="dsh-fw-tgt">' +
-      '<div class="row"><span id="dsh-tgt-name" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">未锁定目标</span>' +
+      '<div class="row"><span class="lb">游戏目标</span><span id="dsh-game-tgt" class="st" style="flex:1">未选择</span></div>' +
+      '<div class="row"><span class="lb">助手锁定</span><span id="dsh-tgt-name" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">未锁定</span>' +
       '<span class="tag blue" id="dsh-tgt-dist" style="flex:0 0 auto">—</span></div>' +
       '<div class="row"><span style="flex:1;height:9px;border:1px solid #b8c6d4;background:#eef3fa;border-radius:2px;overflow:hidden"><i id="dsh-tgt-hp" style="display:block;height:100%;width:0%;background:#8a97a8"></i></span>' +
       '<span class="st" id="dsh-tgt-hptxt" style="flex:0 0 96px;text-align:right">—</span></div>' +
-      '<div class="row"><span class="st" id="dsh-tgt-extra" style="font-size:11px">—</span></div>' +
-      '<div class="log">显示助手当前锁定的目标：名字 / 血量 / 距离 / 状态。挂机时用来确认有没有打错怪。</div>' +
+      '<div class="row"><span class="lb">助手动作</span><span class="st" id="dsh-tgt-extra" style="flex:1;font-size:11px">—</span></div>' +
+      '<div class="row"><span class="lb">攻击名单</span><span class="st" id="dsh-tgt-list" style="flex:1">打全部怪</span></div>' +
+      '<div class="row" id="dsh-tgt-links" style="display:none"><span class="lb">怪物资料</span><a id="dsh-tgt-dvg" target="_blank" rel="noopener noreferrer">DVG</a><a id="dsh-tgt-ro321" target="_blank" rel="noopener noreferrer">RO321</a></div>' +
+      '<div class="log">游戏目标是画面当前选择；助手锁定是自动战斗正在追踪的对象；攻击名单决定允许主动攻击的怪物。</div>' +
       '</div>' +
       '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">队伍血条（队员血量）</span>' +
       '<button class="ghost" id="dsh-fw-btn-party" data-fw="party" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
@@ -902,10 +906,10 @@
       '<div id="dsh-party-list"><span class="st">暂无队伍成员</span></div>' +
       '</div>' +
       '<div id="dsh-fw-mlock">' +
-      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">怪物锁定目录（只打勾选的怪）</span><button class="ghost" id="dsh-fw-btn-mlock" data-fw="mlock" style="flex:0 0 auto;padding:0 8px;font-size:11px">⧉ 浮窗</button></div>' +
-      '<details style="margin:4px 0" open><summary>本图怪物锁定（读当前地图怪物表 · 勾选=锁定）</summary>' +
+      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">攻击名单（只主动攻击勾选的怪）</span><button class="ghost" id="dsh-fw-btn-mlock" data-fw="mlock" style="flex:0 0 auto;padding:0 8px;font-size:11px">⧉ 浮窗</button></div>' +
+      '<details style="margin:4px 0" open><summary>本图攻击名单（读当前地图怪物表 · 勾选=允许攻击）</summary>' +
       '<div class="box" style="margin-top:2px"><div id="dsh-z-maplock" style="font-size:11px;max-height:120px;overflow:auto"><span class="st">读取当前地图怪物表（换图自动刷新）</span></div></div></details>' +
-      '<div class="box"><div class="b-hd">已锁定 <button class="ghost" id="dsh-lockclear" style="flex:0 0 auto;padding:0 8px;font-size:11px">清空锁定</button><span class="tag green" id="dsh-lockcount" style="float:right">0 种</span></div><div id="dsh-locklist" style="font-size:11px">未锁定（勾选本图怪物或侦查扫描到的怪）</div>' +
+      '<div class="box"><div class="b-hd">攻击名单 <button class="ghost" id="dsh-lockclear" style="flex:0 0 auto;padding:0 8px;font-size:11px">清空名单</button><span class="tag green" id="dsh-lockcount" style="float:right">0 种</span></div><div id="dsh-locklist" style="font-size:11px">名单为空（勾选本图怪物或侦查扫描到的怪）</div>' +
       '<div class="log" style="margin-top:2px">锁定后自动切换目标：优先级=勾选怪 &gt; 最近 &gt; 血最少</div></div>' +
       '</div>' +
       '<div class="row"><input id="dsh-mobsearch" type="text" placeholder="搜索怪物名/ID…（全量图鉴）">' +
@@ -1582,11 +1586,31 @@
   // 实现：移动 DOM 节点（appendChild）而非复制 → id 保留，渲染函数与事件监听全部自动跟随；移动前记录 parentNode+nextSibling，收回时 insertBefore 复原。
   var fwState = {}; // id -> {wrap, title, host, parent, next, open}
   var fwOpenIds = {};
+  var fwRestoreTries = 0, FW_RESTORE_MAX = 8;
+  function fwError(id, stage, err, quiet) {
+    var msg = "浮窗“" + ((fwState[id] && fwState[id].title) || id) + "”" + stage + "失败";
+    if (err && err.message) msg += "：" + err.message;
+    try { console.error("[RO助手][浮窗] " + id + " " + stage, err || ""); } catch (e) {}
+    try { dshDiag("fw-error", { id: id, stage: stage, message: err && err.message ? err.message : String(err || "") }); } catch (e2) {}
+    if (!quiet) try { roFeedback(msg, "err"); } catch (e3) {}
+    return false;
+  }
+  function fwActualOpen(id) {
+    var st = fwState[id], win = st && st.win, host = st && st.host;
+    return !!(win && win.parentNode && win.style.display !== "none" && st.body && host && host.parentNode === st.body);
+  }
+  function fwSyncState(id) {
+    var on = fwActualOpen(id);
+    fwOpenIds[id] = on;
+    var b = document.getElementById("dsh-fw-btn-" + id);
+    if (b) b.textContent = on ? "收回" : "浮窗";
+    return on;
+  }
   function fwMakeWin(id, title) {
     try {
       if (fwState[id] && fwState[id].win && fwState[id].win.parentNode) return fwState[id].win;
       var win = document.createElement("div");
-      win.id = "dsh-fw-" + id;
+      win.id = "dsh-win-fw-" + id;
       // V2.17.0：位置 / 尺寸 / 缩放 / 拖动 / 拉伸全部交给公共层 roWinBind，这里只留外观
       win.style.cssText = "position:fixed;z-index:2147482000;" +
         "border:1px solid #8e8e8e;border-radius:3px;background:#fff;box-shadow:1px 2px 2px rgba(0,0,0,.55);" +
@@ -1647,31 +1671,43 @@
         ay: Math.max(0, Math.round(roVh() * 0.12))
       });
       return win;
-    } catch (e) { return null; }
+    } catch (e) {
+      var bad = fwState[id] && fwState[id].win;
+      try { if (bad && bad.parentNode) bad.parentNode.removeChild(bad); } catch (e2) {}
+      if (fwState[id]) { fwState[id].win = null; fwState[id].body = null; }
+      fwError(id, "创建", e, false);
+      return null;
+    }
   }
-  function fwOpen(id) {
+  function fwOpen(id, quiet) {
     try {
+      fwRefreshHosts(id);
       var st = fwState[id];
-      if (!st || !st.host) return;
+      if (!st) return fwError(id, "登记", new Error("模块未登记"), quiet);
+      if (fwActualOpen(id)) { fwSyncState(id); return true; }
+      if (!st.host || !st.host.isConnected) return fwError(id, "打开", new Error("内容节点未就绪"), quiet);
       var win = fwMakeWin(id, st.title);
-      if (!win) return;
-      // 记录原位并移动
-      if (st.host.parentNode) { st.parent = st.host.parentNode; st.next = st.host.nextSibling; }
+      if (!win || !st.body) return fwError(id, "创建", new Error("窗口容器未创建"), quiet);
+      if (st.host.parentNode !== st.body && st.host.parentNode) {
+        st.parent = st.host.parentNode; st.next = st.host.nextSibling;
+        if (!st.origin || !st.origin.parentNode) { st.origin = document.createComment("dsh-fw-origin:" + id); st.parent.insertBefore(st.origin, st.host); }
+      }
       st.body.appendChild(st.host);
       win.style.display = "flex";
-      fwOpenIds[id] = true;
+      if (!fwSyncState(id)) return fwError(id, "校验", new Error("内容未进入窗口"), quiet);
       fwPersist();
-      try { var b = document.getElementById("dsh-fw-btn-" + id); if (b) b.textContent = "收回"; } catch (e) {}
-      try { localStorage.setItem("dsh_ro_fwpos", JSON.stringify((function () { var m = {}; for (var k in fwState) { var w = fwState[k].win; if (w) m[k] = { l: w.offsetLeft, t: w.offsetTop }; } return m; })())); } catch (e) {}
-    } catch (e) {}
+      try { roBringFront(win); } catch (e0) {}
+      try { localStorage.setItem("dsh_ro_fwpos", JSON.stringify((function () { var m = {}; for (var k in fwState) { var w = fwState[k].win; if (w) m[k] = { l: w.offsetLeft, t: w.offsetTop }; } return m; })())); } catch (e1) {}
+      return true;
+    } catch (e) { fwOpenIds[id] = false; return fwError(id, "打开", e, quiet); }
   }
   function fwClose(id) {
     try {
       var st = fwState[id];
       if (!st) return;
-      if (st.parent && st.host) {
-        if (st.next && st.next.parentNode === st.parent) st.parent.insertBefore(st.host, st.next);
-        else st.parent.appendChild(st.host);
+      if (st.host) {
+        if (st.origin && st.origin.parentNode) st.origin.parentNode.insertBefore(st.host, st.origin.nextSibling);
+        else if (st.parent && st.parent.isConnected) st.parent.appendChild(st.host);
       }
       var win = st.win;
       if (win) win.style.display = "none";
@@ -1680,8 +1716,11 @@
       try { var b = document.getElementById("dsh-fw-btn-" + id); if (b) b.textContent = "浮窗"; } catch (e) {}
     } catch (e) {}
   }
-  function fwToggle(id) { try { console.log("[FW-DIAG] fwToggle id=" + id + " currentlyOpen=" + !!fwOpenIds[id]); if (fwOpenIds[id]) fwClose(id); else fwOpen(id); } catch (e) { console.log("[FW-DIAG] fwToggle error: " + e.message); } }
-  function fwCloseAll() { for (var id in fwOpenIds) if (fwOpenIds[id]) fwClose(id); }
+  function fwToggle(id) {
+    try { if (fwActualOpen(id)) return fwClose(id); return fwOpen(id, false); }
+    catch (e) { return fwError(id, "切换", e, false); }
+  }
+  function fwCloseAll() { for (var id in fwState) if (fwActualOpen(id)) fwClose(id); }
   // V2.23.0：浮窗开启状态持久化 —— 挂机时重开客户端后「当前目标/队伍血条」等浮窗自动回来
   var fwRestored = false;
   function fwPersist() {
@@ -1692,40 +1731,54 @@
     } catch (e) {}
   }
   function fwRestore() {
-    if (fwRestored) return;
-    fwRestored = true;
+    if (fwRestored) return true;
     try {
-      var m = JSON.parse(localStorage.getItem("dsh_ro_fwopen_v1") || "{}");
-      for (var k in m) { if (m[k] && roModOn(k) && !fwOpenIds[k]) { try { fwOpen(k); } catch (e) {} } }
-    } catch (e) {}
+      fwRefreshHosts();
+      var m = JSON.parse(localStorage.getItem("dsh_ro_fwopen_v1") || "{}"), pending = false;
+      for (var k in m) {
+        if (!m[k] || !roModOn(k)) continue;
+        if (!fwActualOpen(k) && !fwOpen(k, true)) pending = true;
+      }
+      fwRestoreTries++;
+      fwRestored = !pending || fwRestoreTries >= FW_RESTORE_MAX;
+      if (pending && fwRestored) fwError("restore", "恢复", new Error("部分窗口内容尚未就绪"), false);
+      return fwRestored;
+    } catch (e) {
+      fwRestoreTries++;
+      if (fwRestoreTries >= FW_RESTORE_MAX) fwRestored = true;
+      return fwError("restore", "恢复", e, fwRestoreTries < FW_RESTORE_MAX);
+    }
   }
   // 注册区块：getEl 返回要浮窗化的容器节点（其父容器为原位）
   function fwReg(id, title, getEl) {
     try { console.log("[FW-DIAG] fwReg id=" + id + " title=" + title); if (!fwState[id]) fwState[id] = {}; fwState[id].title = title; fwState[id].getEl = getEl; var el = getEl(); if (el) { fwState[id].host = el; console.log("[FW-DIAG] fwReg id=" + id + " host found"); } else { console.log("[FW-DIAG] fwReg id=" + id + " host NOT found"); } } catch (e) { console.log("[FW-DIAG] fwReg error: " + e.message); }
   }
   // 面板重建后（host 节点已重挂）重新登记 host
-  function fwRefreshHosts() {
-    try { for (var id in fwState) { var st = fwState[id]; if (st.getEl) { var el = st.getEl(); if (el && el !== st.host) { st.host = el; if (fwOpenIds[id] && st.win && st.body) { st.body.appendChild(el); } } } } } catch (e) {}
+  function fwRefreshHosts(onlyId) {
+    try {
+      for (var id in fwState) {
+        if (onlyId && id !== onlyId) continue;
+        var st = fwState[id];
+        if (!st.getEl) continue;
+        var el = st.getEl();
+        if (el && el !== st.host) st.host = el;
+        if (fwOpenIds[id] && !fwActualOpen(id)) fwOpenIds[id] = false;
+      }
+      return true;
+    } catch (e) { return fwError(onlyId || "refresh", "刷新内容", e, true); }
   }
 
   // 三个可浮窗区块注册（V2.10.0）：本图怪物锁定 / 传送功能 / 助手技能设置
   try {
-    fwReg("mlock", "本图怪物锁定", function () { return document.getElementById("dsh-fw-mlock"); });
+    fwReg("mlock", "攻击名单", function () { return document.getElementById("dsh-fw-mlock"); });
     fwReg("tp", "传送功能", function () { return document.getElementById("dsh-fw-tp"); });
     fwReg("zhu2", "助手战斗设置", function () { return document.getElementById("dsh-fw-zhu2"); });
     fwReg("aid", "战斗辅助", function () { return document.getElementById("dsh-fw-aid"); });
-    // MVP 计时：不使用标准浮窗，直接控制独立窗口的显示/隐藏
-    fwReg("mvp", "MVP 计时", function () { 
-      var mvpWin = document.getElementById("dsh-mvp-timers");
-      if (mvpWin) {
-        mvpWin.style.display = mvpWin.style.display === "none" ? "flex" : "none";
-      }
-      return null; // 返回 null 表示不创建标准浮窗，只切换显示
-    });
+    // MVP 计时是独立 custom 窗口，由 roModOpen/roModClose 直接管理，不进入标准浮窗登记。
     // V2.15.1 物品（拾取+背包整理）浮窗：标准浮窗（可拖动/透明/×收回）
     fwReg("item", "物品 · 拾取+背包整理", function () { return document.getElementById("dsh-fw-item"); });
     fwReg("perf", "画面性能", function () { return document.getElementById("dsh-fw-perf"); });
-    fwReg("tgt", "当前目标", function () { return document.getElementById("dsh-fw-tgt"); });
+    fwReg("tgt", "目标状态", function () { return document.getElementById("dsh-fw-tgt"); });
     fwReg("party", "队伍血条", function () { return document.getElementById("dsh-fw-party"); });
   fwReg("dps", "伤害统计", function () { return document.getElementById("dsh-fw-dps"); });   // V2.24.0
   fwReg("boss", "首领警报", function () { return document.getElementById("dsh-fw-boss"); }); // V2.24.0
@@ -1778,13 +1831,13 @@
   //   kind 仍标 "page" 只是为了让渲染层不给它画「总开关」勾选框（面板没有开/关语义）。
   var RO_MODULES = [
     { id: "menu",  name: "功能菜单快捷键",  kind: "menu", noToggle: true, sec: "常用" },
-    { id: "mlock", name: "本图怪物锁定",    kind: "fw", sec: "功能窗口" },
+    { id: "mlock", name: "攻击名单",        kind: "fw", sec: "功能窗口" },
     { id: "tp",    name: "传送功能",        kind: "fw", sec: "功能窗口" },
     { id: "zhu2",  name: "助手战斗设置",    kind: "fw", sec: "功能窗口" },
     { id: "aid",   name: "战斗辅助",        kind: "fw", sec: "功能窗口" },
     { id: "item",  name: "物品 · 拾取与整理", kind: "fw", sec: "功能窗口" },
     { id: "perf",  name: "画面性能",        kind: "fw", sec: "功能窗口" },
-    { id: "tgt",   name: "当前目标",        kind: "fw", sec: "功能窗口" },
+    { id: "tgt",   name: "目标状态",        kind: "fw", sec: "功能窗口" },
     { id: "party", name: "队伍血条",        kind: "fw", sec: "功能窗口" },
     { id: "dps",   name: "伤害统计",        kind: "fw", sec: "功能窗口" },
     { id: "boss",  name: "首领警报",        kind: "fw", sec: "功能窗口", defOff: true },
@@ -1800,7 +1853,8 @@
     if (id === "mvp") return document.getElementById("dsh-mvp-timers");
     if (id === "zhud") return document.getElementById("dsh-ro-z-hud");
     if (id === "ztip") return document.getElementById("dsh-ztip");
-    return document.getElementById("dsh-fw-" + id);
+    var fs = fwState[id];
+    return (fs && fs.win && fs.win.parentNode) ? fs.win : document.getElementById("dsh-win-fw-" + id);
   }
   function roPanelOpen() {
     var p = document.getElementById("dsh-ro-panel");
@@ -1819,7 +1873,7 @@
       var e2 = roModEl(id);
       return !!(e2 && e2.style.display !== "none");
     }
-    return !!fwOpenIds[id];
+    return fwSyncState(id);
   }
   function roModOpen(id) {
     var pg = roModPage(id);
@@ -1837,7 +1891,7 @@
     if (id === "mvp") { var m = roModEl("mvp"); if (m) { m.style.display = "flex"; try { roBringFront(m); } catch (e) {} } return; }
     if (id === "zhud") { try { ensureZHud(); if (zHudEl) zHudEl.style.display = ""; } catch (e) {} return; }
     if (id === "ztip") { try { ensureZTip(); if (zTipEl) zTipEl.style.display = ""; } catch (e) {} return; }
-    if (!fwOpenIds[id]) fwToggle(id);
+    if (!fwActualOpen(id)) fwOpen(id, false);
     try { roBringFront(roModEl(id)); } catch (e) {}  // V2.19.0：打开就置顶
   }
   function roModClose(id) {
@@ -1851,7 +1905,7 @@
     if (id === "np" || id === "zhu") return;   // 纯动作类（只有快捷键，没有窗口）
     if (id === "panel") { saved.collapsed = true; try { saveSaved(saved); } catch (e) {} applyCollapse(true); return; }
     if (id === "mvp" || id === "zhud" || id === "ztip") { var e3 = roModEl(id); if (e3) e3.style.display = "none"; return; }
-    if (fwOpenIds[id]) fwToggle(id);
+    if (fwActualOpen(id)) fwClose(id);
   }
   // V2.24.1：恢复 2.24.0 误删的总调度。菜单每行的「打开」按钮与快捷键 hkAction 都调用它，
   //   缺了它两者全部 ReferenceError → 表现为「所有打开都没反应、所有快捷键全失效」。
@@ -2621,7 +2675,25 @@
   // （已删除：「弹出独立窗口」按钮与 window.open 弹窗生成代码 —— 弹窗为独立 JS 环境，
   //   读不到游戏 CLIENT，且弹窗内操作无法回传游戏。功能改由「功能菜单」承载。）
 
-  // ---------------- 状态条 ----------------
+  // ---------------- 统一反馈 ----------------
+  var roFeedbackEl = null, roFeedbackTimer = null;
+  function roFeedback(text, cls) {
+    setStatus(text, cls);
+    try {
+      if (!roFeedbackEl || !roFeedbackEl.isConnected) {
+        roFeedbackEl = document.createElement("div");
+        roFeedbackEl.id = "dsh-feedback";
+        roFeedbackEl.setAttribute("data-dsh-ui", "1");
+        roFeedbackEl.style.cssText = "position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:2147483600;max-width:min(560px,90vw);padding:7px 12px;border-radius:var(--dsh-radius,6px);background:#334155;color:#fff;box-shadow:0 4px 18px rgba(0,0,0,.35);font:12px/1.5 'Microsoft YaHei',sans-serif;display:none;pointer-events:none";
+        document.documentElement.appendChild(roFeedbackEl);
+      }
+      roFeedbackEl.textContent = String(text || "");
+      roFeedbackEl.style.background = cls === "err" ? "#b33535" : (cls === "ok" ? "#17793a" : (cls === "warn" ? "#a16207" : "#334155"));
+      roFeedbackEl.style.display = "block";
+      if (roFeedbackTimer) clearTimeout(roFeedbackTimer);
+      roFeedbackTimer = setTimeout(function () { if (roFeedbackEl) roFeedbackEl.style.display = "none"; }, cls === "err" ? 6000 : 2600);
+    } catch (e) {}
+  }
   function setStatus(text, cls) {
     var el = $id("dsh-status");
     if (el) { el.textContent = text; el.className = cls || "warn"; }
@@ -3439,11 +3511,12 @@
       try { syncApplyRuntime(); renderSyncState(); } catch (e) {} // V2.15.10：切档后同步器按新档配置启停
       try { perfApply(true); } catch (e) {} // V2.23.0：切档后按新档画面优化设置生效
       renderWinInfo(); renderLockList(); renderAskList();
+      try { fwRefreshHosts(); fwRestore(); } catch (e4) {}
       lastCharGid = gid;
       setStatus("已加载角色档 " + nm + "（ID" + gid + "）", "ok");
       tlog("profile-load " + key);
       try { syncRealAtkRange(); } catch (e) {} // V2.16.7：切档后读真实射程并回写物理距离设置
-    } catch (e) {}
+    } catch (e) { try { roFeedback("角色设置切换失败：" + (e.message || e), "err"); } catch (e2) {} }
   }
   $id("dsh-saveprofile").addEventListener("click", function () {
     try { captureAll(); } catch (e) {}
@@ -5996,7 +6069,7 @@
     if (!el) return;
     var ids = Object.keys(lockList);
     $id("dsh-lockcount").textContent = ids.length + " 种";
-    if (!ids.length) { el.innerHTML = '<span class="st">未锁定（勾选本图怪物或侦查扫描到的怪）</span>'; return; }
+    if (!ids.length) { el.innerHTML = '<span class="st">名单为空（勾选本图怪物或侦查扫描到的怪）</span>'; return; }
     var html = "";
     ids.forEach(function (id) {
       html += '<div class="list-item"><span>' + (lockList[id].name || ("ID" + id)) + ' · ID' + id + '</span>' +
@@ -10693,38 +10766,60 @@
   function roEscTxt(s) {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
-  // ---- 当前目标：显示助手当前锁定的怪（名字 / 血量 / 距离 / 状态）----
+  // ---- 目标状态：游戏画面焦点、助手攻击目标、攻击名单互不混用 ----
+  function mobRefUrl(site, mid) {
+    var s = String(mid == null ? "" : mid);
+    if (!/^[1-9]\d{0,9}$/.test(s)) return "";
+    if (site === "dvg") return "https://ro.dvg.cn/monsterinfo.php?id=" + encodeURIComponent(s);
+    if (site === "ro321") return "https://ro.ro321.com/index.php?page=re_mob_db&mob_id=" + encodeURIComponent(s);
+    return "";
+  }
+  function gameFocusMob() {
+    try {
+      var EM = window.require && window.require("Renderer/EntityManager");
+      var e = EM && EM.getFocusEntity && EM.getFocusEntity();
+      if (!e || e.objecttype !== 5 || !e.GID || !EM.get || EM.get(Number(e.GID)) !== e) return null;
+      if (e.isDeath || e.remove_tick || (e.ACTION && e.action === e.ACTION.DIE)) return null;
+      return e;
+    } catch (e0) { return null; }
+  }
+  function mobSpeciesId(e) {
+    var n = e && (e._job != null ? e._job : (e.job != null ? e.job : e.mobId));
+    n = Math.floor(Number(n));
+    return isFinite(n) && n > 0 ? n : 0;
+  }
+  function targetName(e, fallback) { return (e && e.display && e.display.name) || fallback || "未知怪物"; }
   function renderTgt() {
     try {
-      var nm = $id("dsh-tgt-name");
-      if (!nm) return;
-      var dist = $id("dsh-tgt-dist"), hp = $id("dsh-tgt-hp"), hpt = $id("dsh-tgt-hptxt"), ex = $id("dsh-tgt-extra");
-      var gid = (zLock && zLock.gid) ? zLock.gid : null;
-      if (!gid) {
-        nm.textContent = (zLock && zLock.done) ? "已击杀待命" : "未锁定目标";
-        if (dist) dist.textContent = "—";
-        if (hp) { hp.style.width = "0%"; hp.style.background = "#8a97a8"; }
-        if (hpt) hpt.textContent = "—";
-        if (ex) ex.textContent = zRunning ? "助手自动战斗中" : "助手未运行";
-        return;
-      }
-      var ent = null;
-      try { var EM = window.require && window.require("Renderer/EntityManager"); if (EM && EM.get) ent = EM.get(gid); } catch (e0) {}
-      nm.textContent = (ent && ent.display && ent.display.name) || zLock.name || ("GID " + gid);
-      if (dist) dist.textContent = (zLock.dist != null ? (zLock.dist + " 格") : "—");
+      var nm = $id("dsh-tgt-name"), gameEl = $id("dsh-game-tgt");
+      if (!nm || !gameEl) return;
+      var dist = $id("dsh-tgt-dist"), hp = $id("dsh-tgt-hp"), hpt = $id("dsh-tgt-hptxt"), ex = $id("dsh-tgt-extra"), listEl = $id("dsh-tgt-list");
+      var EM = null; try { EM = window.require && window.require("Renderer/EntityManager"); } catch (e0) {}
+      var game = gameFocusMob(), gid = zLock && zLock.gid ? zLock.gid : null, assist = null;
+      try { if (gid && EM && EM.get) assist = EM.get(Number(gid)); } catch (e1) {}
+      var gameMid = mobSpeciesId(game), assistMid = mobSpeciesId(assist);
+      gameEl.textContent = game ? (targetName(game) + " · ID " + (gameMid || "?")) : "未选中怪物";
+      nm.textContent = gid ? (targetName(assist, zLock.name || ("GID " + gid)) + " · ID " + (assistMid || "?")) : ((zLock && zLock.done) ? "已击杀待命" : "未锁定");
+      if (dist) dist.textContent = gid && zLock.dist != null ? (zLock.dist + " 格") : "—";
       var h = 0, hm = 0;
-      if (ent && ent.life) { h = Number(ent.life.hp) || 0; hm = Number(ent.life.hp_max) || 0; }
+      if (assist && assist.life) { h = Number(assist.life.hp) || 0; hm = Number(assist.life.hp_max) || 0; }
       var pct = hm > 0 ? Math.max(0, Math.min(100, Math.round(h / hm * 100))) : 0;
       if (hp) { hp.style.width = pct + "%"; hp.style.background = pct > 50 ? "#2e9e4f" : (pct > 20 ? "#d39a1e" : "#c0392b"); }
-      if (hpt) hpt.textContent = hm > 0 ? (h + " / " + hm + "（" + pct + "%）") : "血量未知";
+      if (hpt) hpt.textContent = gid ? (hm > 0 ? (h + " / " + hm + "（" + pct + "%）") : "血量未知") : "—";
       if (ex) {
-        var bits = [];
-        if (ent && ent._job != null) bits.push("JOB " + ent._job);
-        bits.push(zLock.reactive ? "还击中" : "攻击中");
-        if (zMon && zMon.action) bits.push("动作 " + zMon.action);
-        ex.textContent = bits.join(" · ");
+        var relation = game && gid ? (String(game.GID) === String(gid) ? "游戏目标与助手锁定一致" : "游戏目标与助手锁定不同") : (game ? "助手未锁定" : (gid ? "游戏未选中" : "无目标"));
+        ex.textContent = relation + " · " + (zMon && zMon.action ? zMon.action : (zRunning ? "运行中" : "未运行"));
       }
-    } catch (e) {}
+      if (listEl) {
+        var ids = Object.keys(lockList || {}), all = $id("dsh-z-allmobs");
+        listEl.textContent = all && all.checked ? "打全部怪" : (ids.length ? (ids.length + " 种：" + ids.slice(0, 4).map(function (id) { return (lockList[id] && lockList[id].name) || id; }).join("、") + (ids.length > 4 ? "…" : "")) : "空名单");
+      }
+      var refMid = gameMid || assistMid, links = $id("dsh-tgt-links"), dvg = $id("dsh-tgt-dvg"), ro321 = $id("dsh-tgt-ro321");
+      var du = mobRefUrl("dvg", refMid), ru = mobRefUrl("ro321", refMid);
+      if (links) links.style.display = du && ru ? "flex" : "none";
+      if (dvg) dvg.href = du || "#";
+      if (ro321) ro321.href = ru || "#";
+    } catch (e) { try { dshDiag("target-render-error", { message: e.message || String(e) }); } catch (e2) {} }
   }
   // ---- 队伍血条：hook 客户端队伍组件，拿队员名单与血量（不额外发包）----
   var partyMembers = {};

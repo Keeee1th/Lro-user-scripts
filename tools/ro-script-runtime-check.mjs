@@ -61,7 +61,7 @@ test('default shortcut opens menu and migrates old panel binding',()=>{
 test('in-game battle checkbox overrides stale chat state',()=>{
   const code=extract('  function npBattleState() {','  function setBattle(on)');
   const ctx={npReadPanelState:()=>false,readChatBattle:()=>true,npHuntOn:true};vm.createContext(ctx);vm.runInContext(code+';this.fn=npBattleState',ctx);
-  assert.equal(ctx.fn(),false);ctx.npReadPanelState=()=>null;assert.equal(ctx.fn(),true);ctx.readChatBattle=()=>null;ctx.npHuntOn=false;assert.equal(ctx.fn(),false);
+  assert.equal(ctx.fn(),false);ctx.npReadPanelState=()=>null;assert.equal(ctx.fn(),true);ctx.readChatBattle=()=>null;ctx.npBattleKnown=false;assert.equal(ctx.fn(),null);ctx.npBattleKnown=true;ctx.npHuntOn=false;assert.equal(ctx.fn(),false);
 });
 
 test('DPS classifies skill fields and keeps normal attacks separate',()=>{
@@ -164,7 +164,7 @@ test('same-map coordinate routing normalizes map prefixes and extensions',()=>{
 test('skill scheduler reports cooldown and 300ms margin yields to imminent skill',()=>{
   const castCode=extract('  function castOrderSkill(order, target) {','  $id("dsh-z-on")');
   const now=Date.now(),sent=[];const ctx={Date,Math,CLIENT:{SS:{Entity:{GID:1,position:[0,0]}},PS:{CZ:{USE_SKILL:function(){}}},NM:{sendPacket:p=>sent.push(p)}},zCastIdx:0,zUseCounts:{},zLockCounts:{},skillNextAt:{10:now+250},zSkillSentAt:{},zLastCastAt:0,zLastCastSkid:0,btDiagOn:false,
-    clampSkillLv:()=>1,dshCastSkip(){},tlog(){},$id:()=>({checked:false}),skillReq:()=>null,skillTypeBits:()=>0,getSkillRange:()=>9,dshCastMark(){},skillCdMs:()=>250,dshDiag(){},checkSkillCond:()=>({ok:true}),castStatusPrep:()=>false};
+    ordinaryCastBlocked:()=>false,clampSkillLv:()=>1,dshCastSkip(){},tlog(){},$id:()=>({checked:false}),skillReq:()=>null,skillTypeBits:()=>0,getSkillRange:()=>9,dshCastMark(){},skillCdMs:()=>250,dshDiag(){},checkSkillCond:()=>({ok:true}),castStatusPrep:()=>false};
   vm.createContext(ctx);vm.runInContext(castCode+';this.cast=castOrderSkill',ctx);const order=[{skid:10,lv:1,uses:0,lock:0,prob:100,cond:'',cd:0}];
   assert.equal(ctx.cast(order,{GID:2,position:[1,0]}),'wait-cd');
   const gapCode=extract('  function skillNextGap(order) {','  function castOrderSkill(order, target) {');vm.runInContext(gapCode+';this.gap=skillNextGap',ctx);
@@ -254,9 +254,116 @@ test('target UI distinguishes game focus assistant lock and attack list',()=>{
   assert.ok(source.includes('攻击名单（只主动攻击勾选的怪）'));
 });
 
-test('version constants agree at v2.28.0 and feedback is visible',()=>{
+test('patch regressions cover hosts virtual rows tooltips and monk prerequisites',()=>{
+  const item=source.indexOf('id="dsh-fw-item"'),close=source.indexOf("'</div>' +",item),tgt=source.indexOf('id="dsh-fw-tgt"');
+  assert.ok(item>=0&&close>item&&close<tgt);
+  assert.ok(source.includes('attributeFilter: ["data-index"]'));
+  assert.ok(source.includes('setTimeout(itipRefresh, 0)'));
+  assert.ok(!source.includes('if (!item) item = itipInvById(itid, inv2)'));
+  assert.ok(source.includes('op === 0x1d0 || op === 0x1e1'));
+  assert.ok(source.includes('selfSpirits.aid === aid && selfSpirits.map === map'));
+  assert.ok(source.includes('o.skid === 267 ? realLv : req[2]'));
+  assert.ok(source.includes('buffStateOn(86)'));
+  assert.ok(source.includes('[267, "MO_FINGEROFFENSIVE", 1, null]'));
+  assert.ok(!source.includes('document.querySelector(".startButton")'));
+  assert.ok(source.includes('return npIsThree() ? npSendWhisper("NPC:setautoattack") : npSendUpdate(34, 1)'));
+  assert.ok(!/spheres\s*>=\s*5[\s\S]{0,120}(爆气|270)/.test(source));
+});
+
+test('spirit packets cache only the current character',()=>{
+  const code=extract('  function onSelfSpirits(bytes) {','  // V2.15.24：拦截服务器下发的技能真实后摇');
+  const ctx={DataView,Math,CLIENT:{SS:{AID:42,Entity:{GID:42}}},selfSpirits:{aid:0,num:0,map:''},normMapKey:x=>x,getMapName:()=> 'moc_pryd02'};vm.createContext(ctx);vm.runInContext(code+';this.fn=onSelfSpirits;this.read=()=>selfSpirits',ctx);
+  const packet=(aid,num)=>{const b=new ArrayBuffer(8),v=new DataView(b);v.setUint32(2,aid,true);v.setUint16(6,num,true);return b};
+  ctx.fn(packet(99,5));assert.equal(ctx.read().aid,0);ctx.fn(packet(42,5));assert.equal(ctx.read().aid,42);assert.equal(ctx.read().num,5);assert.equal(ctx.read().map,'moc_pryd02');
+});
+
+function selfHealHarness({sitting=false,healFirst=true,healLv=7,sp=100,castOk=true}={}){
+  const code=extract('  function escapePos() {','  function markFlyFail()');
+  let now=10000;const sent=[];const pos=[10,10];
+  const ids={
+    'dsh-z-grp':{value:'3'},'dsh-z-grpact':{value:'瞬移'},'dsh-z-flygrp':{checked:true},'dsh-z-ona':{value:'瞬移'}
+  };
+  const ctx={Number,Math,parseInt,Date:{now:()=>now},CLIENT:{SS:{AID:7,Entity:{GID:7,position:pos,life:{hp:30,maxhp:100,sp}}},PS:{CZ:{USE_SKILL:function(){}}},NM:{sendPacket:p=>sent.push(p)}},saved:{healFirst},
+    ESCAPE_TIMEOUT_MS:2500,ESCAPE_MAX_ATTEMPTS:3,escapeSeq:0,escapeBackoffUntil:0,escapeState:{pending:false,id:0,map:'',x:null,y:null,lastCast:0,ackAt:0,deadline:0,attempts:0,nextRetry:0,reason:''},selfHealHoldUntil:0,actLock:{act:null,until:0},lastMobs:[],zHpWatch:{lastHitAt:0},skillNextAt:{},
+    normMapKey:x=>x,getMapName:()=> 'field',isSitting:()=>sitting,sendSit:down=>sent.push({action:down?'sit':'stand'}),setStatus(){},tlog(){},lockAct(act,ms){ctx.actLock={act,until:now+ms};return true},
+    castTeleport(){if(castOk)sent.push({SKID:26});return castOk},clientReady:()=>true,isActFreeOnline:()=>true,potHpThr:()=>50,learnedSkillLv:id=>id===28?healLv:0,skillCdMs:()=>250,dshCastMark(){},$id:id=>ids[id]||null};
+  vm.createContext(ctx);vm.runInContext(code+';this.escape=requestEmergencyEscape;this.pending=escapePending;this.heal=tickSelfHeal;this.blocked=ordinaryCastBlocked;this.state=()=>escapeState;this.reset=resetEmergencyEscape',ctx);
+  return {ctx,sent,pos,setSitting:v=>{sitting=v},setNow:v=>{now=v},ack(){ctx.state().ackAt=now}};
+}
+
+test('emergency escape stands and teleports before Heal',()=>{
+  const h=selfHealHarness({sitting:true});
+  assert.equal(h.ctx.escape('群殴'),'stand');assert.deepEqual(h.sent,[{action:'stand'}]);
+  h.setSitting(false);assert.equal(h.ctx.escape('群殴'),'teleport');assert.equal(h.sent[1].SKID,26);
+  assert.equal(h.ctx.heal(),false);assert.deepEqual(h.sent.map(x=>x.SKID||x.action),['stand',26]);
+});
+
+test('unconfirmed teleport blocks Heal and ordinary skill casts',()=>{
+  const h=selfHealHarness();h.ctx.escape('最近受击');
+  assert.equal(h.ctx.pending(),true);assert.equal(h.ctx.heal(),false);
+  assert.ok(source.includes('if (ordinaryCastBlocked()) return "escape";'));
+  assert.equal(h.sent.filter(x=>x.SKID===28).length,0);
+});
+
+test('escape requires current SKID26 ACK plus credible transition',()=>{
+  const h=selfHealHarness();h.ctx.escape('群殴');h.pos[0]=11;
+  assert.equal(h.ctx.pending(),true,'ordinary movement without ACK must not confirm');
+  h.ack();assert.equal(h.ctx.pending(),true,'small movement remains non-credible');
+  h.pos[0]=18;assert.equal(h.ctx.pending(),false);assert.equal(h.ctx.heal(),true);
+  assert.deepEqual(h.sent.map(x=>x.SKID),[26,28]);assert.equal(h.sent[1].selectedLevel,7);assert.equal(h.sent[1].targetID,7);
+});
+
+test('escape timeout retries finitely then releases pending with backoff',()=>{
+  const h=selfHealHarness();h.ctx.escape('群殴');
+  for(const at of [12500,12800,15300,15900,18400]){h.setNow(at);h.ctx.pending()}
+  assert.equal(h.sent.filter(x=>x.SKID===26).length,3);assert.equal(h.ctx.state().pending,false);assert.equal(h.ctx.heal(),true);
+});
+
+test('rejected escape attempts reset after finite retries',()=>{
+  const h=selfHealHarness({castOk:false});assert.equal(h.ctx.escape('最近受击'),'reject');
+  for(const at of [10300,10900]){h.setNow(at);h.ctx.escape('最近受击')}
+  assert.equal(h.ctx.state().pending,false);assert.equal(h.ctx.heal(),true);
+});
+
+test('Heal preference defaults off and persists through saved profile',()=>{
+  const h=selfHealHarness({healFirst:false});assert.equal(h.ctx.heal(),false);
+  assert.ok(source.includes('saved.healFirst = this.checked; saveSaved(saved)'));
+  assert.ok(source.includes('checked = saved.healFirst === true'));
+});
+
+test('ordinary low HP prefers learned self Heal when enabled',()=>{
+  const h=selfHealHarness();assert.equal(h.ctx.heal(),true);
+  assert.equal(h.sent.length,1);assert.equal(h.sent[0].SKID,28);assert.equal(h.sent[0].selectedLevel,7);
+});
+
+test('Heal unavailable SP insufficient or cooldown falls back to items',()=>{
+  for(const opts of [{healLv:0},{sp:5}]) assert.equal(selfHealHarness(opts).ctx.heal(),false);
+  const h=selfHealHarness();h.ctx.skillNextAt[28]=11000;assert.equal(h.ctx.heal(),false);
+  assert.ok(source.includes('masterTickReg(function () { try { tickSelfHeal(); } catch (e) {} });'));
+  assert.ok(source.indexOf('tickSelfHeal();')<source.indexOf('tickItems();'));
+});
+
+test('sitting-hit direct fly is unified under emergency escape',()=>{
+  assert.ok(source.includes('requestEmergencyEscape("坐下受击")'));
+  assert.ok(!source.includes('doFly(); zMon.action = "坐下被打，瞬移脱离"'));
+});
+
+test('urgent mobbing and recent-hit checks precede sit and ordinary returns',()=>{
+  const start=source.indexOf('function checkDefense(mobs, ent)'),urgent=source.indexOf('var urgentReason = emergencyThreatReason(mobs)',start),sit=source.indexOf('doSitCycle(mobs)',start),cool=source.indexOf('if (now < flyFailUntil) return',start),interval=source.indexOf('if (now - lastFly < flyInt) return',start);
+  assert.ok(urgent>start&&urgent<sit&&sit<cool&&cool<interval);
+});
+
+test('configured item automation remains available fallback',()=>{
+  const code=extract('  function tickItems() {','  // 自愈先于物品规则');const used=[];
+  const ctx={itemList:[{itid:501,cond:'hp',condval:50}],potNoPotion:false,saved:{healFirst:false},selfHealHoldUntil:0,ordinaryCastBlocked:()=>false,clientReady:()=>true,CLIENT:{SS:{Entity:{life:{hp:30,maxhp:100,sp:10,maxsp:100}}}},Date,
+    $id:id=>id==='dsh-itemen'?{checked:true}:null,findInventory:()=>[{ITID:501,index:4}],useItemByIndex:i=>used.push(i),buffStId:()=>-1,buffStateOn:()=>false};
+  vm.createContext(ctx);vm.runInContext(code+';this.tick=tickItems',ctx);ctx.tick();assert.deepEqual(used,[4]);
+  assert.ok(source.includes('masterTickReg(function () { try { tickItems(); } catch (e) {} });'));
+});
+
+test('version constants agree at v2.28.1 and feedback is visible',()=>{
   const meta=source.match(/@version\s+(\S+)/)?.[1], runtime=source.match(/var VER = "([^"]+)"/)?.[1];
-  assert.equal(meta,'2.28.0');assert.equal(runtime,meta);
+  assert.equal(meta,'2.28.1');assert.equal(runtime,meta);
   assert.ok(source.includes('function roFeedback(text, cls)'));
   assert.ok(source.includes('id = "dsh-feedback"'));
 });

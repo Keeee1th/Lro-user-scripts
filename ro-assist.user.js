@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.28.0
+// @version      2.28.1
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -44,7 +44,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.28.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.28.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -799,7 +799,8 @@
       '<div class="row" style="margin-top:2px"><button class="ghost" id="dsh-itemup" style="flex:0 0 auto">↑上移</button>' +
       '<button class="ghost" id="dsh-itemdown" style="flex:0 0 auto">↓下移</button>' +
       '<button class="ghost" id="dsh-itemdel" style="flex:0 0 auto">删除选中</button>' +
-      '<label class="switch" style="margin-left:auto"><input id="dsh-itemen" type="checkbox">启用自动使用</label></div></div>' +
+      '<label class="switch" style="margin-left:auto"><input id="dsh-itemen" type="checkbox">启用自动使用</label></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-healfirst" type="checkbox">优先使用治愈术替代药品</label><span class="st">未学会、SP不足或冷却时仍使用物品</span></div></div>' +
       '<div class="sec">自动装箭矢（V2.15.26：箭矢耗尽自动补）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-arrowen" type="checkbox" checked>箭矢耗尽时用魔法箭袋(2000030)放箭并装上装备栏</label></div>' +
       '<div class="row"><span class="st" style="font-size:10px">V2.16.27：仅当手持弓/乐器/鞭子时生效（其它职业没有箭矢槽，避免白耗箭袋）</span></div>' +
@@ -886,6 +887,7 @@
       '<div class="sec">② 指定 ID 拾取（怪物掉落树 · 点选物品加入）</div>' +
       '<div class="row"><span class="lb">当前地图</span><span class="st" id="dsh-pickmap" style="flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—（未进图）</span>' +
       '<button class="ghost" id="dsh-pickmapbtn" style="flex:0 0 auto">本图怪物掉落</button></div>' +
+      '</div>' +
       '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">目标状态</span>' +
       '<button class="ghost" id="dsh-fw-btn-tgt" data-fw="tgt" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
       '<div id="dsh-fw-tgt">' +
@@ -931,7 +933,6 @@
       '<div class="sec">背包整理（按物品ID · 自动丢弃白名单）</div>' +
       '<div class="row"><span class="st" id="dsh-bag-state" style="font-size:10px">未初始化（登录后自动就绪）</span></div>' +
       '<div id="dsh-bag-clean" style="font-size:11px"></div>' +
-      '</div>' +
       '</div>' +
       // 子页9：战斗统计（伤害统计 + 首领警报，V2.28.0）
       '<div class="sub-page" data-subpage="ap-dps">' +
@@ -2404,8 +2405,8 @@
     try {
       var bn = $id("dsh-qs-nei"), bz = $id("dsh-qs-zhu");
       var neiOn = npBattleState();
-      npHuntOn = neiOn;
-      if (bn) { bn.className = "qs" + (neiOn ? " on" : ""); bn.title = "内挂自动战斗：" + (neiOn ? "已开（点击关闭）" : "已关（点击开启）"); }
+      if (neiOn !== null) { npHuntOn = neiOn; npBattleKnown = true; }
+      if (bn) { bn.className = "qs" + (neiOn === true ? " on" : (neiOn === null ? " unknown" : "")); bn.title = "内挂自动战斗：" + (neiOn === null ? "状态未知（点击切换一次）" : (neiOn ? "已开（点击关闭）" : "已关（点击开启）")); }
       if (bz) { bz.className = "qs" + (zRunning ? " on" : ""); bz.title = "助手自动战斗：" + (zRunning ? "已开（点击停止）" : "已关（点击启动）"); }
     } catch (e) {}
   }
@@ -2413,7 +2414,7 @@
     var qswNei = $id("dsh-qs-nei"), qswZhu = $id("dsh-qs-zhu");
     if (qswNei) qswNei.addEventListener("click", function (ev) {
       ev.stopPropagation(); ev.preventDefault();
-      try { setBattle(!npBattleState()); } catch (e) {}
+      try { var state = npBattleState(); setBattle(state === null ? !npHuntOn : !state); } catch (e) {}
       qswPaint();
     });
     if (qswZhu) qswZhu.addEventListener("click", function (ev) {
@@ -2533,8 +2534,8 @@
   function npToggleFight() {
     try {
       npCalibrate();
-      npToggleHunt();
-      npHuntOn = !npHuntOn;
+      if (!npToggleHunt()) return;
+      npHuntOn = !npHuntOn; npBattleKnown = true;
       setStatus("内挂自动战斗：快捷键切换（toggle 一次）", "ok");
       tlog("hk np-toggle");
     } catch (e) {}
@@ -3504,6 +3505,7 @@
         }
       } catch (me) {}
       if (activeProfileKey() === key && lastCharGid === gid) return;
+      if (typeof selfSpirits !== "undefined") selfSpirits = { aid: 0, num: 0, map: "" };
       try { captureAll(); } catch (e) {} // 旧档先落盘
       setActiveProfile(key);
       ensureProfile(key);
@@ -4639,10 +4641,12 @@
     setStatus("已更新 " + (itp.name || ("ID" + itp.itid)) + " " + itemCondText(itp), "ok");
   });
   $id("dsh-itemen").addEventListener("change", function () { saved.itemEn = this.checked; saveSaved(saved); if (this.checked) hookStatusIcons(); });
+  $id("dsh-healfirst").addEventListener("change", function () { saved.healFirst = this.checked; saveSaved(saved); });
   function tickItems() {
     try {
       var en = $id("dsh-itemen") && $id("dsh-itemen").checked;
       if (!en || !itemList.length) return;
+      if (ordinaryCastBlocked()) return; // 紧急脱战绝对优先；确认位移前不执行普通恢复动作
       if (!clientReady()) return;
       var ent = CLIENT.SS.Entity;
       if (!ent || !ent.life) return;
@@ -4667,6 +4671,7 @@
           }
         }
         if (!fire) continue;
+        if (it.cond === "hp" && saved.healFirst && Date.now() < selfHealHoldUntil) continue;
         // 重新找背包 index（可能已变动）
         var inv = findInventory();
         var idx = -1, found = false;
@@ -4685,8 +4690,11 @@
       }
     } catch (e) {}
   }
+  // 自愈先于物品规则；治愈不可用/冷却时，原有自动物品仍作为可配置兜底。
+  masterTickReg(function () { try { tickSelfHeal(); } catch (e) {} });
   masterTickReg(function () { try { tickItems(); } catch (e) {} });
   if (saved.itemEn) { $id("dsh-itemen").checked = true; hookStatusIcons(); }
+  $id("dsh-healfirst").checked = saved.healFirst === true;
   renderItemList();
 
   // ---------------- 自动装箭矢（V2.15.26）：箭矢耗尽 → 用魔法箭袋(2000030)放箭 → 装到装备栏 ----------------
@@ -4924,6 +4932,7 @@
     try {
       var en = $id("dsh-asken") && $id("dsh-asken").checked;
       if (!en || !askList.length) return;
+      if (ordinaryCastBlocked()) return; // 紧急脱战期间禁止普通辅助技能抢占瞬移
       if (!clientReady()) return;
       var ent = CLIENT.SS.Entity;
       if (!ent || !ent.life) return;
@@ -5785,7 +5794,7 @@
     if (panelState !== null) return panelState;
     var chatState = readChatBattle();
     if (chatState !== null) return chatState;
-    return !!npHuntOn;
+    return npBattleKnown ? !!npHuntOn : null;
   }
   function setBattle(on) {
     // 当前 checkbox 是权威状态；聊天回执只在面板不可读时兜底。
@@ -5796,20 +5805,15 @@
       setStatus("内挂自动战斗已处于" + (on ? "开启" : "关闭") + "状态，无需重复操作", "ok");
       return;
     }
-    // 内挂开关按钮 = .startButton（文字「点击开始/点击停止」，DIV 元素，toggle 型），v0.13.24 探针实锤。
-    // 旧猜想 .setAutokey/.openattack 均点不中；兜底仍留兼容。
-    var btn = null;
-    try { btn = document.querySelector(".startButton"); } catch (e) {}
-    if (!btn) { try { btn = document.querySelector(".setAutokey, .content.attack .openattack, .openattack"); } catch (e) {} }
-    if (!btn) { setStatus("未找到内挂开关，请先打开内挂窗口", "err"); return; }
-    try { btn.click(); } catch (e) {}
-    npHuntOn = !!on;
+    // 面板未打开也直接复用内挂的 toggle 协议；一次操作只发一次，绝不自动重试反相。
+    if (!npToggleHunt()) { setStatus("内挂开关发送失败：客户端未就绪", "err"); return; }
+    npHuntOn = !!on; npBattleKnown = true;
     setStatus("已请求" + (on ? "开启" : "关闭") + "内挂自动战斗，正在校准", "ok");
     setTimeout(function () {
       var actual = npBattleState();
-      npHuntOn = actual;
+      if (actual !== null) { npHuntOn = actual; npBattleKnown = true; }
       qswPaint();
-      setStatus("内挂自动战斗：" + (actual ? "已开启" : "已关闭") + (actual === !!on ? "" : "（未切换到目标状态）"), actual === !!on ? "ok" : "warn");
+      setStatus(actual === null ? "内挂自动战斗：等待状态回执" : ("内挂自动战斗：" + (actual ? "已开启" : "已关闭") + (actual === !!on ? "" : "（未切换到目标状态）")), actual === null ? "warn" : (actual === !!on ? "ok" : "warn"));
     }, 350);
     tlog("setBattle on=" + on + " real=" + real);
   }
@@ -5876,7 +5880,7 @@
   //    .openattack 勾选/取消都发同一包（二转 id=34 value=1、三转 WHISPER msg="0"），服务器收到就翻转一次。
   //    客户端从不发 value=0；因此「关闭」=再发一次同一包（toggle 回来），绝不能周期重发（否则每 1.5s 开关一次）。
   // 通过 NOTIFY_ONLYTARGET 同步锁定目录 → 服务器寻怪只追锁定怪
-  var npHuntOn = false; // 本地跟踪：我们认为服务器内挂自动战斗当前状态（toggle 需精确一次）
+  var npHuntOn = false, npBattleKnown = false; // 三态：未知时不冒充关闭；成功读到状态或发出一次 toggle 后才可信
   function npHuntMode() {
     var el = $id("dsh-z-huntmode");
     return el ? el.value : "self";
@@ -5940,8 +5944,7 @@
   } catch (e) {}
   // toggle 一次自动战斗（发同一包：二转 id=34 value=1 / 三转 WHISPER msg="0"）
   function npToggleHunt() {
-    if (npIsThree()) npSendWhisper("NPC:setautoattack");
-    else npSendUpdate(34, 1);
+    return npIsThree() ? npSendWhisper("NPC:setautoattack") : npSendUpdate(34, 1);
   }
   function npEnsureHunt() {
     // 需要开启内挂寻怪：本地认为已开 → 不再发包（避免 toggle 多翻一次变关）；未开 → toggle 一次
@@ -6304,6 +6307,10 @@
   var DS_BOSS_DIST = 25;   // Boss 危险距离统一口径（原瞬移=侦测即飞、拾取=20 格，语义分裂已统一）
   var defSnap = { hpPct: 100, spPct: 100, isCombatMap: false, mobCount: 0, bossDist: -1, sitting: false, now: 0 };
   var actLock = { act: null, until: 0 };  // 主动作锁：每 tick 决策重写，超时视为空闲
+  var ESCAPE_TIMEOUT_MS = 2500, ESCAPE_MAX_ATTEMPTS = 3;
+  var escapeSeq = 0, escapeBackoffUntil = 0;
+  var escapeState = { pending: false, id: 0, map: "", x: null, y: null, lastCast: 0, ackAt: 0, deadline: 0, attempts: 0, nextRetry: 0, reason: "" };
+  var selfHealHoldUntil = 0;
   var potNoPotion = false;                // 喝水无药标记（瀑布：低血无药被围 → 升级瞬移）
   var flyFailCount = 0, flyFailUntil = 0; // 瞬移连续失败冷却（3 次 → 10s 不重试）
   var sitSince = 0, sitHpAt = -1;         // 坐下看门狗（30s 血未回升 → 站起并入瞬移链）
@@ -6498,6 +6505,89 @@
         mobCount: mobCount, bossDist: bossDist, sitting: isSitting(), now: Date.now() };
     } catch (e) {}
   }
+  function escapePos() {
+    try {
+      var ent = CLIENT.SS && CLIENT.SS.Entity, p = ent && ent.position;
+      return { map: normMapKey(getMapName()), x: p && p[0] != null ? Number(p[0]) : null, y: p && p[1] != null ? Number(p[1]) : null };
+    } catch (e) { return { map: "", x: null, y: null }; }
+  }
+  function resetEmergencyEscape(cooldown) {
+    escapeState.pending = false; escapeState.reason = ""; escapeState.lastCast = 0; escapeState.ackAt = 0; escapeState.deadline = 0; escapeState.nextRetry = 0;
+    if (cooldown) escapeBackoffUntil = Date.now() + cooldown;
+    if (actLock.act === "escape") actLock.act = null;
+  }
+  function castEmergencyEscape() {
+    var now = Date.now();
+    escapeState.attempts++; escapeState.lastCast = now; escapeState.ackAt = 0; escapeState.deadline = now + ESCAPE_TIMEOUT_MS;
+    if (castTeleport()) { setStatus("紧急脱战：瞬移(" + escapeState.reason + ")，等待回执和位移…", "warn"); return "teleport"; }
+    escapeState.lastCast = 0; escapeState.deadline = now; escapeState.nextRetry = now + Math.min(1200, 300 * Math.pow(2, escapeState.attempts - 1));
+    return "reject";
+  }
+  function escapePending() {
+    if (!escapeState.pending) return false;
+    var now = Date.now(), p = escapePos();
+    var moved = !!(p.map && escapeState.map && p.map !== escapeState.map) ||
+      (p.x != null && p.y != null && escapeState.x != null && escapeState.y != null && Math.abs(p.x - escapeState.x) + Math.abs(p.y - escapeState.y) >= 8);
+    if (escapeState.ackAt >= escapeState.lastCast && escapeState.lastCast > 0 && moved) {
+      resetEmergencyEscape(0); tlog("escape-confirmed " + p.map + " " + p.x + "," + p.y); return false;
+    }
+    if (escapeState.deadline && now >= escapeState.deadline) {
+      if (escapeState.attempts >= ESCAPE_MAX_ATTEMPTS) { resetEmergencyEscape(5000); tlog("escape-timeout-final"); return false; }
+      if (!escapeState.nextRetry) escapeState.nextRetry = now + Math.min(1200, 300 * Math.pow(2, escapeState.attempts - 1));
+      if (now >= escapeState.nextRetry) { escapeState.nextRetry = 0; castEmergencyEscape(); }
+    }
+    return escapeState.pending;
+  }
+  function requestEmergencyEscape(reason) {
+    try {
+      var now = Date.now();
+      if (!escapeState.pending) {
+        if (now < escapeBackoffUntil) return "backoff";
+        var p = escapePos();
+        escapeState = { pending: true, id: ++escapeSeq, map: p.map, x: p.x, y: p.y, lastCast: 0, ackAt: 0, deadline: 0, attempts: 0, nextRetry: 0, reason: reason || "紧急脱战" };
+      }
+      lockAct("escape", ESCAPE_TIMEOUT_MS);
+      if (isSitting()) { sendSit(false); setStatus("紧急脱战：先站起…", "warn"); return "stand"; }
+      if (escapeState.lastCast > 0 || (escapeState.nextRetry && now < escapeState.nextRetry)) { escapePending(); return escapeState.pending ? "wait" : "backoff"; }
+      escapeState.nextRetry = 0;
+      var result = castEmergencyEscape();
+      if (result === "reject" && escapeState.attempts >= ESCAPE_MAX_ATTEMPTS) resetEmergencyEscape(5000);
+      return result;
+    } catch (e) { resetEmergencyEscape(5000); return "blocked"; }
+  }
+  function emergencyThreatReason(mobs) {
+    try {
+      mobs = mobs || lastMobs || [];
+      var group = parseInt($id("dsh-z-grp").value, 10) || 0;
+      var mobbing = group > 0 && mobs.length >= group && $id("dsh-z-grpact") && $id("dsh-z-grpact").value === "瞬移" && $id("dsh-z-flygrp") && $id("dsh-z-flygrp").checked;
+      if (mobbing) return "群殴(" + mobs.length + "只)";
+      var recentHit = Date.now() - zHpWatch.lastHitAt < 3000;
+      if (recentHit && $id("dsh-z-ona") && $id("dsh-z-ona").value === "瞬移") return "最近受击";
+    } catch (e) {}
+    return "";
+  }
+  function ordinaryCastBlocked() {
+    var threat = emergencyThreatReason();
+    if (threat) requestEmergencyEscape(threat);
+    return escapePending();
+  }
+  function tickSelfHeal() {
+    try {
+      if (saved.healFirst !== true || ordinaryCastBlocked() || !clientReady() || !isActFreeOnline("heal")) return false;
+      var ent = CLIENT.SS && CLIENT.SS.Entity, life = ent && ent.life;
+      if (!life || !life.maxhp || life.hp / life.maxhp * 100 >= potHpThr()) return false;
+      var lv = learnedSkillLv(28), sp = life.sp != null ? Number(life.sp) : 0;
+      if (lv <= 0 || sp < 10 + lv * 3 || (skillNextAt[28] && Date.now() < skillNextAt[28])) return false;
+      var p = new CLIENT.PS.CZ.USE_SKILL();
+      p.SKID = 28; p.selectedLevel = lv; p.targetID = ent.GID || (CLIENT.SS && CLIENT.SS.AID) || 0;
+      CLIENT.NM.sendPacket(p);
+      var cd = skillCdMs({ skid: 28, cd: 0 });
+      skillNextAt[28] = Date.now() + cd; selfHealHoldUntil = skillNextAt[28]; lockAct("heal", cd);
+      dshCastMark(28, lv, p.targetID, "self-heal");
+      tlog("self-heal lv" + lv);
+      return true;
+    } catch (e) { return false; }
+  }
   function markFlyFail() { try { flyFailCount++; if (flyFailCount >= 3) flyFailUntil = Date.now() + 10000; } catch (e) {} }
   function markFlyOk() { flyFailCount = 0; }
   // ================= /V1.9.4 =================
@@ -6510,10 +6600,10 @@
       var cMap = getCurrentMapInfo();
       var isCombatMap = defSnap.isCombatMap;
       if (!clientReady()) return;
-      // V2.16.19：坐下检查提前到瞬移冷却之前——原来排在下面「瞬移冷却 return」之后，
-      //   导致瞬移后 30s 内整段返回、完全不检查坐下（卡死瞬移一触发就再也坐不下）
-      doSitCycle(mobs);
       var now = Date.now();
+      var urgentReason = emergencyThreatReason(mobs);
+      if (urgentReason) { requestEmergencyEscape(urgentReason); return; }
+      doSitCycle(mobs);
       // V1.9.4：瞬移连续失败冷却（无翅膀/无瞬移术/SP不足 3 次后 10s 停手，避免空转抖动）
       if (now < flyFailUntil) return;
       var flyInt = (parseInt($id("dsh-z-flyint").value, 10) || 30) * 1000;
@@ -6601,8 +6691,9 @@
         reason = "";
       }
       if (needFly) {
-        // V1.9.4：doFly 失败计数（无翅膀/无瞬移术/SP不足）——3 次后 10s 冷却防空转
-        var flyOk = doFly();
+        // 紧急防御只走已学瞬移术；确认地图/坐标变化前持续阻塞治愈与普通技能。
+        var flyResult = requestEmergencyEscape(reason);
+        var flyOk = flyResult === "teleport" || flyResult === "wait" || flyResult === "stand";
         if (btDiagOn) btLog('def-fly', reason + ' -> ' + (flyOk ? '成功' : '失败') + ' (failCnt=' + flyFailCount + ' failUntil=' + (flyFailUntil - now > 0 ? ((flyFailUntil - now) / 1000).toFixed(1) + 's后' : '无') + ')');
         if (!flyOk) markFlyFail(); else markFlyOk();
         lastFly = now;
@@ -6749,7 +6840,7 @@
   // toggle 语义下必须与服务器同步，否则发错次数会反相；用户可能手动在内挂面板点过 → 启动时校准
   function npReadPanelState() {
     try {
-      var el = document.querySelector(".openattack");
+      var el = document.querySelector("#vbk input.openattack");
       if (el) return !!el.checked;
     } catch (e) {}
     return null; // 面板不可读（未知）
@@ -7043,6 +7134,7 @@
   var zLastCastSkid = 0; // V2.15.24：最近一次释放的技能ID（配合 skillDelay 用真实后摇等待）
   var skillDelay = {};   // V2.15.24+：服务器下发真实延迟表（0x43d/0x43e POSTDELAY + 0xb1a USESKILL_ACK3 动态覆盖）SKID→延迟ms
   var skillNextAt = {};  // V2.15.28：每技能独立 CD 计时（skillNextAt[SKID]=下次可释放时间戳），到点才发，不再按攻击轮次全局窗口
+  var selfSpirits = { aid: 0, num: 0, map: "" }; // 0x1d0/0x1e1 自身气弹权威缓存；换图或身份变化即失效
   try { window.__dshSkillDelay = skillDelay; } catch (e) {} // 供控制台/探针查看
   try { window.__dshSkillNext = skillNextAt; } catch (e) {} // 供控制台/探针查看
   var zSkillSentAt = {};  // V2.16.7：技能包发出时间戳（估算服务器 RTT）
@@ -7632,6 +7724,7 @@
       var ent = CLIENT.SS.Entity;
       if (!ent || !ent.life) return;
       var now = Date.now();
+      if (escapePending()) { requestEmergencyEscape(escapeState.reason); zMon.action = "紧急脱战（等待位移确认）"; return; }
       // V2.7.2 锁定怪站桩修复：np 模式（内挂机制寻怪）→ 目标判定强制 ld<=atkRange（射程外锁定怪不当目标、
       //   不解锁、交内挂移动靠近），杜绝「npHuntStop 关内挂⇄zWalk npEnsureHunt 开内挂」每轮拉锯站桩
       var npMode = npHuntMode() === "np";
@@ -7729,7 +7822,7 @@
       if (needSitNow() && beingHit) {
         var sitxwMode = ($id("dsh-z-sitxw") && $id("dsh-z-sitxw").value) || "无视";
         if (sitxwMode === "瞬移" && !($id("dsh-z-flykill") && !$id("dsh-z-flykill").checked)) {
-          doFly(); zMon.action = "坐下被打，瞬移脱离"; setStatus("坐下被打，瞬移脱离…", "warn"); return;
+          requestEmergencyEscape("坐下受击"); zMon.action = "坐下被打，瞬移脱离"; setStatus("坐下被打，瞬移脱离…", "warn"); return;
         }
         else if (sitxwMode === "逃脱") {
           walkEscape(hitTarget || target);
@@ -7754,7 +7847,7 @@
       if (!target && !zLock.gid && beingHit && hitTarget) {
         if (onaMode === "无视" || (onaMode === "瞬移" && $id("dsh-z-flykill") && !$id("dsh-z-flykill").checked)) { /* 不反击，继续寻怪（总开关关：瞬移按无视处理） */ }
         else if (onaMode === "瞬移") {
-          doFly();
+          requestEmergencyEscape("最近受击");
           zMon.action = "瞬移脱离";
           setStatus("被非目标怪攻击，瞬移脱离…", "warn");
           return;
@@ -7955,12 +8048,13 @@
   function entStatus() {
     var ent = CLIENT.SS && CLIENT.SS.Entity;
     if (!ent) return null;
-    var spheres = 0;
-    for (var i = 1; i <= 5; i++) if (ent["Summon" + i]) spheres++;
+    var aid = Number((CLIENT.SS && CLIENT.SS.AID) || ent.GID || 0), map = normMapKey(getMapName());
+    var spheres = (selfSpirits.aid === aid && selfSpirits.map === map) ? selfSpirits.num : 0;
+    if (selfSpirits.aid !== aid || selfSpirits.map !== map) for (var i = 1; i <= 5; i++) if (ent["Summon" + i]) spheres++;
     return {
       ent: ent,
       spheres: spheres,            // 气球/气弹数 0~5
-      explosion: (ent.getOpt3 && ent.getOpt3(86)) ? 1 : (ent.explosion ? 1 : 0), // V2.15.30 爆气：读实体 virtue 位（原 ent.explosion 字段不存在恒 false）
+      explosion: ((ent.getOpt3 && ent.getOpt3(86)) || buffStateOn(86) || ent.explosion) ? 1 : 0, // EFST86：实体位优先，服务器状态缓存补充
       berserk: (ent.getOpt3 && ent.getOpt3(107)) ? 1 : (ent.berserk ? 1 : 0),       // V2.15.30 狂暴：读 virtue 位
       soullink: (ent.getOpt3 && ent.getOpt3(149)) ? 1 : (ent.soullink ? 1 : 0),     // V2.15.30 灵魂：读 virtue 位
       riding: ent.riding || ent.riding_ ? 1 : 0,
@@ -8330,6 +8424,7 @@
         var srcs = SKILL_STATUS_SRC[stName] || [];
         for (var k = 0; k < srcs.length; k++) {
           var sid2 = srcs[k];
+          if (skillNextAt[sid2] && Date.now() < skillNextAt[sid2]) continue;
           var lv2 = learnedSkillLv(sid2);
           if (lv2 <= 0) continue;
           try {
@@ -8344,7 +8439,7 @@
             ps2.targetID = ent.GID || 0;
             CLIENT.NM.sendPacket(ps2);
             zPrepAt = Date.now(); // 补状态节流：1s 内不再补，间隙穿插普攻
-            skillNextAt[sid2] = Date.now() + skillCdMs({ skid: sid2, cd: 0 }); // V2.15.28：补状态技能独立 CD
+            skillNextAt[sid2] = Date.now() + Math.max(skillCdMs({ skid: sid2, cd: 0 }), sid2 === 270 ? 1500 : 0); // 爆气等待状态回执，避免重复刷包
             tlog("cast-prep status " + sid2 + " lv" + lv2 + " -> " + stName);
             setStatus("缺" + statusNameToCond(stName) + "，自动补状态技能(" + (getSkillNameById(sid2) || sid2) + ")…", "st");
             return true;
@@ -8374,6 +8469,7 @@
     } catch (e) { return Infinity; }
   }
   function castOrderSkill(order, target) {
+    if (ordinaryCastBlocked()) return "escape";
     // 并行判断链条（技能链 + 普攻链 各自独立评估，按优先级合流）：
     //  评估阶段：每轮把所有技能的前置/射程并行扫一遍——前置不满足的技能只记录，不立即停下补状态，
     //            后面的技能照常评估（避免顺序里放一个需前置的技能就把整条链堵住）。
@@ -8430,7 +8526,8 @@
       var req = skillReq(o.skid);
       if (req) {
         var parts2 = [];
-        if (req[2] > 0) parts2.push("球" + req[2]);
+        var sphereNeed = o.skid === 267 ? realLv : req[2]; // 弹指按实际技能等级耗球，且绝不隐含爆气
+        if (sphereNeed > 0) parts2.push("球" + sphereNeed);
         if (req[3]) parts2.push(req[3]);
         autoCond = parts2.join(",");
       }
@@ -10315,8 +10412,17 @@
       else if (op === 182) onCloseDialog();
       else if (op === 0x43d || op === 0x43e) onSkillPostDelay(bytes, op);
       else if (op === 0xb1a) onSkillAck3(bytes); // V2.15.28：2842 USESKILL_ACK3 动态技能延迟
+      else if (op === 0x1d0 || op === 0x1e1) onSelfSpirits(bytes);
       else if (op === 0xc6 || op === 0xc7) itipShopPkt(bytes, op); // V2.16.21 商店买卖列表：取单价（买价/卖价）
       else onRawOpcode(bytes, op);
+    } catch (e) {}
+  }
+  function onSelfSpirits(bytes) {
+    try {
+      if (!bytes || bytes.byteLength < 8) return;
+      var dv = new DataView(bytes), aid = dv.getUint32(2, true), num = Math.max(0, Math.min(5, dv.getUint16(6, true)));
+      var ent = CLIENT.SS && CLIENT.SS.Entity, selfAid = Number((CLIENT.SS && CLIENT.SS.AID) || (ent && ent.GID) || 0);
+      if (selfAid && aid === selfAid) selfSpirits = { aid: aid, num: num, map: normMapKey(getMapName()) };
     } catch (e) {}
   }
   // V2.15.24：拦截服务器下发的技能真实后摇（ZC.SKILL_POSTDELAY 0x43d 单技能 / 0x43e 批量列表）
@@ -10353,6 +10459,8 @@
       var skid = dv.getUint16(14, true);
       var dly = dv.getUint32(20, true);
       if (skid > 0) skillDelay[skid] = dly;
+      var aid = dv.getUint32(2, true), selfAid = (CLIENT.SS && (CLIENT.SS.AID || (CLIENT.SS.Entity && CLIENT.SS.Entity.GID))) || 0;
+      if (skid === 26 && escapeState.pending && escapeState.lastCast > 0 && (!selfAid || aid === selfAid)) escapeState.ackAt = Date.now();
       if (skid > 0) { try { dpsOnSkill(skid); } catch (e5) {} } // V2.24.0：伤害统计的技能归属兜底
       // V2.16.7：RTT 估算（发包→收2842回执时间差，滑动平均，供 skillCdMs 延迟补偿）
       if (skid > 0 && zSkillSentAt[skid]) {
@@ -10678,7 +10786,8 @@
           storageWinWasOpen = isOpen;
         } catch (e) {}
       });
-      storageObs.observe(document.body, { childList: true, subtree: true });
+      storageObs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-index"] });
+      document.addEventListener("scroll", function () { try { if (findStorageWindow()) storageDecorateDom(); } catch (e) {} }, true);
     } catch (e) {
       console.error("[INV] 事件绑定失败:", e);
     }
@@ -11543,6 +11652,7 @@
           var curMap = CLIENT.MR && CLIENT.MR.currentMap ? String(CLIENT.MR.currentMap).split(".")[0] : "";
           if (curMap && curMap !== _lastMapKey) {
             _lastMapKey = curMap;
+            selfSpirits = { aid: 0, num: 0, map: "" };
             dshDiag("map-change", { map: curMap, zRunning: zRunning, npHuntOn: npHuntOn });
             tlog("map-changed " + curMap);
             // 换图自动停止战斗（用户需求）：先对齐面板实际状态再决策，绝不误翻 toggle
@@ -12971,7 +13081,7 @@
   //   DB.getItemName() 在 !item.IsIdentified 时直接 return unidentifiedDisplayName（词条被吞），故需自行拼装；
   //   售价：ZC.PC_SELL_ITEMLIST(0xc7)={index,price,overchargeprice}、ZC.PC_PURCHASE_ITEMLIST(0xc6)={price,discountprice,type,ITID}。
   var ITIP = {
-    on: true, el: null, elKey: "", elAt: 0,
+    on: true, el: null, elKey: "", elAt: 0, hover: null, x: 0, y: 0,
     sell: {}, buy: {},               // 商店单价缓存
     invSig: "", invAt: 0,            // 背包探查指纹/时间
     pendingOps: [], seenOps: {},     // 首次出现的 opcode
@@ -13288,6 +13398,7 @@
       if (!t || !t.closest) return;
       var el = t.closest(".item");
       if (!el) { itipHide(); return; }
+      ITIP.hover = el; ITIP.x = e.clientX; ITIP.y = e.clientY;
       var html = "";
       if (itipIsShop(itipChain(el))) {
         var side = itipShopSide(el);
@@ -13307,9 +13418,8 @@
         var idx = el.getAttribute("data-index");
         var inv2 = itipInvMap();
         var item = (idx != null) ? inv2[Number(idx)] : null;
-        // V2.16.22：data-index 与 item.index 编号若不一致会张冠李戴 → 用槽位上的 data-itid 校验，对不上就按 ITID 反查
+        // 装备/交易实例只能按 data-index 精确映射；同 ITID 可能有不同精炼与词条，禁止反查替代。
         if (item && String(item.ITID != null ? item.ITID : item.itemid) !== String(itid)) item = null;
-        if (!item) item = itipInvById(itid, inv2);
         if (!item) { itipHide(); return; }
         html = itipBody(item, null);
       }
@@ -13320,6 +13430,13 @@
       d.style.display = "block";
       itipPlace(e.clientX, e.clientY);
     } catch (err) { itipHide(); }
+  }
+  function itipRefresh() {
+    try {
+      var el = ITIP.hover;
+      if (!el || !el.isConnected) { itipHide(); return; }
+      itipOver({ target: el, clientX: ITIP.x, clientY: ITIP.y, composedPath: function () { return [el]; } });
+    } catch (e) { itipHide(); }
   }
   // ---- 商店单价解析 ----
   function itipShopPkt(bytes, op) {
@@ -13484,10 +13601,10 @@
       try {
         var rt = e.relatedTarget;
         try { if (rt && rt.closest && rt.closest(".item")) return; } catch (e2) {}
-        itipHide();
+        ITIP.hover = null; itipHide();
       } catch (e3) {}
     }, true);
-    document.addEventListener("scroll", itipHide, true);
+    document.addEventListener("scroll", function () { setTimeout(itipRefresh, 0); }, true);
   } catch (e) {}
   // V2.16.26 自动技能探查：把辅助技能配置 + 判活表 + 开关/SP 一起上报，定位「不触发释放」
   var ASKP = { sig: "", at: 0 };

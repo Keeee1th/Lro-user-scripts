@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.30.0
+// @version      2.31.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -35,6 +35,10 @@
 // 装备词条分色（鉴定浮层）：满值暖金 #ffd479 / 低值绿 #7ef0a8 / 中段紫 #c9a0ff / 固定效果暖金+「固定」标 / 无满值中性 / 超范围灰「未评级」。
 // 补齐 48 条词条中文名（200/201/202/204 + 301-344）+ 197 键满值表 ITIP_OPT_MAX；固定效果按 id 白名单判定（30 键：76-86/163/173/174/175-186/303-306）。
 // 190/191/192 与 117-126 沿用本地文案；分色常开无开关；新增 window.__dshCombinedActive 旗标。
+// ---------------- V2.31.0 变更摘要 ----------------
+// 1. 队友显血修复：正确区分 在线/离线/异图/死亡 四态（此前离线/异图/死亡一律显示成死亡红）。
+// 2. 自动 buff 关联自动战斗：开自动战斗才补 buff、关闭即停；新增「一键补 buff」组合快捷键（单键切换，与自动战斗同步启停）。
+// 3. 标题栏球按钮品红底修复：logo 球/关闭球/最小化球贴图由 BMP 换真透明 PNG（消除 #ff00ff 透明占位在浏览器 CSS 里被画成品红/粉的「红框」）。
 
 (function () {
   "use strict";
@@ -60,7 +64,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.30.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.31.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
 
   // V2.11.0：仓库+背包读取全局变量
@@ -1148,7 +1152,7 @@
   // 做法：4 张游戏原生位图（标题栏/系统球/关闭/最小化）内嵌为 base64，另一层 <style> 追加在
   // PANEL_CSS 之后做覆盖。现有布局一行未改 —— 想回滚只需删掉这一层 <style> 即可。
   // 面板外框是行内样式（PANEL_LAYOUT），行内样式优先级高于样式表，故这几条加 !important。
-  var RO_SKIN_CSS = ":root{--dsh-tb:url(\"data:image/bmp;base64,Qk2ABAAAAAAAALIDAAAoAAAADAAAABEAAAABAAgAAAAAAAAAAAASCwAAEgsAAN8AAADfAAAAAAAAAP///wD/AP8Ax5KBAMaRgADFkYAAy5aFAMuXhgDMmIcAyZaGAMqXiADKlYIAx5KAAMiTgQDJlYMAyJSCAMaTgQDKloQAyJWDAMeUggDLmIYAyZaEAMmWhQDJl4UAzJmIAMuZhwDIloUA5s7FAOzUywDGlIEAx5WCAMWVggDow7QA4L6wAOfFtwDYqZMA2ayXANmtmQDYrZkA7r+qANyxnQDsvqkA8MKuAPDDrgDww68A8MSxAPDFsQDiuaYA4bmnAPHItQDmwK8A8su5APHKuADnwbAA8cu6AOjFtQDoxbYA58S1ANq6qwDoxrcA4cCxAN6+rwDgv7EA376wAOnIuQDXuawA38G0AN2/sgDixrkA6dHGAPfe0wDgrpUA5LKaAOOzmwDVp5EA2KyVAOS2ngDjtJ0A4rSdAOO1ngDluKEA2q6ZANmumQDYrpkA27GcAN2zngDvwqwA4LahAPDErwDhuKQA4LikAPHGsQDsw64A4bmmAO7FsADiuqcA47ypAPHJtQDyyrcA5L6sAPHKtwDwyrcA5MCuAOfDsQDlwrAA5sOxAN6+rgDcvKwA58a2AN2+rgDev7AA3b6vAN3AsQDewrQA3cGzAOTLvwDiyb0A6dLGAOvUyQDq08gA6dLHAOnUygDq1csA59PJAOzZ0AA7OTgAPjw7AEJAPwBhX14A4LGYAOO2ngDYrpcA4b2qAObDsADnxLEA6MazAOXDsQDlxLEA2sGzAOTOwgD44tYA59LHAOjUyQDn08gA8uDWAPTk2wD618IA59PHAJeSjwD828UA/NzHAPzdyQD838sAmpSQAOrn5QD428UA/N/JAPzfygD84MsA+9/KAPvfywDy0bYA8tK3APzhywDTzcgA8tS5APLVuwDx1bsA89i/AMC5swDKw70A8ta7APPYvgDy2L4A89m/APnhyQBmY2AAYV5bAMjDvgCqpqIAUlBOAFdVUwDf29cAtLGuAL27uQBmZWQA9vX0AMfGxQDy2b8A89zCAPPcxADx2LsA893CAPPdxADz3sQA897FAPPexgD659EA/evWAPvp1ADx2bsA897DAPPfxQD6588A++jQAPro0AD86tIA+unQAPvq0AD979gA/fDcAP3x3AD98doA/fLbAPvz2wBra2oA8vLyAOfn5wDDw8MAwsLCAMDAwAC9vb0Atra2AAAAAAAAAAAAAAAAAM7Ozs7Ozs7Ozs7OzsPDw8PDw8PDw8PDw9PT09PT09PT09PT062tra2tra2tra2trZ+fn5+fn5+fn5+fn1hYWFhYWFhYWFhYWDQ0NDQ0NDQ0NDQ0NExMTExMTExMTExMTF9fX19fX19fX19fX1JSUlJSUlJSUlJSUjs7Ozs7Ozs7Ozs7O4aGhoaGhoaGhoaGhnl5eXl5eXl5eXl5eW9vb29vb29vb29vb3JycnJycnJycnJycg8PDw8PDw8PDw8PDwAA\");--dsh-base:url(\"data:image/bmp;base64,Qk1wAQAAAAAAAOoAAAAoAAAACwAAAAsAAAABAAgAAAAAAAAAAAASCwAAEgsAAC0AAAAtAAAAAAAAAP///wD/AP8A4K2VALphNQCaUC0AikkoAMZpOwDHaz4AeUInAMlvQwB5QykAynFGAMpySACPVTgAh1A1AM16UQDOfFQAz39WAKBjRQCfY0UA0YVfAJ5lSgCdZUkA0odjALN2WADWkXAAu4FjANeWdgDanH4A25+BANyihgDPmoEAz5uCAN+skgDhr5cA5bmkAOa8pwDowa0A6se2AO7RwwD04tkAzp6DAM2egwD///8AAgICAgICAgICAgIAAgICHBAVEBwCAgIAAgIrEgMmAxIqAgIAAiAHIyUnJSMHIQIAAhcRHyIkIh8RFgIAAgkIGh4dHhoICQIAAg8FBAoMCgQFDwIAAhkGGB0fHRgGGQIAAgITDSgpKA0UAgIAAgICGw4LDhsCAgIAAgICAgICAgICAgIAAAA=\");--dsh-close:url(\"data:image/bmp;base64,Qk3MAQAAAAAAAEYBAAAoAAAACwAAAAsAAAABAAgAAAAAAAAAAAASCwAAEgsAAEQAAABEAAAAAAAAAP///wD/AP8A/wH/AH5KNQBYIQgAbToiAKNfPwB1Qy0AdUQtALN1WACKXUgAonBaANCagQCtinoA5r2qAMeklADhva0AWiMJAFokCQBjLhUAZDEXAMdsPwB5QicAeUMpAMlwRQCeWDYAk1c5AI9VOACHUDUAzXpRAM18VAB5STIAm2NGANGFXwDRhWAAyYBcAJ1lSQCkak0AnWZKANOJZQClbVAAglU/ALN2WADVjWsA1I1rAIVaRAC7gWMA2Jd2ANeWdgCNY04A0ph7AM+agQDJmYIA4KyTAKJ9awDluaQA5bunAOvItwDoz8MA8tvPAPHazwD15d0A2Zp5ANGkigDSpo0A9uffAP///wACAgICAgICAgICAgACAgIxHiIeMQICAgACAkAwDzo5P0EDAgACNB8LID43BiQNAgACJSMRFS4TECwnAgACFxY2DhIyOBkXAgACHRozCAkFNQcdAgACKxsMFDsqBCEKAgACAiYoPEI9LSkCAgACAgIvHBgcLwICAgACAgICAgICAgICAgAAAA==\");--dsh-mini:url(\"data:image/bmp;base64,Qk2gAQAAAAAAABoBAAAoAAAACwAAAAsAAAABAAgAAAAAAAAAAAASCwAAEgsAADkAAAA5AAAAAAAAAP///wD/AP8AoVw8AKVjRADUi2kAilxHALuHcADgrZUA7c/BAFojCABaIwkAikopAItLKwB5QicAyG5BAHlDKQDKckgAy3ZMAI9UOACPVTgAh1A1AM16UQDPf1YAoGNFANCCXADRhV8AnmVKANOKZwDUi2gAs3ZYAMWFZQC7gGMAu4FjAL+DZgDWlHMA15Z2ANuegADbnoEA3KKGAN2ligDeposAz5uCANekiwC7loQA5bumAOjBrQDpxLIA7tHDAO/UxgDx29AA9OLZAMKNcQDCj3MAxJF2AM6egwD///8AAgICAgICAgICAgIAAgICJBYaFiQCAgIAAgI3FwguCBc3AgIAAioPLQkyMS8SKgIAAhsdLDU2NTQmGwIAAg4ZBgsLCwojDgIAAhUDHwcrKSIEFQIAAh4MBScoJRwNHgIAAgIYETAzMBEYAgIAAgICIRQQEyACAgIAAgICAgICAgICAgIAAAA=\")}\n#dsh-ro-panel{background:#fff!important;border:1px solid #8e8e8e!important;border-radius:3px!important;box-shadow:1px 2px 2px rgba(0,0,0,.55)!important;color:#111!important}\n#dsh-ro-panel .hd{height:17px;min-height:17px;padding:0 3px;gap:3px;border-bottom:0;border-radius:3px 3px 0 0;background-color:#fff;background-image:var(--dsh-tb);background-repeat:repeat-x;background-size:auto 17px;color:#111;text-shadow:1px 1px #fff;cursor:move}\n#dsh-ro-panel .hd b{color:#111;font-weight:700;font-size:11px;line-height:13px;text-shadow:1px 1px #fff}\n#dsh-ro-panel .hd .hbtns{gap:3px}\n#dsh-ro-panel .hd .hbtn{height:13px;min-width:0;padding:0 5px;border:1px solid;border-color:#cfcfcf #a9a9a9 #5f5f5f #bdbdbd;border-radius:3px;background:linear-gradient(to bottom,#fff 0%,#f2f2f2 35%,#dcdcdc 55%,#f9f9f9 100%);color:#3f3f3f;font-size:10px;line-height:11px;font-weight:400;text-shadow:1px 1px rgba(255,255,255,.85)}\n#dsh-ro-panel .hd .hbtn:hover{background:linear-gradient(to bottom,#f7fbff,#dfe8f6 35%,#c0d0ee 55%,#f0f6ff);border-color:#c9d1dd #8ea2c4 #4d5f86 #b1bfd5}\n#dsh-ro-panel .tabs{background:#fff;border-bottom:1px solid #7897b9;padding:3px 4px 0;gap:2px}\n#dsh-ro-panel .tab{height:21px;padding:0 9px;border:1px solid #a8bfd8;border-bottom:0;border-radius:4px 4px 0 0;background:linear-gradient(to bottom,#eef5fd,#cfe0f4 45%,#b9d0ea);color:#2a4a70;font-size:11px;line-height:19px;text-shadow:1px 1px #fff}\n#dsh-ro-panel .tab:hover{background:linear-gradient(to bottom,#f7fbff,#dbe9f8 45%,#c8dcf2);color:#123a63}\n#dsh-ro-panel .tab.active{background:#fff;border-color:#7897b9;border-bottom:0;color:#123a63;font-weight:700;height:22px;line-height:20px;text-shadow:none}\n#dsh-ro-panel .statbar{background:#f7f7f7;border-bottom:1px solid #c1c6c2;color:#333;font-size:11px;padding:3px 5px}\n#dsh-ro-panel .statbar .nm{color:#111}#dsh-ro-panel .statbar .job{color:#555}#dsh-ro-panel .statbar .lv{color:#123a63}\n#dsh-ro-panel .statbar .bar .bg{background:#dfe5ec;border:1px solid #9aa7b6;height:8px;border-radius:0}\n#dsh-ro-panel .statbar .bar .hp{background:linear-gradient(#ff8a8a,#d63a3a)}#dsh-ro-panel .statbar .bar .sp{background:linear-gradient(#8ec2ff,#2f6fde)}\n#dsh-ro-panel .statbar .bar .bnum{color:#333}\n#dsh-ro-panel .pages{background:#fff;padding:8px 10px 12px}\n#dsh-ro-panel .sec{margin:5px 0 4px;padding:2px 0 2px 6px;border-left:3px solid #6f9ad0;background:linear-gradient(to right,#eef4fb,rgba(238,244,251,0));color:#123a63;font-size:11px;font-weight:700}\n#dsh-ro-panel .box{background:#fbfcfe;border:1px solid #c1c6c2;border-radius:3px;padding:5px 6px;margin:5px 0}\n#dsh-ro-panel .box .b-hd{color:#123a63;font-size:11px;font-weight:700}\n#dsh-ro-panel .list-item{color:#333;font-size:11px;border-bottom:1px solid #e2e2e2}\n#dsh-ro-panel .log{background:#f4f4f4;border:1px solid #dcdcdc;border-radius:2px;color:#555;font-size:10px}\n#dsh-ro-panel .tag{border:1px solid #b9c6d6;border-radius:3px;background:#f2f6fb;color:#31527a;font-size:10px}\n#dsh-ro-panel .tag.blue{background:#e6eefa;border-color:#9fb8d8;color:#123a63}#dsh-ro-panel .tag.green{background:#eef8f1;border-color:#8fbfa2;color:#1d6b3c}\n#dsh-ro-panel button{height:20px;min-width:42px;padding:0 7px;border:1px solid;border-color:#cfcfcf #a9a9a9 #5f5f5f #bdbdbd;border-radius:4px;background:linear-gradient(to bottom,#fff 0%,#f2f2f2 35%,#dcdcdc 55%,#f9f9f9 100%);color:#3f3f3f;font-size:11px;font-weight:400;line-height:1;text-shadow:1px 1px rgba(255,255,255,.85);box-shadow:inset 0 1px rgba(255,255,255,.95),inset 0 -1px rgba(0,0,0,.12)}\n#dsh-ro-panel button:hover{background:linear-gradient(to bottom,#f7fbff,#dfe8f6 35%,#c0d0ee 55%,#f0f6ff);border-color:#c9d1dd #8ea2c4 #4d5f86 #b1bfd5}\n#dsh-ro-panel button.green{color:#123a63;border-color:#bcd0e6 #8fa9c6 #4a6b91 #a9bfd8;background:linear-gradient(to bottom,#fbfdff,#e3eefa 35%,#c2d9f2 55%,#f2f8ff)}\n#dsh-ro-panel button.red{color:#8d2727;border-color:#d4c5c5 #b9a0a0 #765858 #c3aeae;background:linear-gradient(#fff,#eadede 55%,#fff8f8)}\n#dsh-ro-panel button.ghost{color:#3f3f3f;border-color:#cfcfcf #a9a9a9 #5f5f5f #bdbdbd;background:linear-gradient(to bottom,#fff,#efefef 55%,#fbfbfb)}\n#dsh-ro-panel input[type=text],#dsh-ro-panel input[type=password],#dsh-ro-panel input[type=number]{height:20px;background:#efefef;border:0;border-radius:0;box-shadow:inset 1px 1px 1px #c8c8c8;color:#111;font-size:11px;padding:1px 4px}\n#dsh-ro-panel select{height:20px;background:#fff;border:1px solid #aaa;border-radius:0;box-shadow:none;color:#111;font-size:11px;padding:0 2px}\n#dsh-ro-panel textarea{background:#efefef;border:0;border-radius:0;box-shadow:inset 1px 1px 1px #c8c8c8;color:#111;font-size:11px}\n#dsh-ro-panel .switch input{accent-color:#647c9d}\n#dsh-ro-panel .status{background:#f7f7f7;border-top:1px solid #c1c6c2;color:#333;font-size:10px;padding:2px 5px}\n#dsh-ro-panel .status .dot{width:7px;height:7px;background:#37b24d}\n#dsh-ro-panel .sub-tabs{border-bottom:1px solid #7897b9;gap:2px}\n#dsh-ro-panel .sub-tab{height:20px;padding:0 9px;border:1px solid #a8bfd8;border-bottom:0;border-radius:4px 4px 0 0;background:linear-gradient(to bottom,#eef5fd,#cfe0f4 45%,#b9d0ea);color:#2a4a70;font-size:11px;font-weight:400;line-height:18px;text-shadow:1px 1px #fff}\n#dsh-ro-panel .sub-tab:hover{background:linear-gradient(to bottom,#f7fbff,#dbe9f8 45%,#c8dcf2)}\n#dsh-ro-panel .sub-tab.active{background:#fff;border-color:#7897b9;border-bottom:0;color:#123a63;font-weight:700;text-shadow:none}\n#dsh-ro-panel .a-nav .sub-tab{height:auto;padding:6px 7px;border-radius:3px;border:1px solid #a8bfd8;background:linear-gradient(to bottom,#eef5fd,#cfe0f4 45%,#b9d0ea);color:#2a4a70;font-size:11px;line-height:1.35;text-shadow:1px 1px #fff}\n#dsh-ro-panel .a-nav .sub-tab.active{background:#fff;border:1px solid #7897b9;border-left:3px solid #6f9ad0;color:#123a63}\n#dsh-ro-panel .dbtn{border:1px solid;border-color:#cfcfcf #a9a9a9 #5f5f5f #bdbdbd;border-radius:4px;background:linear-gradient(to bottom,#fff 0%,#f2f2f2 35%,#dcdcdc 55%,#f9f9f9 100%);color:#3f3f3f;font-size:11px;font-weight:400;padding:7px 6px;text-shadow:1px 1px rgba(255,255,255,.85)}\n#dsh-ro-panel .dbtn:active{background:linear-gradient(to bottom,#cdd8eb,#b7c8e5 45%,#dfe9fb)}\n#dsh-ro-panel #dsh-drawer{background:#fff;border-left:1px solid #8e8e8e;box-shadow:-3px 0 6px rgba(0,0,0,.35)}\n#dsh-ro-panel #dsh-drawer .d-hd{height:17px;min-height:17px;padding:0 3px;gap:3px;background:#fff;background-image:var(--dsh-tb);background-repeat:repeat-x;background-size:auto 17px;color:#111;text-shadow:1px 1px #fff;font-size:11px;font-weight:700}\n#dsh-ro-panel #dsh-drawer .d-hd .st{color:#111!important;font-size:11px!important}\n#dsh-ro-panel #dsh-drawer .d-hd button{height:13px!important;min-width:0!important;padding:0 6px!important;font-size:10px!important;color:#3f3f3f!important;border:1px solid #b9a0a0!important;border-radius:3px!important;background:linear-gradient(#fff,#eadede 55%,#fff8f8)!important}\n#dsh-ro-panel #dsh-drawer .d-rail{background:#f2f2f2;border-right:1px solid #c1c6c2;padding:5px 4px;gap:5px}\n#dsh-ro-panel #dsh-drawer .d-rail button{font-size:11px;font-weight:400;padding:6px 4px}\n#dsh-ro-panel #dsh-drawer .d-body{background:#fff;padding:8px 10px 12px}\n#dsh-ro-panel .pages,#dsh-ro-panel #dsh-drawer .d-body{scrollbar-color:#b9c6d6 transparent}\n#dsh-ro-panel .pages::-webkit-scrollbar-thumb,#dsh-ro-panel #dsh-drawer .d-body::-webkit-scrollbar-thumb{background:#b9c6d6;border:3px solid #fff}\n#dsh-ro-panel .pages::-webkit-scrollbar-thumb:hover,#dsh-ro-panel #dsh-drawer .d-body::-webkit-scrollbar-thumb:hover{background:#93a8c0}\n#dsh-fw-mgr{border:1px solid #8e8e8e;border-radius:3px;background:#fff;box-shadow:1px 2px 2px rgba(0,0,0,.55);color:#111}\n.dsh-grip::after{border-right:2px solid #8a8a8a;border-bottom:2px solid #8a8a8a}\n.dsh-grip:hover::after{border-color:#123a63}";
+  var RO_SKIN_CSS = ":root{--dsh-tb:url(\"data:image/bmp;base64,Qk2ABAAAAAAAALIDAAAoAAAADAAAABEAAAABAAgAAAAAAAAAAAASCwAAEgsAAN8AAADfAAAAAAAAAP///wD/AP8Ax5KBAMaRgADFkYAAy5aFAMuXhgDMmIcAyZaGAMqXiADKlYIAx5KAAMiTgQDJlYMAyJSCAMaTgQDKloQAyJWDAMeUggDLmIYAyZaEAMmWhQDJl4UAzJmIAMuZhwDIloUA5s7FAOzUywDGlIEAx5WCAMWVggDow7QA4L6wAOfFtwDYqZMA2ayXANmtmQDYrZkA7r+qANyxnQDsvqkA8MKuAPDDrgDww68A8MSxAPDFsQDiuaYA4bmnAPHItQDmwK8A8su5APHKuADnwbAA8cu6AOjFtQDoxbYA58S1ANq6qwDoxrcA4cCxAN6+rwDgv7EA376wAOnIuQDXuawA38G0AN2/sgDixrkA6dHGAPfe0wDgrpUA5LKaAOOzmwDVp5EA2KyVAOS2ngDjtJ0A4rSdAOO1ngDluKEA2q6ZANmumQDYrpkA27GcAN2zngDvwqwA4LahAPDErwDhuKQA4LikAPHGsQDsw64A4bmmAO7FsADiuqcA47ypAPHJtQDyyrcA5L6sAPHKtwDwyrcA5MCuAOfDsQDlwrAA5sOxAN6+rgDcvKwA58a2AN2+rgDev7AA3b6vAN3AsQDewrQA3cGzAOTLvwDiyb0A6dLGAOvUyQDq08gA6dLHAOnUygDq1csA59PJAOzZ0AA7OTgAPjw7AEJAPwBhX14A4LGYAOO2ngDYrpcA4b2qAObDsADnxLEA6MazAOXDsQDlxLEA2sGzAOTOwgD44tYA59LHAOjUyQDn08gA8uDWAPTk2wD618IA59PHAJeSjwD828UA/NzHAPzdyQD838sAmpSQAOrn5QD428UA/N/JAPzfygD84MsA+9/KAPvfywDy0bYA8tK3APzhywDTzcgA8tS5APLVuwDx1bsA89i/AMC5swDKw70A8ta7APPYvgDy2L4A89m/APnhyQBmY2AAYV5bAMjDvgCqpqIAUlBOAFdVUwDf29cAtLGuAL27uQBmZWQA9vX0AMfGxQDy2b8A89zCAPPcxADx2LsA893CAPPdxADz3sQA897FAPPexgD659EA/evWAPvp1ADx2bsA897DAPPfxQD6588A++jQAPro0AD86tIA+unQAPvq0AD979gA/fDcAP3x3AD98doA/fLbAPvz2wBra2oA8vLyAOfn5wDDw8MAwsLCAMDAwAC9vb0Atra2AAAAAAAAAAAAAAAAAM7Ozs7Ozs7Ozs7OzsPDw8PDw8PDw8PDw9PT09PT09PT09PT062tra2tra2tra2trZ+fn5+fn5+fn5+fn1hYWFhYWFhYWFhYWDQ0NDQ0NDQ0NDQ0NExMTExMTExMTExMTF9fX19fX19fX19fX1JSUlJSUlJSUlJSUjs7Ozs7Ozs7Ozs7O4aGhoaGhoaGhoaGhnl5eXl5eXl5eXl5eW9vb29vb29vb29vb3JycnJycnJycnJycg8PDw8PDw8PDw8PDwAA\");--dsh-base:url(\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAsAAAALCAYAAACprHcmAAAA/ElEQVR4nGP4z0A8ROGUTbv+P7Dq7P/41otgGsTHqrh53tn/YfXn/09d++D/2oMvwDSI3zzv3H8UxY2zzv+3zjz2f/r6h/+X73n2f9vxV2AaxAeJN80+/x+u2DN17v+QmnP/2xbd+T9pzf3/S3Y+BdMgPkjcK3UeQrG6U+V/u+zj/wsmXvvfOP/2/7o5t8A0iA8SB8nDFZsGtP/XDZj13zRx13/n/JP/3QpPgWkQHywe0I5QHFG2+b+GZ9f/5PZLYFNB1oNoEB8kDpJHCQ3X5AX/PYpO/T988d3/m4++gGkQ3zV5/n+s4ZzcuPu/RWj/f03nSjAN4uOMFEIQAAq8ILBetNoqAAAAAElFTkSuQmCC\");--dsh-close:url(\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAsAAAALCAYAAACprHcmAAABNUlEQVR4nI2RO0tCAQCFbcsfEM09IBoMCoxqEdIihcIg6XIpDMyGTHBRuPYgA4mES4PRw7DBbgWRk0OEODWYg5hW9CKqwQqaCmr9QgdFMIozHA7nm85Rofq/KoJn/ZphbxqrP1v0Qq4KB5Qsno0bDhMvHJ+9cxDPI4VukfdzUAMl2BfKMDKXZmA8QIdR4iH/hWM+QmOPk7HFFL7QeRk22sNM+LNEE8/Ut09iEP2om0XWlCQO+QrTVLgMt/RK6GaSBI+e8AaiqJtEhmwyykmePleKQl+CteZlOoUdZjdzaPRuNAY3tQ0CS1spdNZdCn0JFjwxukeDiK4IdW02TjNv6CxLaE0L9Nu2EdwxKtYYnFawr1yQuf/k8fWbzN0HDvkSs3OPqjvbfHG6LKu06qWiF/Kvp/ylH9hkF6Ks4lzeAAAAAElFTkSuQmCC\");--dsh-mini:url(\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAsAAAALCAYAAACprHcmAAABGklEQVR4nI2QO0vDYBiFO+rv6CDFWejg4g2lOiioSAk4hHpZRC0E6mIv1kKCBEG7CMGK7dZFxwzSWkUUTYvBIlERQdBBRXB/5MsQCGQoLy+Hc84znRChzs9nlGKbqY1b5vMtV4UPhHPGHbObFvvVV6q1D1eFF7kPzh5YDKxcUTHfqVlfNJ1fLu0fThqfTCg3iN6DYwmDJc1mq2iS1Osouw1X13bqZAwH0Xtwz2AKKdtkVFLpDse97wrHSe49IHoP7pss0C+VSOQvWC2YaMdttMoLC7kzhuUyovfgOeWUSExlWbPZPnpCLT+TNhwW1Xt6xzVE71tjRD5kbP2a89Y3j29/rgov8sCd5YxJdEYnMpQiOq0jp83gnTu5f+rTHbsioa6rAAAAAElFTkSuQmCC\")}\n#dsh-ro-panel{background:#fff!important;border:1px solid #8e8e8e!important;border-radius:3px!important;box-shadow:1px 2px 2px rgba(0,0,0,.55)!important;color:#111!important}\n#dsh-ro-panel .hd{height:17px;min-height:17px;padding:0 3px;gap:3px;border-bottom:0;border-radius:3px 3px 0 0;background-color:#fff;background-image:var(--dsh-tb);background-repeat:repeat-x;background-size:auto 17px;color:#111;text-shadow:1px 1px #fff;cursor:move}\n#dsh-ro-panel .hd b{color:#111;font-weight:700;font-size:11px;line-height:13px;text-shadow:1px 1px #fff}\n#dsh-ro-panel .hd .hbtns{gap:3px}\n#dsh-ro-panel .hd .hbtn{height:13px;min-width:0;padding:0 5px;border:1px solid;border-color:#cfcfcf #a9a9a9 #5f5f5f #bdbdbd;border-radius:3px;background:linear-gradient(to bottom,#fff 0%,#f2f2f2 35%,#dcdcdc 55%,#f9f9f9 100%);color:#3f3f3f;font-size:10px;line-height:11px;font-weight:400;text-shadow:1px 1px rgba(255,255,255,.85)}\n#dsh-ro-panel .hd .hbtn:hover{background:linear-gradient(to bottom,#f7fbff,#dfe8f6 35%,#c0d0ee 55%,#f0f6ff);border-color:#c9d1dd #8ea2c4 #4d5f86 #b1bfd5}\n#dsh-ro-panel .tabs{background:#fff;border-bottom:1px solid #7897b9;padding:3px 4px 0;gap:2px}\n#dsh-ro-panel .tab{height:21px;padding:0 9px;border:1px solid #a8bfd8;border-bottom:0;border-radius:4px 4px 0 0;background:linear-gradient(to bottom,#eef5fd,#cfe0f4 45%,#b9d0ea);color:#2a4a70;font-size:11px;line-height:19px;text-shadow:1px 1px #fff}\n#dsh-ro-panel .tab:hover{background:linear-gradient(to bottom,#f7fbff,#dbe9f8 45%,#c8dcf2);color:#123a63}\n#dsh-ro-panel .tab.active{background:#fff;border-color:#7897b9;border-bottom:0;color:#123a63;font-weight:700;height:22px;line-height:20px;text-shadow:none}\n#dsh-ro-panel .statbar{background:#f7f7f7;border-bottom:1px solid #c1c6c2;color:#333;font-size:11px;padding:3px 5px}\n#dsh-ro-panel .statbar .nm{color:#111}#dsh-ro-panel .statbar .job{color:#555}#dsh-ro-panel .statbar .lv{color:#123a63}\n#dsh-ro-panel .statbar .bar .bg{background:#dfe5ec;border:1px solid #9aa7b6;height:8px;border-radius:0}\n#dsh-ro-panel .statbar .bar .hp{background:linear-gradient(#ff8a8a,#d63a3a)}#dsh-ro-panel .statbar .bar .sp{background:linear-gradient(#8ec2ff,#2f6fde)}\n#dsh-ro-panel .statbar .bar .bnum{color:#333}\n#dsh-ro-panel .pages{background:#fff;padding:8px 10px 12px}\n#dsh-ro-panel .sec{margin:5px 0 4px;padding:2px 0 2px 6px;border-left:3px solid #6f9ad0;background:linear-gradient(to right,#eef4fb,rgba(238,244,251,0));color:#123a63;font-size:11px;font-weight:700}\n#dsh-ro-panel .box{background:#fbfcfe;border:1px solid #c1c6c2;border-radius:3px;padding:5px 6px;margin:5px 0}\n#dsh-ro-panel .box .b-hd{color:#123a63;font-size:11px;font-weight:700}\n#dsh-ro-panel .list-item{color:#333;font-size:11px;border-bottom:1px solid #e2e2e2}\n#dsh-ro-panel .log{background:#f4f4f4;border:1px solid #dcdcdc;border-radius:2px;color:#555;font-size:10px}\n#dsh-ro-panel .tag{border:1px solid #b9c6d6;border-radius:3px;background:#f2f6fb;color:#31527a;font-size:10px}\n#dsh-ro-panel .tag.blue{background:#e6eefa;border-color:#9fb8d8;color:#123a63}#dsh-ro-panel .tag.green{background:#eef8f1;border-color:#8fbfa2;color:#1d6b3c}\n#dsh-ro-panel button{height:20px;min-width:42px;padding:0 7px;border:1px solid;border-color:#cfcfcf #a9a9a9 #5f5f5f #bdbdbd;border-radius:4px;background:linear-gradient(to bottom,#fff 0%,#f2f2f2 35%,#dcdcdc 55%,#f9f9f9 100%);color:#3f3f3f;font-size:11px;font-weight:400;line-height:1;text-shadow:1px 1px rgba(255,255,255,.85);box-shadow:inset 0 1px rgba(255,255,255,.95),inset 0 -1px rgba(0,0,0,.12)}\n#dsh-ro-panel button:hover{background:linear-gradient(to bottom,#f7fbff,#dfe8f6 35%,#c0d0ee 55%,#f0f6ff);border-color:#c9d1dd #8ea2c4 #4d5f86 #b1bfd5}\n#dsh-ro-panel button.green{color:#123a63;border-color:#bcd0e6 #8fa9c6 #4a6b91 #a9bfd8;background:linear-gradient(to bottom,#fbfdff,#e3eefa 35%,#c2d9f2 55%,#f2f8ff)}\n#dsh-ro-panel button.red{color:#8d2727;border-color:#d4c5c5 #b9a0a0 #765858 #c3aeae;background:linear-gradient(#fff,#eadede 55%,#fff8f8)}\n#dsh-ro-panel button.ghost{color:#3f3f3f;border-color:#cfcfcf #a9a9a9 #5f5f5f #bdbdbd;background:linear-gradient(to bottom,#fff,#efefef 55%,#fbfbfb)}\n#dsh-ro-panel input[type=text],#dsh-ro-panel input[type=password],#dsh-ro-panel input[type=number]{height:20px;background:#efefef;border:0;border-radius:0;box-shadow:inset 1px 1px 1px #c8c8c8;color:#111;font-size:11px;padding:1px 4px}\n#dsh-ro-panel select{height:20px;background:#fff;border:1px solid #aaa;border-radius:0;box-shadow:none;color:#111;font-size:11px;padding:0 2px}\n#dsh-ro-panel textarea{background:#efefef;border:0;border-radius:0;box-shadow:inset 1px 1px 1px #c8c8c8;color:#111;font-size:11px}\n#dsh-ro-panel .switch input{accent-color:#647c9d}\n#dsh-ro-panel .status{background:#f7f7f7;border-top:1px solid #c1c6c2;color:#333;font-size:10px;padding:2px 5px}\n#dsh-ro-panel .status .dot{width:7px;height:7px;background:#37b24d}\n#dsh-ro-panel .sub-tabs{border-bottom:1px solid #7897b9;gap:2px}\n#dsh-ro-panel .sub-tab{height:20px;padding:0 9px;border:1px solid #a8bfd8;border-bottom:0;border-radius:4px 4px 0 0;background:linear-gradient(to bottom,#eef5fd,#cfe0f4 45%,#b9d0ea);color:#2a4a70;font-size:11px;font-weight:400;line-height:18px;text-shadow:1px 1px #fff}\n#dsh-ro-panel .sub-tab:hover{background:linear-gradient(to bottom,#f7fbff,#dbe9f8 45%,#c8dcf2)}\n#dsh-ro-panel .sub-tab.active{background:#fff;border-color:#7897b9;border-bottom:0;color:#123a63;font-weight:700;text-shadow:none}\n#dsh-ro-panel .a-nav .sub-tab{height:auto;padding:6px 7px;border-radius:3px;border:1px solid #a8bfd8;background:linear-gradient(to bottom,#eef5fd,#cfe0f4 45%,#b9d0ea);color:#2a4a70;font-size:11px;line-height:1.35;text-shadow:1px 1px #fff}\n#dsh-ro-panel .a-nav .sub-tab.active{background:#fff;border:1px solid #7897b9;border-left:3px solid #6f9ad0;color:#123a63}\n#dsh-ro-panel .dbtn{border:1px solid;border-color:#cfcfcf #a9a9a9 #5f5f5f #bdbdbd;border-radius:4px;background:linear-gradient(to bottom,#fff 0%,#f2f2f2 35%,#dcdcdc 55%,#f9f9f9 100%);color:#3f3f3f;font-size:11px;font-weight:400;padding:7px 6px;text-shadow:1px 1px rgba(255,255,255,.85)}\n#dsh-ro-panel .dbtn:active{background:linear-gradient(to bottom,#cdd8eb,#b7c8e5 45%,#dfe9fb)}\n#dsh-ro-panel #dsh-drawer{background:#fff;border-left:1px solid #8e8e8e;box-shadow:-3px 0 6px rgba(0,0,0,.35)}\n#dsh-ro-panel #dsh-drawer .d-hd{height:17px;min-height:17px;padding:0 3px;gap:3px;background:#fff;background-image:var(--dsh-tb);background-repeat:repeat-x;background-size:auto 17px;color:#111;text-shadow:1px 1px #fff;font-size:11px;font-weight:700}\n#dsh-ro-panel #dsh-drawer .d-hd .st{color:#111!important;font-size:11px!important}\n#dsh-ro-panel #dsh-drawer .d-hd button{height:13px!important;min-width:0!important;padding:0 6px!important;font-size:10px!important;color:#3f3f3f!important;border:1px solid #b9a0a0!important;border-radius:3px!important;background:linear-gradient(#fff,#eadede 55%,#fff8f8)!important}\n#dsh-ro-panel #dsh-drawer .d-rail{background:#f2f2f2;border-right:1px solid #c1c6c2;padding:5px 4px;gap:5px}\n#dsh-ro-panel #dsh-drawer .d-rail button{font-size:11px;font-weight:400;padding:6px 4px}\n#dsh-ro-panel #dsh-drawer .d-body{background:#fff;padding:8px 10px 12px}\n#dsh-ro-panel .pages,#dsh-ro-panel #dsh-drawer .d-body{scrollbar-color:#b9c6d6 transparent}\n#dsh-ro-panel .pages::-webkit-scrollbar-thumb,#dsh-ro-panel #dsh-drawer .d-body::-webkit-scrollbar-thumb{background:#b9c6d6;border:3px solid #fff}\n#dsh-ro-panel .pages::-webkit-scrollbar-thumb:hover,#dsh-ro-panel #dsh-drawer .d-body::-webkit-scrollbar-thumb:hover{background:#93a8c0}\n#dsh-fw-mgr{border:1px solid #8e8e8e;border-radius:3px;background:#fff;box-shadow:1px 2px 2px rgba(0,0,0,.55);color:#111}\n.dsh-grip::after{border-right:2px solid #8a8a8a;border-bottom:2px solid #8a8a8a}\n.dsh-grip:hover::after{border-color:#123a63}";
   var roSkinStyleEl = null;
   function roSkinSet(on) { try { if (roSkinStyleEl) roSkinStyleEl.disabled = !on; } catch (e) {} }
   function roSkinOn() { try { return !!(roSkinStyleEl && !roSkinStyleEl.disabled); } catch (e) { return false; } }
@@ -1842,6 +1846,7 @@
   //   kind 仍标 "page" 只是为了让渲染层不给它画「总开关」勾选框（面板没有开/关语义）。
   var RO_MODULES = [
     { id: "menu",  name: "功能菜单快捷键",  kind: "menu", noToggle: true, sec: "常用" },
+    { id: "askcombo", name: "一键补 buff", kind: "action", noToggle: true, sec: "常用" },
     { id: "mlock", name: "攻击名单",        kind: "fw", sec: "功能窗口" },
     { id: "tp",    name: "传送功能",        kind: "fw", sec: "功能窗口" },
     { id: "zhu2",  name: "助手战斗设置",    kind: "fw", sec: "功能窗口" },
@@ -2011,7 +2016,7 @@
         var lab = document.createElement("label");
         lab.style.cssText = "display:flex;align-items:center;gap:4px;flex:1;min-width:0;cursor:pointer;";
         var nm = document.createElement("span"); nm.className = "nm"; nm.textContent = m.name;
-        if (m.kind === "page" || m.kind === "menu") {
+        if (m.kind === "page" || m.kind === "menu" || m.kind === "action") {
           // 无「总开关」语义的行：留一个与勾选框等宽的占位，保证功能名左对齐
           var sp = document.createElement("span"); sp.style.cssText = "flex:none;width:13px;height:13px;";
           lab.appendChild(sp);
@@ -2563,6 +2568,7 @@
     if (id === "panel") { hkToggle(); return; }
     if (id === "np") { npToggleFight(); return; }
     if (id === "zhu") { zToggleFight(); return; }
+    if (id === "askcombo") { castBuffCombo(); return; }
     roModToggle(id);
   }
   var hkTarget = null, hkTimer = null;
@@ -4941,7 +4947,7 @@
   function tickAskSkills() {
     try {
       var en = $id("dsh-asken") && $id("dsh-asken").checked;
-      if (!en || !askList.length) return;
+      if (!en || !askList.length || !zRunning) return;
       if (ordinaryCastBlocked()) return; // 紧急脱战期间禁止普通辅助技能抢占瞬移
       if (!clientReady()) return;
       var ent = CLIENT.SS.Entity;
@@ -5009,6 +5015,32 @@
         setStatus("自动技能已补缺失状态", "ok");
       }
     } catch (e) {}
+  }
+  // 一键补 buff 组合：手动快捷键触发，按 askList 顺序强制施放全部 buff（无视状态判活/间隔），
+  // 每技能约 300ms 链式施放；不受 dsh-asken 总开关影响；组合进行中再按忽略（防重入）。
+  var castComboBusy = false;
+  function castBuffCombo() {
+    if (castComboBusy) { setStatus("补 buff 组合进行中，请稍候", "warn"); return; }
+    if (!askList || !askList.length) { setStatus("补 buff 组合：buff 列表为空", "warn"); return; }
+    if (!clientReady() || !CLIENT.SS || !CLIENT.SS.Entity) { setStatus("补 buff 组合：未进入游戏", "warn"); return; }
+    castComboBusy = true;
+    var list = askList.slice(), idx = 0;
+    function next() {
+      if (idx >= list.length) { castComboBusy = false; setStatus("补 buff 组合完成", "ok"); return; }
+      var s = list[idx++];
+      try {
+        var p = new CLIENT.PS.CZ.USE_SKILL();
+        p.SKID = s.skid;
+        p.selectedLevel = s.lv;
+        p.targetID = 0;
+        dshCastMark(s.skid, s.lv, 0, "combo");
+        CLIENT.NM.sendPacket(p);
+      } catch (e) {
+        try { tlog("combo-cast-error skid=" + (s && s.skid) + " " + (e.message || e)); } catch (e2) {}
+      }
+      setTimeout(next, 300);
+    }
+    next();
   }
   masterTickReg(function () { try { tickAskSkills(); } catch (e) {} });
   // 状态挂钩定时重试：asken 开着但 SI 模块未就绪时持续重试，确保 buffActive 判活表可用（否则状态判活失效）
@@ -11137,14 +11169,22 @@
       if (!m || m.AID == null) return;
       var k = String(Math.floor(Number(m.AID) || 0));
       if (!k || k === "0") return;
-      var o = partyMembers[k] || (partyMembers[k] = { AID: k, name: "", job: 0, hp: 0, maxhp: 0, dead: false });
+      var o = partyMembers[k] || (partyMembers[k] = { AID: k, name: "", job: 0, hp: 0, maxhp: 0, online: true, map: "", dead: false });
       if (m.characterName) o.name = String(m.characterName);
       else if (m.name) o.name = String(m.name);
+      // 「ON 」前缀 = 在线标识（NEO 客户端可能在名字前拼 ON）；剥掉存干净名并记在线
+      if (/^ON[ \t]+/.test(o.name)) { o.name = o.name.replace(/^ON[ \t]+/, ""); o.online = true; }
       if (m.job != null) o.job = Number(m.job) || 0;
       if (m.hp != null) o.hp = Number(m.hp) || 0;
       if (m.maxhp != null) o.maxhp = Number(m.maxhp) || 0;
       if (m.life) { if (m.life.hp != null) o.hp = Number(m.life.hp) || 0; if (m.life.hp_max != null) o.maxhp = Number(m.life.hp_max) || 0; }
-      if (m.state != null) o.dead = !!Number(m.state);
+      // state：0=在线 / 非0=离线（roBrowser PartyFriends 用 state===0 判在线），不是死亡标志
+      if (m.state != null) o.online = (Number(m.state) === 0);
+      // 成员所在地图：用于「异图」判定
+      if (m.mapName != null) o.map = String(m.mapName);
+      else if (m.map != null) o.map = String(m.map);
+      // 死亡单独由 updateMemberDead 维护
+      if (m.dead != null) o.dead = !!m.dead;
     } catch (e) {}
   }
   function partyHook() {
@@ -11157,7 +11197,7 @@
       if (typeof oAdd === "function") PF.addPartyMember = function (m) { try { partyUpsert(m); } catch (e) {} return oAdd.apply(this, arguments); };
       if (typeof oDel === "function") PF.removePartyMember = function (aid) { try { delete partyMembers[String(Math.floor(Number(aid) || 0))]; } catch (e) {} return oDel.apply(this, arguments); };
       if (typeof oLife === "function") PF.updateMemberLife = function (aid, cv, hp, mx) { try { partyUpsert({ AID: aid, hp: hp, maxhp: mx }); } catch (e) {} return oLife.apply(this, arguments); };
-      if (typeof oDead === "function") PF.updateMemberDead = function (aid, dead) { try { partyUpsert({ AID: aid, state: dead ? 1 : 0 }); } catch (e) {} return oDead.apply(this, arguments); };
+      if (typeof oDead === "function") PF.updateMemberDead = function (aid, dead) { try { partyUpsert({ AID: aid, dead: !!dead }); } catch (e) {} return oDead.apply(this, arguments); };
     } catch (e) {}
   }
   // ---- V2.29.0 队伍面板：团本式职业色块矩阵（2 列 grid · 名字+HP 压块上 · 点击锁定队友）----
@@ -11258,13 +11298,25 @@
     } catch (e) {}
   }
   function partyCellHtml(o, isSelf) {
-    var hm = Math.max(0, Number(o.maxhp) || 0), hh = Math.max(0, Math.min(hm || (Number(o.hp) || 0), Number(o.hp) || 0));
+    var hm = Math.max(0, Number(o.maxhp) || 0), hp = Math.max(0, Number(o.hp) || 0);
+    var hh = Math.min(hp, hm > 0 ? hm : hp);
     var pct = hm > 0 ? Math.round(hh / hm * 100) : 0;
     var sel = !isSelf && zLock && zLock.gid != null && String(zLock.gid) === String(o.AID);
-    return '<div class="dsh-pcell' + (sel ? " selected" : "") + '" data-aid="' + roEscTxt(o.AID) + '" data-nm="' + roEscTxt(o.name) + '" style="background:' + (o.dead ? "#5a5a5a" : partyJobColor(o.job)) + (isSelf ? ";cursor:default" : "") + '">' +
-      '<div class="dsh-hp-edge" style="width:' + (o.dead ? 0 : pct) + '%"></div>' +
+    var myMap = normMapKey(getMapName()), memMap = normMapKey(o.map || "");
+    var offline = !isSelf && !o.online;
+    var diffMap = !isSelf && !offline && !!memMap && !!myMap && memMap !== myMap;
+    var dead = !isSelf && !offline && !diffMap && (o.dead || (hm > 0 && hp <= 0));
+    var mapLabel = memMap;
+    if (memMap) { try { if (!CLIENT.DB) CLIENT.DB = window.require && window.require("DB/DBManager"); if (CLIENT.DB && typeof CLIENT.DB.getMapName === "function") { var _mn = CLIENT.DB.getMapName(memMap); if (_mn && String(_mn) !== memMap) mapLabel = String(_mn); } } catch (e) {} }
+    var bg, label, edgeW;
+    if (dead) { bg = "#5a5a5a"; label = "死亡"; edgeW = 0; }
+    else if (offline) { bg = "#6b7280"; label = "离线"; edgeW = 0; }
+    else if (diffMap) { bg = "#2b6cb0"; label = "异图·" + roEscTxt(mapLabel || "?"); edgeW = 0; }
+    else { bg = partyJobColor(o.job); label = hm > 0 ? (fmtK(hh) + " / " + fmtK(hm)) : "--"; edgeW = pct; }
+    return '<div class="dsh-pcell' + (sel ? " selected" : "") + '" data-aid="' + roEscTxt(o.AID) + '" data-nm="' + roEscTxt(o.name) + '" style="background:' + bg + (isSelf ? ";cursor:default" : "") + '">' +
+      '<div class="dsh-hp-edge" style="width:' + edgeW + '%"></div>' +
       '<div class="dsh-pname">' + roEscTxt(o.name || ("AID " + o.AID)) + '</div>' +
-      '<div class="dsh-php">' + (o.dead ? "死亡" : (hm > 0 ? (fmtK(hh) + " / " + fmtK(hm)) : "--")) + '</div></div>';
+      '<div class="dsh-php">' + label + '</div></div>';
   }
   // ================= V2.28.0 本次登录伤害统计 =================
   // 优先旁听客户端已解析伤害回调；rAthena skill_db_re.yml 的 Type 字段用于技能物理/魔法/特殊分类。

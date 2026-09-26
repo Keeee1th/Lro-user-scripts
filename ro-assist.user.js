@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.28.1
+// @version      2.30.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -19,6 +19,22 @@
 // @run-at       document-idle
 // @grant        none
 // ==/UserScript==
+//
+// ---------------- V2.29.0 变更摘要 ----------------
+// 1a. 目标锁定条重做：demo 悬浮样式（8898 by-id 怪物头像贴图 + 渐变血条带数值 + Lv/种族/属性/形体/距离小字，无数据显示--），
+//     容器全透明零边框零背景可拖拽，位置存 saved；头像加载失败退化名字首字占位块。
+// 3.  healFirst 开关自 辅助页→自动吃药/物品 移至 助手模式→战斗设置（saved.healFirst 键不变，原位留提示行）。
+// 4.  快捷传送点改全局共享 localStorage dsh_ro_tp_global_v1：首次读取自动合并各角色档旧点（不删旧数据），
+//     window storage 事件跨标签页实时刷新；新增 fwReg 传送点悬浮条（点击直传，保持无确认）。
+// 5.  队伍血条重做：团本式职业色块 2 列矩阵（名字+HP 压块上、白字四向黑描边、选中=放大+光晕+名字变金），
+//     点击色块锁定该队友（写 zLock + 发一次 REQUEST_ACT action=7；拖拽位移>3px 不触发选中）。
+// 8.  攻击名单/本图怪物/掉落树按怪物ID加外链：「数量」→RO321 re_mob_db、「资料」→ro.dvg.cn monsterinfo。
+// 6.  tools/progress.mjs 8898 服务新增 GET /monster-sprites/by-id/<id>.png（前缀匹配 mob_<id>_*.png，未命中回 1x1 透明 png，id 仅数字防目录遍历）。
+
+// ---------------- V2.30.0 变更摘要 ----------------
+// 装备词条分色（鉴定浮层）：满值暖金 #ffd479 / 低值绿 #7ef0a8 / 中段紫 #c9a0ff / 固定效果暖金+「固定」标 / 无满值中性 / 超范围灰「未评级」。
+// 补齐 48 条词条中文名（200/201/202/204 + 301-344）+ 197 键满值表 ITIP_OPT_MAX；固定效果按 id 白名单判定（30 键：76-86/163/173/174/175-186/303-306）。
+// 190/191/192 与 117-126 沿用本地文案；分色常开无开关；新增 window.__dshCombinedActive 旗标。
 
 (function () {
   "use strict";
@@ -44,7 +60,8 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.28.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.30.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -662,6 +679,7 @@
       '<div class="row"><label class="switch"><input id="dsh-scanen" type="checkbox" checked>启用侦查扫描</label>' +
       '<span class="lb" style="margin-left:auto;min-width:26px">间隔</span>' +
       '<input id="dsh-scanint" type="number" value="0.5" min="0.3" step="0.1" style="flex:0 0 44px"><span style="color:#5a6b7f">s（最低0.3）</span></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-healfirst" type="checkbox">优先使用治愈术替代药品（V2.29.0 自辅助页移入）</label><span class="st">未学会、SP不足或冷却时仍使用物品</span></div>' +
       '<div class="sec">防御与瞬移（助手自实现）</div>' +
       '<div class="row"><span class="lb">非选中怪攻击</span><select id="dsh-z-ona" style="flex:0 0 100px"><option>无视</option><option>瞬移</option><option selected>还击</option></select></div>' +
       '<div class="row"><span class="lb">群殴时</span><span style="color:#5a6b7f">n≥</span><input id="dsh-z-grp" type="number" value="6" min="0" style="flex:0 0 38px"><span style="color:#5a6b7f">只怪（0=关闭）→</span>' +
@@ -800,7 +818,7 @@
       '<button class="ghost" id="dsh-itemdown" style="flex:0 0 auto">↓下移</button>' +
       '<button class="ghost" id="dsh-itemdel" style="flex:0 0 auto">删除选中</button>' +
       '<label class="switch" style="margin-left:auto"><input id="dsh-itemen" type="checkbox">启用自动使用</label></div>' +
-      '<div class="row"><label class="switch"><input id="dsh-healfirst" type="checkbox">优先使用治愈术替代药品</label><span class="st">未学会、SP不足或冷却时仍使用物品</span></div></div>' +
+      '<div class="row"><span class="st" style="font-size:10px">「优先使用治愈术替代药品」已移至 助手模式→战斗设置</span></div></div>' +
       '<div class="sec">自动装箭矢（V2.15.26：箭矢耗尽自动补）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-arrowen" type="checkbox" checked>箭矢耗尽时用魔法箭袋(2000030)放箭并装上装备栏</label></div>' +
       '<div class="row"><span class="st" style="font-size:10px">V2.16.27：仅当手持弓/乐器/鞭子时生效（其它职业没有箭矢槽，避免白耗箭袋）</span></div>' +
@@ -888,25 +906,8 @@
       '<div class="row"><span class="lb">当前地图</span><span class="st" id="dsh-pickmap" style="flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—（未进图）</span>' +
       '<button class="ghost" id="dsh-pickmapbtn" style="flex:0 0 auto">本图怪物掉落</button></div>' +
       '</div>' +
-      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">目标状态</span>' +
-      '<button class="ghost" id="dsh-fw-btn-tgt" data-fw="tgt" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
-      '<div id="dsh-fw-tgt">' +
-      '<div class="row"><span class="lb">游戏目标</span><span id="dsh-game-tgt" class="st" style="flex:1">未选择</span></div>' +
-      '<div class="row"><span class="lb">助手锁定</span><span id="dsh-tgt-name" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">未锁定</span>' +
-      '<span class="tag blue" id="dsh-tgt-dist" style="flex:0 0 auto">—</span></div>' +
-      '<div class="row"><span style="flex:1;height:9px;border:1px solid #b8c6d4;background:#eef3fa;border-radius:2px;overflow:hidden"><i id="dsh-tgt-hp" style="display:block;height:100%;width:0%;background:#8a97a8"></i></span>' +
-      '<span class="st" id="dsh-tgt-hptxt" style="flex:0 0 96px;text-align:right">—</span></div>' +
-      '<div class="row"><span class="lb">助手动作</span><span class="st" id="dsh-tgt-extra" style="flex:1;font-size:11px">—</span></div>' +
-      '<div class="row"><span class="lb">攻击名单</span><span class="st" id="dsh-tgt-list" style="flex:1">打全部怪</span></div>' +
-      '<div class="row" id="dsh-tgt-links" style="display:none"><span class="lb">怪物资料</span><a id="dsh-tgt-dvg" target="_blank" rel="noopener noreferrer">DVG</a><a id="dsh-tgt-ro321" target="_blank" rel="noopener noreferrer">RO321</a></div>' +
-      '<div class="log">游戏目标是画面当前选择；助手锁定是自动战斗正在追踪的对象；攻击名单决定允许主动攻击的怪物。</div>' +
-      '</div>' +
-      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">队伍血条（队员血量）</span>' +
-      '<button class="ghost" id="dsh-fw-btn-party" data-fw="party" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
-      '<div id="dsh-fw-party">' +
-      '<div class="row"><label class="switch"><input id="dsh-party-self" type="checkbox" checked>包含自己</label><span class="st" id="dsh-party-count" style="margin-left:auto">0 人</span></div>' +
-      '<div id="dsh-party-list"><span class="st">暂无队伍成员</span></div>' +
-      '</div>' +
+      '<div class="sec">目标锁定条 / 队伍面板</div>' +
+      '<div class="row"><span class="st" style="font-size:11px">V2.29.0 起改为全透明悬浮层：直接在游戏画面上拖动，位置自动保存；在 功能菜单 勾选「目标状态 / 队伍血条」显示；队友色块点击即锁定。</span></div>' +
       '<div id="dsh-fw-mlock">' +
       '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">攻击名单（只主动攻击勾选的怪）</span><button class="ghost" id="dsh-fw-btn-mlock" data-fw="mlock" style="flex:0 0 auto;padding:0 8px;font-size:11px">⧉ 浮窗</button></div>' +
       '<details style="margin:4px 0" open><summary>本图攻击名单（读当前地图怪物表 · 勾选=允许攻击）</summary>' +
@@ -1016,12 +1017,15 @@
       '<div class="row" style="margin-top:6px;gap:7px"><button class="ghost" id="dsh-mvcur" style="flex:0 0 auto">填入当前位置</button>' +
       '<button id="dsh-mvgo" style="flex:0 0 auto">前往</button><button class="ghost" id="dsh-mvstop" style="flex:0 0 auto">停止</button>' +
       '<span class="st" id="dsh-mvlog" style="font-size:11px"></span></div>' +
-      '<div class="sec">快捷传送点（当前角色 · 最多 20 条）</div>' +
+      '<div class="sec">快捷传送点（全账号共享 · 最多 20 条 · 跨标签实时同步）</div>' +
       '<div class="row"><input id="dsh-tpp-name" type="text" maxlength="24" placeholder="地点名称" style="flex:1 1 110px;min-width:80px">' +
       '<button class="ghost" id="dsh-tpp-current" style="flex:0 0 auto">登记当前位置</button><button id="dsh-tpp-save" style="flex:0 0 auto">保存</button></div>' +
       '<div id="dsh-tpp-list" style="max-height:180px;overflow:auto"><span class="st">暂无快捷传送点</span></div>' +
       '<div class="st" id="dsh-tpp-msg" style="font-size:11px"></div>' +
       '</div>' +
+      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">传送点快捷条（悬浮 · 点击直传）</span><button class="ghost" id="dsh-fw-btn-tpp" data-fw="tpp" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
+      '<div id="dsh-fw-tpp"><div id="dsh-tpp-float-list" style="font-size:12px"><span class="st">暂无快捷传送点</span></div>' +
+      '<div class="st" style="font-size:10px">与「快捷传送点」共享同一份全账号数据（跨标签页实时同步）</div></div>' +
       '<div class="sec">回城清理（半自动）</div>' +
       '<div class="row" style="flex-wrap:wrap;gap:6px"><button id="dsh-tp-town" style="flex:0 0 auto">回城</button><button class="ghost" id="dsh-scan-npc" style="flex:0 0 auto">扫描NPC</button><button class="ghost" id="dsh-go-npc" style="flex:0 0 auto">走到选中</button><button class="ghost" id="dsh-talk-npc" style="flex:0 0 auto">点NPC对话</button><button class="ghost" id="dsh-sell" style="flex:0 0 auto">卖装备</button></div>' +
       '<div class="st" id="dsh-npclist" style="font-size:11px;max-height:96px;overflow:auto">NPC: 未扫描（点「扫描NPC」→ 点条目选中）</div>' +
@@ -1743,7 +1747,7 @@
       fwRefreshHosts();
       var m = JSON.parse(localStorage.getItem("dsh_ro_fwopen_v1") || "{}"), pending = false;
       for (var k in m) {
-        if (!m[k] || !roModOn(k)) continue;
+        if (!m[k] || !roModOn(k) || !fwState[k] || !fwState[k].getEl) continue; // V2.29.0：tgt/party 已改悬浮层，跳过残留记录
         if (!fwActualOpen(k) && !fwOpen(k, true)) pending = true;
       }
       fwRestoreTries++;
@@ -1785,8 +1789,8 @@
     // V2.15.1 物品（拾取+背包整理）浮窗：标准浮窗（可拖动/透明/×收回）
     fwReg("item", "物品 · 拾取+背包整理", function () { return document.getElementById("dsh-fw-item"); });
     fwReg("perf", "画面性能", function () { return document.getElementById("dsh-fw-perf"); });
-    fwReg("tgt", "目标状态", function () { return document.getElementById("dsh-fw-tgt"); });
-    fwReg("party", "队伍血条", function () { return document.getElementById("dsh-fw-party"); });
+    // V2.29.0：目标锁定条/队伍面板改为独立透明悬浮层（renderTgt/renderParty 直管，功能菜单 roModOn 开关），不再走 fwReg
+    fwReg("tpp", "传送点快捷条", function () { return document.getElementById("dsh-fw-tpp"); }); // V2.29.0
   fwReg("dps", "伤害统计", function () { return document.getElementById("dsh-fw-dps"); });   // V2.24.0
   fwReg("boss", "首领警报", function () { return document.getElementById("dsh-fw-boss"); }); // V2.24.0
     panel.addEventListener("click", function (ev) {
@@ -1860,6 +1864,8 @@
     if (id === "mvp") return document.getElementById("dsh-mvp-timers");
     if (id === "zhud") return document.getElementById("dsh-ro-z-hud");
     if (id === "ztip") return document.getElementById("dsh-ztip");
+    if (id === "tgt") return document.getElementById("dsh-tgt-bar");     // V2.29.0 悬浮层
+    if (id === "party") return document.getElementById("dsh-party-float"); // V2.29.0 悬浮层
     var fs = fwState[id];
     return (fs && fs.win && fs.win.parentNode) ? fs.win : document.getElementById("dsh-win-fw-" + id);
   }
@@ -1880,6 +1886,7 @@
       var e2 = roModEl(id);
       return !!(e2 && e2.style.display !== "none");
     }
+    if (id === "tgt" || id === "party") { var fel = document.getElementById(id === "tgt" ? "dsh-tgt-bar" : "dsh-party-float"); return !!(fel && fel.style.display !== "none"); } // V2.29.0 悬浮层
     return fwSyncState(id);
   }
   function roModOpen(id) {
@@ -1898,6 +1905,7 @@
     if (id === "mvp") { var m = roModEl("mvp"); if (m) { m.style.display = "flex"; try { roBringFront(m); } catch (e) {} } return; }
     if (id === "zhud") { try { ensureZHud(); if (zHudEl) zHudEl.style.display = ""; } catch (e) {} return; }
     if (id === "ztip") { try { ensureZTip(); if (zTipEl) zTipEl.style.display = ""; } catch (e) {} return; }
+    if (id === "tgt" || id === "party") { try { if (id === "tgt") renderTgt(); else renderParty(); } catch (e) {} return; } // V2.29.0 悬浮层（roModOn 已由菜单勾选）
     if (!fwActualOpen(id)) fwOpen(id, false);
     try { roBringFront(roModEl(id)); } catch (e) {}  // V2.19.0：打开就置顶
   }
@@ -1912,6 +1920,7 @@
     if (id === "np" || id === "zhu") return;   // 纯动作类（只有快捷键，没有窗口）
     if (id === "panel") { saved.collapsed = true; try { saveSaved(saved); } catch (e) {} applyCollapse(true); return; }
     if (id === "mvp" || id === "zhud" || id === "ztip") { var e3 = roModEl(id); if (e3) e3.style.display = "none"; return; }
+    if (id === "tgt" || id === "party") { var fce = document.getElementById(id === "tgt" ? "dsh-tgt-bar" : "dsh-party-float"); if (fce) fce.style.display = "none"; return; } // V2.29.0 悬浮层
     if (fwActualOpen(id)) fwClose(id);
   }
   // V2.24.1：恢复 2.24.0 误删的总调度。菜单每行的「打开」按钮与快捷键 hkAction 都调用它，
@@ -2430,11 +2439,12 @@
     if (ball.__dsDragged) { ball.__dsDragged = false; return; } // 拖动松手不弹菜单
     roMenuToggle();
   });
-  // V2.24.1：大面板降级为「旧版设置界面」入口 —— 启动不再自动弹出。
-  //   升级后首次运行 collapsed 是 undefined，按「收起」处理；用户从菜单打开过（collapsed=false）则下次仍展开。
-  //   必须把状态写回，否则快捷键 hkToggle 读到旧值会出现「按了没反应」。
-  if (saved.collapsed !== false) { saved.collapsed = true; try { saveSaved(saved); } catch (e) {} }
-  applyCollapse(!!saved.collapsed);
+  // V2.24.1：旧版设置界面入口 —— 启动不再自动弹出。
+  // V2.29.0：启动一律按收起处理，与历史 collapsed 值解耦（旧逻辑 collapsed===false 会在每次刷新后自动弹出）。
+  //   仍把 true 写回存档：否则快捷键 hkToggle 读到旧值会出现「按了没反应」（原注释已记录的坑）。
+  //   手动入口不受影响：功能菜单/悬浮球点击照常打开（菜单路径的 saved.collapsed=false 保留，本次会话内保持打开）。
+  saved.collapsed = true; try { saveSaved(saved); } catch (e) {}
+  applyCollapse(true);
 
   // ---------------- 快捷键（V2.8.0 三组 · Switch 单键切换）：面板收起 / 内挂自动战斗 / 助手自动战斗 ----------------
   // 捕获态 hkTarget：null|panel|np|zhu；三组存全局独立 key（V2.13.0 起所有角色共用，刷新/换角色不丢）
@@ -6082,6 +6092,7 @@
     var html = "";
     ids.forEach(function (id) {
       html += '<div class="list-item"><span>' + (lockList[id].name || ("ID" + id)) + ' · ID' + id + '</span>' +
+        mobRefLinksHtml(id) + // V2.29.0：任务目标怪外链（数量→RO321 / 资料→DVG，按怪物ID）
         '<button class="ghost" data-unlock="' + id + '" style="flex:0 0 auto;padding:0 8px;font-size:11px">解除</button></div>';
     });
     el.innerHTML = html;
@@ -9113,7 +9124,7 @@
       var it = list[i];
       var m = it.m;
       if (!m) continue;
-      html += '<details><summary style="cursor:pointer;padding:2px 0">' + (m.kName || m.name || ("ID" + it.id)) + ' · ID' + it.id + ' · LV' + (m.LV || "?") + ' <span class="tag">掉落树</span></summary><div style="padding-left:8px">';
+      html += '<details><summary style="cursor:pointer;padding:2px 0">' + (m.kName || m.name || ("ID" + it.id)) + ' · ID' + it.id + ' · LV' + (m.LV || "?") + ' <span class="tag">掉落树</span> ' + mobRefLinksHtml(it.id) + '</summary><div style="padding-left:8px">'; // V2.29.0：任务目标怪外链（按怪物ID）
       for (var d = 0; d < 9; d++) {
         var did = m["Drop" + d + "id"];
         if (did == null) continue;
@@ -9298,7 +9309,7 @@
       if (!m) continue;
       var nm = m.kName || m.name || ("ID" + id);
       var locked = lockList[String(id)] ? true : false;
-      html += '<div class="list-item"><label class="switch"><input type="checkbox"' + (locked ? " checked" : "") + ' data-maplock="' + id + '" data-nm="' + nm + '">' + nm + ' <span class="st">ID' + id + ' · Lv' + (m.LV || "?") + '</span></label></div>';
+      html += '<div class="list-item"><label class="switch"><input type="checkbox"' + (locked ? " checked" : "") + ' data-maplock="' + id + '" data-nm="' + nm + '">' + nm + ' <span class="st">ID' + id + ' · Lv' + (m.LV || "?") + '</span></label>' + mobRefLinksHtml(id) + '</div>'; // V2.29.0：任务目标怪外链（按怪物ID）
     }
     el.innerHTML = html || '<span class="st">该图怪物库无匹配数据</span>';
     el.querySelectorAll('input[data-maplock]').forEach(function (c) {
@@ -9813,19 +9824,49 @@
       } catch (e) { clearInterval(iv); }
     }, 800);
   }
-  // 角色独立快捷传送点：复用现有角色档案，不另建 localStorage 键。
+  // V2.29.0：快捷传送点改全局共享（跨账号/跨标签页），localStorage 键 dsh_ro_tp_global_v1；
+  // 首次读取时把各角色档（PROF_KEY 按 角色名_GID 隔离）里的旧点合并迁移过来，旧档数据保留不删。
+  var TP_GLOBAL_KEY = "dsh_ro_tp_global_v1";
   var tpPointEdit = -1, tpPointProfile = "";
+  var tpGlobalCache = null;
+  function tpSamePoint(a, b) { return !!(a && b) && String(a.map) === String(b.map) && Number(a.x) === Number(b.x) && Number(a.y) === Number(b.y); }
   function tpPoints() {
     try {
-      var k = activeProfileKey(); ensureProfile(k);
-      var list = profiles[k].saved.teleportPoints;
-      if (!Array.isArray(list)) list = profiles[k].saved.teleportPoints = [];
-      return list;
+      if (tpGlobalCache) return tpGlobalCache;
+      var g = JSON.parse(localStorage.getItem(TP_GLOBAL_KEY) || "null");
+      if (!Array.isArray(g)) {
+        g = [];
+        try {
+          for (var pk in profiles) {
+            var old = profiles[pk] && profiles[pk].saved && profiles[pk].saved.teleportPoints;
+            if (!Array.isArray(old)) continue;
+            for (var oi = 0; oi < old.length && g.length < 20; oi++) {
+              var op = old[oi];
+              if (!op || !op.map) continue;
+              var dup = false;
+              for (var gi = 0; gi < g.length; gi++) { if (tpSamePoint(g[gi], op)) { dup = true; break; } }
+              if (!dup) g.push(op);
+            }
+          }
+        } catch (e0) {}
+        try { localStorage.setItem(TP_GLOBAL_KEY, JSON.stringify(g)); } catch (e1) {}
+      }
+      tpGlobalCache = g;
+      return tpGlobalCache;
     } catch (e) { return []; }
   }
   function tpPointSaveList() {
-    try { var k = activeProfileKey(); ensureProfile(k); profiles[k].saved.teleportPoints = tpPoints().slice(0, 20); profiles[k].lastAt = Date.now(); saveProfiles(); } catch (e) {}
+    try { tpGlobalCache = tpPoints().slice(0, 20); localStorage.setItem(TP_GLOBAL_KEY, JSON.stringify(tpGlobalCache)); } catch (e) {}
   }
+  // 跨标签页实时刷新：别的标签页改了全局传送点，本页列表立刻重绘
+  try {
+    window.addEventListener("storage", function (ev) {
+      if (!ev || ev.key !== TP_GLOBAL_KEY) return;
+      tpGlobalCache = null; tpPoints();
+      try { tpPointRender(); } catch (e) {}
+      try { renderTppFloat(); } catch (e) {}
+    });
+  } catch (e) {}
   function tpPointMsg(text) { var el = $id("dsh-tpp-msg"); if (el) el.textContent = text || ""; }
   function tpPointRender() {
     var box = $id("dsh-tpp-list"); if (!box) return;
@@ -9839,7 +9880,28 @@
         '<button class="ghost" data-tpp-go="' + i + '">前往</button><button class="ghost" data-tpp-edit="' + i + '">修改</button><button class="ghost" data-tpp-del="' + i + '">删除</button></div>';
     }
     box.innerHTML = html;
+    try { renderTppFloat(); } catch (e) {} // V2.29.0：悬浮条同步刷新
   }
+  // V2.29.0：传送点悬浮条（fwReg "tpp" 拖出的小浮窗）：列出传送点，点击直传（与面板一致，无确认）
+  function renderTppFloat() {
+    var box = $id("dsh-tpp-float-list");
+    if (!box) return;
+    var list = tpPoints();
+    if (!list.length) { box.innerHTML = '<span class="st">暂无快捷传送点</span>'; return; }
+    var html = "";
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i];
+      html += '<div class="prow"><button class="ghost" data-tppf-go="' + i + '" style="flex:1 1 auto;text-align:left">' + (i + 1) + '. ' + roEscTxt(p.name) + ' · ' + roEscTxt(p.map) + ' (' + p.x + ',' + p.y + ')</button></div>';
+    }
+    box.innerHTML = html;
+  }
+  var tppFloatBox = $id("dsh-tpp-float-list");
+  if (tppFloatBox) tppFloatBox.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest("[data-tppf-go]");
+    if (!b) return;
+    var p = tpPoints()[Number(b.getAttribute("data-tppf-go"))];
+    if (p) tpPointGo(p);
+  });
   function tpPointGo(p) {
     if (!p) return;
     var cur = getMapName();
@@ -10904,36 +10966,166 @@
     return isFinite(n) && n > 0 ? n : 0;
   }
   function targetName(e, fallback) { return (e && e.display && e.display.name) || fallback || "未知怪物"; }
+  // ---- V2.29.0 目标锁定条 / 队伍面板：demo 悬浮层（容器全透明零边框零背景 · 可拖拽 · clamp/vw 自适应 · 白字四向黑描边）----
+  var TGT_SPRITE_BASE = "http://127.0.0.1:8898/monster-sprites/by-id/";
+  var dshFloatCssDone = false;
+  function dshFloatCss() {
+    if (dshFloatCssDone) return;
+    dshFloatCssDone = true;
+    var st = document.createElement("style");
+    st.id = "dsh-float-css";
+    st.textContent =
+      "#dsh-tgt-bar,#dsh-party-float{position:fixed;background:transparent;border:none;box-shadow:none;cursor:grab;z-index:2147481500;user-select:none;-webkit-user-select:none;font-family:'Microsoft YaHei','Segoe UI',sans-serif;box-sizing:border-box}" +
+      "#dsh-tgt-bar:active,#dsh-party-float:active{cursor:grabbing}" +
+      "#dsh-tgt-bar{display:flex;align-items:center;gap:clamp(6px,0.8vw,12px);width:clamp(240px,26vw,380px)}" +
+      ".dsh-mob-portrait{width:clamp(40px,4vw,48px);height:clamp(40px,4vw,48px);flex:0 0 auto;position:relative;background:transparent}" +
+      ".dsh-mob-portrait img{width:100%;height:100%;object-fit:contain;display:block;filter:drop-shadow(0 1px 3px rgba(0,0,0,.8))}" +
+      ".dsh-mob-portrait .dsh-mob-fallback{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:clamp(16px,1.8vw,22px);font-weight:bold;color:#fff;text-shadow:0 1px 2px #000,0 0 6px #000}" +
+      ".dsh-tgt-right{flex:1 1 auto;min-width:0}" +
+      ".dsh-mob-name-row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px}" +
+      ".dsh-mob-name{color:#fff;font-size:clamp(13px,1.2vw,16px);font-weight:bold;text-shadow:0 1px 2px #000,0 0 6px rgba(0,0,0,.9)}" +
+      ".dsh-mob-hp{color:#fff;font-size:clamp(10px,0.95vw,13px);font-variant-numeric:tabular-nums;text-shadow:0 1px 2px #000,0 0 5px rgba(0,0,0,.9)}" +
+      ".dsh-hp-bar{position:relative;height:clamp(12px,1.3vw,18px);border-radius:3px;overflow:hidden;background:rgba(0,0,0,.55);box-shadow:0 1px 3px rgba(0,0,0,.6)}" +
+      ".dsh-hp-fill{height:100%;width:0%;background:linear-gradient(180deg,#8be05a 0%,#4caf2e 45%,#2e7d1a 100%);transition:width .3s}" +
+      ".dsh-hp-fill::after{content:'';position:absolute;left:0;right:0;top:0;height:45%;background:linear-gradient(180deg,rgba(255,255,255,.35),rgba(255,255,255,0));pointer-events:none}" +
+      ".dsh-mob-info{margin-top:4px;color:#e8e8e8;font-size:clamp(10px,0.9vw,12px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 2px #000,0 0 5px rgba(0,0,0,.9)}" +
+      ".dsh-mob-info b{color:#ffd75e;font-weight:bold}" +
+      ".dsh-mob-info a{color:#9ecbff;font-weight:bold;text-decoration:none;text-shadow:0 1px 2px #000,0 0 5px rgba(0,0,0,.9)}" +
+      "#dsh-party-float{display:grid;grid-template-columns:1fr 1fr;gap:3px;width:clamp(220px,18vw,300px)}" +
+      "#dsh-party-float .dsh-pcells{display:contents}" +
+      ".dsh-pcell{position:relative;border-radius:2px;overflow:hidden;padding:clamp(5px,0.6vw,8px) clamp(7px,0.8vw,10px);padding-top:clamp(8px,1vw,13px);cursor:pointer;transition:transform .12s}" +
+      ".dsh-pcell .dsh-hp-edge{position:absolute;top:0;left:0;height:clamp(3px,0.35vw,5px);background:rgba(255,255,255,.85);box-shadow:0 0 3px rgba(0,0,0,.4)}" +
+      ".dsh-pcell:hover{transform:scale(1.03)}" +
+      ".dsh-pcell.selected{transform:scale(1.08);box-shadow:0 0 14px rgba(255,255,255,.75),0 2px 6px rgba(0,0,0,.6);z-index:2}" +
+      ".dsh-pcell .dsh-pname{color:#fff;font-weight:bold;font-size:clamp(11px,1.05vw,14px);line-height:1.25;text-shadow:-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000,0 2px 3px rgba(0,0,0,.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+      ".dsh-pcell .dsh-php{color:#fff;font-variant-numeric:tabular-nums;font-size:clamp(10px,0.95vw,12px);text-shadow:-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000,0 2px 3px rgba(0,0,0,.9)}" +
+      ".dsh-pcell.selected .dsh-pname{color:#ffe27a}" +
+      ".dsh-pfoot{grid-column:1 / -1;display:flex;align-items:center;gap:8px;color:#fff;font-size:clamp(10px,0.9vw,12px);text-shadow:0 1px 2px #000,0 0 6px #000}" +
+      ".dsh-pfoot label{display:flex;align-items:center;gap:3px;cursor:pointer}" +
+      ".dsh-lock-tip{grid-column:1 / -1;text-align:center;color:#ffe27a;font-size:clamp(10px,0.9vw,12px);font-weight:bold;text-shadow:0 1px 2px #000,0 0 6px #000;display:none}" +
+      ".dsh-lock-tip.show{display:block}";
+    document.documentElement.appendChild(st);
+  }
+  // 指针拖拽（按住任一可见元素拖动整个悬浮层；位移 >3px 视为拖拽不触发点击选中），位置存 saved
+  function dshFloatDrag(el, posKey) {
+    var sx = 0, sy = 0, ox = 0, oy = 0, pid = null;
+    el.addEventListener("pointerdown", function (e) {
+      if (e.button !== 0) return;
+      if (e.target && e.target.closest && e.target.closest("a,input,label,button,select")) return; // 控件交互不抢拖
+      pid = e.pointerId; el._dshMoved = false;
+      try { el.setPointerCapture(pid); } catch (e0) {}
+      var r = el.getBoundingClientRect();
+      el.style.left = r.left + "px"; el.style.top = r.top + "px"; el.style.right = "auto";
+      sx = e.clientX; sy = e.clientY; ox = r.left; oy = r.top;
+      e.preventDefault();
+    });
+    el.addEventListener("pointermove", function (e) {
+      if (pid === null || e.pointerId !== pid) return;
+      var dx = e.clientX - sx, dy = e.clientY - sy;
+      if (Math.abs(dx) + Math.abs(dy) > 3) el._dshMoved = true;
+      var r = el.getBoundingClientRect();
+      el.style.left = Math.max(0, Math.min(ox + dx, Math.max(0, window.innerWidth - r.width))) + "px";
+      el.style.top = Math.max(0, Math.min(oy + dy, Math.max(0, window.innerHeight - r.height))) + "px";
+    });
+    function end(e) {
+      if (pid === null || (e && e.pointerId !== pid)) return;
+      pid = null;
+      if (el._dshMoved) {
+        var r = el.getBoundingClientRect();
+        try { saved[posKey] = { x: Math.round(r.left), y: Math.round(r.top) }; saveSaved(saved); } catch (e2) {}
+      }
+    }
+    el.addEventListener("pointerup", end);
+    el.addEventListener("pointercancel", end);
+  }
+  function dshFloatPlace(el, posKey, dx, dy) {
+    var pos = saved && saved[posKey];
+    el.style.left = (pos && isFinite(Number(pos.x)) ? Number(pos.x) : dx) + "px";
+    el.style.top = (pos && isFinite(Number(pos.y)) ? Number(pos.y) : dy) + "px";
+  }
+  function fmtK(n) { n = Math.floor(Number(n) || 0); return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
+  // 按怪物ID的外链：「数量」→RO321 re_mob_db、「资料」→DVG monsterinfo（不依赖中文名）
+  function mobRefLinksHtml(mid) {
+    var ru = mobRefUrl("ro321", mid), du = mobRefUrl("dvg", mid);
+    if (!ru && !du) return "";
+    return '<span style="flex:0 0 auto;font-size:10px;white-space:nowrap">' +
+      (ru ? '<a href="' + ru + '" target="_blank" rel="noopener noreferrer">数量</a>' : "") +
+      (du ? ' <a href="' + du + '" target="_blank" rel="noopener noreferrer">资料</a>' : "") + '</span>';
+  }
+  // ---- 目标锁定条 ----
+  var dshTgtBar = null;
+  function ensureTgtBar() {
+    if (dshTgtBar && dshTgtBar.parentNode) return dshTgtBar;
+    dshFloatCss();
+    var el = document.createElement("div");
+    el.id = "dsh-tgt-bar";
+    el.innerHTML =
+      '<div class="dsh-mob-portrait"><img id="dsh-tgt-img" alt="" style="display:none"><div class="dsh-mob-fallback" id="dsh-tgt-fb">?</div></div>' +
+      '<div class="dsh-tgt-right">' +
+      '<div class="dsh-mob-name-row"><span class="dsh-mob-name" id="dsh-tgt-nm2">未锁定</span><span class="dsh-mob-hp" id="dsh-tgt-hp2"></span></div>' +
+      '<div class="dsh-hp-bar"><div class="dsh-hp-fill" id="dsh-tgt-fill"></div></div>' +
+      '<div class="dsh-mob-info" id="dsh-tgt-info">--</div></div>';
+    document.documentElement.appendChild(el);
+    dshFloatPlace(el, "tgtBarPos", Math.round(window.innerWidth * 0.08), Math.round(window.innerHeight * 0.14));
+    dshFloatDrag(el, "tgtBarPos");
+    var img = el.querySelector("#dsh-tgt-img"), fb = el.querySelector("#dsh-tgt-fb");
+    img.addEventListener("load", function () { img.style.display = "block"; fb.style.display = "none"; });
+    img.addEventListener("error", function () { img.style.display = "none"; fb.style.display = "flex"; });
+    dshTgtBar = el;
+    return el;
+  }
   function renderTgt() {
     try {
-      var nm = $id("dsh-tgt-name"), gameEl = $id("dsh-game-tgt");
-      if (!nm || !gameEl) return;
-      var dist = $id("dsh-tgt-dist"), hp = $id("dsh-tgt-hp"), hpt = $id("dsh-tgt-hptxt"), ex = $id("dsh-tgt-extra"), listEl = $id("dsh-tgt-list");
+      if (!roModOn("tgt")) { if (dshTgtBar) dshTgtBar.style.display = "none"; return; }
+      var bar = ensureTgtBar();
+      if (!bar) return;
+      bar.style.display = "flex";
       var EM = null; try { EM = window.require && window.require("Renderer/EntityManager"); } catch (e0) {}
       var game = gameFocusMob(), gid = zLock && zLock.gid ? zLock.gid : null, assist = null;
       try { if (gid && EM && EM.get) assist = EM.get(Number(gid)); } catch (e1) {}
-      var gameMid = mobSpeciesId(game), assistMid = mobSpeciesId(assist);
-      gameEl.textContent = game ? (targetName(game) + " · ID " + (gameMid || "?")) : "未选中怪物";
-      nm.textContent = gid ? (targetName(assist, zLock.name || ("GID " + gid)) + " · ID " + (assistMid || "?")) : ((zLock && zLock.done) ? "已击杀待命" : "未锁定");
-      if (dist) dist.textContent = gid && zLock.dist != null ? (zLock.dist + " 格") : "—";
+      var ent = assist || game; // 优先助手锁定，其次游戏画面焦点
+      var mid = mobSpeciesId(ent) || mobSpeciesId(assist) || mobSpeciesId(game);
+      var nm = ent ? targetName(ent, zLock && zLock.name) : ((zLock && zLock.done) ? "已击杀待命" : "未锁定");
+      var nmEl = $id("dsh-tgt-nm2"), hpEl = $id("dsh-tgt-hp2"), fill = $id("dsh-tgt-fill"), info = $id("dsh-tgt-info");
+      var img = $id("dsh-tgt-img"), fb = $id("dsh-tgt-fb");
+      if (nmEl) nmEl.textContent = nm;
+      // 头像：8898 静态映射 /monster-sprites/by-id/<mobId>.png；加载失败退化名字首字占位块
+      if (img && fb) {
+        var key = String(mid || "");
+        if (img.getAttribute("data-mid") !== key) {
+          img.setAttribute("data-mid", key);
+          img.style.display = "none"; fb.style.display = "flex";
+          if (mid) img.src = TGT_SPRITE_BASE + mid + ".png";
+          else img.removeAttribute("src");
+        }
+        fb.textContent = ent ? String(nm).charAt(0) : "?";
+      }
+      // 血条：life.hp / hp_max
       var h = 0, hm = 0;
-      if (assist && assist.life) { h = Number(assist.life.hp) || 0; hm = Number(assist.life.hp_max) || 0; }
+      if (ent && ent.life) { h = Number(ent.life.hp) || 0; hm = Number(ent.life.hp_max) || 0; }
       var pct = hm > 0 ? Math.max(0, Math.min(100, Math.round(h / hm * 100))) : 0;
-      if (hp) { hp.style.width = pct + "%"; hp.style.background = pct > 50 ? "#2e9e4f" : (pct > 20 ? "#d39a1e" : "#c0392b"); }
-      if (hpt) hpt.textContent = gid ? (hm > 0 ? (h + " / " + hm + "（" + pct + "%）") : "血量未知") : "—";
-      if (ex) {
-        var relation = game && gid ? (String(game.GID) === String(gid) ? "游戏目标与助手锁定一致" : "游戏目标与助手锁定不同") : (game ? "助手未锁定" : (gid ? "游戏未选中" : "无目标"));
-        ex.textContent = relation + " · " + (zMon && zMon.action ? zMon.action : (zRunning ? "运行中" : "未运行"));
+      if (fill) fill.style.width = pct + "%";
+      if (hpEl) hpEl.textContent = ent ? (hm > 0 ? ("HP " + fmtK(h) + " / " + fmtK(hm)) : "血量未知") : "";
+      // 信息行：Lv / 种族 / 属性 / 形体 / 距离（暂无数据 → --）+ 按怪物ID的外链
+      if (info) {
+        var mobDB = null; try { mobDB = getMobDb(); } catch (e2) {}
+        var m = mobDB && mid ? mobDB[mid] : null;
+        var fv = function (v) { return (v != null && String(v) !== "") ? roEscTxt(v) : "--"; };
+        var lv = m && m.LV != null ? m.LV : (ent && ent.level != null ? ent.level : null);
+        var race = m ? (m.Race != null ? m.Race : m.race) : null;
+        var elem = m ? (m.Element != null ? m.Element : m.element) : null;
+        var scale = m ? (m.Scale != null ? m.Scale : m.scale) : null;
+        var dist = null;
+        try {
+          var selfE = CLIENT.SS && CLIENT.SS.Entity;
+          if (ent && ent.position && selfE && selfE.position) dist = Math.round(Math.sqrt(Math.pow(ent.position[0] - selfE.position[0], 2) + Math.pow(ent.position[1] - selfE.position[1], 2)) * 10) / 10;
+          else if (gid && zLock.dist != null) dist = zLock.dist;
+        } catch (e3) {}
+        var du = mobRefUrl("dvg", mid), ru = mobRefUrl("ro321", mid);
+        info.innerHTML = "Lv <b>" + fv(lv) + "</b> · 种族 <b>" + fv(race) + "</b> · 属性 <b>" + fv(elem) + "</b> · 形体 <b>" + fv(scale) + "</b> · 距离 <b>" + (dist != null ? dist + "m" : "--") + "</b>" +
+          (ru ? ' · <a href="' + ru + '" target="_blank" rel="noopener noreferrer">数量</a>' : "") +
+          (du ? ' <a href="' + du + '" target="_blank" rel="noopener noreferrer">资料</a>' : "");
       }
-      if (listEl) {
-        var ids = Object.keys(lockList || {}), all = $id("dsh-z-allmobs");
-        listEl.textContent = all && all.checked ? "打全部怪" : (ids.length ? (ids.length + " 种：" + ids.slice(0, 4).map(function (id) { return (lockList[id] && lockList[id].name) || id; }).join("、") + (ids.length > 4 ? "…" : "")) : "空名单");
-      }
-      var refMid = gameMid || assistMid, links = $id("dsh-tgt-links"), dvg = $id("dsh-tgt-dvg"), ro321 = $id("dsh-tgt-ro321");
-      var du = mobRefUrl("dvg", refMid), ru = mobRefUrl("ro321", refMid);
-      if (links) links.style.display = du && ru ? "flex" : "none";
-      if (dvg) dvg.href = du || "#";
-      if (ro321) ro321.href = ru || "#";
     } catch (e) { try { dshDiag("target-render-error", { message: e.message || String(e) }); } catch (e2) {} }
   }
   // ---- 队伍血条：hook 客户端队伍组件，拿队员名单与血量（不额外发包）----
@@ -10968,8 +11160,75 @@
       if (typeof oDead === "function") PF.updateMemberDead = function (aid, dead) { try { partyUpsert({ AID: aid, state: dead ? 1 : 0 }); } catch (e) {} return oDead.apply(this, arguments); };
     } catch (e) {}
   }
+  // ---- V2.29.0 队伍面板：团本式职业色块矩阵（2 列 grid · 名字+HP 压块上 · 点击锁定队友）----
+  // RO job → 职业色（demo 配色语言：纯色实心块 = 信息本体）；转生/三转 job 归一到基础职业段
+  var PARTY_JOB_COLORS = {
+    0: "#ABD473", 1: "#C79C6E", 2: "#69CCF0", 3: "#ABD473", 4: "#E8E8E8", 5: "#F58CBA", 6: "#FFF569",
+    7: "#C79C6E", 8: "#E8E8E8", 9: "#69CCF0", 10: "#F58CBA", 11: "#ABD473", 12: "#FFF569",
+    13: "#C79C6E", 14: "#E8E8E8", 15: "#69CCF0", 16: "#F58CBA", 17: "#F58CBA", 18: "#ABD473", 19: "#FFF569",
+    20: "#C41F3B", 21: "#C79C6E", 22: "#69CCF0", 23: "#C79C6E", 24: "#9482C9", 25: "#C41F3B"
+  };
+  function partyJobColor(job) {
+    job = Math.floor(Number(job) || 0);
+    var j = job;
+    if (job >= 4001 && job <= 4049) j = job - 4001;      // 转生职业段归一
+    else if (job >= 4050 && job <= 4099) j = job - 4050; // 三转段粗归一
+    if (PARTY_JOB_COLORS[j]) return PARTY_JOB_COLORS[j];
+    return "hsl(" + ((job * 47) % 360) + ",45%,55%)";  // 未收录职业：稳定散列色
+  }
+  var dshPartyFloat = null;
+  function ensurePartyFloat() {
+    if (dshPartyFloat && dshPartyFloat.parentNode) return dshPartyFloat;
+    dshFloatCss();
+    var el = document.createElement("div");
+    el.id = "dsh-party-float";
+    el.innerHTML =
+      '<div id="dsh-party-list" class="dsh-pcells"></div>' +
+      '<div class="dsh-pfoot"><label><input id="dsh-party-self" type="checkbox" checked>含自己</label><span id="dsh-party-count" style="margin-left:auto">0 人</span></div>' +
+      '<div class="dsh-lock-tip" id="dsh-party-locktip"></div>';
+    document.documentElement.appendChild(el);
+    dshFloatPlace(el, "partyPos", Math.round(window.innerWidth * 0.76), Math.round(window.innerHeight * 0.30));
+    dshFloatDrag(el, "partyPos");
+    // 点击色块 = 锁定该队友为目标（拖拽位移 >3px 不触发选中）
+    el.addEventListener("click", function (e) {
+      if (el._dshMoved) return;
+      var c = e.target && e.target.closest ? e.target.closest(".dsh-pcell") : null;
+      if (!c) return;
+      partyLockMember(c.getAttribute("data-aid"), c.getAttribute("data-nm"));
+    });
+    dshPartyFloat = el;
+    return el;
+  }
+  // 锁定队友：写 zLock（同助手锁定范式）+ 发一次 REQUEST_ACT action=7
+  function partyLockMember(aid, name) {
+    try {
+      if (!aid) return;
+      var gid = Number(aid);
+      if (!isFinite(gid) || !gid) return;
+      var ss = CLIENT.SS || {};
+      var myAid = (ss.AID != null) ? String(Math.floor(Number(ss.AID) || 0)) : "";
+      if (myAid && String(aid) === myAid) return; // 自己不作为锁定目标
+      if (!clientReady()) return;
+      zLock.gid = gid;
+      zLock.name = name || ("AID " + aid);
+      zLock.dist = null;
+      zLock.reactive = false;
+      zLock.done = false;
+      var p = new CLIENT.PS.CZ.REQUEST_ACT();
+      p.targetGID = gid;
+      p.action = 7;
+      CLIENT.NM.sendPacket(p);
+      var tip = $id("dsh-party-locktip");
+      if (tip) { tip.textContent = "已锁定：" + zLock.name; tip.classList.add("show"); }
+      renderParty();
+    } catch (e) {}
+  }
   function renderParty() {
     try {
+      if (!roModOn("party")) { if (dshPartyFloat) dshPartyFloat.style.display = "none"; return; }
+      var fl = ensurePartyFloat();
+      if (!fl) return;
+      fl.style.display = "grid";
       var box = $id("dsh-party-list");
       if (!box) return;
       var selfEl = $id("dsh-party-self");
@@ -10980,9 +11239,7 @@
       var selfEnt = ss.Entity;
       if (withSelf && selfEnt && selfEnt.life) {
         cnt++;
-        var sh = Number(selfEnt.life.hp) || 0, shm = Number(selfEnt.life.hp_max) || 0;
-        var spct = shm > 0 ? Math.round(sh / shm * 100) : 0;
-        rows.push(partyRowHtml("（自己）" + ((selfEnt.display && selfEnt.display.name) || ""), sh, shm, spct, false));
+        rows.push(partyCellHtml({ AID: myAid, name: "（自己）" + ((selfEnt.display && selfEnt.display.name) || ""), job: selfEnt._job || 0, hp: Number(selfEnt.life.hp) || 0, maxhp: Number(selfEnt.life.hp_max) || 0, dead: false }, true));
       }
       for (var k in partyMembers) {
         var o = partyMembers[k];
@@ -10990,24 +11247,24 @@
         if (!withSelf && myAid && o.AID === myAid) continue;
         if (myAid && o.AID === myAid) continue; // 自己已单独渲染（客户端不推送自己的血条更新）
         cnt++;
-        var hm = Math.max(0, o.maxhp), hh = Math.max(0, Math.min(hm || o.hp, o.hp));
-        var p2 = hm > 0 ? Math.round(hh / hm * 100) : 0;
-        rows.push(partyRowHtml(o.name || ("AID " + o.AID), hh, hm, p2, !!o.dead));
+        rows.push(partyCellHtml(o, false));
       }
       var ct = $id("dsh-party-count");
       if (ct) ct.textContent = cnt + " 人";
-      var sig = cnt + "|" + rows.join("");
+      var sig = cnt + "|" + (zLock && zLock.gid) + "|" + rows.join("");
       if (sig === partySig) return; // 没变化不重绘（1 秒一次也不制造垃圾）
       partySig = sig;
-      box.innerHTML = rows.length ? rows.join("") : '<span class="st">暂无队伍成员</span>';
+      box.innerHTML = rows.length ? rows.join("") : '<span style="grid-column:1 / -1;color:#fff;font-size:12px;text-shadow:0 1px 2px #000,0 0 6px #000">暂无队伍成员</span>';
     } catch (e) {}
   }
-  function partyRowHtml(name, h, hm, pct, dead) {
-    var col = dead ? "#7a8797" : (pct > 50 ? "#2e9e4f" : (pct > 20 ? "#d39a1e" : "#c0392b"));
-    return '<div class="prow" style="flex-direction:column;align-items:stretch;gap:2px">' +
-      '<div style="display:flex;align-items:center;gap:6px"><span class="pnm">' + roEscTxt(name) + '</span>' +
-      '<span class="st" style="flex:0 0 auto">' + (dead ? "死亡" : (hm > 0 ? (h + "/" + hm) : "—")) + '</span></div>' +
-      '<div style="height:8px;border:1px solid #b8c6d4;background:#eef3fa;border-radius:2px;overflow:hidden"><i style="display:block;height:100%;width:' + (dead ? 100 : pct) + '%;background:' + col + '"></i></div></div>';
+  function partyCellHtml(o, isSelf) {
+    var hm = Math.max(0, Number(o.maxhp) || 0), hh = Math.max(0, Math.min(hm || (Number(o.hp) || 0), Number(o.hp) || 0));
+    var pct = hm > 0 ? Math.round(hh / hm * 100) : 0;
+    var sel = !isSelf && zLock && zLock.gid != null && String(zLock.gid) === String(o.AID);
+    return '<div class="dsh-pcell' + (sel ? " selected" : "") + '" data-aid="' + roEscTxt(o.AID) + '" data-nm="' + roEscTxt(o.name) + '" style="background:' + (o.dead ? "#5a5a5a" : partyJobColor(o.job)) + (isSelf ? ";cursor:default" : "") + '">' +
+      '<div class="dsh-hp-edge" style="width:' + (o.dead ? 0 : pct) + '%"></div>' +
+      '<div class="dsh-pname">' + roEscTxt(o.name || ("AID " + o.AID)) + '</div>' +
+      '<div class="dsh-php">' + (o.dead ? "死亡" : (hm > 0 ? (fmtK(hh) + " / " + fmtK(hm)) : "--")) + '</div></div>';
   }
   // ================= V2.28.0 本次登录伤害统计 =================
   // 优先旁听客户端已解析伤害回调；rAthena skill_db_re.yml 的 Type 字段用于技能物理/魔法/特殊分类。
@@ -13195,6 +13452,83 @@
     190: "受到小型怪魔法伤害 -%d%%", 191: "受到中型怪魔法伤害 -%d%%", 192: "受到大型怪魔法伤害 -%d%%",
     203: "最大负载增加 %d"
   };
+  // ITEM_OPTION_COLOR_START
+  // V2.30.0：装备词条分色（物品提示悬停词条按档着色，始终开启、不设开关，不改 RO_MODULES）
+  // 只补缺失 id：190/191/192 与 117-126 沿用助手现有本地文案，绝不覆盖。
+  var ITIP_OPT_CN_EXT = {
+    200: "消灭魔物一定几率获得(1 - %d)金钱",
+    201: "消灭魔物恢复%d点HP",
+    202: "消灭魔物恢复%d点SP",
+    204: "空",
+    301: "丁丁",
+    302: "巨人",
+    303: "披风不会被破坏",
+    304: "头饰不会被破坏",
+    305: "盾牌不会被破坏",
+    306: "鞋不会被破坏",
+    307: "受到小型魔物的魔法伤害减少%d%",
+    308: "受到中型魔物的魔法伤害减少%d%",
+    309: "受到大型魔物的魔法伤害减少%d%",
+    310: "对无型魔物的物理伤害减少+%d%",
+    311: "对不死型魔物的物理伤害减少+%d%",
+    312: "对动物型魔物的物理伤害减少+%d%",
+    313: "对植物型魔物的物理伤害减少+%d%",
+    314: "对昆虫型魔物的物理伤害减少+%d%",
+    315: "对鱼贝类魔物的物理伤害减少+%d%",
+    316: "对恶魔型魔物的物理伤害减少+%d%",
+    317: "对人类型魔物的物理伤害减少+%d%",
+    318: "对天使型魔物的物理伤害减少+%d%",
+    319: "对龙族魔物的物理伤害减少+%d%",
+    320: "受到人型系玩家的伤害降低%d%",
+    321: "对喵族玩家的耐性+%d%",
+    322: "对人类型玩家的物理伤害+%d%",
+    323: "对喵族玩家的物理伤害+%d%",
+    324: "对人类型玩家的魔法伤害+%d%",
+    325: "对喵族玩家的魔法伤害+%d%",
+    326: "对人类型玩家的 CRI + %d",
+    327: "对喵族玩家的 CRI + %d",
+    328: "对人类型玩家的物理防御力无视%d%",
+    329: "对喵族玩家的物理防御力无视%d%",
+    330: "对人类型玩家的魔法防御力无视%d%",
+    331: "对喵族玩家的魔法防御力无视%d%",
+    332: "近距离物理伤害+%d%",
+    333: "受到的近距离物理伤害-%d%",
+    334: "无属性魔法伤害+%d%",
+    335: "水属性魔法伤害+%d%",
+    336: "地属性魔法伤害+%d%",
+    337: "火属性魔法伤害+%d%",
+    338: "风属性魔法伤害+%d%",
+    339: "毒属性魔法伤害+%d%",
+    340: "圣属性魔法伤害+%d%",
+    341: "暗属性魔法伤害+%d%",
+    342: "念属性魔法伤害+%d%",
+    343: "不死属性魔法伤害+%d%",
+    344: "所有属性魔法伤害+%d%"
+  };
+  for (var _k in ITIP_OPT_CN_EXT) { if (!(_k in ITIP_OPT_CN)) ITIP_OPT_CN[_k] = ITIP_OPT_CN_EXT[_k]; }
+  // 满值上限表 = 独立版 ITIP_OPT_MAX（196 键）补 192:5（助手 190/191/192 为「受到X怪魔法伤害」，192 独立版缺失）
+  var ITIP_OPT_MAX = {"1":1000,"2":100,"3":5,"4":5,"5":5,"6":5,"7":5,"8":5,"9":5,"10":5,"11":5,"12":5,"13":10,"14":10,"15":5,"16":10,"17":100,"18":10,"19":100,"22":5,"24":10,"25":5,"26":5,"27":5,"28":5,"29":5,"30":5,"31":5,"32":5,"33":5,"34":5,"36":5,"37":10,"38":5,"39":10,"40":5,"41":10,"42":5,"43":10,"44":5,"45":10,"46":5,"47":10,"48":5,"49":10,"50":5,"51":10,"52":5,"53":10,"54":5,"55":10,"56":5,"57":10,"58":5,"59":10,"60":5,"61":10,"62":5,"63":10,"64":5,"65":10,"66":5,"67":10,"68":5,"69":10,"70":5,"71":10,"72":5,"73":10,"74":5,"75":10,"87":5,"88":5,"89":5,"90":5,"91":5,"92":5,"93":5,"94":5,"95":5,"96":5,"97":10,"98":10,"99":10,"100":10,"101":10,"102":10,"103":10,"104":10,"105":10,"106":10,"107":10,"108":10,"109":10,"110":10,"111":10,"112":10,"113":10,"114":10,"115":10,"116":10,"117":10,"118":10,"119":10,"120":10,"121":10,"122":10,"123":10,"124":10,"125":10,"126":10,"127":10,"128":10,"129":10,"130":10,"131":10,"132":10,"133":10,"134":10,"135":10,"136":10,"137":10,"138":10,"139":10,"140":10,"141":10,"142":10,"143":10,"144":10,"145":10,"146":10,"147":10,"148":10,"149":5,"150":5,"151":10,"152":10,"153":10,"154":10,"155":10,"156":10,"157":10,"158":10,"159":10,"160":5,"161":5,"162":5,"164":10,"165":5,"166":10,"167":5,"168":10,"169":10,"170":5,"171":5,"172":5,"187":10,"188":10,"189":10,"190":5,"191":5,"192":5,"200":100,"201":100,"202":20,"203":100,"307":5,"308":5,"309":5,"310":5,"311":5,"312":5,"313":5,"314":5,"315":5,"316":5,"317":5,"318":5,"319":5,"320":5,"322":10,"324":10,"326":10,"328":10,"330":10,"332":10,"333":5,"334":10,"335":10,"336":10,"337":10,"338":10,"339":10,"340":10,"341":10,"342":10,"343":10};
+  // 固定效果白名单：文案不含 %d 的 id，排除占位项（未开启/空/丁丁/巨人）
+  var FIXED_IDS = [76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 163, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 303, 304, 305, 306];
+  function itipOptRange(id) { var max = ITIP_OPT_MAX[id]; return max ? { min: 1, max: max } : null; }
+  function itipOptGrade(oe) {
+    var id = Number(oe.id), value = Number(oe.value);
+    if (FIXED_IDS.indexOf(id) !== -1) return { tier: "fixed", color: "#ffd479", label: "固定" };
+    var range = itipOptRange(id);
+    if (!range) return { tier: "neutral", color: "", label: "" };
+    if (!Number.isFinite(value) || value < range.min || value > range.max) return { tier: "unrated", color: "#8f9bb3", label: "未评级" };
+    var lowEnd = range.min + Math.floor((range.max - range.min + 1) / 2) - 1;
+    if (value === range.max) return { tier: "max", color: "#ffd479", label: "" };
+    if (value <= lowEnd) return { tier: "low", color: "#7ef0a8", label: "" };
+    return { tier: "middle", color: "#c9a0ff", label: "" };
+  }
+  function itipOptHtml(oe) {
+    var g = itipOptGrade(oe);
+    var s = g.color ? "color:" + g.color + ";" : "";
+    var b = g.label ? ' <span style="color:#8f9bb3;font-size:11px">[' + g.label + "]</span>" : "";
+    return '<div style="margin-top:2px;' + s + '">· ' + itipEsc(oe.text) + b + "</div>";
+  }
+  // ITEM_OPTION_COLOR_END
   function itipOptText(o) {
     var id = parseInt(o.index, 10);
     var cn = ITIP_OPT_CN[id];
@@ -13216,14 +13550,14 @@
         for (var k = 0; k <= 4; k++) {
           var ix = Number(ops["Index" + k] || 0);
           if (!ix) continue;
-          out.push({ id: ix, text: itipOptText({ index: ix, value: Number(ops["Value" + k] || 0), param: Number(ops["Param" + k] || 0) }) });
+          out.push({ id: ix, value: Number(ops["Value" + k] || 0), text: itipOptText({ index: ix, value: Number(ops["Value" + k] || 0), param: Number(ops["Param" + k] || 0) }) });
         }
         return out;
       }
       for (var i = 1; i <= 5; i++) {
         var o = ops[i];
         if (!o || !o.index) continue;
-        out.push({ id: Number(o.index), text: itipOptText(o) });
+        out.push({ id: Number(o.index), value: Number(o.value), text: itipOptText(o) });
       }
     } catch (e) {}
     return out;
@@ -13327,15 +13661,8 @@
       L.push('<div style="color:#7fd1ff;font-weight:bold">' + itipEsc(head) + "</div>");
       L.push('<div style="color:#8f9bb3">物品 ID ' + itid + "</div>");
       if (opts.length) {
-        // V2.16.25：属性类词条（175-186）单独一行绿色显示——它是鉴定前唯一能看到的那条，最该突出
-        var elemLines = [], otherLines = [];
-        for (var oi3 = 0; oi3 < opts.length; oi3++) {
-          var oe = opts[oi3];
-          if (oe.id >= 175 && oe.id <= 186) elemLines.push("· " + itipEsc(oe.text));
-          else otherLines.push("· " + itipEsc(oe.text));
-        }
-        if (elemLines.length) L.push('<div style="color:#7ef0a8;margin-top:3px">' + elemLines.join("<br>") + "</div>");
-        if (otherLines.length) L.push('<div style="color:#c9a0ff;margin-top:3px">' + otherLines.join("<br>") + "</div>");
+        // V2.30.0：装备词条分色——每条词条单独一行按档着色，不再把 175-186 单独绿色分组
+        for (var oi3 = 0; oi3 < opts.length; oi3++) L.push(itipOptHtml(opts[oi3]));
       } else if (!ident) {
         L.push('<div style="color:#8f9bb3;margin-top:3px">（无随机词条）</div>');
       }

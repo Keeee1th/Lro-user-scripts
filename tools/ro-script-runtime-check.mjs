@@ -114,8 +114,12 @@ test('shop sell rows use inventory tooltip path',()=>{
   ctx.getComputedStyle=()=>({display:'none',visibility:'visible'});assert.equal(ctx.sell(input),false);
 });
 
-test('teleport shortcuts are profile scoped and capped',()=>{
-  assert.ok(source.includes('profiles[k].saved.teleportPoints'));
+test('teleport shortcuts are global shared, migrated and capped',()=>{
+  // V2.29.0：全局键 dsh_ro_tp_global_v1，首读合并角色档旧点（不删旧数据），跨标签 storage 实时刷新
+  assert.ok(source.includes('dsh_ro_tp_global_v1'));
+  assert.ok(source.includes('profiles[pk].saved.teleportPoints'));
+  assert.ok(source.includes('ev.key !== TP_GLOBAL_KEY'));
+  assert.ok(source.includes('data-tppf-go')); // 传送点悬浮条（点击直传）
   assert.ok(source.includes('list.length >= 20'));
   assert.ok(source.includes('else gptTeleport(p.map, p.x, p.y);'));
   assert.ok(source.includes('data-tpp-edit'));
@@ -245,17 +249,22 @@ test('safe monster references reject injected IDs',()=>{
   assert.ok(source.includes('target="_blank" rel="noopener noreferrer"'));
 });
 
-test('target UI distinguishes game focus assistant lock and attack list',()=>{
-  assert.ok(source.includes('id="dsh-game-tgt"'));
-  assert.ok(source.includes('助手锁定'));
-  assert.ok(source.includes('id="dsh-tgt-list"'));
+test('target bar is a transparent draggable float with portrait and ref links',()=>{
+  // V2.29.0：目标锁定条 = demo 悬浮层（8898 by-id 头像 + 渐变血条 + 信息小字），面板内旧区块已移除
+  assert.ok(source.includes('el.id = "dsh-tgt-bar"'));
+  assert.ok(source.includes('http://127.0.0.1:8898/monster-sprites/by-id/'));
+  assert.ok(source.includes('dsh-mob-fallback')); // 头像失败退化名字首字占位
+  assert.ok(!source.includes('id="dsh-game-tgt"'));
+  assert.ok(!source.includes('id="dsh-tgt-list"'));
   assert.ok(source.includes('EM.getFocusEntity'));
-  assert.ok(source.includes('游戏目标与助手锁定不同'));
   assert.ok(source.includes('攻击名单（只主动攻击勾选的怪）'));
+  assert.ok(source.includes('mobRefLinksHtml(id)')); // 任务目标怪外链（数量→RO321 / 资料→DVG）
+  assert.ok(source.includes('el.id = "dsh-party-float"'));
+  assert.ok(source.includes('p.action = 7;')); // 点色块锁定队友 REQUEST_ACT(7)
 });
 
 test('patch regressions cover hosts virtual rows tooltips and monk prerequisites',()=>{
-  const item=source.indexOf('id="dsh-fw-item"'),close=source.indexOf("'</div>' +",item),tgt=source.indexOf('id="dsh-fw-tgt"');
+  const item=source.indexOf('id="dsh-fw-item"'),close=source.indexOf("'</div>' +",item),tgt=source.indexOf('el.id = "dsh-tgt-bar"'); // V2.29.0：dsh-fw-tgt 面板区块已移除，锚到悬浮层创建处
   assert.ok(item>=0&&close>item&&close<tgt);
   assert.ok(source.includes('attributeFilter: ["data-index"]'));
   assert.ok(source.includes('setTimeout(itipRefresh, 0)'));
@@ -361,9 +370,20 @@ test('configured item automation remains available fallback',()=>{
   assert.ok(source.includes('masterTickReg(function () { try { tickItems(); } catch (e) {} });'));
 });
 
-test('version constants agree at v2.28.1 and feedback is visible',()=>{
+test('version constants agree at v2.30.0 and feedback is visible',()=>{
   const meta=source.match(/@version\s+(\S+)/)?.[1], runtime=source.match(/var VER = "([^"]+)"/)?.[1];
-  assert.equal(meta,'2.28.1');assert.equal(runtime,meta);
+  assert.equal(meta,'2.30.0');assert.equal(runtime,meta);
   assert.ok(source.includes('function roFeedback(text, cls)'));
   assert.ok(source.includes('id = "dsh-feedback"'));
+});
+test('startup always collapses legacy panel regardless of saved state',()=>{
+  // V2.29.0 BUG 修复：saved.collapsed===false 的档案刷新后不再自动弹出旧版设置界面
+  const code=extract('  // V2.24.1：旧版设置界面入口','  // ---------------- 快捷键');
+  const mk=()=>{const saved={collapsed:false},calls=[];const ctx={saved,saveSaved:()=>calls.push('save'),applyCollapse:c=>calls.push(c)};vm.createContext(ctx);vm.runInContext(code,ctx);return {saved,calls}};
+  const a=mk();assert.equal(a.saved.collapsed,true);assert.deepEqual(a.calls,['save',true]); // 启动强制收起并写回
+  // 手动打开路径保留：功能菜单打开写 collapsed=false + applyCollapse(false)
+  assert.ok(source.includes('saved.collapsed = false; try { saveSaved(saved); } catch (e) {}'));
+  assert.ok(source.includes('applyCollapse(false);'));
+  // 快捷键 toggle 基于 collapsed 翻转：启动已写回 true → 首次按下即打开，不会「按了没反应」
+  assert.ok(source.includes('if (saved.collapsed) { saved.collapsed = false; saveSaved(saved); applyCollapse(false); }'));
 });

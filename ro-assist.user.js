@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.32.1
+// @version      2.32.2
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -41,6 +41,13 @@
 // 3. 标题栏球按钮品红底修复：logo 球/关闭球/最小化球贴图由 BMP 换真透明 PNG（消除 #ff00ff 透明占位在浏览器 CSS 里被画成品红/粉的「红框」）。
 // ---------------- V2.32.0 变更摘要 ----------------
 // 换角色战斗设置切档修复 + game.lastro.cn @match + 跨入口本地 KV 互通（8899 中继，last-write-wins）。
+// ---------------- V2.32.2 变更摘要 ----------------
+// 1. 天使之赐福 buffid 统一处理：buffStId 加 CJK 归一化（之/的/·/空格），翻译名差异不再逐个补别名，并补 Blessing 别名与 SKILL_STATUS_SRC/MEASURED 表。
+// 2. 弹指气弹检测修复：气弹缓存 aid 取整对齐 + 补球节流封顶（防无限狂蓄气）+ 气弹自采集诊断（导出气弹诊断按钮）。
+// 3. 坐下优先：zAttack 加 isSitting 守卫，坐下回血期间不锁怪不攻击不追怪（修自动起身追怪）。
+// 4. 换图反向走加固：新图名连续稳定 1.2s 且坐标有效才认定换图，防瞬态误触反向走。
+// 5. 换角色切档双检测：角色名+GID 双比对（游戏内切角色 GID 不变也能切档）。
+// 6. 本地化方案 B：配置导出/导入按钮（跨入口/跨机器备份）。
 
 (function () {
   "use strict";
@@ -66,7 +73,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.32.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.32.2"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
 
   // V2.11.0：仓库+背包读取全局变量
@@ -83,6 +90,7 @@
   // V2.16.7：刷新后恢复上次活跃角色档（防 activeCharKey 重置 default → 面板用错档丢配置）
   try { var _lastAk = localStorage.getItem("dsh_ro_last_active"); if (_lastAk && profiles[_lastAk]) activeCharKey = _lastAk; } catch (e) {}
   var lastCharGid = null; // 已识别的主角色 GID（换角色自动切档）
+  var lastCharName = null; // V2.32.2 已识别角色名（游戏内切角色 GID 可能不变，加角色名双检测）
   function activeProfileKey() { return activeCharKey; }
   function setActiveProfile(k) { activeCharKey = k || "default"; try { localStorage.setItem("dsh_ro_last_active", activeCharKey); } catch (e) {} }
   function loadProfiles() { try { return JSON.parse(localStorage.getItem(PROF_KEY)) || {}; } catch (e) { return {}; } }
@@ -91,6 +99,8 @@
   // V2.8.9：lastro 自身实体 GID 是带随机小数的浮点（引擎自己用 parseInt 比较），
   // 这里统一取整（Math.floor），非法/非正数返回 0，避免每秒拼出 name_GID.<小数> 的新档键。
   function gidInt(v) { var n = Math.floor(Number(v)); return (isFinite(n) && n > 0) ? n : 0; }
+  // V2.32.2 角色名读取统一（换角色双检测：游戏内切角色 GID 可能不变，加角色名比对）
+  function charNameOf(ent) { try { return ((ent && ent.display && ent.display.name) || (ent && ent.displayName) || (ent && ent.name) || "") || ""; } catch (e) { return ""; } }
   // V2.8.9：归并历史小数垃圾键（角色_2007018.9392906795 → 角色_2007018），同一基键只留 lastAt 最新的一份。
   function pruneProfiles() {
     try {
@@ -1042,7 +1052,7 @@
       '<div class="st" id="dsh-menu-status" style="font-size:11px">自动上报：待命</div>' +
       '<div class="row" style="margin-top:6px;gap:6px"><button id="dsh-menu-export" style="flex:0 0 auto">导出JSON</button><button class="ghost" id="dsh-menu-copy" style="flex:0 0 auto">复制</button></div>' +
       '<div class="sec">出站抓包（真机对比用）</div>' +
-      '<div class="row" style="gap:6px;flex-wrap:wrap"><button id="dsh-txcap" style="flex:0 0 auto">开始抓包</button><button class="ghost" id="dsh-txstop" style="flex:0 0 auto">停止</button><button class="ghost" id="dsh-txexp" style="flex:0 0 auto">导出</button><button class="ghost" id="dsh-txdl" style="flex:0 0 auto">下载成文件</button></div>' +
+      '<div class="row" style="gap:6px;flex-wrap:wrap"><button id="dsh-txcap" style="flex:0 0 auto">开始抓包</button><button class="ghost" id="dsh-txstop" style="flex:0 0 auto">停止</button><button class="ghost" id="dsh-txexp" style="flex:0 0 auto">导出</button><button class="ghost" id="dsh-txdl" style="flex:0 0 auto">下载成文件</button><button class="ghost" id="dsh-spheredump" style="flex:0 0 auto">导出气弹诊断</button></div>' +
       '<div class="st" id="dsh-txlog" style="font-size:11px">出站抓包：未开始</div>' +
       '<textarea id="dsh-txout" style="width:100%;height:110px;font-size:10px;font-family:monospace" readonly placeholder="点「导出出站序列」后这里出现内容"></textarea>' +
       '<div class="row" style="margin-top:6px;align-items:center;gap:6px"><span class="lb" style="min-width:0;margin:0">选第</span><input id="dsh-menu-num" type="number" min="0" value="0" style="flex:0 0 48px;padding:3px 6px"><span class="lb" style="margin:0">项</span><button id="dsh-menu-choose" style="flex:0 0 auto">发 CHOOSE_MENU</button><button class="ghost" id="dsh-menu-next" style="flex:0 0 auto">下一段</button></div>',
@@ -1084,6 +1094,9 @@
       '<div class="row"><label class="switch"><input id="dsh-capauto" type="checkbox" checked>自动过验证</label><span class="st" id="dsh-capstate" style="font-size:10px;margin-left:auto">待命</span></div>' +
       '<div class="row"><span class="lb">填入后等待</span><input id="dsh-capwait" type="number" value="10" min="0" style="flex:0 0 48px"><span style="color:#5a6b7f">s 再点「下面」（0=立即提交）</span></div>' +
       '<div class="log">点登录/换角色弹验证时自动读算式算结果，填入输入框，等 N 秒后自动点「下面」提交。</div>' +
+      '<div class="sec">配置备份</div>' +
+      '<div class="row" style="gap:6px;flex-wrap:wrap"><button id="dsh-cfg-exp" style="flex:0 0 auto">导出配置</button><button class="ghost" id="dsh-cfg-imp" style="flex:0 0 auto">导入配置</button></div>' +
+      '<div class="log">导出=把本入口全部配置（角色档/技能/传送点/快捷键/高亮/白名单等）打包成 JSON 下载；导入=选文件恢复。跨入口/跨机器迁移或备份用，导入后刷新页面生效。</div>' +
       '<div class="sec">扩展脚本（独立功能包）</div>' +
       '<div id="dsh-extlist" style="font-size:11px;max-height:130px;overflow:auto"><span class="st">未检测到扩展脚本（安装独立功能包后自动显示）</span></div>'
   };
@@ -2735,7 +2748,7 @@
     try {
       var ent = CLIENT.SS && CLIENT.SS.Entity;
       // V1.7.0：登录后识别角色 → 自动切档并加载上次保存
-      if (ent && ent.GID != null && gidInt(ent.GID) && gidInt(ent.GID) !== lastCharGid) { try { onCharChanged(ent); } catch (e) {} }
+      if (ent && ent.GID != null && gidInt(ent.GID) && (gidInt(ent.GID) !== lastCharGid || charNameOf(ent) !== lastCharName)) { try { onCharChanged(ent); } catch (e) {} }
       if (!ent) { sb.querySelector(".nm").textContent = "—"; sb.querySelector(".job").textContent = "未登录"; return; }
       var life = ent.life || {};
       var name = (ent.display && ent.display.name) || ent.displayName || ent.name || (ent.character && ent.character.name) || "角色"; // V2.12.3：角色名在 display.name
@@ -3524,7 +3537,7 @@
   function onCharChanged(ent) {
     try {
       // V2.12.3：真实角色名在 ent.display.name；旧占位键「角色_GID」自动迁移到真实角色名键
-      var nm = (ent.display && ent.display.name) || ent.displayName || ent.name || "角色";
+      var nm = charNameOf(ent) || "角色";
       var gid = gidInt(ent.GID);
       if (!gid) return;
       var key = (nm + "_" + gid).replace(/[\\\/:"*?<>|]/g, "_");
@@ -3555,6 +3568,7 @@
       renderWinInfo(); renderLockList(); renderAskList();
       try { fwRefreshHosts(); fwRestore(); } catch (e4) {}
       lastCharGid = gid;
+      lastCharName = nm;
       setStatus("已加载角色档 " + nm + "（ID" + gid + "）", "ok");
       tlog("profile-load " + key);
       try { syncRealAtkRange(); } catch (e) {} // V2.16.7：切档后读真实射程并回写物理距离设置
@@ -3737,7 +3751,7 @@
   //   中文别名映射（常用 buff/debuff → 客户端 StatusConst 状态ID）
   var BUFF_STATUS_CN = {
     "加速": "INC_AGI", "加速术": "INC_AGI",
-    "赐福": "BLESSING", "天赐": "BLESSING", "天使赐福": "BLESSING",
+    "赐福": "BLESSING", "天赐": "BLESSING", "天使赐福": "BLESSING", "天使之赐福": "BLESSING",
     "霸体": "ENDURE",
     "加速武器": "ADRENALINE", "速度激发": "ADRENALINE",
     "武器值最大化": "WEAPONPERFECT", "武器增加值": "WEAPONPERFECT",
@@ -4073,6 +4087,8 @@
     "VR_BOOK008":1442,"VR_BOOK009":1443,"ALL_T_STAT":1444,"P_ATK_PLUS":1445,"S_MATK_PLUS":1446,
     "C_RATE_PLUS":1447,"RESIST_PLUS":1448,"PVP_DUN_BUFF":1449,"BPOWER":2000,"MAX":2001
   };
+  // V2.32.2 中文名归一化：去助词（之/的/·/空格）并转小写，供 buffStId 归一化后精确匹配（统一处理翻译名差异）
+  function normCjk(s) { try { return String(s || "").toLowerCase().replace(/[之的· ]/g, ""); } catch (e) { return String(s || ""); } }
   // 状态键 → 客户端状态ID（StatusConst 常量表；支持 数字/英文SC名/中文别名；查不到返回 -1）
   function buffStId(key) {
     try {
@@ -4081,11 +4097,20 @@
       var up = String(key).toUpperCase();
       var cn = BUFF_STATUS_CN[key.toLowerCase()] || BUFF_STATUS_CN[key] ||
         BUFF_DEBUFF_CN[key.toLowerCase()] || BUFF_DEBUFF_CN[key] || "";
+      // V2.32.2 统一处理：精确匹配失败时，做 CJK 归一化后再精确匹配（天使之赐福→天使赐福），不再逐个补别名
+      if (!cn) {
+        var nk = normCjk(key);
+        if (nk && nk !== String(key).toLowerCase()) {
+          var NK;
+          for (NK in BUFF_STATUS_CN) { if (normCjk(NK) === nk) { cn = BUFF_STATUS_CN[NK]; break; } }
+          if (!cn) for (NK in BUFF_DEBUFF_CN) { if (normCjk(NK) === nk) { cn = BUFF_DEBUFF_CN[NK]; break; } }
+        }
+      }
       var tryN = cn ? cn.toUpperCase() : up;
       // V2.16.26 修：本服实测值与客户端 StatusConst 表不一致时，以实测为准。
       // 旧写法把实测修正放在「兜底2」，而 StatusConst 优先命中，导致修正永远轮不到
       // （典型：圣母之祈福本服实测 473=ASSUMPTIO2，客户端表 ASSUMPTIO=110 → 永远判「不在身」空放）。
-      var MEASURED = { "ASSUMPTIO": 473, "KYRIE": 19 };
+      var MEASURED = { "ASSUMPTIO": 473, "KYRIE": 19, "BLESSING": 10 };
       try {
         if (typeof MEASURED[tryN] === "number") return MEASURED[tryN];
         if (tryN !== up && typeof MEASURED[up] === "number") return MEASURED[up];
@@ -7190,12 +7215,22 @@
   var zWaitSince = 0;
   // 补状态节流：距上次补状态技能 <1s 不重复补 → 间隙让普攻穿插（蓄气链不再霸占每轮）
   var zPrepAt = 0;
+  var zPrepSpam = 0; // V2.32.2 补球节流：连续补球仍无球则封顶，杜绝无限狂蓄气（气弹数>0 即清零）
   // 技能释放最小间隔：放完一次技能（含补状态）后 800ms 内不再放 → 转 wait 穿插普攻（避免技能链霸占每轮）
   var zLastCastAt = 0;
   var zLastCastSkid = 0; // V2.15.24：最近一次释放的技能ID（配合 skillDelay 用真实后摇等待）
   var skillDelay = {};   // V2.15.24+：服务器下发真实延迟表（0x43d/0x43e POSTDELAY + 0xb1a USESKILL_ACK3 动态覆盖）SKID→延迟ms
   var skillNextAt = {};  // V2.15.28：每技能独立 CD 计时（skillNextAt[SKID]=下次可释放时间戳），到点才发，不再按攻击轮次全局窗口
   var selfSpirits = { aid: 0, num: 0, map: "" }; // 0x1d0/0x1e1 自身气弹权威缓存；换图或身份变化即失效
+  var __dshSphereLog = []; // V2.32.2 气弹自采集诊断环形缓冲（自动采集，无需手动开关）
+  function dshSphereLog(msg) {
+    try {
+      __dshSphereLog.push({ t: Date.now(), m: msg });
+      if (__dshSphereLog.length > 400) __dshSphereLog.splice(0, __dshSphereLog.length - 400);
+      try { window.__dshSphereLog = __dshSphereLog; } catch (e) {}
+    } catch (e) {}
+  }
+  try { window.__dshSphereLog = __dshSphereLog; } catch (e) {}
   try { window.__dshSkillDelay = skillDelay; } catch (e) {} // 供控制台/探针查看
   try { window.__dshSkillNext = skillNextAt; } catch (e) {} // 供控制台/探针查看
   var zSkillSentAt = {};  // V2.16.7：技能包发出时间戳（估算服务器 RTT）
@@ -7343,6 +7378,10 @@
       try {
         var curKeyB = getMapName();
         if (zWalkState.startMap && curKeyB && normMapKey(curKeyB) !== normMapKey(zWalkState.startMap)) {
+          // V2.32.2 换图加固：换图瞬间地图名/坐标未稳会误触反向走；要求新图名连续稳定 1.2s 且坐标有效才认定
+          if (zWalkState.mapChgKey !== curKeyB) { zWalkState.mapChgKey = curKeyB; zWalkState.mapChgAt = Date.now(); return; }
+          if (Date.now() - zWalkState.mapChgAt < 1200) return;
+          if (!ent.position || !isFinite(ent.position[0]) || !isFinite(ent.position[1])) return;
           var nowB = Date.now();
           if (!zWalkState.backMapAt) {
             zWalkState.backMapAt = nowB;
@@ -7370,8 +7409,10 @@
         }
         if (zWalkState.backMapAt && normMapKey(curKeyB) === normMapKey(zWalkState.startMap)) {
           zWalkState.backMapAt = 0; zWalkState.backTeleportAt = 0;
+          zWalkState.mapChgKey = ""; zWalkState.mapChgAt = 0;
           tlog("walk-mapchange 回到原图，恢复寻怪");
         }
+        if (!zWalkState.startMap || (curKeyB && normMapKey(curKeyB) === normMapKey(zWalkState.startMap))) { zWalkState.mapChgKey = ""; zWalkState.mapChgAt = 0; }
       } catch (e) {}
       doSitCycle(scanMobs || []); // V2.15.22：坐下周期（无目标时间；安全才坐，坐下被打自动站起）
       var now = Date.now();
@@ -7791,6 +7832,8 @@
       var npMode = npHuntMode() === "np";
       updateHpWatch(ent);
       sitMaintain(); // V2.15.22：坐下期间被打自动站起逃生（战斗循环每 tick，不依赖侦查扫描）
+      // V2.32.2 坐下优先：sitMaintain 未站起（没被打/没回满/没过看门狗）→ 保持坐下，本拍不锁怪不攻击不追怪
+      if (isSitting()) { zMon.action = "坐下回血中"; return; }
       var EM = window.require("Renderer/EntityManager");
       var range = parseInt($id("dsh-z-range").value, 10) || 12; // 寻怪范围（触发目标考虑）
       // 攻击距离：物理/魔法按技能射程自动选择（普攻=物理距离；技能=技能射程与对应距离取大）
@@ -8109,9 +8152,18 @@
   function entStatus() {
     var ent = CLIENT.SS && CLIENT.SS.Entity;
     if (!ent) return null;
-    var aid = Number((CLIENT.SS && CLIENT.SS.AID) || ent.GID || 0), map = normMapKey(getMapName());
+    var aid = gidInt((CLIENT.SS && CLIENT.SS.AID) || ent.GID || 0), map = normMapKey(getMapName());
     var spheres = (selfSpirits.aid === aid && selfSpirits.map === map) ? selfSpirits.num : 0;
     if (selfSpirits.aid !== aid || selfSpirits.map !== map) for (var i = 1; i <= 5; i++) if (ent["Summon" + i]) spheres++;
+    // V2.32.2 自采集诊断：节流快照气弹候选字段（确定本客户端正确气弹来源用）
+    if (!entStatus.__snapAt || Date.now() - entStatus.__snapAt > 2000) {
+      entStatus.__snapAt = Date.now();
+      var cand = {};
+      for (var ci = 1; ci <= 5; ci++) { var f = ent["Summon" + ci]; if (f !== undefined) cand["Summon" + ci] = f; }
+      var candKeys = ["sphere", "spheres", "spiritBall", "spiritball", "spirit", "spirit_ball", "ball", "soulBall", "soulball"];
+      for (var ck = 0; ck < candKeys.length; ck++) { var cf = ent[candKeys[ck]]; if (cf !== undefined) cand[candKeys[ck]] = cf; }
+      dshSphereLog("snap spheres=" + spheres + " cache=" + JSON.stringify(selfSpirits) + " cand=" + JSON.stringify(cand));
+    }
     return {
       ent: ent,
       spheres: spheres,            // 气球/气弹数 0~5
@@ -8289,6 +8341,7 @@
   // 补状态技能映射：目标状态 → 达成该状态的技能ID列表（skill_db 施放后 Status 字段反向推导，re 版实证）
   // 键支持英文（rAthena 状态名）与中文（cond 语法）两种写法
   var SKILL_STATUS_SRC = {
+    "Blessing": [34], "赐福": [34], "天使之赐福": [34],
     "Explosionspirits": [270], "爆气": [270], "Fury": [270], "fury": [270],
     "Hiding": [51, 165, 528, 3001], "隐匿": [51, 165], "Cloaking": [51, 165], "cloaking": [51, 165],
     "Cartboost": [486], "手推车加速": [486], "Boost": [486], "boost": [486], "CartBoost": [486],
@@ -8453,11 +8506,13 @@
       if (!ent) return false;
       var st = entStatus();
       if (!st) return false;
+      if (st.spheres > 0) zPrepSpam = 0; // 看到球 → 补球计数清零
       // 补状态节流：距上次补状态 <1s 不重复补 → 让 wait 分支穿插普攻（蓄气×5 链不再霸占每轮）
       if (Date.now() - zPrepAt < 1000) return false;
       var need = condNeeds(condStr);
       // 1) 气弹不足 → 补气弹（蓄气/吸魂）
       if (need.spheres > 0 && st.spheres < need.spheres) {
+        if (st.spheres <= 0 && zPrepSpam >= 6) return false; // 连续6次补球仍无球 → 停，防无限狂蓄气
         for (var si = 0; si < SKILL_SPHERE_SRC.length; si++) {
           var sid = SKILL_SPHERE_SRC[si];
           var lv = learnedSkillLv(sid);
@@ -8471,6 +8526,7 @@
             ps.targetID = ent.GID || 0;
             CLIENT.NM.sendPacket(ps);
             zPrepAt = Date.now(); // 补状态节流：1s 内不再补，间隙穿插普攻
+            zPrepSpam = (st.spheres <= 0) ? zPrepSpam + 1 : 0; // V2.32.2 补球计数
             skillNextAt[sid] = Date.now() + skillCdMs({ skid: sid, cd: 0 }); // V2.15.28：补球技能独立 CD
             tlog("cast-prep sphere " + sid + " lv" + lv + " (now " + st.spheres + "/" + need.spheres + ")");
             setStatus("气弹不足(" + st.spheres + "/" + need.spheres + ")，自动蓄气补球…", "st");
@@ -10533,8 +10589,11 @@
     try {
       if (!bytes || bytes.byteLength < 8) return;
       var dv = new DataView(bytes), aid = dv.getUint32(2, true), num = Math.max(0, Math.min(5, dv.getUint16(6, true)));
-      var ent = CLIENT.SS && CLIENT.SS.Entity, selfAid = Number((CLIENT.SS && CLIENT.SS.AID) || (ent && ent.GID) || 0);
+      // V2.32.2 气弹缓存 aid 统一取整对齐（此前包 AID 为整数、实体 GID 为浮点，恒不等 → 缓存永判失效 → 气弹恒0）
+      var ent = CLIENT.SS && CLIENT.SS.Entity, selfAid = gidInt((CLIENT.SS && CLIENT.SS.AID) || (ent && ent.GID) || 0);
       if (selfAid && aid === selfAid) selfSpirits = { aid: aid, num: num, map: normMapKey(getMapName()) };
+      // V2.32.2 自采集诊断：记录气弹包解析值
+      dshSphereLog("pkt aid=" + aid + " num=" + num + " selfAid=" + selfAid + " match=" + (aid === selfAid));
     } catch (e) {}
   }
   // V2.15.24：拦截服务器下发的技能真实后摇（ZC.SKILL_POSTDELAY 0x43d 单技能 / 0x43e 批量列表）
@@ -10625,6 +10684,66 @@
     var j = buildMenuJson();
     try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(j); } catch (e) {}
     $id("dsh-menu-recon").textContent = "已生成JSON（已尝试复制到剪贴板）:\n" + j;
+  });
+  // V2.32.2 气弹自采集诊断导出（复制 JSON 到剪贴板，粘贴给助手分析气弹来源）
+  $id("dsh-spheredump").addEventListener("click", function () {
+    try {
+      var _sl = window.__dshSphereLog || [];
+      var txt = JSON.stringify(_sl, null, 1);
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt);
+      try { console.log("[SPHERE-DIAG]", txt); } catch (e) {}
+      setStatus("气弹诊断已复制到剪贴板（" + _sl.length + " 条），粘贴发给助手", "ok");
+    } catch (e) { try { setStatus("导出异常: " + e.message, "err"); } catch (e2) {} }
+  });
+  // V2.32.2 配置导出/导入（本地化方案 B：跨入口/跨机器备份）
+  function collectDshConfig() {
+    var out = {};
+    try {
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf("dsh_ro_") === 0) { try { out[k] = localStorage.getItem(k); } catch (e) {} }
+      }
+    } catch (e) {}
+    return out;
+  }
+  $id("dsh-cfg-exp").addEventListener("click", function () {
+    try {
+      var data = collectDshConfig();
+      var json = JSON.stringify({ v: 2, exportedAt: new Date().toISOString(), keys: data }, null, 1);
+      var blob = new Blob([json], { type: "application/json" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "ro-assist-config-" + new Date().toISOString().slice(0, 10) + ".json";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { try { URL.revokeObjectURL(a.href); } catch (e) {} }, 1000);
+      setStatus("已导出配置（" + Object.keys(data).length + " 键）", "ok");
+    } catch (e) { try { setStatus("导出失败: " + e.message, "err"); } catch (e2) {} }
+  });
+  $id("dsh-cfg-imp").addEventListener("click", function () {
+    try {
+      var fi = document.createElement("input");
+      fi.type = "file"; fi.accept = ".json,application/json";
+      fi.onchange = function () {
+        var f = fi.files && fi.files[0];
+        if (!f) return;
+        var rd = new FileReader();
+        rd.onload = function () {
+          try {
+            var j = JSON.parse(rd.result);
+            var keys = j.keys || j;
+            var n = 0;
+            for (var k in keys) { try { localStorage.setItem(k, keys[k]); n++; } catch (e) {} }
+            profiles = loadProfiles(); saved = loadSaved();
+            var ak = localStorage.getItem("dsh_ro_last_active");
+            if (ak && profiles[ak]) activeCharKey = ak;
+            try { applyProfileUI(); } catch (e) {}
+            setStatus("已导入配置（" + n + " 键），刷新页面后完整生效", "ok");
+          } catch (e) { try { setStatus("导入解析失败: " + e.message, "err"); } catch (e2) {} }
+        };
+        rd.readAsText(f);
+      };
+      fi.click();
+    } catch (e) { try { setStatus("导入失败: " + e.message, "err"); } catch (e2) {} }
   });
   $id("dsh-menu-copy").addEventListener("click", function () {
     if (!menuRecon.items.length) { $id("dsh-cleanlog").textContent = "先捕获菜单（点NPC对话）"; return; }
@@ -11935,7 +12054,7 @@
         // V2.15.30：角色切档检测独立于 UI 渲染——后台标签（UI_BG）也执行，切换角色/重登必然切到该角色专属档
         try {
           var _pEnt = CLIENT.SS && CLIENT.SS.Entity;
-          if (_pEnt && _pEnt.GID != null && gidInt(_pEnt.GID) && gidInt(_pEnt.GID) !== lastCharGid) { try { onCharChanged(_pEnt); } catch (e2) {} }
+          if (_pEnt && _pEnt.GID != null && gidInt(_pEnt.GID) && (gidInt(_pEnt.GID) !== lastCharGid || charNameOf(_pEnt) !== lastCharName)) { try { onCharChanged(_pEnt); } catch (e2) {} }
         } catch (e3) {}
         // 登录角色后自动读取内挂配置（一次性，延迟等内挂窗口渲染，读不到重试）
         if (!autoReadBotDone) {

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.32.0
+// @version      2.32.1
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -66,7 +66,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.32.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.32.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
 
   // V2.11.0：仓库+背包读取全局变量
@@ -3494,13 +3494,21 @@
   } catch (e) {}
   function applyProfileUI() {
     try {
-      // V2.32.0：先按 PROF_CONTROLS 全部重置回默认，再回填 saved.ui——修「切到空档(新角色)时旧角色战斗设置残留」
+      // V2.32.1：重置回 HTML 默认值（checked/selected/value 属性），而非一刀切清空——修「防御瞬移总开关等默认勾选项被重置成关闭」
       for (var ri = 0; ri < PROF_CONTROLS.length; ri++) {
         var rid = PROF_CONTROLS[ri][0], rtp = PROF_CONTROLS[ri][1];
         var rel = $id(rid); if (!rel) continue;
-        if (rtp === "c") rel.checked = false;
-        else if (rel.tagName === "SELECT") { try { rel.selectedIndex = 0; } catch (e) {} }
-        else { try { rel.value = ""; } catch (e) {} }
+        if (rtp === "c") rel.checked = !!rel.defaultChecked;
+        else if (rel.tagName === "SELECT") {
+          try {
+            var defIdx = 0;
+            for (var oi2 = 0; oi2 < rel.options.length; oi2++) {
+              if (rel.options[oi2].defaultSelected) { defIdx = oi2; break; }
+            }
+            rel.selectedIndex = defIdx;
+          } catch (e) {}
+        }
+        else { try { rel.value = (rel.defaultValue != null ? rel.defaultValue : ""); } catch (e) {} }
       }
       var ui = saved.ui || {};
       for (var k in ui) {

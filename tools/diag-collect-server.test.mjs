@@ -66,3 +66,54 @@ test('durable command id, idempotent ack and restart recovery', async t => {
   const ledger=JSON.parse(await readFile(path.join(h.dir,'command-ledger.json'),'utf8'));
   assert.equal(ledger.commands[0].status,'succeeded');
 });
+
+test('cancelled acknowledgement is terminal and survives restart', async t => {
+  const h=await startHub(t);
+  const created=await (await post(h.base,'/api/cmd',{node:'worker-cancel',cmd:{do:'run',script:'farm_kill'}})).json();
+  const claimed=await (await post(h.base,'/api/node/report',{node:{id:'worker-cancel'}})).json();
+  assert.equal(claimed.cmd.commandId,created.commandId);
+  let ack=await (await post(h.base,'/api/cmd/ack',{node:'worker-cancel',commandId:created.commandId,ok:true,status:'running',msg:'started'})).json();
+  assert.equal(ack.status,'running');
+  ack=await (await post(h.base,'/api/cmd/ack',{node:'worker-cancel',commandId:created.commandId,ok:true,status:'cancelled',msg:'stopped'})).json();
+  assert.equal(ack.status,'cancelled');
+  const state=await (await fetch(h.base+'/api/node/state')).json();
+  const command=state.commands.find(c=>c.id===created.commandId);
+  assert.equal(command.status,'cancelled'); assert.ok(command.finishedAt); assert.equal(state.cmds['worker-cancel'],undefined);
+  const duplicate=await (await post(h.base,'/api/cmd/ack',{node:'worker-cancel',commandId:created.commandId,ok:false,msg:'late'})).json();
+  assert.equal(duplicate.status,'cancelled'); assert.equal(duplicate.duplicate,true);
+  const ledger=JSON.parse(await readFile(path.join(h.dir,'command-ledger.json'),'utf8'));
+  assert.equal(ledger.commands[0].status,'cancelled'); assert.ok(ledger.commands[0].finishedAt);
+});
+
+test('generic KV sync: last-write-wins, validation and durable store', async t => {
+  const h=await startHub(t);
+  // missing key -> value null, ts 0
+  let r=await (await fetch(h.base+'/api/kv/get?key=missing')).json();
+  assert.deepEqual(r,{ok:true,key:'missing',value:null,ts:0});
+  // invalid: no key / bad value / bad ts -> 400
+  assert.equal((await fetch(h.base+'/api/kv/get')).status,400);
+  assert.equal((await post(h.base,'/api/kv/save',{key:'',value:'x',ts:1})).status,400);
+  assert.equal((await post(h.base,'/api/kv/save',{key:'k',value:123,ts:1})).status,400);
+  assert.equal((await post(h.base,'/api/kv/save',{key:'k',value:'x',ts:'1'})).status,400);
+  // first write wins (no prior ts)
+  r=await (await post(h.base,'/api/kv/save',{key:'k',value:'v1',ts:10})).json();
+  assert.deepEqual(r,{ok:true,stored:true});
+  r=await (await fetch(h.base+'/api/kv/get?key=k')).json();
+  assert.deepEqual(r,{ok:true,key:'k',value:'v1',ts:10});
+  // older ts -> rejected (stored:false), value unchanged
+  r=await (await post(h.base,'/api/kv/save',{key:'k',value:'v2',ts:5})).json();
+  assert.deepEqual(r,{ok:true,stored:false});
+  r=await (await fetch(h.base+'/api/kv/get?key=k')).json();
+  assert.equal(r.value,'v1'); assert.equal(r.ts,10);
+  // newer ts -> overwrites
+  r=await (await post(h.base,'/api/kv/save',{key:'k',value:'v3',ts:20})).json();
+  assert.deepEqual(r,{ok:true,stored:true});
+  r=await (await fetch(h.base+'/api/kv/get?key=k')).json();
+  assert.deepEqual(r,{ok:true,key:'k',value:'v3',ts:20});
+  // durable store file matches { "<key>": { value, ts } }
+  const kv=JSON.parse(await readFile(path.join(h.dir,'kv-sync.json'),'utf8'));
+  assert.deepEqual(kv,{k:{value:'v3',ts:20}});
+  // wrong method on known route -> 405
+  assert.equal((await post(h.base,'/api/kv/get',{})).status,405);
+});
+

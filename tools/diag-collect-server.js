@@ -123,7 +123,9 @@ var ALLOWED_ORIGINS = {
   'http://127.0.0.1:8899': true,
   'http://localhost:8899': true,
   'https://post.lastro.cn': true,
-  'http://post.lastro.cn': true
+  'http://post.lastro.cn': true,
+  'https://game.lastro.cn': true,
+  'http://game.lastro.cn': true
 };
 function cors(req, res) {
   var origin = req.headers.origin;
@@ -387,6 +389,45 @@ var server = http.createServer(function (req, res) {
     } else {
       json(res, 200, { ok: true, accounts: Object.keys(db2) });
     }
+    return;
+  }
+
+  // 通用 KV 同步：GET /api/kv/get?key= 读 / POST /api/kv/save 写（last-write-wins）
+  // 数据落盘 diag-collect/kv-sync.json：{ "<key>": { value, ts } }
+  var KV_FILE = path.join(DIR, 'kv-sync.json');
+  function loadKvSync() { try { return JSON.parse(fs.readFileSync(KV_FILE, 'utf8')) || {}; } catch (e) { return {}; } }
+  function saveKvSync(d) { try { fs.writeFileSync(KV_FILE, JSON.stringify(d)); } catch (e) {} }
+  if (url === '/api/kv/get' && req.method === 'GET') {
+    var kq = require('url').parse(req.url, true).query;
+    var kkey = (typeof kq.key === 'string') ? kq.key : '';
+    if (!kkey) { json(res, 400, { ok: false, err: 'need key' }); return; }
+    var kdb = loadKvSync();
+    var kentry = kdb[kkey];
+    if (kentry && typeof kentry === 'object' && typeof kentry.value === 'string' && Number.isFinite(kentry.ts)) {
+      json(res, 200, { ok: true, key: kkey, value: kentry.value, ts: kentry.ts });
+    } else {
+      json(res, 200, { ok: true, key: kkey, value: null, ts: 0 });
+    }
+    return;
+  }
+  if (url === '/api/kv/save' && req.method === 'POST') {
+    readBody(req, res, function (body) {
+      var ksnap = null;
+      try { ksnap = JSON.parse(body); } catch (e) { json(res, 400, { ok: false, err: 'bad json' }); return; }
+      if (!ksnap || typeof ksnap.key !== 'string' || !ksnap.key) { json(res, 400, { ok: false, err: 'need key' }); return; }
+      if (typeof ksnap.value !== 'string') { json(res, 400, { ok: false, err: 'need string value' }); return; }
+      if (typeof ksnap.ts !== 'number' || !Number.isFinite(ksnap.ts)) { json(res, 400, { ok: false, err: 'need finite ts' }); return; }
+      var kdb = loadKvSync();
+      var kentry = kdb[ksnap.key];
+      var storedTs = (kentry && typeof kentry === 'object' && Number.isFinite(kentry.ts)) ? kentry.ts : -Infinity;
+      if (ksnap.ts > storedTs) {
+        kdb[ksnap.key] = { value: ksnap.value, ts: ksnap.ts };
+        saveKvSync(kdb);
+        json(res, 200, { ok: true, stored: true });
+      } else {
+        json(res, 200, { ok: true, stored: false });
+      }
+    });
     return;
   }
 
@@ -789,10 +830,10 @@ var server = http.createServer(function (req, res) {
       if (!c3) { json(res, 404, { ok: false, err: 'command not found' }); return; }
       var terminal = c3.status === 'succeeded' || c3.status === 'failed' || c3.status === 'cancelled';
       if (!terminal) {
-        c3.status = d3.ok === false ? 'failed' : (d3.status === 'running' ? 'running' : 'succeeded');
+        c3.status = d3.status === 'cancelled' ? 'cancelled' : d3.ok === false ? 'failed' : (d3.status === 'running' ? 'running' : 'succeeded');
         c3.msg = typeof d3.msg === 'string' ? d3.msg.slice(0, 1000) : '';
         c3.updatedAt = Date.now();
-        if (c3.status === 'succeeded' || c3.status === 'failed') c3.finishedAt = c3.updatedAt;
+        if (c3.status === 'succeeded' || c3.status === 'failed' || c3.status === 'cancelled') c3.finishedAt = c3.updatedAt;
         saveCommands();
         ev(d3.ok === false ? 'err' : 'ok', d3.node, (d3.ok === false ? '执行失败: ' : '执行更新: ') + c3.msg + ' [' + commandId + ']');
       }
@@ -857,7 +898,7 @@ var server = http.createServer(function (req, res) {
     });
     return;
   }
-  var known = ['/api/acct/report','/api/acct/state','/api/acct/server-online','/api/acct/accounts','/api/inv/save','/api/inv/clear','/api/inv/get','/api/node/report','/api/node/state','/api/worker','/api/cmd','/api/cmd/ack','/api/events','/api/script','/api/probe-collect','/api/acct/probe','/panel','/panel/','/acct'];
+  var known = ['/api/acct/report','/api/acct/state','/api/acct/server-online','/api/acct/accounts','/api/inv/save','/api/inv/clear','/api/inv/get','/api/kv/get','/api/kv/save','/api/node/report','/api/node/state','/api/worker','/api/cmd','/api/cmd/ack','/api/events','/api/script','/api/probe-collect','/api/acct/probe','/panel','/panel/','/acct'];
   if (known.indexOf(url) >= 0) json(res, 405, { ok: false, err: 'method not allowed' });
   else json(res, 404, { ok: false, err: 'not found' });
 });

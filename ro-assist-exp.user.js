@@ -1,0 +1,14272 @@
+// ==UserScript==
+// @name         仙境传说 · 原站插件模式（游戏助手 · 实验版）
+// @namespace    dsh.ro-plugin
+// @version      2.33.0
+// @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
+// @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
+// @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
+// @author       DSH
+// @match        http://post.lastro.cn/*
+// @match        https://post.lastro.cn/*
+// @match        http://post.lastro.cn/ro/api.html*
+// @match        https://post.lastro.cn/ro/api.html*
+// @match        http://post.lastro.cn/ro/api-old.html*
+// @match        https://post.lastro.cn/ro/api-old.html*
+// @match        http://game.lastro.cn/*
+// @match        https://game.lastro.cn/*
+// @match        http://game.lastro.cn/ro/api.html*
+// @match        https://game.lastro.cn/ro/api.html*
+// @run-at       document-idle
+// @grant        none
+// ==/UserScript==
+//
+// ---------------- V2.29.0 变更摘要 ----------------
+// 1a. 目标锁定条重做：demo 悬浮样式（8898 by-id 怪物头像贴图 + 渐变血条带数值 + Lv/种族/属性/形体/距离小字，无数据显示--），
+//     容器全透明零边框零背景可拖拽，位置存 saved；头像加载失败退化名字首字占位块。
+// 3.  healFirst 开关自 辅助页→自动吃药/物品 移至 助手模式→战斗设置（saved.healFirst 键不变，原位留提示行）。
+// 4.  快捷传送点改全局共享 localStorage dsh_ro_tp_global_v1：首次读取自动合并各角色档旧点（不删旧数据），
+//     window storage 事件跨标签页实时刷新；新增 fwReg 传送点悬浮条（点击直传，保持无确认）。
+// 5.  队伍血条重做：团本式职业色块 2 列矩阵（名字+HP 压块上、白字四向黑描边、选中=放大+光晕+名字变金），
+//     点击色块锁定该队友（写 zLock + 发一次 REQUEST_ACT action=7；拖拽位移>3px 不触发选中）。
+// 8.  攻击名单/本图怪物/掉落树按怪物ID加外链：「数量」→RO321 re_mob_db、「资料」→ro.dvg.cn monsterinfo。
+// 6.  tools/progress.mjs 8898 服务新增 GET /monster-sprites/by-id/<id>.png（前缀匹配 mob_<id>_*.png，未命中回 1x1 透明 png，id 仅数字防目录遍历）。
+
+// ---------------- V2.30.0 变更摘要 ----------------
+// 装备词条分色（鉴定浮层）：满值暖金 #ffd479 / 低值绿 #7ef0a8 / 中段紫 #c9a0ff / 固定效果暖金+「固定」标 / 无满值中性 / 超范围灰「未评级」。
+// 补齐 48 条词条中文名（200/201/202/204 + 301-344）+ 197 键满值表 ITIP_OPT_MAX；固定效果按 id 白名单判定（30 键：76-86/163/173/174/175-186/303-306）。
+// 190/191/192 与 117-126 沿用本地文案；分色常开无开关；新增 window.__dshCombinedActive 旗标。
+// ---------------- V2.31.0 变更摘要 ----------------
+// 1. 队友显血修复：正确区分 在线/离线/异图/死亡 四态（此前离线/异图/死亡一律显示成死亡红）。
+// 2. 自动 buff 关联自动战斗：开自动战斗才补 buff、关闭即停；新增「一键补 buff」组合快捷键（单键切换，与自动战斗同步启停）。
+// 3. 标题栏球按钮品红底修复：logo 球/关闭球/最小化球贴图由 BMP 换真透明 PNG（消除 #ff00ff 透明占位在浏览器 CSS 里被画成品红/粉的「红框」）。
+// ---------------- V2.32.0 变更摘要 ----------------
+// 换角色战斗设置切档修复 + game.lastro.cn @match + 跨入口本地 KV 互通（8899 中继，last-write-wins）。
+// ---------------- V2.32.2 变更摘要 ----------------
+// 1. 天使之赐福 buffid 统一处理：buffStId 加 CJK 归一化（之/的/·/空格），翻译名差异不再逐个补别名，并补 Blessing 别名与 SKILL_STATUS_SRC/MEASURED 表。
+// 2. 弹指气弹检测修复：气弹缓存 aid 取整对齐 + 补球节流封顶（防无限狂蓄气）+ 气弹自采集诊断（导出气弹诊断按钮）。
+// 3. 坐下优先：zAttack 加 isSitting 守卫，坐下回血期间不锁怪不攻击不追怪（修自动起身追怪）。
+// 4. 换图反向走加固：新图名连续稳定 1.2s 且坐标有效才认定换图，防瞬态误触反向走。
+// 5. 换角色切档双检测：角色名+GID 双比对（游戏内切角色 GID 不变也能切档）。
+// 6. 本地化方案 B：配置导出/导入按钮（跨入口/跨机器备份）。
+
+(function () {
+  "use strict";
+
+  // ---------------- 配置 ----------------
+  // 服务器选择（原站 initialize(nid) 机制）：ClientVer 3 = V6-Online[三转]，5 = V6-Eden[进阶二转]
+  // 默认进阶二转；URL 加 ?cv=3 可切回三转（如 api.html?69.32&cv=3）；也可用面板「线路」下拉切换
+  var CV_DEFAULT = 5;
+  var SERVER_NAMES = { 3: "V6-Online 三转", 5: "V6-Eden 进阶二转" };
+  var SERVER_IDS = [3, 5];
+  // 手机版检测：post.lastro.cn/?r=mn/index（同客户端 Online_mn.js + 同数据，触摸事件驱动）
+  var IS_MN = /[?&]r=mn/.test(location.search);
+  // 手机版页面路径：/?r=mn/index（PC 版为 /ro/api.html）
+  var MN_PATH = "/?r=mn/index";
+  var PC_PATH = "/ro/api.html";
+  var cvMatch = (location.search.match(/[?&]cv=(\d+)/) || [null, String(CV_DEFAULT)])[1];
+  // 生效线路：URL ?cv= 优先，其次面板保存的选择，最后默认二转
+  function pickCv() {
+    var u = parseInt(cvMatch, 10), s = saved && saved.server;
+    if (SERVER_IDS.indexOf(u) !== -1) return u;
+    if (SERVER_IDS.indexOf(s) !== -1) return s;
+    return CV_DEFAULT;
+  }
+  var LS_KEY = "dsh_ro_plugin_v1";
+  var VERSION_RE = /\?([0-9.]+)/;
+  var VER = "2.33.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
+
+  // V2.11.0：仓库+背包读取全局变量
+  var inventoryReadTimer = null; // 仓库读取定时器
+  var inventoryReadChar = null; // 触发读取时的角色名
+
+  // ---------------- 角色档案（V1.7.0：按「角色名_ID」分档存储 · OpenKore 风格）----------------
+  // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
+  var LOGIN_KEYS = ["account", "password", "server", "autoBoot"];
+  var PROF_KEY = "dsh_ro_profiles_v2";
+  var profiles = loadProfiles();
+  pruneProfiles(); // V2.8.9：启动即归并历史小数垃圾键（无损，只删重复档）
+  var activeCharKey = "default";
+  // V2.16.7：刷新后恢复上次活跃角色档（防 activeCharKey 重置 default → 面板用错档丢配置）
+  try { var _lastAk = localStorage.getItem("dsh_ro_last_active"); if (_lastAk && profiles[_lastAk]) activeCharKey = _lastAk; } catch (e) {}
+  var lastCharGid = null; // 已识别的主角色 GID（换角色自动切档）
+  var lastCharName = null; // V2.32.2 已识别角色名（游戏内切角色 GID 可能不变，加角色名双检测）
+  function activeProfileKey() { return activeCharKey; }
+  function setActiveProfile(k) { activeCharKey = k || "default"; try { localStorage.setItem("dsh_ro_last_active", activeCharKey); } catch (e) {} }
+  function loadProfiles() { try { return JSON.parse(localStorage.getItem(PROF_KEY)) || {}; } catch (e) { return {}; } }
+  function saveProfiles() { try { localStorage.setItem(PROF_KEY, JSON.stringify(profiles)); } catch (e) {} }
+  function ensureProfile(k) { if (!profiles[k]) profiles[k] = { name: k, gid: 0, saved: {}, lockList: {}, askList: [], lastAt: 0 }; return profiles[k]; }
+  // V2.8.9：lastro 自身实体 GID 是带随机小数的浮点（引擎自己用 parseInt 比较），
+  // 这里统一取整（Math.floor），非法/非正数返回 0，避免每秒拼出 name_GID.<小数> 的新档键。
+  function gidInt(v) { var n = Math.floor(Number(v)); return (isFinite(n) && n > 0) ? n : 0; }
+  // V2.32.2 角色名读取统一（换角色双检测：游戏内切角色 GID 可能不变，加角色名比对）
+  function charNameOf(ent) { try { return ((ent && ent.display && ent.display.name) || (ent && ent.displayName) || (ent && ent.name) || "") || ""; } catch (e) { return ""; } }
+  // V2.8.9：归并历史小数垃圾键（角色_2007018.9392906795 → 角色_2007018），同一基键只留 lastAt 最新的一份。
+  function pruneProfiles() {
+    try {
+      var keys = Object.keys(profiles);
+      if (!keys.length) return;
+      var groups = {}, changed = false;
+      for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        var base = String(k).replace(/\.\d+$/, ""); // 剥掉末尾 .<小数>
+        if (base !== k) changed = true;
+        if (!groups[base]) groups[base] = [];
+        groups[base].push(k);
+      }
+      if (!changed) return;
+      var out = {};
+      for (var b in groups) {
+        var list = groups[b];
+        var best = null, bestT = -1;
+        if (profiles[b]) { best = profiles[b]; bestT = (profiles[b].lastAt) || 0; } // 存在整数基键（真实档）优先保留，小数垃圾只作兜底
+        for (var j = 0; j < list.length; j++) {
+          var p = profiles[list[j]];
+          if (p === best) continue;
+          var t = (p && p.lastAt) || 0;
+          if (!best || t > bestT) { bestT = t; best = p; }
+        }
+        out[b] = best || {};
+      }
+      profiles = out;
+      saveProfiles();
+    } catch (e) {}
+  }
+  // 首次运行迁移：旧扁平 saved（去登录键）+ 旧锁定/自动技能 → default 档案
+  function ensureProfilesInit() {
+    if (Object.keys(profiles).length) return;
+    try {
+      var legacy = {};
+      try { legacy = JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch (e) {}
+      var saved0 = {}, glob0 = {};
+      for (var k in legacy) {
+        if (LOGIN_KEYS.indexOf(k) >= 0) glob0[k] = legacy[k];
+        else saved0[k] = legacy[k];
+      }
+      var lock0 = {}; try { lock0 = JSON.parse(localStorage.getItem("dsh_ro_locklist")) || {}; } catch (e) {}
+      var ask0 = []; try { ask0 = JSON.parse(localStorage.getItem("dsh_ro_asklist")) || []; } catch (e) {}
+      profiles["default"] = { name: "默认", gid: 0, saved: saved0, lockList: lock0, askList: ask0, lastAt: Date.now() };
+      try { localStorage.setItem(LS_KEY, JSON.stringify(glob0)); } catch (e) {}
+      saveProfiles();
+    } catch (e) {}
+  }
+  ensureProfilesInit();
+  var saved = loadSaved();
+  var DEFAULTS = {
+    application: "Online",
+    servers: "data/clientinfo.xml",
+    grfList: null,
+    remoteClient: "/ro/client_re/",
+    packetver: "auto",
+    development: false,
+    api: false,
+    socketProxy: "wss://port.lastro.cn/", // 原站 WS 代理（ClientVer 3 三转 / 5 进阶二转 均走此代理）
+    packetKeys: false,
+    saveFiles: true,
+    skipServerList: true,
+    skipIntro: true,
+    autoLogin: [],
+    clientHash: null,
+    plugins: { IntroMessagePc: {}, LoadingDonate: {} },
+    charBlockSize: 0,
+    BGMFileExtension: ["mp3"],
+    ClientVer: pickCv()
+  };
+  var LOCAL_DATA = "http://127.0.0.1:8973/ro/client_re/"; // 本地镜像（毫秒级，避免原站数据卡死）
+  var REMOTE_DATA = "/ro/client_re/";                        // 原站数据
+  var useLocalData = false;
+
+  function loadSaved() {
+    try {
+      var key = activeProfileKey();
+      var p = profiles[key] || profiles["default"] || {};
+      var o = {};
+      var src = p.saved || {};
+      for (var k in src) o[k] = src[k];
+      var g = {};
+      try { g = JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch (e) {}
+      for (var kg in g) { if (LOGIN_KEYS.indexOf(kg) >= 0) o[kg] = g[kg]; } // 全局登录键覆盖
+      return o;
+    } catch (e) { return {}; }
+  }
+  // 保存分流：登录键→全局存储；其余→当前角色档案（含 lockList/askList 快照）
+  function saveSaved(o) {
+    try {
+      var g = o || saved;
+      if (!g) return;
+      var glob = {}, prof = {};
+      for (var k in g) {
+        if (LOGIN_KEYS.indexOf(k) >= 0) glob[k] = g[k];
+        else prof[k] = g[k];
+      }
+      var oldG = {};
+      try { oldG = JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch (e) {}
+      for (var k2 in glob) oldG[k2] = glob[k2];
+      try { localStorage.setItem(LS_KEY, JSON.stringify(oldG)); } catch (e) {}
+      var key = activeProfileKey();
+      ensureProfile(key);
+      var p = profiles[key];
+      for (var kp in prof) p.saved[kp] = prof[kp];
+      p.lockList = (typeof lockList !== "undefined" && lockList) || (p.lockList || {});
+      p.askList = (typeof askList !== "undefined" && askList) || (p.askList || []);
+      p.lastAt = Date.now();
+      saveProfiles();
+    } catch (e) {}
+  }
+
+  var version = (location.href.match(VERSION_RE) || [null, "69.32"])[1];
+
+  // ---------------- 状态 ----------------
+  var state = {
+    ready: false,
+    bootedByWrapper: false,
+    bootedByPlugin: false,
+    account: null
+  };
+
+  // ---------------- 遥测（诊断用，仅发往本机 127.0.0.1:8973）----------------
+  function tlog(msg) {
+    try {
+      var ver = "?";
+      try { if (typeof GM_info !== "undefined" && GM_info && GM_info.script) ver = GM_info.script.version; } catch (e) {}
+      var u = "http://127.0.0.1:8973/plugin/log?msg=" + encodeURIComponent("[v" + ver + "] " + msg);
+      if (typeof fetch === "function") { fetch(u, { mode: "no-cors" }).catch(function () {}); }
+      var img = new Image();
+      img.src = u;
+    } catch (e) {}
+  }
+
+  // ---------------- 客户端启动 ----------------
+  function buildConfig() {
+    var cfg = {};
+    var k;
+    for (k in DEFAULTS) cfg[k] = DEFAULTS[k];
+    cfg.version = version;
+    cfg.remoteClient = useLocalData ? LOCAL_DATA : REMOTE_DATA;
+    if (window.__dshRunAcct && window.__dshRunPwd) {
+      // 兼容旧多开窗口注入（V1.6.18 已取消多账号 UI，此处保留旧窗口兜底；V1.7.0 起设置按角色分档）
+      cfg.autoLogin = [window.__dshRunAcct, window.__dshRunPwd];
+    } else if (saved.account && saved.password) {
+      // 中转确认机制：默认打开页面不自动登录（避免把中转页/当前会话的账号挤掉）。
+      // 仅显式操作才注入 autoLogin：
+      //   ?auto=1 → 顶部登录框「保存并自动登录」「中转确认后登录」显式入口（用户已在中转页确认）
+      //   saved.autoBoot === true → 恢复旧行为（打开即自动登录，可选）
+      var wantAuto = /[?&](run|auto)=/.test(location.search) || saved.autoBoot === true;
+      if (wantAuto) cfg.autoLogin = [saved.account, saved.password];
+    }
+    return cfg;
+  }
+
+  // 探测本地数据服务器是否可用（带 1.5s 超时），可用则数据走本地（秒开，不卡加载）
+  function detectDataServer(cb) {
+    try {
+      var xhr = new XMLHttpRequest();
+      xhr.open("GET", LOCAL_DATA + "data/clientinfo.xml", true);
+      xhr.timeout = 1500;
+      xhr.onload = function () {
+        useLocalData = xhr.status === 200 && xhr.responseText.indexOf("clientinfo") !== -1;
+        if (useLocalData) setStatus("本地数据源（加载秒开）", "ok");
+        tlog("detect=" + (useLocalData ? "local" : "remote-fallback") + " status=" + xhr.status);
+        cb();
+      };
+      xhr.onerror = function () { useLocalData = false; tlog("detect=error"); cb(); };
+      xhr.ontimeout = function () { useLocalData = false; tlog("detect=timeout"); cb(); };
+      xhr.send();
+    } catch (e) { useLocalData = false; cb(); }
+  }
+
+  function boot() {
+    if (state.ready || state.bootedByWrapper || state.bootedByPlugin) return;
+    state.bootedByPlugin = true;
+    var cfg = buildConfig();
+    tlog("post-config source=" + (useLocalData ? "local" : "remote") + " version=" + version + " clientver=" + cfg.ClientVer + " autoLogin=" + (cfg.autoLogin.length ? "yes" : "no"));
+    var already = false;
+    try {
+      var scripts = document.getElementsByTagName("script");
+      for (var i = 0; i < scripts.length; i++) {
+        if (/Online(_mn)?\.js/.test(scripts[i].src)) { already = true; break; }
+      }
+    } catch (e) {}
+    if (!already) {
+      var directInjected = false;
+      try {
+        window.ROConfig = cfg;
+        var app = document.createElement("script");
+        app.type = "text/javascript";
+        app.src = "Online.js?" + version;
+        document.getElementsByTagName("head")[0].appendChild(app);
+        directInjected = true;
+        setStatus("已注入配置，正在启动客户端…");
+      } catch (e) {
+        tlog("inject-error " + (e && e.message));
+      }
+      if (!directInjected) {
+        setTimeout(function () {
+          if (!state.ready) {
+            window.postMessage(cfg, "*");
+            tlog("postMessage-fallback");
+          }
+        }, 1200);
+      }
+    }
+  }
+
+  // ---------------- 工具 ----------------
+  var $ = function (tag, cls, html) {
+    var el = document.createElement(tag);
+    if (cls) el.className = cls;
+    if (html !== undefined) el.innerHTML = html;
+    return el;
+  };
+  var $id = function (id) { return document.getElementById(id); };
+
+  // 通用拖拽排序：给容器内的 .drag-item 行启用 HTML5 拖拽重排，完成后回调 onReorder(旧索引,新索引)
+  function enableDragSort(container, onReorder) {
+    if (!container) return;
+    if (container._dragBound) return; // 已绑定过（容器不重建，防重复监听）
+    container._dragBound = true;
+    container.addEventListener("dragstart", function (e) {
+      var row = e.target.closest ? e.target.closest(".drag-item") : null;
+      if (!row) return;
+      row.classList.add("dragging");
+      try { e.dataTransfer.setData("text/plain", row.getAttribute("data-drag-i") || ""); } catch (ex) {}
+      e.dataTransfer.effectAllowed = "move";
+    });
+    container.addEventListener("dragover", function (e) {
+      var row = e.target.closest ? e.target.closest(".drag-item") : null;
+      if (!row || row.classList.contains("dragging")) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      var rect = row.getBoundingClientRect();
+      var after = e.clientY > rect.top + rect.height / 2;
+      container.insertBefore(document.querySelector(".dragging"), after ? row.nextSibling : row);
+    });
+    container.addEventListener("drop", function (e) {
+      e.preventDefault();
+      var drag = container.querySelector(".dragging");
+      if (!drag) return;
+      var from = parseInt(drag.getAttribute("data-drag-i"), 10);
+      var rows = container.querySelectorAll(".drag-item");
+      var to = 0;
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i] === drag) { to = i; break; }
+      }
+      drag.classList.remove("dragging");
+      if (from !== to && typeof onReorder === "function") onReorder(from, to);
+    });
+    container.addEventListener("dragend", function () {
+      var d = container.querySelector(".dragging");
+      if (d) d.classList.remove("dragging");
+    });
+  }
+
+  // ---------------- 客户端访问 ----------------
+  var CLIENT = { SS: null, NM: null, PS: null, MR: null, DB: null, UI: null, EM: null, hooked: false };
+  function clientReady() {
+    try {
+      if (!window.require) return false;
+      if (!CLIENT.SS) CLIENT.SS = window.require("Engine/SessionStorage");
+      if (!CLIENT.NM) CLIENT.NM = window.require("Network/NetworkManager");
+      if (!CLIENT.PS) CLIENT.PS = window.require("Network/PacketStructure");
+      return !!(CLIENT.SS && CLIENT.NM && CLIENT.NM.sendPacket && CLIENT.PS);
+    } catch (e) { return false; }
+  }
+  function getMapName() {
+    try {
+      if (!CLIENT.MR) CLIENT.MR = window.require && window.require("Renderer/MapRenderer");
+      var cur = CLIENT.MR && CLIENT.MR.currentMap;
+      if (cur) return cur;
+      if (CLIENT.DB) {
+        var nm = CLIENT.DB.getMapName && CLIENT.DB.getMapName(cur);
+        return nm || cur || "";
+      }
+      return cur || "";
+    } catch (e) { return ""; }
+  }
+  // 地图名口径规范化：去 .rsw/.gat 扩展名 + 去 map_ 前缀 + 转小写（V2.16.11 统一换图/传送比较口径）
+  function normMapKey(m) {
+    if (m == null) return "";
+    return String(m).replace(/\.(rsw|gat)$/i, "").replace(/^map_/i, "").toLowerCase();
+  }
+  // V2.13.0：当前地图中文名（显示用；getMapName 保留返回原始 key 供逻辑使用）
+  function getMapNameCn() {
+    try {
+      var raw = getMapName();
+      if (!raw) return "";
+      var key = String(raw).replace(/\.gat$/i, "").toLowerCase();
+      var nm = "";
+      try { if (CLIENT.DB && typeof CLIENT.DB.getMapName === "function") nm = CLIENT.DB.getMapName(key) || ""; } catch (e) {}
+      if (!nm || nm === key) {
+        try {
+          var DB = CLIENT.DB || requireDB("DB/DBManager");
+          var wd = DB && typeof DB.getworldData === "function" ? DB.getworldData(key) : null;
+          if (wd && wd.name) nm = wd.name;
+        } catch (e) {}
+      }
+      return nm || raw;
+    } catch (e) { return ""; }
+  }
+  function getJobName(jobId) {
+    try {
+      var map = { 0: "初学者", 1: "剑士", 2: "魔法师", 3: "弓箭手", 4: "服事", 5: "商人", 6: "盗贼", 7: "骑士", 8: "牧师", 9: "巫师", 10: "铁匠", 11: "猎人", 12: "刺客", 13: "骑士", 14: "十字军", 15: "武僧", 16: "贤者", 17: "流氓", 18: "炼金术士", 19: "诗人", 20: "舞者", 4001: "进阶初学者", 4002: "进阶剑士", 4003: "进阶魔法师", 4004: "进阶弓箭手", 4005: "进阶服事", 4006: "进阶商人", 4007: "进阶盗贼", 4008: "骑士领主", 4009: "神官", 4010: "超魔导师", 4011: "神工匠", 4012: "神射手", 4013: "十字刺客", 4015: "武宗", 4016: "智者", 4017: "神行太保", 4018: "创造者", 4019: "搞笑艺人", 4020: "冷艳舞姬" };
+      return map[jobId] || String(jobId);
+    } catch (e) { return String(jobId); }
+  }
+  function requireDB(name) {
+    try {
+      if (!window.require) return null;
+      return window.require(name);
+    } catch (e) { return null; }
+  }
+
+  // ---------------- 技能名 / 怪物名 / 物品名（客户端模块）----------------
+  var _skillInfoCache = null;
+  // 被动技能判定：SKILLINFO_LIST 的 type 字段（0=被动，1=主动），与 SkillList 组件一致
+  function isPassiveSkill(skid) {
+    try {
+      var DB = CLIENT.DB || requireDB("DB/DBManager");
+      var si = DB && typeof DB.getSkillInfo === "function" && DB.getSkillInfo(skid);
+      if (si && si.type != null) return !si.type;
+    } catch (e) {}
+    try {
+      if (!_skillInfoCache) _skillInfoCache = requireDB("DB/Skills/SkillInfo");
+      var s = _skillInfoCache && _skillInfoCache[skid];
+      if (s && s.type != null) return !s.type;
+      // 无 type 字段时回退：SpAmount 全 0 视为被动（武器研究/钢制喙/天使之护等）
+      if (s && Array.isArray(s.SpAmount) && s.SpAmount.length) {
+        var allZero = true;
+        for (var i = 0; i < s.SpAmount.length; i++) if (s.SpAmount[i] !== 0) { allZero = false; break; }
+        if (allZero) return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+  function getSkillNameById(skid) {
+    try {
+      // 优先 DBManager.getSkillInfo（vbk 同款）
+      var DB = CLIENT.DB || requireDB("DB/DBManager");
+      var si = DB && typeof DB.getSkillInfo === "function" && DB.getSkillInfo(skid);
+      if (si && (si.SkillName || si.name || si.Name)) return si.SkillName || si.name || si.Name;
+    } catch (e) {}
+    try {
+      if (!_skillInfoCache) _skillInfoCache = requireDB("DB/Skills/SkillInfo");
+      var s = _skillInfoCache && _skillInfoCache[skid];
+      if (s && s.SkillName) return s.SkillName;
+      if (s && s.Name) return s.Name;
+    } catch (e) {}
+    return null;
+  }
+  // 技能攻击射程：按等级取 AttackRange（默认1格近战）
+  function getSkillRange(skid, lv) {
+    try {
+      var DB = CLIENT.DB || requireDB("DB/DBManager");
+      var si = DB && typeof DB.getSkillInfo === "function" && DB.getSkillInfo(skid);
+      var range = null;
+      if (si) {
+        var ar = si.AttackRange || si.attackRange || si.Range;
+        if (Array.isArray(ar)) range = ar[Math.min((lv || 1) - 1, ar.length - 1)];
+        else if (typeof ar === "number") range = ar;
+        else if (ar != null) range = parseInt(ar, 10) || null;
+      }
+      if (range == null && !si) {
+        if (!_skillInfoCache) _skillInfoCache = requireDB("DB/Skills/SkillInfo");
+        var s = _skillInfoCache && _skillInfoCache[skid];
+        if (s) {
+          var ar2 = s.AttackRange || s.attackRange || s.Range;
+          if (Array.isArray(ar2)) range = ar2[Math.min((lv || 1) - 1, ar2.length - 1)];
+          else if (typeof ar2 === "number") range = ar2;
+          else if (ar2 != null) range = parseInt(ar2, 10) || null;
+        }
+      }
+      if (range == null) range = 1; // 默认近战
+      return range;
+    } catch (e) { return 1; }
+  }
+  var _mobDbCache = null;
+  function getMobDb() {
+    try {
+      if (!_mobDbCache) _mobDbCache = requireDB("DB/Mobs/mob_db");
+      if (!_mobDbCache) {
+        var DB = CLIENT.DB || requireDB("DB/DBManager");
+        if (DB && DB.mob_db) _mobDbCache = DB.mob_db;
+        else if (DB && DB.MobDB) _mobDbCache = DB.MobDB;
+      }
+      return _mobDbCache;
+    } catch (e) { return null; }
+  }
+  function getMobName(mid) {
+    try {
+      var mob = getMobDb();
+      var m = mob && mob[mid];
+      return (m && (m.kName || m.name)) || null;
+    } catch (e) { return null; }
+  }
+  function getItemName(itemid) {
+    try {
+      var DB = CLIENT.DB || requireDB("DB/DBManager");
+      if (!DB || typeof DB.getItemInfo !== "function") return null;
+      var info = DB.getItemInfo(itemid);
+      return (info && (info.identifiedDiSPlayName || info.name)) || null;
+    } catch (e) { return null; }
+  }
+
+  // ============================================================
+  //  面板（分页式 · v1.6 重构）
+  // ============================================================
+  var PANEL_CSS =
+    ":root{--dsh-primary:#2f6fde;--dsh-primary-dark:#1d4ed8;--dsh-success:#1f9d4d;--dsh-danger:#d64545;--dsh-warning:#c77a00;--dsh-text:#16202c;--dsh-muted:#5a6b7f;--dsh-border:#c7d3e6;--dsh-surface:#f4f7fc;--dsh-surface-2:#eef2f8;--dsh-radius:6px;--dsh-gap:8px}" +
+    "#dsh-ro-panel{position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:2147483647;width:400px;height:640px;min-width:300px;min-height:360px;max-height:92vh;" +
+    "background:rgba(244,247,252,.93);border:2px solid #1f9d4d;border-radius:12px;color:#16202c;" +
+    "font:13px/1.6 'Microsoft YaHei',system-ui,sans-serif;" +
+    "box-shadow:0 0 0 3px rgba(31,157,77,.35),0 10px 32px rgba(0,0,0,.55);display:flex;flex-direction:column;overflow:hidden}" +
+    "#dsh-ro-panel .hd{padding:8px 12px;border-bottom:1px solid #c7d3e6;display:flex;justify-content:space-between;align-items:center;cursor:move;background:linear-gradient(135deg,#2f6fde,#1d4ed8);color:#fff;flex:none}" +
+    "#dsh-ro-panel .hd b{color:#fff;font-weight:700;font-size:14px}" +
+    "#dsh-ro-panel .hd .hbtns{display:flex;align-items:center;gap:6px}" +
+    "#dsh-ro-panel .hd .hbtn{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:6px;padding:2px 8px;font-size:13px;cursor:pointer;font-weight:600}" +
+    "#dsh-ro-panel .hd .hbtn:hover{background:rgba(255,255,255,.3)}" +
+    "#dsh-ro-panel .tabs{display:flex;background:rgba(221,229,241,.9);border-bottom:1px solid #c7d3e6;flex:none;padding:4px 6px 0;gap:2px;overflow-x:auto;scrollbar-width:thin}" +
+    "#dsh-ro-panel .tab{flex:none;padding:5px 10px 6px;border-radius:8px 8px 0 0;cursor:pointer;font-size:13px;color:#4a5b76;background:transparent;border:none;border-bottom:2px solid transparent;white-space:nowrap}" +
+    "#dsh-ro-panel .tab:hover{background:rgba(255,255,255,.5);color:#1d4ed8}" +
+    "#dsh-ro-panel .tab.active{background:rgba(244,247,252,.93);color:#1d4ed8;font-weight:700;border-bottom-color:#1d4ed8}" +
+    "#dsh-ro-panel .statbar{display:flex;align-items:center;gap:6px;flex:none;padding:4px 10px;background:rgba(255,255,255,.88);border-bottom:1px solid #d3dff0;font-size:12px;color:#3c4d66;flex-wrap:wrap;white-space:nowrap}" +
+    "#dsh-ro-panel .statbar .nm{font-weight:700;color:#16202c}" +
+    "#dsh-ro-panel .statbar .job{color:#5a6b7f}" +
+    "#dsh-ro-panel .statbar .lv{color:#1259b3;font-weight:700}" +
+    "#dsh-ro-panel .statbar .bar{display:inline-flex;align-items:center;gap:3px}" +
+    "#dsh-ro-panel .statbar .bar .bg{width:40px;height:7px;border-radius:4px;background:#e5eaf3;overflow:hidden;display:inline-block}" +
+    "#dsh-ro-panel .statbar .bar .hp{display:block;height:100%;background:linear-gradient(90deg,#ef4444,#f87171)}" +
+    "#dsh-ro-panel .statbar .bar .sp{display:block;height:100%;background:linear-gradient(90deg,#2f6fde,#60a5fa)}" +
+    "#dsh-ro-panel .statbar .bar .bnum{color:#3c4d66;font-variant-numeric:tabular-nums}" +
+    "#dsh-ro-panel .statbar .warn{color:#d97706}.statbar .warn.hot{color:#dc2626;font-weight:700}" +
+    "#dsh-ro-panel .statbar .zeny{color:#b45309;font-weight:700}" +
+    "#dsh-ro-panel .pages{flex:auto;min-height:0;overflow-y:auto;padding:16px 22px 20px}" +
+    "#dsh-ro-panel .page{display:none}" +
+    "#dsh-ro-panel .page.active{display:block}" +
+    "#dsh-ro-panel .sub-tabs{display:flex;gap:2px;margin:2px 0 8px;border-bottom:1px solid #c7d3e6}" +
+    "#dsh-ro-panel .sub-tab{flex:none;padding:3px 12px 4px;border-radius:8px 8px 0 0;cursor:pointer;font-size:13px;color:#4a5b76;background:rgba(227,234,244,.9);border:1px solid #c7d3e6;border-bottom:none;font-weight:600}" +
+    "#dsh-ro-panel .sub-tab:hover{background:#eef2f8}" +
+    "#dsh-ro-panel .sub-tab.active{background:rgba(255,255,255,.9);color:#1d4ed8;border-bottom:2px solid #1d4ed8}" +
+    "#dsh-ro-panel .sub-page{display:none}" +
+    "#dsh-ro-panel .sub-page.active{display:block}" +
+    "#dsh-ro-panel .a-layout{display:flex;gap:8px;align-items:stretch}" +
+    "#dsh-ro-panel .a-nav{flex:none;display:flex;flex-direction:column;gap:4px;width:78px}" +
+    "#dsh-ro-panel .a-nav .sub-tab{flex:none;padding:7px 8px;text-align:left;border-radius:6px;background:rgba(227,234,244,.92);border:1px solid #c7d3e6;font-weight:600;font-size:12px;line-height:1.35;white-space:normal}" +
+    "#dsh-ro-panel .a-nav .sub-tab.active{background:rgba(255,255,255,.97);color:#1d4ed8;border:1px solid #1d4ed8;border-left:3px solid #1f9d4d}" +
+    "#dsh-ro-panel .a-body{flex:auto;min-width:0}" +
+    "#dsh-ro-panel .sec{margin:12px 0 6px;font-size:12px;color:#1259b3;font-weight:700;border-left:3px solid #2f6fde;padding-left:8px;line-height:1.5}" +
+    "#dsh-ro-panel .sec:first-child{margin-top:0}" +
+    // V2.22.0 UI 统一层：行分隔灰线（对齐功能菜单 .ro-row）+ 列表行/联想下拉/折叠标题统一
+    "#dsh-ro-panel .row{margin:0;padding:6px 2px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #e6ebf2}" +
+    "#dsh-ro-panel .row:last-child{border-bottom:0}" +
+    "#dsh-ro-panel .row>.st{color:#6b7a90;font-size:12px}" +
+    "#dsh-ro-panel .prow{display:flex;align-items:center;gap:6px;padding:6px 2px;border-bottom:1px solid #e2e2e2;font-size:12px;color:#3c4d66}" +
+    "#dsh-ro-panel .prow:last-child{border-bottom:0}" +
+    "#dsh-ro-panel .prow:hover{background:#f3f7fd}" +
+    "#dsh-ro-panel .prow.sel{background:#e8f1ff}" +
+    "#dsh-ro-panel .prow .pidx{flex:none;min-width:16px;text-align:right;color:#9db1cc;font-size:11px}" +
+    "#dsh-ro-panel .prow .pnm{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+    "#dsh-ro-panel .skgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 10px;max-height:180px;overflow:auto}" +
+    "#dsh-ro-panel .skgrid .list-item{min-width:0;padding:5px 2px}" +
+    "#dsh-ro-panel .skgrid .switch{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+    "#dsh-ro-panel #dsh-skillorderlist,#dsh-ro-panel #dsh-asklist{max-height:132px;overflow:auto}" +
+    "#dsh-ro-panel .ac{position:absolute;top:calc(100% + 3px);left:0;right:0;z-index:99;background:#fff;border:1px solid #b8c6d4;border-radius:6px;max-height:180px;overflow:auto;box-shadow:0 3px 8px rgba(0,0,0,.18)}" +
+    "#dsh-ro-panel details>summary{list-style:none;cursor:pointer;padding:5px 2px;border-bottom:1px solid #e6ebf2;color:#1259b3;font-size:12px}" +
+    "#dsh-ro-panel details>summary::-webkit-details-marker{display:none}" +
+    "#dsh-ro-panel details>summary::before{content:'▸ ';color:#7d93b3}" +
+    "#dsh-ro-panel details[open]>summary::before{content:'▾ ';color:#2f6fde}" +
+    "#dsh-ro-panel .row .lb{color:#5a6b7f;flex:none;min-width:50px}" +
+    "#dsh-ro-panel input[type=text],#dsh-ro-panel input[type=password],#dsh-ro-panel input[type=number],#dsh-ro-panel select{flex:1;min-width:0;background:rgba(255,255,255,.9);border:1px solid #b9c4d4;color:#16202c;border-radius:5px;padding:3px 6px;font-size:13px;outline:none;font-family:inherit}" +
+    "#dsh-ro-panel textarea{width:100%;background:rgba(255,255,255,.9);border:1px solid #b9c4d4;color:#16202c;border-radius:5px;padding:4px 6px;font-size:12px;resize:vertical;outline:none;font-family:Consolas,'Microsoft YaHei',monospace;line-height:1.5}" +
+    "#dsh-ro-panel button{background:#2f6fde;color:#fff;border:1px solid #1f5cc9;border-radius:6px;padding:3px 9px;font-size:13px;cursor:pointer;font-weight:600;font-family:inherit}" +
+    "#dsh-ro-panel button:hover{background:#3d7de8}" +
+    "#dsh-ro-panel button.green{background:#1f9d4d;border-color:#17793a}#dsh-ro-panel button.green:hover{background:#26b25a}" +
+    "#dsh-ro-panel button.red{background:#d64545;border-color:#b33535}" +
+    "#dsh-ro-panel button.ghost{background:rgba(238,242,248,.92);color:#2a3a52;border-color:#c8d4e4}#dsh-ro-panel button.ghost:hover{background:#e2e9f4}" +
+    "#dsh-ro-panel .box{background:rgba(255,255,255,.88);border:1px solid #dce4f0;border-radius:8px;padding:8px 10px;margin:7px 0}" +
+    "#dsh-ro-panel .box .b-hd{font-size:12px;color:#1259b3;font-weight:700;margin-bottom:3px}" +
+    "#dsh-ro-panel .list-item{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:12px;color:#3c4d66;padding:6px 2px;border-bottom:1px solid #e2e2e2}" +
+    "#dsh-ro-panel .list-item:hover{background:#f3f7fd}" +
+    "#dsh-ro-panel .drag-item{cursor:grab;user-select:none;background:rgba(255,255,255,.85)}" +
+    "#dsh-ro-panel .drag-item.dragging{opacity:.5;background:#e6f0ff}" +
+    "#dsh-ro-panel .drag-item .dh{color:#9db1cc;margin-right:4px;font-size:13px;flex:none}" +
+    "#dsh-ro-panel .list-item:last-child{border-bottom:none}" +
+    "#dsh-ro-panel .log{font-size:11px;color:#7a879b;background:rgba(238,242,248,.9);border-radius:5px;padding:3px 7px;margin-top:4px}" +
+    "#dsh-ro-panel .st{color:#5a6b7f}" +
+    "#dsh-ro-panel .ok{color:#1a8a3a}#dsh-ro-panel .warn{color:#c77a00}#dsh-ro-panel .err{color:#d93025}" +
+    "#dsh-ro-panel .switch{display:inline-flex;align-items:center;gap:4px;cursor:pointer;color:#3c4d66;font-size:13px}" +
+    "#dsh-ro-panel .switch input{accent-color:#2f6fde;width:13px;height:13px;flex:none}" +
+    "#dsh-ro-panel .tag{font-size:11px;color:#fff;background:#64748b;border-radius:999px;padding:0 7px;flex:none}" +
+    "#dsh-ro-panel .tag.blue{background:#2f6fde}#dsh-ro-panel .tag.green{background:#1f9d4d}#dsh-ro-panel .tag.red{background:#c0392b}" +  // V2.24.0 首领标记
+    "#dsh-ro-panel [style*=\"font-size:10px;\"]{font-size:11px!important}" +
+    "#dsh-ro-panel [style*=\"font-size:11px;\"]{font-size:12px!important}" +
+    "#dsh-ro-panel [style*=\"font-size:12px;\"]{font-size:13px!important}" +
+    "#dsh-ro-panel .status{flex:none;display:flex;align-items:center;gap:6px;font-size:12px;background:rgba(232,237,245,.92);border-top:1px solid #d4dcea;padding:4px 12px;color:#4a5b76}" +
+    "#dsh-ro-panel .status .dot{width:8px;height:8px;border-radius:50%;background:#22c55e;flex:none}" +
+    "#dsh-ro-panel .resize-h{position:absolute;right:0;bottom:0;width:20px;height:20px;cursor:nwse-resize;z-index:5;display:flex;align-items:flex-end;justify-content:flex-end;padding:4px}" +
+    "#dsh-ro-panel .resize-h::after{content:'';display:block;width:9px;height:9px;border-right:2px solid #7d93b3;border-bottom:2px solid #7d93b3;border-bottom-right-radius:3px;opacity:.8}" +
+    "#dsh-ro-panel .resize-h:hover::after{border-color:#1d4ed8}" +
+    // V2.17.2 悬浮球：波利 GIF（41x39 / 4 帧动图 / 16 色，base64 内嵌保持动画）+ 右下角「助」字角标
+    "#dsh-ball{position:fixed;right:28px;bottom:80px;z-index:2147483647;width:56px;height:56px;display:flex;align-items:center;justify-content:center;cursor:grab;background:none;border:0;box-shadow:none;opacity:.92;transition:transform .15s,opacity .15s}" +
+    "#dsh-ball:hover{transform:scale(1.08);opacity:1}" +
+    "#dsh-ball img{display:block;width:46px;height:44px;image-rendering:pixelated;filter:drop-shadow(0 2px 4px rgba(0,0,0,.65));pointer-events:none;-webkit-user-drag:none}" +
+    "#dsh-ball .zhu{position:absolute;right:-2px;bottom:-2px;width:20px;height:20px;border-radius:50%;background:linear-gradient(160deg,#f0a0b8,#d1567c);border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.6);color:#fff;font:700 11px/16px 'Microsoft YaHei',Arial,sans-serif;text-align:center;text-shadow:0 1px 1px rgba(0,0,0,.5);pointer-events:none}" +
+    "#dsh-ball .dot{position:absolute;top:2px;right:2px;width:10px;height:10px;border-radius:50%;background:#22c55e;border:2px solid #fff;box-shadow:0 1px 2px rgba(0,0,0,.5)}" +
+    "#dsh-mini{position:fixed;top:12px;right:12px;z-index:2147483647;display:block;background:#2f6fde;border:1px solid #1f5cc9;color:#fff;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600}" +
+    "#dsh-mini:hover{background:#3d7de8}" +
+    // 侧边抽屉（V1.7.0：战斗页/技能页的 内挂模式/助手模式 配置块滑入右侧抽屉）
+    "#dsh-ro-panel .drow{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 6px}" +
+    "#dsh-ro-panel .dbtn{flex:1 1 auto;min-width:104px;padding:9px 6px;border-radius:8px;border:1px solid #1f9d4d;background:rgba(31,157,77,.1);color:#166534;font-weight:700;font-size:13px;cursor:pointer}" +
+    "#dsh-ro-panel .dbtn:active{background:rgba(31,157,77,.24)}" +
+    "#dsh-ro-panel #dsh-drawer{position:absolute;top:0;right:0;bottom:0;width:min(96%,340px);background:#f4f7fc;z-index:41;display:flex;flex-direction:column;transform:translateX(103%);transition:transform .22s ease;border-left:2px solid #1f9d4d;box-shadow:-6px 0 18px rgba(30,50,90,.28)}" +
+    "#dsh-ro-panel #dsh-drawer.open{transform:translateX(0)}" +
+    "#dsh-ro-panel #dsh-drawer .d-hd{flex:none;display:flex;align-items:center;gap:8px;padding:6px 10px;background:#1f9d4d;color:#fff;font-weight:700;font-size:13px}" +
+    "#dsh-ro-panel #dsh-drawer .d-main{flex:1 1 auto;display:flex;min-height:0}" +
+    "#dsh-ro-panel #dsh-drawer .d-rail{flex:none;display:flex;flex-direction:column;gap:8px;padding:8px 6px;background:#eaf1f8;border-right:1px solid #d9e3ee}" +
+    "#dsh-ro-panel #dsh-drawer .d-rail button{flex:none;padding:8px 5px;font-size:13px;font-weight:700;border-radius:6px}" +
+    "#dsh-ro-panel #dsh-drawer .d-body{flex:1 1 auto;overflow:auto;padding:14px 20px 18px}" +
+    // 可见滚动条 + 手机惯性滚动（内容区长，浏览器默认滚动条太细/隐藏 → 用户以为滚不动）
+    // 滚动条双兼容：scrollbar-color（Firefox/新版 Chrome）+ ::-webkit-scrollbar（老 Chrome/Safari），均为绿色。
+    // V2.6.0 第三轮：轨道底色去掉（rgba(31,157,77,.08) 整条浅绿带被误认"全框填充"），只留滑块；滑块 10→12px、min-height 44px，更醒目。
+    // 不写 scrollbar-width:thin（会让 Chrome 只用标准属性、thumb 变细）；去掉 scrollbar-gutter 避免常驻空轨道被误认成额外图层。
+    "#dsh-ro-panel .pages,#dsh-ro-panel #dsh-drawer .d-body{scrollbar-color:#1f9d4d transparent;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}" +
+    "#dsh-ro-panel .pages::-webkit-scrollbar,#dsh-ro-panel #dsh-drawer .d-body::-webkit-scrollbar{width:12px;height:12px}" +
+    "#dsh-ro-panel .pages::-webkit-scrollbar-thumb,#dsh-ro-panel #dsh-drawer .d-body::-webkit-scrollbar-thumb{background:#1f9d4d;border:3px solid rgba(244,247,252,.9);border-radius:8px;min-height:44px}" +
+    "#dsh-ro-panel .pages::-webkit-scrollbar-thumb:hover,#dsh-ro-panel #dsh-drawer .d-body::-webkit-scrollbar-thumb:hover{background:#17893f}" +
+    "#dsh-ro-panel .pages::-webkit-scrollbar-track,#dsh-ro-panel #dsh-drawer .d-body::-webkit-scrollbar-track{background:transparent;border-radius:8px}" +
+    "#dsh-ro-panel .pages *, #dsh-ro-panel #dsh-drawer .d-body *{scrollbar-color:auto}" +
+    // V2.17.0 公共层 A：统一窗口拉伸手柄（所有助手窗口共用，右下角，可拖动改尺寸）
+    ".dsh-grip{position:absolute;right:0;bottom:0;width:18px;height:18px;cursor:nwse-resize;z-index:9;touch-action:none;pointer-events:auto}" +
+    ".dsh-grip::after{content:'';position:absolute;right:3px;bottom:3px;width:9px;height:9px;border-right:2px solid rgba(120,140,170,.9);border-bottom:2px solid rgba(120,140,170,.9);border-bottom-right-radius:3px}" +
+    ".dsh-grip:hover::after{border-color:#1d4ed8}" +
+    // V2.17.1 窗口透明度滑块（主面板与功能浮窗统一）
+    ".dsh-alpha{display:inline-flex;align-items:center;gap:2px;flex:none;margin:0 2px}" +
+    ".dsh-alpha .lb{font-size:9px;line-height:1;color:#333;text-shadow:1px 1px #fff}" +
+    ".dsh-alpha input[type=range]{width:40px;height:10px;margin:0;padding:0;flex:none;accent-color:#647c9d}" +
+    "#dsh-ro-panel .hd .st{color:#333!important;font-size:10px!important}" +
+    // V2.17.1 功能菜单（独立窗口，不在 #dsh-ro-panel 内，故需自带一套）
+    "#dsh-ro-menu .ro-sec{margin:2px 0 4px;padding:2px 0 2px 6px;border-left:3px solid #6f9ad0;background:linear-gradient(to right,#eef4fb,rgba(238,244,251,0));color:#123a63;font-size:11px;font-weight:700}" +
+    "#dsh-ro-menu .ro-row{display:flex;align-items:center;gap:5px;min-height:24px;padding:1px 2px;border-bottom:1px solid #e2e2e2}" +
+    "#dsh-ro-menu .ro-row:last-child{border-bottom:0}" +
+    "#dsh-ro-menu .ro-row .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}" +
+    "#dsh-ro-menu .ro-cb{width:13px;height:13px;margin:0;padding:0;flex:none;accent-color:#647c9d}" +
+    "#dsh-ro-menu button{height:20px;min-width:42px;padding:0 7px;border:1px solid;border-color:#cfcfcf #a9a9a9 #5f5f5f #bdbdbd;border-radius:4px;background:linear-gradient(to bottom,#fff 0%,#f2f2f2 35%,#dcdcdc 55%,#f9f9f9 100%);color:#3f3f3f;font-size:11px;font-weight:400;line-height:1;cursor:pointer;font-family:inherit;text-shadow:1px 1px rgba(255,255,255,.85)}" +
+    "#dsh-ro-menu button:hover{background:linear-gradient(to bottom,#f7fbff,#dfe8f6 35%,#c0d0ee 55%,#f0f6ff)}" +
+    "#dsh-ro-menu select{height:20px;background:#fff;border:1px solid #aaa;border-radius:0;color:#111;font-size:11px;padding:0 2px;font-family:inherit}" +
+    "#dsh-ro-menu .ro-info{color:#555;font-size:10px;padding:2px 2px 0}" +
+    // V2.22.0 悬浮球旁战斗快速开关（26×26 两个小方块：[内]=内挂自动战斗 [助]=助手自动战斗）
+    "#dsh-ball .qs{position:absolute;left:-31px;width:26px;height:26px;min-width:0;padding:0;border-radius:6px;border:1px solid #8e8e8e;background:linear-gradient(to bottom,#fff 0%,#f2f2f2 35%,#dcdcdc 55%,#f9f9f9 100%);color:#3f3f3f;font:700 11px/1 'Microsoft YaHei',Arial,sans-serif;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.5);opacity:.94;text-shadow:1px 1px rgba(255,255,255,.85)}" +
+    "#dsh-ball .qs:hover{opacity:1}" +
+    "#dsh-ball .qs.on{background:linear-gradient(to bottom,#4bd07f 0%,#25a55a 55%,#1c8b4a 100%);border-color:#17793a;color:#fff;text-shadow:0 1px 1px rgba(0,0,0,.35)}" +
+    "#dsh-ball #dsh-qs-nei{top:1px}" +
+    "#dsh-ball #dsh-qs-zhu{bottom:1px}";
+
+  // ---------------- 页签定义 ----------------
+  var PAGE_HTML = {
+    nei: '' +
+      // V2.20.0：内挂配置改为直连游戏自带的右下角齿轮（删掉助手镜像页，只留打开入口 + 快速开关）
+      '<div class="row"><button id="dsh-open-gear" style="flex:1 1 auto">打开游戏内挂设置</button>' +
+      '<button class="ghost" id="dsh-open-gear-skill" style="flex:0 0 auto">技能设置</button></div>' +
+      '<div class="row"><span class="st" id="dsh-battlestate" style="font-size:10px">内挂状态: 未读取</span></div>' +
+      '<div class="sec">快速开关（直接发包给服务器，不依赖内挂窗口是否打开）</div>' +
+      '<div class="row"><button id="dsh-np-atk" style="flex:0 0 auto">开自动战斗</button>' +
+      '<button class="ghost" id="dsh-np-pick" style="flex:0 0 auto">开自动拾取</button>' +
+      '<button class="ghost" id="dsh-np-eat" style="flex:0 0 auto">开自动吃药</button></div>' +
+      '<div class="row"><span class="lb">寻怪模式</span><select id="dsh-np-huntmode" style="flex:0 0 96px">' +
+      '<option value="0" selected>移动寻怪</option><option value="1">范围寻怪</option><option value="2">原地寻怪</option></select>' +
+      '<button class="ghost" id="dsh-np-hunt" style="flex:0 0 auto">发送寻怪模式</button></div>' +
+      '<div class="row"><span class="st" id="dsh-np-log" style="font-size:10px">未发送</span></div>' +
+      '<div class="sec">内挂状态（读游戏内挂面板）</div>' +
+      '<div class="row"><span class="lb">检测目标</span><span class="st" id="dsh-targets" style="font-size:11px">未读取</span></div>' +
+      '<div class="row"><button class="ghost" id="dsh-readbot" style="flex:0 0 auto">读取内挂状态</button>' +
+      '<button class="ghost" id="dsh-probe-neidom" style="flex:0 0 auto">探查内挂DOM</button></div>' +
+      '',
+    zhu: '' +
+      // V2.21.0：去掉侧边抽屉，改成页内二级页签（战斗设置 / 技能设置 / 附近怪物），合并为「助手战斗设置」
+      '<div class="row"><span class="st" id="dsh-z-state" style="font-size:10px">助手未启动</span>' +
+      '<button class="ghost" id="dsh-fw-btn-zhu2" data-fw="zhu2" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
+      '<div id="dsh-fw-zhu2">' +
+      '<div class="sub-tabs">' +
+      '<button class="sub-tab active" data-sub="zs-battle">战斗设置</button>' +
+      '<button class="sub-tab" data-sub="zs-skill">技能设置</button>' +
+      '<button class="sub-tab" data-sub="zs-near">附近怪物</button></div>' +
+      '<div class="sub-page active" data-subpage="zs-battle">' +
+      '<div class="sec">助手模式（自控发包 · 无CD）</div>' +
+      '<div class="sec">怪物侦查扫描（间隔可调）</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-scanen" type="checkbox" checked>启用侦查扫描</label>' +
+      '<span class="lb" style="margin-left:auto;min-width:26px">间隔</span>' +
+      '<input id="dsh-scanint" type="number" value="0.5" min="0.3" step="0.1" style="flex:0 0 44px"><span style="color:#5a6b7f">s（最低0.3）</span></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-healfirst" type="checkbox">优先使用治愈术替代药品（V2.29.0 自辅助页移入）</label><span class="st">未学会、SP不足或冷却时仍使用物品</span></div>' +
+      '<div class="sec">防御与瞬移（助手自实现）</div>' +
+      '<div class="row"><span class="lb">非选中怪攻击</span><select id="dsh-z-ona" style="flex:0 0 100px"><option>无视</option><option>瞬移</option><option selected>还击</option></select></div>' +
+      '<div class="row"><span class="lb">群殴时</span><span style="color:#5a6b7f">n≥</span><input id="dsh-z-grp" type="number" value="6" min="0" style="flex:0 0 38px"><span style="color:#5a6b7f">只怪（0=关闭）→</span>' +
+      '<select id="dsh-z-grpact" style="flex:0 0 88px"><option>解围技能</option><option selected>瞬移</option></select></div>' +
+      '<div class="row"><span class="lb">解围技能</span><select id="dsh-z-qoaskill"><option value="">- 请选择 -</option></select>' +
+      '<span class="lb" style="min-width:26px">Lv</span><input id="dsh-z-qoaskilllv" type="number" value="5" min="1" max="10" style="flex:0 0 38px"></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-z-flygrp" type="checkbox">群殴自动瞬移</label>' +
+      '<label class="switch"><input id="dsh-z-flykill" type="checkbox" checked>防御瞬移总开关</label></div>' +
+      '<div class="row"><span class="lb">瞬移方式</span><select id="dsh-z-flymode" style="flex:0 0 120px"><option>翅膀→瞬移术</option><option>苍蝇翅膀优先</option><option>瞬移术Lv1</option><option selected>瞬移术→翅膀</option></select>' +
+      '<label class="switch"><input id="dsh-z-flyauto" type="checkbox" checked>无翅膀自动瞬移术</label></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-z-flystuck" type="checkbox">卡死自动瞬移(助手战斗中·4s)</label></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-z-rein" type="checkbox">寻怪自动上马（缰绳 12622）</label><span style="color:#5a6b7f;font-size:11px">骑乘状态不在身自动用</span></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-z-mapbound" type="checkbox" checked>地图边界</label>' +
+      '<span class="lb" style="min-width:34px">半径</span><input id="dsh-z-mapbound-r" type="number" value="25" min="5" style="flex:0 0 42px"><span style="color:#5a6b7f;font-size:11px">格（以启动点为圆心，走出就回头）</span></div>' +
+      '<div class="row"><span class="lb" style="min-width:80px">地图边缘距离</span><input id="dsh-z-mapbound-edge" type="number" value="15" min="3" style="flex:0 0 42px"><span style="color:#5a6b7f;font-size:11px">格（距当前地图物理边界小于此值就回头，防走到别的图）</span></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-z-idlefly" type="checkbox">无目标持续自动瞬移</label>' +
+      '<span class="lb" style="min-width:34px">超过</span><input id="dsh-z-idleflysec" type="number" value="10" style="flex:0 0 40px"><span style="color:#5a6b7f">s无锁定怪→瞬移</span></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-z-bossfly" type="checkbox">BOSS出现瞬移</label>' +
+      '<span class="lb" style="min-width:52px">瞬移间隔</span><input id="dsh-z-flyint" type="number" value="4" style="flex:0 0 40px"><span style="color:#5a6b7f">s</span></div>' +
+      '<div class="row"><span class="lb">HP低于</span><input id="dsh-z-hpfly" type="number" value="20" style="flex:0 0 40px"><span style="color:#5a6b7f">%瞬移</span>' +
+      '<span class="lb" style="min-width:50px">SP低于</span><input id="dsh-z-spfly" type="number" value="10" style="flex:0 0 40px"><span style="color:#5a6b7f">%瞬移</span></div>' +
+      '<div class="row"><span class="lb">HP低于</span><input id="dsh-z-hpout" type="number" value="5" style="flex:0 0 40px"><span style="color:#5a6b7f">%下线</span>' +
+      '<span class="lb" style="min-width:50px">无法瞬移</span><select id="dsh-z-keep" style="flex:0 0 70px"><option selected>无视</option><option>逃脱</option></select></div>' +
+      '<div class="row"><span class="st" id="dsh-defstate" style="font-size:11px">防御状态：-</span></div>' +
+      '<div class="sec">坐下（参考内挂 · 助手自实现）</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-z-sit" type="checkbox" checked>自动坐下</label>' +
+      '<span class="lb" style="margin-left:auto;min-width:26px">HP</span><input id="dsh-z-sithplo" type="number" value="30" style="flex:0 0 38px"><span style="color:#5a6b7f">~</span><input id="dsh-z-sithphi" type="number" value="80" style="flex:0 0 38px"><span style="color:#5a6b7f">%</span></div>' +
+      '<div class="row"><span class="lb">SP范围</span><input id="dsh-z-sitsplo" type="number" value="10" style="flex:0 0 38px"><span style="color:#5a6b7f">~</span><input id="dsh-z-sitsphi" type="number" value="70" style="flex:0 0 38px"><span style="color:#5a6b7f">%</span>' +
+      '<span class="lb" style="min-width:60px">坐下被锁定</span><select id="dsh-z-sitxw" style="flex:0 0 72px"><option selected>无视</option><option>还击</option><option>瞬移</option><option>逃脱</option></select></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-z-sitback" type="checkbox" checked>回满后继续战斗</label>' +
+      '<label class="switch"><input id="dsh-z-sitnofight" type="checkbox">战斗状态不坐下</label></div>' +
+      '<div class="row"><span class="lb">攻击间隔</span><input id="dsh-z-attint" type="number" value="0.25" min="0.25" step="0.05" style="flex:0 0 44px"><span style="color:#5a6b7f">s（最低0.25）</span>' +
+      '<span class="lb" style="min-width:26px">寻怪</span><input id="dsh-z-range" type="number" value="12" style="flex:0 0 40px"><span style="color:#5a6b7f">格</span></div>' +
+      '<div class="row"><span class="lb">物理距离</span><input id="dsh-z-pmrange" type="number" value="2" min="1" style="flex:0 0 40px"><span style="color:#5a6b7f">格(普攻/近战)</span>' +
+      '<span class="lb" style="min-width:48px">魔法距离</span><input id="dsh-z-mgrange" type="number" value="9" min="1" style="flex:0 0 40px"><span style="color:#5a6b7f">格(远程技能)</span></div>' +
+      '<div class="row"><span class="lb">最短攻击距离</span><input id="dsh-z-minrange" type="number" value="0" min="0" style="flex:0 0 40px"><span style="color:#5a6b7f">格（0=不限；技能和普攻都按此区间，太近会后撤拉开）</span></div>' +
+      '<div class="row"><span class="lb">换怪延迟</span><input id="dsh-z-switchdelay" type="number" value="0.25" min="0.1" step="0.1" style="flex:0 0 44px"><span style="color:#5a6b7f">s（打完一只→找下一只的间隔）</span></div>' +
+      '<div class="row"><span class="lb">直走节流</span><input id="dsh-z-walkint" type="number" value="0.5" min="0.3" step="0.1" style="flex:0 0 44px"><span style="color:#5a6b7f">s（无怪直走寻怪间隔）</span>' +
+      '<span class="lb" style="min-width:26px">追怪</span><input id="dsh-z-chaseint" type="number" value="0.5" min="0.3" step="0.1" style="flex:0 0 44px"><span style="color:#5a6b7f">s（内挂模式助手主动追怪间隔）</span></div>' +
+      '<div class="row"><span class="lb">寻怪方式</span><select id="dsh-z-huntmode" style="flex:0 0 118px">' +
+      '<option value="self" selected>自研直走寻怪</option><option value="np">内挂机制寻怪</option><option value="hybrid">混合寻怪</option></select>' +
+      '<label class="switch" style="margin-left:2px"><input id="dsh-z-astar" type="checkbox" checked>A*绕障寻路</label><span class="st" style="font-size:10px">（内挂发包时机自动控制，无需调节）</span></div>' +
+      '<div class="row"><span class="lb" style="min-width:56px">接管距离</span><input id="dsh-z-takeover" type="number" value="12" min="3" max="30" step="1" style="flex:0 0 48px"><span class="st" style="font-size:10px">格（仅混合寻怪：锁定怪≤此距离→助手接管最后靠近+打怪）</span></div>' +
+      '<div class="row"><span class="st" style="font-size:10px">内挂=只有可攻击到的锁定怪（射程内）才停内挂、助手战斗；无怪/锁定怪超出射程→持续内挂寻怪移动靠近</span></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-z-follow" type="checkbox" checked>锁定目标跟随追击</label>' +
+      '<label class="switch"><input id="dsh-z-next" type="checkbox" checked>打死换下一个</label></div>' +
+      '<div class="sec">目标范围</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-z-allmobs" type="checkbox" checked>打全部怪（不限「本图怪物锁定」名单）</label></div>' +
+      '<div class="row"><span class="st">勾选=攻击距离内所有怪都打（血少优先抢尾刀）；取消=只打锁定名单里的怪。</span></div>' +
+      '<details style="margin:6px 0"><summary>战斗诊断（默认关 · 不改行为）</summary>' +
+      '<div class="row"><label class="switch"><input id="dsh-bt-diag" type="checkbox">启用诊断日志</label></div>' +
+      '<div class="row" style="flex-wrap:wrap;gap:4px"><button class="ghost" id="dsh-bt-snap" style="flex:0 0 auto;padding:0 8px;font-size:11px">快照</button><button class="ghost" id="dsh-bt-mark" style="flex:0 0 auto;padding:0 8px;font-size:11px">标记测试</button></div>' +
+      '<div class="row"><span class="st" id="dsh-bt-state" style="font-size:10px">诊断: 关</span></div>' +
+      '<div id="dsh-bt-log" style="font-size:10px;max-height:150px;overflow:auto;background:#f4f6f8;border:1px solid #d8e0e8;border-radius:4px;padding:4px;font-family:monospace;white-space:pre-wrap;line-height:1.5">诊断日志: 关</div></details>' +
+      '</div>' +
+      '<div class="sub-page" data-subpage="zs-skill">' +
+      '<div class="sec">普攻兜底（技能优先 · 只补空档）</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-z-attmix" type="checkbox" checked>技能空档补普攻</label>' +
+      '<span class="lb" style="margin-left:auto;min-width:56px">让位余量</span>' +
+      '<input id="dsh-z-attmixmargin" type="number" value="800" min="0" step="50" style="flex:0 0 56px"><span class="st">毫秒</span></div>' +
+      '<div class="row"><span class="st">技能还剩不到「让位余量」就冷却好时不补普攻，先等技能；完全没配技能时直接普攻。</span></div>' +
+      '<div class="sec">技能释放与顺序（自动判断释放前置 · 自动补状态）</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-prereq" type="checkbox" checked>自动补充释放前置（状态/气弹）</label>' +
+      '<span class="tag blue" id="dsh-prereqcnt" style="margin-left:auto">释放需求表: 94技能</span></div>' +
+      '<details id="dsh-skillpickbox" style="margin:6px 0"><summary>点选技能释放（展开/收缩）</summary>' +
+      '<div class="box"><div class="b-hd">点选已学主动技能 → 自动生成技能顺序</div>' +
+      '<div id="dsh-skillpick" class="skgrid"></div></div></details>' +
+      '<div class="box"><div class="b-hd">技能顺序（拖拽排序 · 点选技能自动加入）</div>' +
+      '<div id="dsh-skillorderlist"><span class="st">空（点选上方技能加入，拖拽调整顺序）</span></div>' +
+      '<div class="row" style="margin-top:2px"><button class="ghost" id="dsh-skillclear" style="flex:0 0 auto">清空</button>' +
+      '<button class="ghost" id="dsh-skillimp" style="flex:0 0 auto">导入已学技能</button></div></div>' +
+      '<details style="margin:6px 0"><summary>手动编辑技能顺序/条件（高级用法）</summary>' +
+      '<textarea id="dsh-skillorder" rows="3" placeholder="技能顺序：每行 技能ID:等级:条件:释放%:次数:锁定次数:冷却秒&#10;例：271  :5   :球5,爆气:80 :20 :3:2&#10;   技能ID :等级:条件    :概率:次数:锁定次数:冷却秒&#10;条件=释放前置，须全满足，可空；释放%=0-100（省略=100）&#10;次数=整轮最多放N次（0=不限，重开重置）；锁定次数=每只怪最多放N次（0=不限，换怪重置）&#10;冷却秒=该技能间隔兜底秒数（0/省略=自动跟随服务器2842真实后摇，无数据默认250ms）&#10;等级超已学自动降级、未学自动跳过；只填ID也能用"></textarea>' +
+      '<div class="log" style="margin-top:2px">字段说明：技能ID:等级:条件:释放%:次数:锁定次数:冷却秒。条件=释放前置（如阿修罗需球5,爆气，自动补状态）；释放%=0-100（省略=100）；次数=整轮上限（OpenKore maxUses，重开自动战斗重置）；锁定次数=每只怪上限（换目标/解锁清零重计）；冷却秒=该技能释放间隔兜底（0/省略=自动跟随服务器2842真实后摇[动态]，无数据默认250ms）。技能按各自冷却独立释放，不再按攻击轮次重复发包。点选/拖拽生成的行只填前2段，无需手写。例：271:5:球5,爆气:80:20:3:2 = 阿修罗5级，需5球+爆气，80%概率，整轮最多20次，每只怪最多3次，间隔兜底2秒。</div>' +
+      '</details>' +
+      '<div class="sec">辅助技能（选技能自动加判定条件 · 按间隔施放）</div>' +
+      '<div class="row"><span class="lb">技能</span><select id="dsh-askskill" style="flex:0 0 auto;max-width:130px"><option value="">选择技能…</option></select>' +
+      '<button class="ghost" id="dsh-askskilladd" style="flex:0 0 auto">＋加入</button>' +
+      '<button class="ghost" id="dsh-askskillload" style="flex:0 0 auto">读技能栏</button></div>' +
+      '<div class="row"><span class="lb">判定</span><select id="dsh-askcond" style="flex:0 0 auto"><option value="">无（纯按间隔放）</option><option value="self" selected>自身状态消失才补</option><option value="party">队友状态消失才补（待支持）</option></select></div>' +
+      '<div class="row" style="align-items:center;flex-wrap:wrap;gap:4px 6px"><span class="lb">Debuff</span>' +
+      '<div style="position:relative;flex:1 1 130px;min-width:100px"><input id="dsh-askdebuff" placeholder="输入Debuff中文/ID（联想）" autocomplete="off" style="width:100%;box-sizing:border-box;padding:3px 6px">' +
+      '<div id="dsh-askdebuff-ac" class="ac" style="display:none"></div></div>' +
+      '<span style="color:#5a6b7f;font-size:11px;line-height:1.4">选中后=该 Debuff 在身才放（如缓速在身→放加速术）</span></div>' +
+      '<div class="row" style="align-items:center;flex-wrap:wrap;gap:4px 6px"><span class="lb">自身状态</span>' +
+      '<div style="position:relative;flex:1 1 130px;min-width:100px"><input id="dsh-askstatus" placeholder="状态ID/英文（如 12 或 INC_AGI，联想辅助）" autocomplete="off" style="width:100%;box-sizing:border-box;padding:3px 6px;border:1px solid #b8c6d4;border-radius:4px;font-size:12px">' +
+      '<div id="dsh-askstatus-ac" class="ac" style="display:none"></div></div>' +
+      '<span style="color:#5a6b7f;font-size:11px;line-height:1.4">选中后=该状态不在身才补（消失补）· 数字ID或英文EFST直认</span></div>' +
+      '<div class="row"><span class="lb">间隔</span><input id="dsh-askint" type="number" value="120" style="flex:0 0 48px"><span class="st">秒</span>' +
+      '<span class="lb" style="min-width:52px">SP不低于</span><input id="dsh-asksp" type="number" value="30" style="flex:0 0 44px"><span class="st">%</span>' +
+      '<label class="switch" style="margin-left:auto"><input id="dsh-asken" type="checkbox">启用自动释放</label></div>' +
+      '<div class="box"><div class="b-hd">技能释放列表 <span class="tag green" id="dsh-askcount" style="float:right">0 项</span></div>' +
+      '<div id="dsh-asklist"><span class="st">空（点选技能加入，可拖拽调序）</span></div>' +
+      '<div class="row" style="margin-top:2px"><button class="ghost" id="dsh-askup" style="flex:0 0 auto">↑上移</button>' +
+      '<button class="ghost" id="dsh-askdown" style="flex:0 0 auto">↓下移</button>' +
+      '<button class="ghost" id="dsh-askdel" style="flex:0 0 auto">删除选中</button></div></div>' +
+      '<div class="log" id="dsh-bufflog" style="margin-top:2px">辅助技能：未启用</div>' +
+      '<div class="row"><span class="lb" style="min-width:48px">当前状态</span><span class="st" id="dsh-statusview" style="flex:1;line-height:1.6">未读取（客户端就绪后显示）</span>' +
+      '<button class="ghost" id="dsh-statehelp" style="flex:0 0 auto">状态速查</button></div>' +
+      '</div>' +
+      '<div class="sub-page" data-subpage="zs-near">' +
+      '<div class="sec">附近怪物（实时 · <span id="dsh-scanst">未启动</span>）</div>' +
+      '<div class="box" style="margin-top:2px"><div id="dsh-scanlist" style="font-size:11px;max-height:120px;overflow:auto">未启动侦查</div></div>' +
+      '</div>' +
+      '</div>',
+    assist: '' +
+      '<div class="a-layout">' +
+      '<div class="a-nav">' +
+      '<button class="sub-tab active" data-sub="ap-pot">自动吃药/物品</button>' +
+      '<button class="sub-tab" data-sub="ap-pet">宠物投喂</button>' +
+      '<button class="sub-tab" data-sub="ap-hl">物品标色</button>' +
+      '<button class="sub-tab" data-sub="ap-mvp">MVP计时</button>' +
+      '<button class="sub-tab" data-sub="ap-dps">战斗统计</button>' +
+      '<button class="sub-tab" data-sub="ap-inv">仓库查询</button>' +
+      '<button class="sub-tab" data-sub="ap-scr">脚本执行</button>' +
+      '<button class="sub-tab" data-sub="ap-item">物品</button>' +
+      '<button class="sub-tab" data-sub="ap-sync">同步器</button></div>' +
+      '<div class="a-body">' +
+      // 子页1：战斗辅助（自动使用物品 + 自动装箭矢）+ 背包快照 + 自动跟随（默认）
+      '<div class="sub-page active" data-subpage="ap-pot">' +
+      '<div id="dsh-fw-aid">' +
+      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">战斗辅助 · 自动使用物品 / 自动装箭矢</span>' +
+      '<button class="ghost" id="dsh-fw-btn-aid" data-fw="aid" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
+      '<div class="sec">自动使用物品（点选背包 · 条件触发）</div>' +
+      '<div class="row"><span class="lb">物品</span><select id="dsh-itempick" style="flex:0 0 auto;max-width:130px"><option value="">选择物品…</option></select>' +
+      '<button class="ghost" id="dsh-itempickadd" style="flex:0 0 auto">＋加入</button>' +
+      '<button class="ghost" id="dsh-itempickload" style="flex:0 0 auto">读背包</button>' +
+      '<button class="ghost" id="dsh-potquick" style="flex:0 0 auto" title="从背包里找红药/蓝药，按 HP低于50% / SP低于30% 自动生成两条规则">一键加红蓝药</button></div>' +
+      '<div class="row"><span class="lb">触发</span><select id="dsh-itemcond" style="flex:0 0 100px"><option value="manual">手动</option><option value="hp">HP低于%</option><option value="sp">SP低于%</option><option value="interval">间隔秒</option><option value="status">状态在身用</option><option value="statusgone">状态消失用</option></select>' +
+      '<input id="dsh-itemcondval" type="number" value="50" style="flex:0 0 40px">' +
+      '<div style="position:relative;flex:0 0 92px"><input id="dsh-itemstatus" placeholder="状态中文/ID" autocomplete="off" style="width:100%;box-sizing:border-box;padding:3px 6px">' +
+      '<div id="dsh-itemstatus-ac" class="ac" style="display:none"></div></div>' +
+      '<button class="ghost" id="dsh-itemupd" style="flex:0 0 auto">更新</button></div>' +
+      '<div class="box"><div class="b-hd">物品使用列表 <span class="tag green" id="dsh-itemcount" style="float:right">0 项</span></div>' +
+      '<div id="dsh-itemlist" style="font-size:11px;max-height:90px;overflow:auto"><span class="st">空（选物品加入，可拖拽调序）</span></div>' +
+      '<div class="row" style="margin-top:2px"><button class="ghost" id="dsh-itemup" style="flex:0 0 auto">↑上移</button>' +
+      '<button class="ghost" id="dsh-itemdown" style="flex:0 0 auto">↓下移</button>' +
+      '<button class="ghost" id="dsh-itemdel" style="flex:0 0 auto">删除选中</button>' +
+      '<label class="switch" style="margin-left:auto"><input id="dsh-itemen" type="checkbox">启用自动使用</label></div>' +
+      '<div class="row"><span class="st" style="font-size:10px">「优先使用治愈术替代药品」已移至 助手模式→战斗设置</span></div></div>' +
+      '<div class="sec">自动装箭矢（V2.15.26：箭矢耗尽自动补）</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-arrowen" type="checkbox" checked>箭矢耗尽时用魔法箭袋(2000030)放箭并装上装备栏</label></div>' +
+      '<div class="row"><span class="st" style="font-size:10px">V2.16.27：仅当手持弓/乐器/鞭子时生效（其它职业没有箭矢槽，避免白耗箭袋）</span></div>' +
+      '<div class="row"><span class="st" id="dsh-arrowlog" style="font-size:10px">未启用</span></div>' +
+      '</div>' +
+      '<div class="sec">背包快照定期上报（V2.15.27）</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-invshot" type="checkbox" checked>开启定期上报</label>' +
+      '<span class="lb" style="margin-left:8px">间隔</span><input id="dsh-invshotint" type="number" value="120" style="flex:0 0 44px"><span style="color:#5a6b7f">秒</span></div>' +
+      '<div class="row"><span class="st" id="dsh-invshotlog" style="font-size:10px"></span></div>' +
+      '<div class="sec">辅助对象 · 自动跟随玩家</div>' +
+      '<div class="row"><span class="lb">跟随目标</span><select id="dsh-followtarget" style="flex:0 0 auto;max-width:140px"><option value="">选择玩家…（侦测）</option></select>' +
+      '<button class="ghost" id="dsh-followscan" style="flex:0 0 auto">刷新</button></div>' +
+      '<div class="row"><span class="lb">跟随距离</span><input id="dsh-followdist" type="number" value="3" min="1" style="flex:0 0 40px"><span style="color:#5a6b7f">格（达到即停）</span>' +
+      '<label class="switch" style="margin-left:auto"><input id="dsh-followen" type="checkbox">启用跟随</label></div>' +
+      '<div class="row"><span class="st" id="dsh-followlog" style="font-size:10px">未启用（选择玩家后开启）</span></div>' +
+      '</div>' +
+      // 子页2：宠物投喂
+      '<div class="sub-page" data-subpage="ap-pet">' +
+      '<div class="sec">宠物投喂（饱食度低于阈值自动喂）</div>' +
+      '<div class="row"><button id="dsh-petfeed2" style="flex:0 0 auto">喂食</button>' +
+      '<span class="lb" style="margin-left:8px;min-width:26px">饱食度&lt;</span><input id="dsh-petfeedhp2" type="number" value="25" style="flex:0 0 44px"><span style="color:#5a6b7f">%自动喂</span>' +
+      '<span class="lb" style="min-width:34px">间隔</span><input id="dsh-petfeedint2" type="number" value="10" style="flex:0 0 40px"><span style="color:#5a6b7f">s</span>' +
+      '<label class="switch" style="margin-left:auto"><input id="dsh-peten2" type="checkbox">自动喂食</label></div>' +
+      '<div class="row"><span class="st" id="dsh-petlog2" style="font-size:10px"></span></div>' +
+      '<div class="sec">宠物（召唤蛋/变蛋/表演）</div>' +
+      '<div class="box" id="dsh-petbox2"><div class="b-hd">宠物状态</div><div class="st" id="dsh-petinfo2">未读取（登录后自动显示）</div></div>' +
+      '<div class="row"><button id="dsh-petegg" style="flex:0 0 auto">召唤宠物蛋</button>' +
+      '<button class="ghost" id="dsh-petback" style="flex:0 0 auto">变蛋(收回)</button>' +
+      '<button class="ghost" id="dsh-petperf" style="flex:0 0 auto">表演</button></div>' +
+      '</div>' +
+      // 子页3：物品标色（赏金任务材料提示 + 自定义高亮，自拾取页搬入）
+      '<div class="sub-page" data-subpage="ap-hl">' +
+      '<div class="sec">赏金任务材料提示</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-bountyhl" type="checkbox" checked>物品栏中赏金材料金边高亮</label></div>' +
+      '<div class="row"><span class="lb" style="min-width:52px">自定义高亮</span><input id="dsh-hlrule" type="text" placeholder="ID[颜色]逗号分隔，如 970[yellow]；回车添加" style="flex:1 1 auto;min-width:0"></div>' +
+      '<div class="box"><div class="b-hd">高亮名单 <span class="tag blue" id="dsh-hlcount" style="float:right">0 条</span></div>' +
+      '<div id="dsh-hllist" style="font-size:11px;max-height:110px;overflow:auto"><span class="st">空（输入 ID[颜色] 添加，赏金材料默认黄）</span></div></div>' +
+      '<div class="log">按赏金任务收集品清单（92 件，V2.6.5 按游戏内导出重建）给物品栏物品槽加金边框+数量变金（V1.8.4：选择器按实测物品栏结构 .item[data-itid] 重写，v0.13.10 探针取证）。仓库槽由助手按实例索引补充物品 ID 后同步标色；装备槽暂不覆盖。</div>' +
+      '</div>' +
+            '<div class="sub-page" data-subpage="ap-scr">' +
+      '<div class="sec">脚本执行（导入 JSON 模板 · 白名单 8 类动作）</div>' +
+      '<div class="row"><span class="lb" style="min-width:42px">脚本名</span><input id="dsh-scr-name" type="text" placeholder="如：每日签到" style="flex:1 1 90px"></div>' +
+      '<textarea id="dsh-scr-json" rows="4" placeholder="JSON 模板：{\"templateId\":\"daily\",\"version\":1,\"steps\":[{\"action\":\"walk\",\"params\":{\"x\":100,\"y\":80}},{\"action\":\"talk\",\"params\":{\"npc\":\"^_^\"}}]}"></textarea>' +
+      '<div class="row"><button id="dsh-scr-imp" style="flex:0 0 auto">导入校验</button>' +
+      '<button class="ghost" id="dsh-scr-clear" style="flex:0 0 auto">清空输入</button>' +
+      '<span class="st" id="dsh-scr-msg" style="font-size:10px"></span></div>' +
+      '<div class="box"><div class="b-hd">已导入脚本 <span class="tag green" id="dsh-scr-count" style="float:right">0</span></div>' +
+      '<div id="dsh-scr-list" style="font-size:11px;max-height:110px;overflow:auto"><span class="st">空（粘贴 JSON 后点「导入校验」）</span></div></div>' +
+      '<div class="row"><span class="lb" style="min-width:42px">运行</span><span class="st" id="dsh-scr-state" style="font-size:11px">未运行</span>' +
+      '<button class="ghost" id="dsh-scr-stop" style="flex:0 0 auto;color:#b91c1c;border-color:#e5b3b3">停止</button></div>' +
+      '<div class="log" id="dsh-scr-log" style="font-size:10px;max-height:64px;overflow:auto">模板动作：teleport 传送 / walk 走路 / battleOn 开自动 / battleOff 关自动 / useItem 用物品 / stopMove 停止 / check 读取状态 / talk 对话NPC；判定：arrive 到达 / waitFor 界面文本 / until 物品数量；HP<25% 自动停手。</div>' +
+      '</div>' +
+            '<div class="sub-page" data-subpage="ap-mvp">' +
+      '<div class="sec">MVP 计时（公告栏 #i1 → MVP 日志自动校准 · 点击地图名传送）</div>' +
+      '<div class="row"><button class="ghost" id="dsh-mvp-open" data-fw="mvp" style="flex:0 0 auto">浮窗</button>' +
+      '<span class="st" id="dsh-mvp-status" style="font-size:10px;margin-left:6px">拖动窗口可移动 · 点击地图名传送</span></div>' +
+      '<div id="dsh-mvp-timers" style="font-size:11px;max-height:220px;overflow:auto;border:1px solid #43506a;border-radius:6px;padding:6px;margin-top:4px"><span class="st">暂无记录。请打开公告栏#i1 → 第一个选项（MVP日志）。</span></div>' +
+      '<div class="log" style="margin-top:4px">打开公告栏的第一个选项（MVP 日志）后自动读取并校准；关闭日志继续计时，刷新保留记录。分钟精度日志只能给出预计复活时间。</div>' +
+      '</div>' +
+      // 子页6：仓库查询（V2.11.0）
+      '<div class="sub-page" data-subpage="ap-inv">' +
+      '<div class="sec">仓库与背包查询（打开仓库自动读取 · 覆盖旧数据）</div>' +
+      '<div class="row"><input id="dsh-inv-search" type="text" placeholder="输入物品名（模糊）或 ID（精确）搜索" style="flex:1 1 auto;min-width:0"></div>' +
+      '<div class="row"><button id="dsh-inv-read" style="flex:0 0 auto">立即读取</button>' +
+      '<span class="st" id="dsh-inv-msg" style="font-size:10px;margin-left:6px">打开仓库自动读取，或点「立即读取」读背包</span></div>' +
+      '<div id="dsh-inv-results" style="font-size:11px;max-height:320px;overflow:auto;border:1px solid #c7d3e6;border-radius:6px;padding:6px;margin-top:4px;background:#fff"><span class="st">输入关键词搜索，或先打开仓库记录数据。</span></div>' +
+      '<div class="row" style="margin-top:4px"><button class="ghost" id="dsh-inv-clear" style="flex:0 0 auto">清空数据</button>' +
+      '<button class="ghost" id="dsh-inv-export" style="flex:0 0 auto">导出 JSON</button></div>' +
+      '</div>' +
+      // 子页7：物品（拾取 + 背包整理，V2.15.1 自拾取页搬入）
+      '<div class="sub-page" data-subpage="ap-item">' +
+      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">物品 · 拾取 + 背包整理</span>' +
+      '<button class="ghost" id="dsh-fw-btn-item" data-fw="item" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
+      '<div id="dsh-fw-item">' +
+      '<div class="sec">拾取</div>' +
+'<div class="sec">① 百分比拾取（直接联动内挂）</div>' +
+      '<div class="row"><span class="lb">拾取机率</span>' +
+      '<input id="dsh-lootprob" type="number" value="10" style="flex:0 0 50px"><span style="color:#5a6b7f">%</span>' +
+      '<span class="tag blue" id="dsh-lootstate" style="margin-left:auto">内挂未读取</span></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-openpick" type="checkbox" checked>启用百分比拾取（内挂执行）</label>' +
+      '<button class="ghost" id="dsh-lootread" style="flex:0 0 auto">读内挂设置</button>' +
+      '<button class="ghost" id="dsh-lootwrite" style="flex:0 0 auto">写回内挂</button></div>' +
+      '<div class="log">数值直接读取/写回游戏内挂的拾取设置（#lootProbability + .openpick），拾取由内挂自己跑。</div>' +
+      '<div class="sec">② 指定 ID 拾取（怪物掉落树 · 点选物品加入）</div>' +
+      '<div class="row"><span class="lb">当前地图</span><span class="st" id="dsh-pickmap" style="flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—（未进图）</span>' +
+      '<button class="ghost" id="dsh-pickmapbtn" style="flex:0 0 auto">本图怪物掉落</button></div>' +
+      '</div>' +
+      '<div class="sec">目标锁定条 / 队伍面板</div>' +
+      '<div class="row"><span class="st" style="font-size:11px">V2.29.0 起改为全透明悬浮层：直接在游戏画面上拖动，位置自动保存；在 功能菜单 勾选「目标状态 / 队伍血条」显示；队友色块点击即锁定。</span></div>' +
+      '<div id="dsh-fw-mlock">' +
+      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">攻击名单（只主动攻击勾选的怪）</span><button class="ghost" id="dsh-fw-btn-mlock" data-fw="mlock" style="flex:0 0 auto;padding:0 8px;font-size:11px">⧉ 浮窗</button></div>' +
+      '<details style="margin:4px 0" open><summary>本图攻击名单（读当前地图怪物表 · 勾选=允许攻击）</summary>' +
+      '<div class="box" style="margin-top:2px"><div id="dsh-z-maplock" style="font-size:11px;max-height:120px;overflow:auto"><span class="st">读取当前地图怪物表（换图自动刷新）</span></div></div></details>' +
+      '<div class="box"><div class="b-hd">攻击名单 <button class="ghost" id="dsh-lockclear" style="flex:0 0 auto;padding:0 8px;font-size:11px">清空名单</button><span class="tag green" id="dsh-lockcount" style="float:right">0 种</span></div><div id="dsh-locklist" style="font-size:11px">名单为空（勾选本图怪物或侦查扫描到的怪）</div>' +
+      '<div class="log" style="margin-top:2px">锁定后自动切换目标：优先级=勾选怪 &gt; 最近 &gt; 血最少</div></div>' +
+      '</div>' +
+      '<div class="row"><input id="dsh-mobsearch" type="text" placeholder="搜索怪物名/ID…（全量图鉴）">' +
+      '<button class="ghost" id="dsh-mobsearchbtn" style="flex:0 0 auto">搜索</button>' +
+      '<button class="ghost" id="dsh-mobsearchclr" style="flex:0 0 auto">清空</button></div>' +
+      '<div class="row"><input id="dsh-itemsearch" type="text" placeholder="搜索物品名/ID…（搜物品查掉落，或直接「＋加入」指定ID）">' +
+      '<button class="ghost" id="dsh-itemsearchadd" style="flex:0 0 auto">＋加入</button>' +
+      '<button class="ghost" id="dsh-itemsearchbtn" style="flex:0 0 auto">搜物品</button>' +
+      '<button class="ghost" id="dsh-itemsearchclr" style="flex:0 0 auto">清空</button></div>' +
+      '<div id="dsh-itemsearch-res" style="font-size:11px;max-height:150px;overflow:auto"></div>' +
+      '<div class="box"><div class="b-hd">当前白名单 <span class="tag green" id="dsh-wlcount" style="float:right">0 个物品ID</span></div>' +
+      '<div id="dsh-wllist" style="font-size:11px;max-height:70px;overflow:auto">空</div></div>' +
+      '<div id="dsh-drop-tree" style="font-size:11px;max-height:200px;overflow:auto">' +
+      '<div class="st">怪物掉落树：点「本图怪物掉落」直接看当前地图怪 → 展开勾选物品加入白名单；也可搜索。</div></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-picken" type="checkbox">启用指定ID自动拾取</label><span class="st" id="dsh-pickstate" style="margin-left:auto"></span><span class="st" id="dsh-picklog"></span></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-pickwalk" type="checkbox" checked>距离不足自动走过去捡</label></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-picksafe" type="checkbox" checked>危险时不走过去捡（Boss/低血/低SP 在场）</label></div>' +
+      '<div class="log">怪物=当前地图表联动（同内挂检测目标）+挂机实测自动入列；掉落=mob_db 全量数据零网络。勾选物品→自动加入上方白名单并保存；物品一落地即检测白名单并自动拾取（15格内）。「本图锁定目录」=读本图怪物表生成锁定列表（勾选进战斗锁定目录，换图自动刷新）。</div>' +
+      '<div class="sec">背包整理（按物品ID · 自动丢弃白名单）</div>' +
+      '<div class="row"><span class="st" id="dsh-bag-state" style="font-size:10px">未初始化（登录后自动就绪）</span></div>' +
+      '<div id="dsh-bag-clean" style="font-size:11px"></div>' +
+      '</div>' +
+      // 子页9：战斗统计（伤害统计 + 首领警报，V2.28.0）
+      '<div class="sub-page" data-subpage="ap-dps">' +
+      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">伤害统计（本次登录 · 技能混伤）</span>' +
+      '<button class="ghost" id="dsh-fw-btn-dps" data-fw="dps" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
+      '<div id="dsh-fw-dps">' +
+      '<div class="row"><span class="lb">当前目标</span><span class="st" id="dsh-dps-curname" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">未开打</span>' +
+      '<span class="tag blue" id="dsh-dps-curdps" style="flex:0 0 auto">—</span></div>' +
+      '<div class="row"><span class="st" id="dsh-dps-curtxt" style="font-size:11px">目标伤害 0 · 伤害段数 0</span></div>' +
+      '<div class="sec">本次登录</div>' +
+      '<div class="row"><span class="lb">总伤害</span><span class="st" id="dsh-dps-total">0</span>' +
+      '<span class="lb" style="margin-left:auto">有效DPS</span><span class="st" id="dsh-dps-dps">0</span></div>' +
+      '<div class="row"><span class="lb">物理技能</span><span class="st" id="dsh-dps-physical">0 / 0 DPS</span>' +
+      '<span class="lb" style="margin-left:auto">魔法技能</span><span class="st" id="dsh-dps-magical">0 / 0 DPS</span></div>' +
+      '<div class="row"><span class="lb">普攻</span><span class="st" id="dsh-dps-melee">0 / 0 DPS</span>' +
+      '<span class="lb" style="margin-left:auto">特殊/未知</span><span class="st" id="dsh-dps-other">0 / 0 DPS</span></div>' +
+      '<div class="row"><span class="lb">伤害段数</span><span class="st" id="dsh-dps-hits">0</span>' +
+      '<span class="lb" style="margin-left:auto">多段次数</span><span class="st" id="dsh-dps-multi">0</span>' +
+      '<span class="lb" style="margin-left:auto">最高单段</span><span class="st" id="dsh-dps-max">0</span></div>' +
+      '<div class="row"><span class="lb">承受</span><span class="st" id="dsh-dps-taken">0</span>' +
+      '<span class="lb" style="margin-left:auto">登录均值</span><span class="st" id="dsh-dps-session">0 DPS</span></div>' +
+      '<div class="row"><span class="lb">登录时长</span><span class="st" id="dsh-dps-dur">0 秒</span>' +
+      '<span class="lb" style="margin-left:auto">有效战斗</span><span class="st" id="dsh-dps-active">0 秒</span></div>' +
+      '<div class="sec">技能占比</div>' +
+      '<div id="dsh-dps-skills" style="font-size:11px;max-height:170px;overflow:auto"><span class="st">暂无数据</span></div>' +
+      '<div class="row"><button class="ghost" id="dsh-dps-reset-cur" style="flex:1">清零当前目标</button>' +
+      '<button class="ghost" id="dsh-dps-reset-all" style="flex:1">清零本次统计</button></div>' +
+      '<div class="row"><span class="st" id="dsh-dps-state" style="font-size:10px">等待客户端伤害回调…</span></div>' +
+      '<div class="log">数据只保留在本次网页登录的内存中，不写浏览器存储。普攻独立计算；技能类型按 rAthena Type 字段分为物理、魔法、特殊、未知。10 秒无伤害自动切分有效战斗。</div>' +
+      '</div>' +
+      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">首领警报（MVP / BOSS 出现提示）</span>' +
+      '<button class="ghost" id="dsh-fw-btn-boss" data-fw="boss" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
+      '<div id="dsh-fw-boss">' +
+      '<div class="row"><span class="lb">警报距离</span><input id="dsh-boss-range" type="number" value="30" min="3" max="80" style="flex:0 0 48px">' +
+      '<span style="color:#5a6b7f">格（范围内才弹提示）</span></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-boss-toast" type="checkbox" checked>顶部文字提示</label>' +
+      '<span class="st" id="dsh-boss-count" style="margin-left:auto">0 只</span></div>' +
+      '<div class="sec">本图首领</div>' +
+      '<div id="dsh-boss-list" style="font-size:11px;max-height:150px;overflow:auto"><span class="st">未检测到首领（换图或靠近后自动刷新）</span></div>' +
+      '<div class="sec">最近警报</div>' +
+      '<div id="dsh-boss-log" style="font-size:11px;max-height:90px;overflow:auto"><span class="st">暂无</span></div>' +
+      '<div class="log">首领判定用客户端怪物数据库的 MvpDropsNum 字段（就是 BOSS 瞬移用的那套，全服约 126 只），不做地图级兜底。同一只首领 60 秒内只提醒一次。总开关默认关闭，需要时在功能菜单里勾上。</div>' +
+      '</div>' +
+      '</div>' +
+      '<div class="sub-page" data-subpage="ap-sync">' +
+      '<div class="sec">同步器（多账号联动 · 默认关）</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-sync-en" type="checkbox">启用同步器（同时开始上报状态到中心）</label></div>' +
+      '<div class="row"><span class="lb">同步模式</span><select id="dsh-sync-mode" style="flex:0 0 132px">' +
+      '<option value="both">双向（广播+执行）</option><option value="master">只广播（主号）</option><option value="slave">只执行（从号）</option></select></div>' +
+      '<div class="row"><span class="lb">轮询间隔</span><input id="dsh-sync-int" type="number" value="15" min="1" max="120" style="flex:0 0 48px">' +
+      '<span style="color:#5a6b7f">秒（从号调小=同步更快，1~120）</span></div>' +
+      '<div class="row"><span class="st" id="dsh-sync-state" style="font-size:11px">同步器关闭</span></div>' +
+      '<div class="log">主号点地板/点NPC → 中心广播 → 从号自动执行（地图相同才动）。间隔=取回广播的频率：从号设 1~3 秒几乎实时跟随；中心有未执行指令时自动加速到 3 秒。设置按角色自动保存。</div>' +
+      '</div>' +
+      '</div></div>',
+    teleport: '' +
+      '<div class="sec">内挂书本（自动读取 logsTable · 全部分类）</div>' +
+      '<div class="sub-tabs">' +
+      '<button class="sub-tab active" data-sub="bk-npc">NPC</button>' +
+      '<button class="sub-tab" data-sub="bk-train">练级</button>' +
+      '<button class="sub-tab" data-sub="bk-money">打钱</button>' +
+      '<button class="sub-tab" data-sub="bk-chg">挑战</button>' +
+      '<button class="sub-tab" data-sub="bk-dun">副本</button>' +
+      '<button class="sub-tab" data-sub="bk-mvp">BOSS</button></div>' +
+      '<div id="dsh-book" style="font-size:11px;max-height:180px;overflow:auto"><div class="st">书本数据读取中…（logsTable 6分类×线路）</div></div>' +
+      '<div id="dsh-fw-tp">' +
+      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">GPT 地图传送 + 坐标前往</span><button class="ghost" id="dsh-fw-btn-tp" data-fw="tp" style="flex:0 0 auto;padding:0 8px;font-size:11px">⧉ 浮窗</button></div>' +
+      '<div class="row"><span class="lb">世界</span><select id="dsh-world" style="flex:0 0 100px"><option value="黑暗大陆">黑暗大陆</option><option value="次元大陆">次元大陆</option><option value="局部地图01">局部地图01</option><option value="局部地图02">局部地图02</option></select>' +
+      '<button id="dsh-tp" style="flex:0 0 auto">传送</button><span class="st" id="dsh-tpmsg"></span></div>' +
+      '<div class="row" style="align-items:center;flex-wrap:wrap;gap:7px 7px"><span class="lb" style="min-width:34px;margin:0">地图</span>' +
+      '<div style="position:relative;flex:1 1 150px;min-width:120px"><input id="dsh-map" placeholder="输入地图名/拼音（读地图后联想）" autocomplete="off" style="width:100%;box-sizing:border-box;padding:3px 22px 3px 6px">' +
+      '<span id="dsh-maptog" title="展开/收起联想" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);cursor:pointer;color:#5a6b7f;font-size:11px;user-select:none">▾</span>' +
+      '<div id="dsh-maplist" style="display:none;position:absolute;top:calc(100% + 3px);left:0;right:0;z-index:99;background:#fff;border:1px solid #b8c6d4;border-radius:4px;max-height:180px;overflow:auto;box-shadow:0 3px 8px rgba(0,0,0,.18)"></div></div></div>' +
+      '<div class="row" style="margin-top:8px;gap:7px"><button class="ghost" id="dsh-mapload" style="flex:0 0 auto">读地图</button><button id="dsh-tp-map" style="flex:0 0 auto">传送</button><button class="ghost" id="dsh-tp-walk" style="flex:0 0 auto">走去</button><span class="st" id="dsh-tpmsg2" style="font-size:11px"></span></div>' +
+      '<div class="st" id="dsh-route" style="font-size:11px;margin-top:6px">路线：-</div>' +
+      '<div class="sec">指定坐标（同图走路 / 跨图 GPT 直达）</div>' +
+      '<div class="row" style="align-items:center;flex-wrap:wrap;gap:7px"><span class="lb" style="min-width:34px;margin:0">地图</span>' +
+      '<input id="dsh-mvmap" type="text" placeholder="地图英文名·留空=当前图" autocomplete="off" style="flex:1 1 140px;min-width:100px;padding:3px 6px">' +
+      '<span class="lb" style="min-width:14px;margin:0">X</span><input id="dsh-mvx" type="number" placeholder="x" style="flex:0 0 56px;padding:3px 6px">' +
+      '<span class="lb" style="min-width:14px;margin:0">Y</span><input id="dsh-mvy" type="number" placeholder="y" style="flex:0 0 56px;padding:3px 6px"></div>' +
+      '<div class="row" style="margin-top:6px;gap:7px"><button class="ghost" id="dsh-mvcur" style="flex:0 0 auto">填入当前位置</button>' +
+      '<button id="dsh-mvgo" style="flex:0 0 auto">前往</button><button class="ghost" id="dsh-mvstop" style="flex:0 0 auto">停止</button>' +
+      '<span class="st" id="dsh-mvlog" style="font-size:11px"></span></div>' +
+      '<div class="sec">快捷传送点（全账号共享 · 最多 20 条 · 跨标签实时同步）</div>' +
+      '<div class="row"><input id="dsh-tpp-name" type="text" maxlength="24" placeholder="地点名称" style="flex:1 1 110px;min-width:80px">' +
+      '<button class="ghost" id="dsh-tpp-current" style="flex:0 0 auto">登记当前位置</button><button id="dsh-tpp-save" style="flex:0 0 auto">保存</button></div>' +
+      '<div id="dsh-tpp-list" style="max-height:180px;overflow:auto"><span class="st">暂无快捷传送点</span></div>' +
+      '<div class="st" id="dsh-tpp-msg" style="font-size:11px"></div>' +
+      '</div>' +
+      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">传送点快捷条（悬浮 · 点击直传）</span><button class="ghost" id="dsh-fw-btn-tpp" data-fw="tpp" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
+      '<div id="dsh-fw-tpp"><div id="dsh-tpp-float-list" style="font-size:12px"><span class="st">暂无快捷传送点</span></div>' +
+      '<div class="st" style="font-size:10px">与「快捷传送点」共享同一份全账号数据（跨标签页实时同步）</div></div>' +
+      '<div class="sec">回城清理（半自动）</div>' +
+      '<div class="row" style="flex-wrap:wrap;gap:6px"><button id="dsh-tp-town" style="flex:0 0 auto">回城</button><button class="ghost" id="dsh-scan-npc" style="flex:0 0 auto">扫描NPC</button><button class="ghost" id="dsh-go-npc" style="flex:0 0 auto">走到选中</button><button class="ghost" id="dsh-talk-npc" style="flex:0 0 auto">点NPC对话</button><button class="ghost" id="dsh-sell" style="flex:0 0 auto">卖装备</button></div>' +
+      '<div class="st" id="dsh-npclist" style="font-size:11px;max-height:96px;overflow:auto">NPC: 未扫描（点「扫描NPC」→ 点条目选中）</div>' +
+      '<div class="st" id="dsh-cleanlog" style="font-size:11px">流程日志：-</div>' +
+      '<div class="sec">菜单侦察（对话采集）</div>' +
+      '<div class="st" style="font-size:11px;color:#7c2d12">走到任务NPC前点「点NPC对话」→ 下方自动抓菜单项与序号（序号=「选第N项」的N，从0起）。</div>' +
+      '<div id="dsh-menu-recon" style="font-size:11px;max-height:140px;overflow:auto;background:#f6f8fa;border:1px solid #dfe5ec;border-radius:4px;padding:6px;white-space:pre-wrap">菜单：未捕获（点NPC对话后自动出现）</div>' +
+      '<div class="st" id="dsh-menu-status" style="font-size:11px">自动上报：待命</div>' +
+      '<div class="row" style="margin-top:6px;gap:6px"><button id="dsh-menu-export" style="flex:0 0 auto">导出JSON</button><button class="ghost" id="dsh-menu-copy" style="flex:0 0 auto">复制</button></div>' +
+      '<div class="sec">出站抓包（真机对比用）</div>' +
+      '<div class="row" style="gap:6px;flex-wrap:wrap"><button id="dsh-txcap" style="flex:0 0 auto">开始抓包</button><button class="ghost" id="dsh-txstop" style="flex:0 0 auto">停止</button><button class="ghost" id="dsh-txexp" style="flex:0 0 auto">导出</button><button class="ghost" id="dsh-txdl" style="flex:0 0 auto">下载成文件</button><button class="ghost" id="dsh-spheredump" style="flex:0 0 auto">导出气弹诊断</button></div>' +
+      '<div class="st" id="dsh-txlog" style="font-size:11px">出站抓包：未开始</div>' +
+      '<textarea id="dsh-txout" style="width:100%;height:110px;font-size:10px;font-family:monospace" readonly placeholder="点「导出出站序列」后这里出现内容"></textarea>' +
+      '<div class="row" style="margin-top:6px;align-items:center;gap:6px"><span class="lb" style="min-width:0;margin:0">选第</span><input id="dsh-menu-num" type="number" min="0" value="0" style="flex:0 0 48px;padding:3px 6px"><span class="lb" style="margin:0">项</span><button id="dsh-menu-choose" style="flex:0 0 auto">发 CHOOSE_MENU</button><button class="ghost" id="dsh-menu-next" style="flex:0 0 auto">下一段</button></div>',
+    system: '' +
+      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">画面性能</span>' +
+      '<button class="ghost" id="dsh-fw-btn-perf" data-fw="perf" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
+      '<div id="dsh-fw-perf">' +
+      '<div class="row"><label class="switch"><input id="dsh-perf-on" type="checkbox" checked>启用画面优化</label><span class="st" id="dsh-perf-state" style="margin-left:auto"></span></div>' +
+      '<div class="row"><span class="lb">画质</span><select id="dsh-perf-q" style="flex:0 0 108px"><option value="100">100%（原画）</option><option value="80">80%</option><option value="70">70%</option><option value="60">60%</option><option value="50" selected>50%（默认）</option><option value="40">40%</option><option value="30">30%</option></select>' +
+      '<label class="switch"><input id="dsh-perf-fpslock" type="checkbox">锁帧</label><input id="dsh-perf-fps" type="number" value="15" min="5" max="30" step="5" style="flex:0 0 44px"></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-perf-fog" type="checkbox">雾气</label><label class="switch"><input id="dsh-perf-lightmap" type="checkbox">光照</label><label class="switch"><input id="dsh-perf-effect" type="checkbox">技能特效</label><label class="switch"><input id="dsh-perf-mineffect" type="checkbox" checked>自身特效</label><label class="switch"><input id="dsh-perf-miss" type="checkbox" checked>Miss</label></div>' +
+      '<div class="row"><button class="ghost" id="dsh-perf-apply" style="flex:1">立即应用</button></div></div>' +
+      '<div class="row"><span class="lb">数据源</span><span id="dsh-datasrc">检测中…</span></div>' +
+      '<div class="row"><span class="lb">角色</span><span id="dsh-chr">未登录</span></div>' +
+      '<div class="sec">仓库读取配置</div>' +
+      '<div class="row"><span class="lb">账号名称</span><input id="dsh-inv-account" type="text" placeholder="用于标识仓库数据（如：主号）" style="flex:1 1 auto;min-width:0"></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-inv-auto" type="checkbox" checked>自动读取仓库和背包</label></div>' +
+      '<div class="log">账号名称用于区分不同账号的共享仓库；仓库数据按账号存，背包按角色存，打开仓库时自动读取并覆盖旧数据。</div>' +
+      '<div class="sec">保活与重连</div>' +
+      
+      '<div class="row"><label class="switch"><input id="dsh-bgkeep" type="checkbox" checked>后台保活(音频+WebLock)</label><span class="tag blue">切后台保持吃药/打怪/拾取</span></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-alert" type="checkbox" checked>掉线提醒</label>' +
+      '<label class="switch"><input id="dsh-reconn" type="checkbox" checked>自动重连</label></div>' +
+      (IS_MN ? '<div class="box" style="background:rgba(255,235,215,.95);border:1px solid #e08a2a"><div class="b-hd" style="color:#b45309">手机版保活 · 重要设置（必做）</div>' +
+        '<div class="row"><span class="st" style="font-size:11px;color:#7c2d12">① 系统设置 → 电池/应用管理 → 找到本浏览器（Kiwi 等）→ 电池优化 → 选 <b>「不限制 / 无限制」</b>（小米/华为等品牌在「应用启动管理」里允许后台活动）。<br>② 否则切后台会被系统杀进程/断网络 → 掉线。</span></div>' +
+        '<div class="row"><span class="st" style="font-size:11px;color:#7c2d12">③ 助手已加后台保活：切后台瞬间连发心跳 + 回前台自动补心跳，超 90 秒自动重登。切后台勿超 90 秒；长时间挂机请保持屏幕常亮或分屏。</span></div></div>' : '') +
+      '<div class="sec">快速侦查（附近怪物/物品）</div>' +
+      '<details style="margin-top:2px"><summary>点开查看附近目标</summary>' +
+      '<div class="st" id="dsh-recon" style="font-size:11px;max-height:110px;overflow:auto">未就绪</div></details>' +
+      '<div class="sec">面板</div>' +
+      '<div class="row"><span class="lb">状态</span><span id="dsh-status" class="warn">等待启动…</span></div>' +
+      '<div class="row"><span class="lb">大小</span><span class="st">右下角 ↘ 拖动手柄可拉伸</span></div>' +
+      '<div class="row"><span class="lb">快捷键</span><span class="st">在「功能菜单」里逐个功能设置（点悬浮球打开菜单，每行右侧的键位按钮）</span></div>' +
+      '<div class="sec">键位检测</div>' +
+      '<div class="row"><span class="st" id="dsh-hkprobe" style="font-size:11px;word-break:break-all">最近按键：还没有收到按键（把浏览器标签页点到最前面再按）</span></div>' +
+      '<div class="log">按任意键会显示在这里：键码 / 按键 / 修饰键 / 是否命中功能。用来判断快捷键问题是「收不到按键」还是「判定错了」。命中但功能没反应，说明该功能的总开关被关掉了。</div>' +
+      '<div class="log">V2.18.0：快捷键改为在「功能菜单」里按功能设置 —— 左键点键位按钮 → 按下组合键（支持 Ctrl/Alt/Shift/Win + 键，功能键 F1~F12 也可）；Esc 取消；右键键位按钮清除；20 秒不按自动取消。所有快捷键都是单键切换（按一次开、再按一次关）。同一组合不可重复绑定；功能总开关关掉后该功能的快捷键也不响应；输入框内打字时不触发。注意：浏览器标签页必须在最前面才收得到按键。</div>' +
+      '<div class="sec">登录验证自动过</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-capauto" type="checkbox" checked>自动过验证</label><span class="st" id="dsh-capstate" style="font-size:10px;margin-left:auto">待命</span></div>' +
+      '<div class="row"><span class="lb">填入后等待</span><input id="dsh-capwait" type="number" value="10" min="0" style="flex:0 0 48px"><span style="color:#5a6b7f">s 再点「下面」（0=立即提交）</span></div>' +
+      '<div class="log">点登录/换角色弹验证时自动读算式算结果，填入输入框，等 N 秒后自动点「下面」提交。</div>' +
+      '<div class="sec">配置备份</div>' +
+      '<div class="row" style="gap:6px;flex-wrap:wrap"><button id="dsh-cfg-exp" style="flex:0 0 auto">导出配置</button><button class="ghost" id="dsh-cfg-imp" style="flex:0 0 auto">导入配置</button></div>' +
+      '<div class="log">导出=把本入口全部配置（角色档/技能/传送点/快捷键/高亮/白名单等）打包成 JSON 下载；导入=选文件恢复。跨入口/跨机器迁移或备份用，导入后刷新页面生效。</div>' +
+      '<div class="sec">扩展脚本（独立功能包）</div>' +
+      '<div id="dsh-extlist" style="font-size:11px;max-height:130px;overflow:auto"><span class="st">未检测到扩展脚本（安装独立功能包后自动显示）</span></div>'
+  };
+
+  // ---------------- 构建面板 ----------------
+  var style = $("style");
+  style.textContent = PANEL_CSS;
+  document.documentElement.appendChild(style);
+
+  var tabsHtml = "";
+  var tabDefs = [["nei", "内挂模式"], ["zhu", "助手模式"], ["assist", "辅助"], ["teleport", "传送"], ["system", "系统"]];
+  for (var ti = 0; ti < tabDefs.length; ti++) {
+    tabsHtml += '<button class="tab' + (ti === 0 ? " active" : "") + '" data-page="' + tabDefs[ti][0] + '">' + tabDefs[ti][1] + '</button>';
+  }
+  var pagesHtml = "";
+  for (var pi = 0; pi < tabDefs.length; pi++) {
+    pagesHtml += '<div class="page' + (pi === 0 ? " active" : "") + '" data-page="' + tabDefs[pi][0] + '">' + PAGE_HTML[tabDefs[pi][0]] + '</div>';
+  }
+
+  var panel = $("div", "", '<div class="hd"><b>仙境传说 V' + VER + ' · 助手</b><span class="hbtns">' +
+    '<span class="st" id="dsh-st" style="color:#cfe0ff;font-size:11px"></span>' +
+    '<button class="hbtn" id="dsh-min" title="缩成悬浮球">▁</button></span></div>' +
+    '<div class="tabs">' + tabsHtml + '</div>' +
+    // 登录信息折叠框（原登录页取消后迁至面板顶部、橘色信息=角色状态条正上方）
+    '<details id="dsh-loginbox" style="margin:6px 8px 0"><summary style="cursor:pointer;color:#b45309;font-size:12px;font-weight:bold;display:flex;align-items:center;gap:8px"><span>登录 · 展开/收起</span><button id="dsh-recenter" title="面板回中" style="margin-left:auto;flex:0 0 auto;color:#b45309;background:rgba(255,255,255,.55);border:1px solid #d9a441;border-radius:5px;padding:1px 8px;font-size:11px;cursor:pointer;font-weight:600">回中</button></summary>' +
+    '<div class="row" style="margin-top:4px"><span class="lb">线路</span><select id="dsh-server" style="flex:0 0 140px">' +
+    '<option value="5">V6-Eden 进阶二转</option><option value="3">V6-Online 三转</option></select>' +
+    '<span class="st" id="dsh-server-note" style="font-size:10px">版本 ' + version + '</span></div>' +
+    '<div class="row"><span class="lb">账号</span><input id="dsh-acc" placeholder="游戏账号" autocomplete="off"></div>' +
+    '<div class="row"><span class="lb">密码</span><input id="dsh-pwd" type="password" placeholder="游戏密码" autocomplete="off"></div>' +
+    '<div class="row"><button id="dsh-save">保存并自动登录</button><button class="ghost" id="dsh-clear">清除</button><button class="ghost" id="dsh-reboot">重启客户端</button></div>' +
+    '<div class="row"><button id="dsh-save-confirm" class="green" style="flex:0 0 auto">中转确认后登录已保存账号</button></div>' +
+    '<div class="row"><span class="st" id="dsh-autolognote" style="font-size:10px">默认不自动登录：先在中转页/登录界面确认（避免挤掉中转会话），确认后点上方按钮登录已保存账号</span></div>' +
+    '<div class="row"><button class="green" id="dsh-saveprofile" style="flex:0 0 auto">保存当前角色设置</button>' +
+    '<span class="st" id="dsh-proflabel" style="font-size:10px"></span></div>' +
+    '<div class="row"><span class="lb">当前账号</span><span class="st" id="dsh-wininfo" style="font-size:10px">读取中…</span></div></details>' +
+    '<div class="statbar" id="dsh-statbar" style="display:none">' +
+    '<span class="nm">—</span><span class="job">未登录</span><span class="lv">—</span>' +
+    '<span class="bar">HP <span class="bg"><span class="hp" style="width:0%"></span></span><span class="bnum">—</span></span>' +
+    '<span class="bar">SP <span class="bg"><span class="sp" style="width:0%"></span></span><span class="bnum">—</span></span>' +
+    '<span class="warn">负重—</span><span class="zeny">Zeny—</span></div>' +
+    // V2.3.1 常驻开始/停止命令条：移到角色状态条正下方（内挂页显内挂开/停，助手页显助手开/停），
+    // 关闭设置抽屉后回到主面板即可直接开始/停止，无需再进设置。
+    '<div class="dsh-cmdbar" id="dsh-cmdbar" style="flex:none;display:flex;gap:8px;align-items:center;margin:0 8px">' +
+    '<button class="green" id="dsh-battleon" style="flex:1;padding:7px 4px">开始</button>' +
+    '<button class="red" id="dsh-battleoff" style="flex:1;padding:7px 4px">停止</button>' +
+    '<button class="green" id="dsh-z-on" style="flex:1;padding:7px 4px;display:none">开始</button>' +
+    '<button class="red" id="dsh-z-off" style="flex:1;padding:7px 4px;display:none">停止</button></div>' +
+    '<div class="pages">' + pagesHtml + '</div>' +
+    '<div class="status"><span class="dot"></span><span class="st" id="dsh-status2">就绪</span></div>' +
+    '<div class="resize-h" id="dsh-resize" title="按住拖动调整面板大小"></div>');
+  panel.id = "dsh-ro-panel"; // 关键：CSS 选择器全部基于 #dsh-ro-panel，漏设 id 会导致样式全失效
+
+  // 手机版窄屏适配：宽度 92vw（≤400px 屏宽不溢出），PC 版保持 400px
+  var PANEL_LAYOUT =
+    (IS_MN ? "position:fixed;top:6px;left:50%;transform:translateX(-50%);z-index:2147482000;width:92vw;max-width:420px;min-width:240px;height:calc(100vh - 12px);min-height:240px;max-height:none;" :
+      "position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:2147482000;width:400px;min-width:300px;height:640px;min-height:360px;max-height:92vh;") +
+    "background:rgba(244,247,252,.93);border:2px solid #1f9d4d;border-radius:12px;color:#16202c;" +
+    "font:13px/1.6 'Microsoft YaHei',system-ui,sans-serif;" +
+    "box-shadow:0 0 0 3px rgba(31,157,77,.35),0 10px 32px rgba(0,0,0,.55);display:flex;flex-direction:column;overflow:hidden;";
+  panel.style.cssText = PANEL_LAYOUT;
+  var innerStyle = $("style");
+  innerStyle.textContent = PANEL_CSS;
+  panel.insertBefore(innerStyle, panel.firstChild);
+  document.documentElement.appendChild(panel);
+
+  // ================= V2.17.0 公共层 B：RO 原生皮肤（覆盖层，完全不动 PANEL_CSS）================
+  // 做法：4 张游戏原生位图（标题栏/系统球/关闭/最小化）内嵌为 base64，另一层 <style> 追加在
+  // PANEL_CSS 之后做覆盖。现有布局一行未改 —— 想回滚只需删掉这一层 <style> 即可。
+  // 面板外框是行内样式（PANEL_LAYOUT），行内样式优先级高于样式表，故这几条加 !important。
+  var RO_SKIN_CSS = ":root{--dsh-tb:url(\"data:image/bmp;base64,Qk2ABAAAAAAAALIDAAAoAAAADAAAABEAAAABAAgAAAAAAAAAAAASCwAAEgsAAN8AAADfAAAAAAAAAP///wD/AP8Ax5KBAMaRgADFkYAAy5aFAMuXhgDMmIcAyZaGAMqXiADKlYIAx5KAAMiTgQDJlYMAyJSCAMaTgQDKloQAyJWDAMeUggDLmIYAyZaEAMmWhQDJl4UAzJmIAMuZhwDIloUA5s7FAOzUywDGlIEAx5WCAMWVggDow7QA4L6wAOfFtwDYqZMA2ayXANmtmQDYrZkA7r+qANyxnQDsvqkA8MKuAPDDrgDww68A8MSxAPDFsQDiuaYA4bmnAPHItQDmwK8A8su5APHKuADnwbAA8cu6AOjFtQDoxbYA58S1ANq6qwDoxrcA4cCxAN6+rwDgv7EA376wAOnIuQDXuawA38G0AN2/sgDixrkA6dHGAPfe0wDgrpUA5LKaAOOzmwDVp5EA2KyVAOS2ngDjtJ0A4rSdAOO1ngDluKEA2q6ZANmumQDYrpkA27GcAN2zngDvwqwA4LahAPDErwDhuKQA4LikAPHGsQDsw64A4bmmAO7FsADiuqcA47ypAPHJtQDyyrcA5L6sAPHKtwDwyrcA5MCuAOfDsQDlwrAA5sOxAN6+rgDcvKwA58a2AN2+rgDev7AA3b6vAN3AsQDewrQA3cGzAOTLvwDiyb0A6dLGAOvUyQDq08gA6dLHAOnUygDq1csA59PJAOzZ0AA7OTgAPjw7AEJAPwBhX14A4LGYAOO2ngDYrpcA4b2qAObDsADnxLEA6MazAOXDsQDlxLEA2sGzAOTOwgD44tYA59LHAOjUyQDn08gA8uDWAPTk2wD618IA59PHAJeSjwD828UA/NzHAPzdyQD838sAmpSQAOrn5QD428UA/N/JAPzfygD84MsA+9/KAPvfywDy0bYA8tK3APzhywDTzcgA8tS5APLVuwDx1bsA89i/AMC5swDKw70A8ta7APPYvgDy2L4A89m/APnhyQBmY2AAYV5bAMjDvgCqpqIAUlBOAFdVUwDf29cAtLGuAL27uQBmZWQA9vX0AMfGxQDy2b8A89zCAPPcxADx2LsA893CAPPdxADz3sQA897FAPPexgD659EA/evWAPvp1ADx2bsA897DAPPfxQD6588A++jQAPro0AD86tIA+unQAPvq0AD979gA/fDcAP3x3AD98doA/fLbAPvz2wBra2oA8vLyAOfn5wDDw8MAwsLCAMDAwAC9vb0Atra2AAAAAAAAAAAAAAAAAM7Ozs7Ozs7Ozs7OzsPDw8PDw8PDw8PDw9PT09PT09PT09PT062tra2tra2tra2trZ+fn5+fn5+fn5+fn1hYWFhYWFhYWFhYWDQ0NDQ0NDQ0NDQ0NExMTExMTExMTExMTF9fX19fX19fX19fX1JSUlJSUlJSUlJSUjs7Ozs7Ozs7Ozs7O4aGhoaGhoaGhoaGhnl5eXl5eXl5eXl5eW9vb29vb29vb29vb3JycnJycnJycnJycg8PDw8PDw8PDw8PDwAA\");--dsh-base:url(\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAsAAAALCAYAAACprHcmAAAA/ElEQVR4nGP4z0A8ROGUTbv+P7Dq7P/41otgGsTHqrh53tn/YfXn/09d++D/2oMvwDSI3zzv3H8UxY2zzv+3zjz2f/r6h/+X73n2f9vxV2AaxAeJN80+/x+u2DN17v+QmnP/2xbd+T9pzf3/S3Y+BdMgPkjcK3UeQrG6U+V/u+zj/wsmXvvfOP/2/7o5t8A0iA8SB8nDFZsGtP/XDZj13zRx13/n/JP/3QpPgWkQHywe0I5QHFG2+b+GZ9f/5PZLYFNB1oNoEB8kDpJHCQ3X5AX/PYpO/T988d3/m4++gGkQ3zV5/n+s4ZzcuPu/RWj/f03nSjAN4uOMFEIQAAq8ILBetNoqAAAAAElFTkSuQmCC\");--dsh-close:url(\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAsAAAALCAYAAACprHcmAAABNUlEQVR4nI2RO0tCAQCFbcsfEM09IBoMCoxqEdIihcIg6XIpDMyGTHBRuPYgA4mES4PRw7DBbgWRk0OEODWYg5hW9CKqwQqaCmr9QgdFMIozHA7nm85Rofq/KoJn/ZphbxqrP1v0Qq4KB5Qsno0bDhMvHJ+9cxDPI4VukfdzUAMl2BfKMDKXZmA8QIdR4iH/hWM+QmOPk7HFFL7QeRk22sNM+LNEE8/Ut09iEP2om0XWlCQO+QrTVLgMt/RK6GaSBI+e8AaiqJtEhmwyykmePleKQl+CteZlOoUdZjdzaPRuNAY3tQ0CS1spdNZdCn0JFjwxukeDiK4IdW02TjNv6CxLaE0L9Nu2EdwxKtYYnFawr1yQuf/k8fWbzN0HDvkSs3OPqjvbfHG6LKu06qWiF/Kvp/ylH9hkF6Ks4lzeAAAAAElFTkSuQmCC\");--dsh-mini:url(\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAsAAAALCAYAAACprHcmAAABGklEQVR4nI2QO0vDYBiFO+rv6CDFWejg4g2lOiioSAk4hHpZRC0E6mIv1kKCBEG7CMGK7dZFxwzSWkUUTYvBIlERQdBBRXB/5MsQCGQoLy+Hc84znRChzs9nlGKbqY1b5vMtV4UPhHPGHbObFvvVV6q1D1eFF7kPzh5YDKxcUTHfqVlfNJ1fLu0fThqfTCg3iN6DYwmDJc1mq2iS1Osouw1X13bqZAwH0Xtwz2AKKdtkVFLpDse97wrHSe49IHoP7pss0C+VSOQvWC2YaMdttMoLC7kzhuUyovfgOeWUSExlWbPZPnpCLT+TNhwW1Xt6xzVE71tjRD5kbP2a89Y3j29/rgov8sCd5YxJdEYnMpQiOq0jp83gnTu5f+rTHbsioa6rAAAAAElFTkSuQmCC\")}\n#dsh-ro-panel{background:#fff!important;border:1px solid #8e8e8e!important;border-radius:3px!important;box-shadow:1px 2px 2px rgba(0,0,0,.55)!important;color:#111!important}\n#dsh-ro-panel .hd{height:17px;min-height:17px;padding:0 3px;gap:3px;border-bottom:0;border-radius:3px 3px 0 0;background-color:#fff;background-image:var(--dsh-tb);background-repeat:repeat-x;background-size:auto 17px;color:#111;text-shadow:1px 1px #fff;cursor:move}\n#dsh-ro-panel .hd b{color:#111;font-weight:700;font-size:11px;line-height:13px;text-shadow:1px 1px #fff}\n#dsh-ro-panel .hd .hbtns{gap:3px}\n#dsh-ro-panel .hd .hbtn{height:13px;min-width:0;padding:0 5px;border:1px solid;border-color:#cfcfcf #a9a9a9 #5f5f5f #bdbdbd;border-radius:3px;background:linear-gradient(to bottom,#fff 0%,#f2f2f2 35%,#dcdcdc 55%,#f9f9f9 100%);color:#3f3f3f;font-size:10px;line-height:11px;font-weight:400;text-shadow:1px 1px rgba(255,255,255,.85)}\n#dsh-ro-panel .hd .hbtn:hover{background:linear-gradient(to bottom,#f7fbff,#dfe8f6 35%,#c0d0ee 55%,#f0f6ff);border-color:#c9d1dd #8ea2c4 #4d5f86 #b1bfd5}\n#dsh-ro-panel .tabs{background:#fff;border-bottom:1px solid #7897b9;padding:3px 4px 0;gap:2px}\n#dsh-ro-panel .tab{height:21px;padding:0 9px;border:1px solid #a8bfd8;border-bottom:0;border-radius:4px 4px 0 0;background:linear-gradient(to bottom,#eef5fd,#cfe0f4 45%,#b9d0ea);color:#2a4a70;font-size:11px;line-height:19px;text-shadow:1px 1px #fff}\n#dsh-ro-panel .tab:hover{background:linear-gradient(to bottom,#f7fbff,#dbe9f8 45%,#c8dcf2);color:#123a63}\n#dsh-ro-panel .tab.active{background:#fff;border-color:#7897b9;border-bottom:0;color:#123a63;font-weight:700;height:22px;line-height:20px;text-shadow:none}\n#dsh-ro-panel .statbar{background:#f7f7f7;border-bottom:1px solid #c1c6c2;color:#333;font-size:11px;padding:3px 5px}\n#dsh-ro-panel .statbar .nm{color:#111}#dsh-ro-panel .statbar .job{color:#555}#dsh-ro-panel .statbar .lv{color:#123a63}\n#dsh-ro-panel .statbar .bar .bg{background:#dfe5ec;border:1px solid #9aa7b6;height:8px;border-radius:0}\n#dsh-ro-panel .statbar .bar .hp{background:linear-gradient(#ff8a8a,#d63a3a)}#dsh-ro-panel .statbar .bar .sp{background:linear-gradient(#8ec2ff,#2f6fde)}\n#dsh-ro-panel .statbar .bar .bnum{color:#333}\n#dsh-ro-panel .pages{background:#fff;padding:8px 10px 12px}\n#dsh-ro-panel .sec{margin:5px 0 4px;padding:2px 0 2px 6px;border-left:3px solid #6f9ad0;background:linear-gradient(to right,#eef4fb,rgba(238,244,251,0));color:#123a63;font-size:11px;font-weight:700}\n#dsh-ro-panel .box{background:#fbfcfe;border:1px solid #c1c6c2;border-radius:3px;padding:5px 6px;margin:5px 0}\n#dsh-ro-panel .box .b-hd{color:#123a63;font-size:11px;font-weight:700}\n#dsh-ro-panel .list-item{color:#333;font-size:11px;border-bottom:1px solid #e2e2e2}\n#dsh-ro-panel .log{background:#f4f4f4;border:1px solid #dcdcdc;border-radius:2px;color:#555;font-size:10px}\n#dsh-ro-panel .tag{border:1px solid #b9c6d6;border-radius:3px;background:#f2f6fb;color:#31527a;font-size:10px}\n#dsh-ro-panel .tag.blue{background:#e6eefa;border-color:#9fb8d8;color:#123a63}#dsh-ro-panel .tag.green{background:#eef8f1;border-color:#8fbfa2;color:#1d6b3c}\n#dsh-ro-panel button{height:20px;min-width:42px;padding:0 7px;border:1px solid;border-color:#cfcfcf #a9a9a9 #5f5f5f #bdbdbd;border-radius:4px;background:linear-gradient(to bottom,#fff 0%,#f2f2f2 35%,#dcdcdc 55%,#f9f9f9 100%);color:#3f3f3f;font-size:11px;font-weight:400;line-height:1;text-shadow:1px 1px rgba(255,255,255,.85);box-shadow:inset 0 1px rgba(255,255,255,.95),inset 0 -1px rgba(0,0,0,.12)}\n#dsh-ro-panel button:hover{background:linear-gradient(to bottom,#f7fbff,#dfe8f6 35%,#c0d0ee 55%,#f0f6ff);border-color:#c9d1dd #8ea2c4 #4d5f86 #b1bfd5}\n#dsh-ro-panel button.green{color:#123a63;border-color:#bcd0e6 #8fa9c6 #4a6b91 #a9bfd8;background:linear-gradient(to bottom,#fbfdff,#e3eefa 35%,#c2d9f2 55%,#f2f8ff)}\n#dsh-ro-panel button.red{color:#8d2727;border-color:#d4c5c5 #b9a0a0 #765858 #c3aeae;background:linear-gradient(#fff,#eadede 55%,#fff8f8)}\n#dsh-ro-panel button.ghost{color:#3f3f3f;border-color:#cfcfcf #a9a9a9 #5f5f5f #bdbdbd;background:linear-gradient(to bottom,#fff,#efefef 55%,#fbfbfb)}\n#dsh-ro-panel input[type=text],#dsh-ro-panel input[type=password],#dsh-ro-panel input[type=number]{height:20px;background:#efefef;border:0;border-radius:0;box-shadow:inset 1px 1px 1px #c8c8c8;color:#111;font-size:11px;padding:1px 4px}\n#dsh-ro-panel select{height:20px;background:#fff;border:1px solid #aaa;border-radius:0;box-shadow:none;color:#111;font-size:11px;padding:0 2px}\n#dsh-ro-panel textarea{background:#efefef;border:0;border-radius:0;box-shadow:inset 1px 1px 1px #c8c8c8;color:#111;font-size:11px}\n#dsh-ro-panel .switch input{accent-color:#647c9d}\n#dsh-ro-panel .status{background:#f7f7f7;border-top:1px solid #c1c6c2;color:#333;font-size:10px;padding:2px 5px}\n#dsh-ro-panel .status .dot{width:7px;height:7px;background:#37b24d}\n#dsh-ro-panel .sub-tabs{border-bottom:1px solid #7897b9;gap:2px}\n#dsh-ro-panel .sub-tab{height:20px;padding:0 9px;border:1px solid #a8bfd8;border-bottom:0;border-radius:4px 4px 0 0;background:linear-gradient(to bottom,#eef5fd,#cfe0f4 45%,#b9d0ea);color:#2a4a70;font-size:11px;font-weight:400;line-height:18px;text-shadow:1px 1px #fff}\n#dsh-ro-panel .sub-tab:hover{background:linear-gradient(to bottom,#f7fbff,#dbe9f8 45%,#c8dcf2)}\n#dsh-ro-panel .sub-tab.active{background:#fff;border-color:#7897b9;border-bottom:0;color:#123a63;font-weight:700;text-shadow:none}\n#dsh-ro-panel .a-nav .sub-tab{height:auto;padding:6px 7px;border-radius:3px;border:1px solid #a8bfd8;background:linear-gradient(to bottom,#eef5fd,#cfe0f4 45%,#b9d0ea);color:#2a4a70;font-size:11px;line-height:1.35;text-shadow:1px 1px #fff}\n#dsh-ro-panel .a-nav .sub-tab.active{background:#fff;border:1px solid #7897b9;border-left:3px solid #6f9ad0;color:#123a63}\n#dsh-ro-panel .dbtn{border:1px solid;border-color:#cfcfcf #a9a9a9 #5f5f5f #bdbdbd;border-radius:4px;background:linear-gradient(to bottom,#fff 0%,#f2f2f2 35%,#dcdcdc 55%,#f9f9f9 100%);color:#3f3f3f;font-size:11px;font-weight:400;padding:7px 6px;text-shadow:1px 1px rgba(255,255,255,.85)}\n#dsh-ro-panel .dbtn:active{background:linear-gradient(to bottom,#cdd8eb,#b7c8e5 45%,#dfe9fb)}\n#dsh-ro-panel #dsh-drawer{background:#fff;border-left:1px solid #8e8e8e;box-shadow:-3px 0 6px rgba(0,0,0,.35)}\n#dsh-ro-panel #dsh-drawer .d-hd{height:17px;min-height:17px;padding:0 3px;gap:3px;background:#fff;background-image:var(--dsh-tb);background-repeat:repeat-x;background-size:auto 17px;color:#111;text-shadow:1px 1px #fff;font-size:11px;font-weight:700}\n#dsh-ro-panel #dsh-drawer .d-hd .st{color:#111!important;font-size:11px!important}\n#dsh-ro-panel #dsh-drawer .d-hd button{height:13px!important;min-width:0!important;padding:0 6px!important;font-size:10px!important;color:#3f3f3f!important;border:1px solid #b9a0a0!important;border-radius:3px!important;background:linear-gradient(#fff,#eadede 55%,#fff8f8)!important}\n#dsh-ro-panel #dsh-drawer .d-rail{background:#f2f2f2;border-right:1px solid #c1c6c2;padding:5px 4px;gap:5px}\n#dsh-ro-panel #dsh-drawer .d-rail button{font-size:11px;font-weight:400;padding:6px 4px}\n#dsh-ro-panel #dsh-drawer .d-body{background:#fff;padding:8px 10px 12px}\n#dsh-ro-panel .pages,#dsh-ro-panel #dsh-drawer .d-body{scrollbar-color:#b9c6d6 transparent}\n#dsh-ro-panel .pages::-webkit-scrollbar-thumb,#dsh-ro-panel #dsh-drawer .d-body::-webkit-scrollbar-thumb{background:#b9c6d6;border:3px solid #fff}\n#dsh-ro-panel .pages::-webkit-scrollbar-thumb:hover,#dsh-ro-panel #dsh-drawer .d-body::-webkit-scrollbar-thumb:hover{background:#93a8c0}\n#dsh-fw-mgr{border:1px solid #8e8e8e;border-radius:3px;background:#fff;box-shadow:1px 2px 2px rgba(0,0,0,.55);color:#111}\n.dsh-grip::after{border-right:2px solid #8a8a8a;border-bottom:2px solid #8a8a8a}\n.dsh-grip:hover::after{border-color:#123a63}";
+  var roSkinStyleEl = null;
+  function roSkinSet(on) { try { if (roSkinStyleEl) roSkinStyleEl.disabled = !on; } catch (e) {} }
+  function roSkinOn() { try { return !!(roSkinStyleEl && !roSkinStyleEl.disabled); } catch (e) { return false; } }
+  (function () {
+    try {
+      var st = document.createElement("style");
+      st.id = "dsh-ro-skin";
+      st.textContent = RO_SKIN_CSS;
+      document.documentElement.appendChild(st);
+      roSkinStyleEl = st;
+      // 面板内部还注入了一份 PANEL_CSS（innerStyle），延迟再挪到最末尾，确保覆盖层排在它之后
+      setTimeout(function () { try { document.documentElement.appendChild(st); } catch (e) {} }, 0);
+    } catch (e) {}
+  })();
+
+
+  // ---- 赏金任务材料提示（V1.8.4）：物品栏槽 data-itid 命中赏金清单 → 金边+数量变金（纯样式注入，不改图片）----
+  // V1.8.1 用 .item.maked[data-itid] 从未生效（物品栏真实结构=<div class="item" data-index data-itid draggable>，v0.13.10 探针 domInv 取证）；
+  // V1.8.4 重写为 .item[data-itid]，仓库(.items 无 itid)/装备(仅 data-index)槽暂不覆盖
+  var BOUNTY_ITEMS = ['507','508','509','510','511','518','526','608','618','714','719','720','721','723','726','727','729','741','750','751','752','753','754','7206','7038','1001','733','1004','7027','7026','7035','722','7047','7048','7209','970','7002','922','7014','1097','7015','7016','713','919','921','931','948','950','1038','7114','7113','7211','7023','7022','701','743','1041','730','731','732','934','1020','539','609','604','915','1059','739','1008','1009','971','972','1051','1049','1047','7041','7054','1064','7063','1040','7053','901','1094','1025','1045','941','1034','7108','7020','7036','958','740','742']; // 与 ro-wiki/wiki.html BOUNTY 一致（赏金任务收集品 92 件，按 2026-08-29 玩家导出清单重建，截图 32行×3列-4空格）；V2.6.5 全量重写：删除旧错误 ID（740=傀儡 非蜂蜜、725=缠丝玛瑙 等），按游戏内逐件确认名→ID 替换，含 7002=兽人之牙 与 922=兽人犬齿（Orc Tooth vs Orc's Fang）两件分开、958=亡者牙齿
+  // V1.9.4：自定义高亮白名单（防 CSS 注入，白名单外颜色忽略）
+  var HL_COLORS = {
+    yellow: { c: "#e8b400", r: "232,180,0" },
+    red:    { c: "#e04b3a", r: "224,75,58" },
+    green:  { c: "#4caf50", r: "76,175,80" },
+    blue:   { c: "#4a90e2", r: "74,144,226" },
+    purple: { c: "#9c6ade", r: "156,106,222" },
+    orange: { c: "#ff8f2b", r: "255,143,43" },
+    cyan:   { c: "#2ec4b6", r: "46,196,182" },
+    white:  { c: "#f2f3f5", r: "242,243,245" },
+    pink:   { c: "#f26d9c", r: "242,109,156" }
+  };
+  function parseHlRules() {
+    var map = {};
+    hlRules.forEach(function (r) { map[r.id] = r.color; });
+    return map;
+  }
+  // V1.9.4：高亮规则结构化名单（localStorage dsh_ro_hlrules = [{id,color}]）+ 名单框增删管理
+  var hlRules = [];
+  function parseHlText(txt) {
+    var arr = [];
+    var re = /(\d+)\[(\w+)\]/g, mm;
+    while ((mm = re.exec(txt || "")) !== null) {
+      var col = (mm[2] || "").toLowerCase();
+      if (HL_COLORS[col]) arr.push({ id: String(mm[1]), color: col }); // 白名单外忽略
+    }
+    return arr;
+  }
+  function loadHlRules() {
+    var arr = [];
+    try { var raw = localStorage.getItem("dsh_ro_hlrules"); if (raw) { var j = JSON.parse(raw); if (Array.isArray(j)) arr = j; } } catch (e) {}
+    try {
+      // 旧版文本存档迁移（saved.ui.hlrule "ID[color]," 格式）一次性并入
+      if (saved.ui && saved.ui.hlrule) {
+        arr = arr.concat(parseHlText(String(saved.ui.hlrule)));
+        saved.ui.hlrule = undefined;
+        try { saveSaved(saved); } catch (e2) {}
+      }
+    } catch (e) {}
+    var map = {};
+    arr.forEach(function (r) { if (r && HL_COLORS[r.color]) map[String(r.id)] = r.color; });
+    var out = [];
+    for (var k in map) out.push({ id: k, color: map[k] });
+    return out;
+  }
+  function saveHlRules() {
+    try { localStorage.setItem("dsh_ro_hlrules", JSON.stringify(hlRules)); } catch (e) {}
+    var c = $id("dsh-hlcount"); if (c) c.textContent = hlRules.length + " 条";
+  }
+  function addHlRulesFromInput() {
+    try {
+      var el = $id("dsh-hlrule");
+      if (!el) return;
+      var arr = parseHlText(el.value);
+      if (!arr.length) { setStatus("未识别到有效规则：格式 ID[颜色]，颜色限 yellow/red/green/blue/purple/orange/cyan/white/pink", "err"); return; }
+      var map = {};
+      hlRules.forEach(function (r) { map[r.id] = r.color; });
+      arr.forEach(function (r) { map[r.id] = r.color; });
+      hlRules = [];
+      for (var k in map) hlRules.push({ id: k, color: map[k] });
+      el.value = "";
+      saveHlRules();
+      renderHlList();
+      rebuildBountyStyle();
+      setStatus("已添加 " + arr.length + " 条高亮规则", "ok");
+    } catch (e) {}
+  }
+  function delHlRule(id) {
+    try {
+      hlRules = hlRules.filter(function (r) { return String(r.id) !== String(id); });
+      saveHlRules();
+      renderHlList();
+      rebuildBountyStyle();
+    } catch (e) {}
+  }
+  function renderHlList() {
+    try {
+      var el = $id("dsh-hllist");
+      if (!el) return;
+      if (!hlRules.length) { el.innerHTML = '<span class="st">空（输入 ID[颜色] 添加，赏金材料默认黄）</span>'; return; }
+      var html = "";
+      hlRules.forEach(function (r) {
+        var def = HL_COLORS[r.color] || HL_COLORS.yellow;
+        var nm = getItemNameS(r.id);
+        var disp = (nm !== ("ID" + r.id)) ? nm + "(" + r.id + ")" : "ID" + r.id;
+        html += '<div class="list-item"><span style="display:inline-block;width:10px;height:10px;background:' + def.c + ';border-radius:2px;margin-right:5px;vertical-align:middle"></span>' +
+                '<span>' + disp + '</span><span class="st">[' + r.color + ']</span>' +
+                '<button class="ghost" data-hldel="' + r.id + '" style="float:right;padding:0 6px">×</button></div>';
+      });
+      el.innerHTML = html;
+      el.querySelectorAll("[data-hldel]").forEach(function (b) {
+        b.addEventListener("click", function () { delHlRule(this.getAttribute("data-hldel")); });
+      });
+    } catch (e) {}
+  }
+  function hlCss(id, col) {
+    var def = HL_COLORS[col] || HL_COLORS.yellow;
+    return '.item[data-itid="' + id + '"],.item[data-dsh-itid="' + id + '"]{border-left:3px solid ' + def.c + ' !important;outline:none !important;box-shadow:none !important;}';
+  }
+  var bountyStyleEl = null;
+  function applyBountyStyle(on) {
+    try {
+      if (on && !bountyStyleEl) {
+        bountyStyleEl = $("style");
+        bountyStyleEl.id = "dsh-bounty-style";
+        var hl = parseHlRules();
+        var css = "";
+        // 1) 赏金材料默认黄色（被自定义规则覆盖的跳过）
+        for (var bIdx = 0; bIdx < BOUNTY_ITEMS.length; bIdx++) {
+          var bId = BOUNTY_ITEMS[bIdx];
+          if (hl[bId]) continue;
+          css += hlCss(bId, "yellow");
+        }
+        // 2) 自定义规则（任意 ID 可配，含覆盖赏金色/非赏金 ID）
+        for (var k in hl) {
+          css += hlCss(k, hl[k]);
+        }
+        bountyStyleEl.textContent = css;
+        document.documentElement.appendChild(bountyStyleEl);
+      } else if (!on && bountyStyleEl) {
+        if (bountyStyleEl.parentNode) bountyStyleEl.parentNode.removeChild(bountyStyleEl);
+        bountyStyleEl = null;
+      }
+    } catch (e) {}
+  }
+  function rebuildBountyStyle() {
+    try {
+      if (bountyStyleEl) { bountyStyleEl.parentNode.removeChild(bountyStyleEl); bountyStyleEl = null; }
+      var bh = $id("dsh-bountyhl");
+      applyBountyStyle(!!(bh && bh.checked));
+    } catch (e) {}
+  }
+  try {
+    hlRules = loadHlRules();
+    var bhEl = $id("dsh-bountyhl");
+    renderHlList();
+    applyBountyStyle(!!(bhEl && bhEl.checked));
+    if (bhEl) bhEl.addEventListener("change", function () { rebuildBountyStyle(); });
+    // 自定义高亮输入：回车/切走即添加进名单并重建样式
+    var hlEl = $id("dsh-hlrule");
+    if (hlEl) {
+      hlEl.addEventListener("change", addHlRulesFromInput);
+      hlEl.addEventListener("keydown", function (ev) { if (ev.key === "Enter") { ev.preventDefault(); addHlRulesFromInput(); } });
+    }
+  } catch (e) {}
+
+  // ---- V2.21.0：侧边抽屉整体删除 ----
+  // 旧的「战斗设置 / 技能设置」右侧滑出抽屉交互不方便，已改为页内二级页签
+  // （助手模式页 = 战斗设置 / 技能设置 / 附近怪物 三个页签，且可整块浮窗）。
+
+  // ================= V2.17.0 公共层 A / A2 / D =================
+  // A  统一窗口行为：所有助手窗口（主面板 / 功能浮窗 / 功能管理器 / MVP 计时）共用同一套
+  //    拖动 + 拉伸 + 位置尺寸记忆 + 事件隔离，不再每个窗口各写一份。
+  // A2 界面缩放：按浏览器「视口」尺寸（innerWidth / innerHeight）等比缩放助手 UI。
+  //    视口尺寸天然排除了浏览器顶栏、书签栏与页面自身顶框，分屏时助手自动变小不再压住游戏。
+  //    缩放只作用于助手窗口根节点，绝不改 documentElement（那会把游戏画面一起缩放）。
+  // D  事件隔离：助手 UI 根节点统一打 data-dsh-ui="1"，判定只此一处；旧实现维护的是手写
+  //    选择器清单，漏掉了功能浮窗/战斗条/提示条，兜底形同虚设。
+  var RO_UI_KEY = "dsh_ro_ui_v1";
+  var RO_DESIGN_W = 1600, RO_DESIGN_H = 900;   // 缩放基准视口：1600x900 时按 100% 显示
+  var RO_SCALE_HARD_MIN = 0.5, RO_SCALE_HARD_MAX = 1.5;
+  var roUiC = null;
+  function roUi() {
+    if (roUiC) return roUiC;
+    roUiC = { win: {}, scale: "auto", scaleMin: 0.75 };
+    try {
+      var o = JSON.parse(localStorage.getItem(RO_UI_KEY) || "{}");
+      if (o && typeof o === "object") {
+        if (o.win && typeof o.win === "object") roUiC.win = o.win;
+        if (o.scale !== undefined && o.scale !== null) roUiC.scale = o.scale;
+        var sm = parseFloat(o.scaleMin);
+        if (isFinite(sm) && sm >= RO_SCALE_HARD_MIN && sm <= 1) roUiC.scaleMin = sm;
+      }
+    } catch (e) {}
+    return roUiC;
+  }
+  function roUiSave() { try { localStorage.setItem(RO_UI_KEY, JSON.stringify(roUi())); } catch (e) {} }
+  function roVw() { return window.innerWidth || document.documentElement.clientWidth || 1280; }
+  function roVh() { return window.innerHeight || document.documentElement.clientHeight || 800; }
+  function roScaleAuto() {
+    if (typeof IS_MN !== "undefined" && IS_MN) return 1;  // 手机版铺满视口，不参与缩放
+    var lo = roUi().scaleMin;
+    var s = Math.min(1, roVw() / RO_DESIGN_W, roVh() / RO_DESIGN_H);
+    if (!(s > 0)) s = 1;
+    if (s < lo) s = lo;
+    return Math.round(s * 100) / 100;
+  }
+  function roScale() {
+    var v = roUi().scale;
+    if (v === "auto" || v === undefined || v === null) return roScaleAuto();
+    var n = parseFloat(v);
+    if (!isFinite(n) || n <= 0) return roScaleAuto();
+    return Math.max(RO_SCALE_HARD_MIN, Math.min(RO_SCALE_HARD_MAX, Math.round(n * 100) / 100));
+  }
+  // 助手窗口的 transform 由本函数独占写入（其它任何地方都不得再写窗口的 transform）
+  function roApplyScale(el) {
+    if (!el) return;
+    var s = roScale();
+    try { el.setAttribute("data-dsh-scale", String(s)); } catch (e) {}
+    el.style.transformOrigin = "top left";
+    el.style.transform = (s === 1) ? "none" : "scale(" + s + ")";
+  }
+  function roScaleOf(el) {
+    var v = parseFloat(el && el.getAttribute && el.getAttribute("data-dsh-scale"));
+    return (isFinite(v) && v > 0) ? v : 1;
+  }
+  // V2.19.0 公共层 A3：窗口层级——点谁谁到最前；功能菜单固定在所有窗口之下（修复「打开的窗口被菜单压住」）
+  var RO_Z_MENU = 2147481000;    // 功能菜单
+  var RO_Z_WIN = 2147482000;     // 助手窗口基础层级
+  var RO_Z_TOOLTIP = 2147483500; // 悬浮信息（永远最上，非交互）
+  var roZTop = RO_Z_WIN;
+  function roBringFront(el) {
+    try {
+      if (!el || !el.style) return;
+      if (roZTop >= RO_Z_TOOLTIP - 1) roZTop = RO_Z_WIN;
+      el.style.zIndex = String(++roZTop);
+    } catch (e) {}
+  }
+  // 捕获阶段全局监听：窗口内部都做了 stopPropagation（事件隔离），只有捕获阶段收得到
+  try {
+    document.addEventListener("pointerdown", function (ev) {
+      try {
+        var t = ev.target;
+        if (!t || !t.closest) return;
+        var w = t.closest("[data-dsh-win]");
+        if (!w || w.id === "dsh-ro-menu") return; // 功能菜单不参与抢层级
+        roBringFront(w);
+      } catch (e) {}
+    }, true);
+  } catch (e) {}
+  function roWinEls() { try { return document.querySelectorAll("[data-dsh-win]"); } catch (e) { return []; } }
+  function roScaleAll() { var l = roWinEls(); for (var i = 0; i < l.length; i++) roApplyScale(l[i]); }
+  function roScaleSet(v) { roUi().scale = v; roUiSave(); roScaleAll(); try { roReclampAll(); } catch (e) {} }
+  // 位置夹紧：按「缩放后」的可视尺寸夹紧，保证标题栏始终留在视口内可抓
+  function roClampXY(el, x, y, w, h) {
+    var s = roScaleOf(el);
+    var ww = (w || el.offsetWidth || 0) * s, hh = (h || el.offsetHeight || 0) * s;
+    var minX = 60 - ww, maxX = roVw() - 60, minY = 0, maxY = roVh() - 24;
+    if (maxX < minX) maxX = minX;
+    if (maxY < minY) maxY = minY;
+    if (!isFinite(x)) x = 0;
+    if (!isFinite(y)) y = 0;
+    return { x: Math.max(minX, Math.min(maxX, x)), y: Math.max(minY, Math.min(maxY, y)) };
+  }
+  function roReclampAll() {
+    var l = roWinEls();
+    for (var i = 0; i < l.length; i++) {
+      var el = l[i];
+      if (!el.style || el.style.display === "none") continue;
+      var x = parseFloat(el.style.left), y = parseFloat(el.style.top);
+      if (!isFinite(x) || !isFinite(y)) continue;
+      var p = roClampXY(el, x, y);
+      el.style.left = p.x + "px"; el.style.top = p.y + "px";
+    }
+    // 悬浮球不参与缩放，但视口变小后要保证还在屏幕内（否则分屏后找不回来）
+    try {
+      var bl = document.getElementById("dsh-ball");
+      if (bl && bl.style.display !== "none" && bl.style.left) {
+        var bx = parseFloat(bl.style.left) || 0, by = parseFloat(bl.style.top) || 0;
+        var nbx = Math.max(0, Math.min(roVw() - 40, bx)), nby = Math.max(0, Math.min(roVh() - 40, by));
+        if (nbx !== bx || nby !== by) { bl.style.left = nbx + "px"; bl.style.top = nby + "px"; }
+      }
+    } catch (e) {}
+  }
+  var roScaleTimer = null;
+  function roScaleOnResize() {
+    if (roScaleTimer) clearTimeout(roScaleTimer);
+    roScaleTimer = setTimeout(function () { try { roScaleAll(); roReclampAll(); } catch (e) {} }, 200);
+  }
+  function roWinSave(id, el) {
+    try {
+      var m = roUi().win;
+      var cur = m[id] || {};            // 必须合并而不是整体替换，否则会抹掉同一窗口的 a（透明度）
+      cur.x = parseFloat(el.style.left) || 0;
+      cur.y = parseFloat(el.style.top) || 0;
+      cur.w = el.offsetWidth;
+      cur.h = el.offsetHeight;
+      m[id] = cur;
+      roUiSave();
+    } catch (e) {}
+  }
+  // ---- 窗口透明度（甲案：整个窗口一起变淡，30%~100%，每个窗口独立记忆）----
+  function roSetAlpha(el, id, a) {
+    if (!el) return;
+    a = Math.max(0.3, Math.min(1, a));
+    el.style.opacity = (a >= 0.999) ? "" : String(a);
+    try {
+      var m = roUi().win;
+      if (!m[id]) m[id] = {};
+      m[id].a = a;
+    } catch (e) {}
+  }
+  function roAlphaOf(id) {
+    try { var w = roUi().win[id]; if (w && typeof w.a === "number") return w.a; } catch (e) {}
+    return 1;
+  }
+  // 标题栏上的「透明」滑块（主面板与所有功能浮窗统一用这个）
+  function roAlphaSlider(el, id) {
+    var wrap = document.createElement("span");
+    wrap.className = "dsh-alpha";
+    var lab = document.createElement("span");
+    lab.className = "lb";
+    lab.textContent = "透明";
+    var inp = document.createElement("input");
+    inp.type = "range"; inp.min = "30"; inp.max = "100";
+    inp.value = String(Math.round(roAlphaOf(id) * 100));
+    inp.title = "窗口透明度 " + inp.value + "%（30%~100%）";
+    inp.addEventListener("input", function () {
+      roSetAlpha(el, id, parseInt(inp.value, 10) / 100);
+      inp.title = "窗口透明度 " + inp.value + "%（30%~100%）";
+    });
+    inp.addEventListener("change", function () { roUiSave(); });
+    wrap.appendChild(lab); wrap.appendChild(inp);
+    return wrap;
+  }
+  function roGrip(el) {
+    var g = document.createElement("div");
+    g.className = "dsh-grip";
+    g.title = "按住拖动可拉伸窗口大小";
+    el.appendChild(g);
+    return g;
+  }
+  // 统一窗口绑定：拖动（标题栏）+ 拉伸（右下角手柄）+ 位置尺寸记忆 + 缩放 + 事件隔离
+  function roWinBind(el, opt) {
+    if (!el || el.__roBound) return;
+    el.__roBound = true;
+    opt = opt || {};
+    var id = opt.id || el.id || "w";
+    el.setAttribute("data-dsh-win", "1");
+    el.setAttribute("data-dsh-ui", "1");
+    var st = roUi().win[id] || null;
+    var s0 = roScale();
+    var mw = opt.minW || 220, mh = opt.minH || 120;
+    var w = (st && st.w) ? st.w : (opt.dw || 0);
+    var h = (st && st.h) ? st.h : (opt.dh || 0);
+    if (w) el.style.width = Math.round(Math.max(mw, Math.min(w, (roVw() - 16) / s0))) + "px";
+    if (h) el.style.height = Math.round(Math.max(mh, Math.min(h, (roVh() - 16) / s0))) + "px";
+    roApplyScale(el);
+    var pw = (el.offsetWidth || 0) * s0, ph = (el.offsetHeight || 0) * s0;
+    var dx = (st && isFinite(st.x)) ? st.x : ((opt.ax !== undefined) ? opt.ax : Math.max(0, (roVw() - pw) / 2));
+    var dy = (st && isFinite(st.y)) ? st.y : ((opt.ay !== undefined) ? opt.ay : Math.max(0, (roVh() - ph) / 2));
+    var p = roClampXY(el, dx, dy, el.offsetWidth, el.offsetHeight);
+    el.style.left = p.x + "px"; el.style.top = p.y + "px";
+    el.style.right = "auto"; el.style.bottom = "auto";
+    // V2.17.1 透明度：默认 100%，按窗口独立记忆
+    roSetAlpha(el, id, (st && typeof st.a === "number") ? st.a : 1);
+    var save = function () { roWinSave(id, el); };
+    if (opt.drag) {
+      dragEl(opt.drag, function (x, y) {
+        var q = roClampXY(el, x, y);
+        el.style.left = q.x + "px"; el.style.top = q.y + "px";
+      }, function () { return roScaleOf(el); }, save);
+    }
+    var grip = opt.grip;
+    if (grip) {
+      var rz = false, rsx = 0, rsy = 0, rw = 0, rh = 0;
+      try { grip.style.touchAction = "none"; } catch (e) {}
+      grip.addEventListener("pointerdown", function (e) {
+        rz = true; rsx = e.clientX; rsy = e.clientY;
+        rw = el.offsetWidth; rh = el.offsetHeight;
+        try { grip.setPointerCapture && grip.setPointerCapture(e.pointerId); } catch (err) {}
+        try { e.stopPropagation(); if (e.cancelable) e.preventDefault(); } catch (err) {}
+      });
+      grip.addEventListener("pointermove", function (e) {
+        if (!rz) return;
+        var sc = roScaleOf(el);
+        var nw = rw + (e.clientX - rsx) / sc, nh = rh + (e.clientY - rsy) / sc;
+        nw = Math.max(mw, Math.min(nw, (roVw() - 16) / sc));
+        nh = Math.max(mh, Math.min(nh, (roVh() - 16) / sc));
+        if (opt.maxW) nw = Math.min(nw, opt.maxW);
+        if (opt.maxH) nh = Math.min(nh, opt.maxH);
+        el.style.width = Math.round(nw) + "px"; el.style.height = Math.round(nh) + "px";
+      });
+      var rzEnd = function () { if (!rz) return; rz = false; save(); try { opt.onResize && opt.onResize(); } catch (e) {} };
+      grip.addEventListener("pointerup", rzEnd);
+      grip.addEventListener("pointercancel", rzEnd);
+    }
+    try { isolateEl(el); } catch (e) {}
+    try { opt.onReady && opt.onReady(); } catch (e) {}
+  }
+  // D 事件隔离统一判定：助手 UI 根节点都带 data-dsh-ui="1"；
+  // 兜底再认一次 dsh- 前缀 id（助手全部元素 id 均以 dsh- 开头），双保险不会漏。
+  function inAssistantUI(t) {
+    try {
+      if (!t || !t.closest) return false;
+      return !!(t.closest('[data-dsh-ui="1"]') || t.closest('[id^="dsh-"]'));
+    } catch (e) { return false; }
+  }
+  try { window.addEventListener("resize", roScaleOnResize); } catch (e) {}
+
+  // 事件隔离层：游戏引擎在 document/window 挂全局鼠标/触摸监听（点地图=走路），
+  // 助手 UI 内的点击/拖动/滚动冒泡到 document 会被误判为游戏操作 → 角色乱走。
+  // 在面板与悬浮球冒泡阶段 stopPropagation，让助手 UI 成为操作「孤岛」：
+  // UI 内事件只作用于 UI，不再冒泡到游戏监听；UI 外操作照常。
+  // 注意：必须用冒泡阶段 stopPropagation（捕获阶段会阻断面板内元素事件）。
+  var isoEvents = ["mousedown", "mousemove", "mouseup", "click", "dblclick", "wheel", "contextmenu",
+    "touchstart", "touchmove", "touchend", "pointerdown", "pointermove", "pointerup"];
+  function isolateEl(el) {
+    if (!el) return;
+    try { el.setAttribute("data-dsh-ui", "1"); } catch (e) {}  // V2.17.0 公共层 D：标记助手 UI 根节点
+    for (var ie = 0; ie < isoEvents.length; ie++) {
+      el.addEventListener(isoEvents[ie], function (ev) { ev.stopPropagation(); }, false);
+    }
+  }
+
+
+  try {
+
+    isolateEl(panel);
+    // 悬浮球的隔离在 ball 创建后补挂（见 ball 定义处）——此处 ball 尚未创建
+    // document 冒泡兜底：万一有事件类型漏网冒泡到 document，且 target 在助手 UI 内，
+    // 立即掐断（防游戏误判；正常情况面板/球的隔离已先拦截，到不了这里）
+    for (var ie2 = 0; ie2 < isoEvents.length; ie2++) {
+      document.addEventListener(isoEvents[ie2], function (ev) {
+        try {
+          if (inAssistantUI(ev.target)) {
+            ev.stopPropagation();
+          }
+        } catch (e) {}
+      }, false);
+    }
+  } catch (e) {}
+
+  // ---------------- V2.10.0 功能独立透明浮窗（拖动/透明度滑块/×关闭/事件隔离）----------------
+  // 用法：fwReg(id, title, getEl) 注册区块；点「⧉ 浮窗」按钮 fwOpen(id) 弹出，浮窗标题栏 × fwClose(id) 收回原位。
+  // 实现：移动 DOM 节点（appendChild）而非复制 → id 保留，渲染函数与事件监听全部自动跟随；移动前记录 parentNode+nextSibling，收回时 insertBefore 复原。
+  var fwState = {}; // id -> {wrap, title, host, parent, next, open}
+  var fwOpenIds = {};
+  var fwRestoreTries = 0, FW_RESTORE_MAX = 8;
+  function fwError(id, stage, err, quiet) {
+    var msg = "浮窗“" + ((fwState[id] && fwState[id].title) || id) + "”" + stage + "失败";
+    if (err && err.message) msg += "：" + err.message;
+    try { console.error("[RO助手][浮窗] " + id + " " + stage, err || ""); } catch (e) {}
+    try { dshDiag("fw-error", { id: id, stage: stage, message: err && err.message ? err.message : String(err || "") }); } catch (e2) {}
+    if (!quiet) try { roFeedback(msg, "err"); } catch (e3) {}
+    return false;
+  }
+  function fwActualOpen(id) {
+    var st = fwState[id], win = st && st.win, host = st && st.host;
+    return !!(win && win.parentNode && win.style.display !== "none" && st.body && host && host.parentNode === st.body);
+  }
+  function fwSyncState(id) {
+    var on = fwActualOpen(id);
+    fwOpenIds[id] = on;
+    var b = document.getElementById("dsh-fw-btn-" + id);
+    if (b) b.textContent = on ? "收回" : "浮窗";
+    return on;
+  }
+  function fwMakeWin(id, title) {
+    try {
+      if (fwState[id] && fwState[id].win && fwState[id].win.parentNode) return fwState[id].win;
+      var win = document.createElement("div");
+      win.id = "dsh-win-fw-" + id;
+      // V2.17.0：位置 / 尺寸 / 缩放 / 拖动 / 拉伸全部交给公共层 roWinBind，这里只留外观
+      win.style.cssText = "position:fixed;z-index:2147482000;" +
+        "border:1px solid #8e8e8e;border-radius:3px;background:#fff;box-shadow:1px 2px 2px rgba(0,0,0,.55);" +
+        "display:flex;flex-direction:column;overflow:hidden;font:12px/1.6 'Microsoft YaHei',Arial,sans-serif;color:#111;";
+      win.setAttribute("data-fw", "1");
+      var bar = document.createElement("div");
+      bar.className = "ro-fw-title";
+      bar.style.cssText = "display:flex;align-items:center;gap:3px;height:17px;min-height:17px;padding:0 3px;border-radius:3px 3px 0 0;" +
+        "background-color:#fff;background-image:var(--dsh-tb);background-repeat:repeat-x;background-size:auto 17px;" +
+        "color:#111;text-shadow:1px 1px #fff;cursor:move;user-select:none;flex:none;";
+      var tt = document.createElement("span");
+      tt.textContent = title || "浮窗";
+      tt.style.cssText = "flex:1;min-width:0;font-weight:700;font-size:11px;line-height:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+      // V2.17.1：透明度滑块统一（旧版只改背景色 alpha，效果很弱；现在调整个窗口）
+      var opBox = roAlphaSlider(win, "fw-" + id);
+      var x = document.createElement("button");
+      x.textContent = "";  // RO 原生关闭球（位图），不用 × 字符
+      x.title = "收回浮窗（回到设置抽屉原位）";
+      x.style.cssText = "flex:0 0 auto;width:11px;height:11px;min-width:11px;padding:0;border:0;border-radius:50%;" +
+        "background:var(--dsh-close) no-repeat;background-size:11px 11px;cursor:pointer;font-size:0;line-height:0;color:transparent;";
+      var body = document.createElement("div");
+      body.className = "ro-fw-body";
+      body.addEventListener("click", onSubTabClick, false);
+      body.style.cssText = "overflow:auto;flex:1 1 auto;min-height:0;padding:5px;border-top:1px solid #7897b9;background:#fff;color:#111;font:13px/1.6 'Microsoft YaHei',system-ui,sans-serif;";
+      // V2.22.0：浮窗内容被移到面板外，挂在 #dsh-ro-panel 下的样式全部失效（浮窗一直是裸样式）。
+      // 这里把同一份 PANEL_CSS 的作用域整体换成 .ro-fw-body 注入浮窗，保证浮窗与面板观感一致。
+      try {
+        var fwStyle = document.createElement("style");
+        fwStyle.textContent = String(PANEL_CSS).replace(/#dsh-ro-panel\s+/g, ".ro-fw-body ");
+        body.appendChild(fwStyle);
+      } catch (e0) {}
+      x.addEventListener("click", function () { fwClose(id); });
+      // V2.17.0：拖动改由公共层 dragEl 处理（带缩放换算 + 视口夹紧 + 位置记忆）。
+      // 旧实现每个浮窗各挂一对 document 级 pointermove/pointerup 监听，浮窗越多监听越多。
+      bar.appendChild(tt); bar.appendChild(opBox); bar.appendChild(x);
+      win.appendChild(bar); win.appendChild(body);
+      // 先登记 fwState 再挂载/隔离：任何后续异常都不留下「已挂载未记录」的半成品浮窗（防无限生成）
+      if (!fwState[id]) fwState[id] = {};
+      fwState[id].win = win; fwState[id].body = body;
+      document.documentElement.appendChild(win);
+      // 位置记忆迁移：旧的 dsh_ro_fwpos 一次性并入统一的 dsh_ro_ui_v1
+      try {
+        if (!roUi().win["fw-" + id]) {
+          var pos = JSON.parse(localStorage.getItem("dsh_ro_fwpos") || "{}");
+          if (pos[id]) { roUi().win["fw-" + id] = { x: pos[id].l, y: pos[id].t }; roUiSave(); }
+        }
+      } catch (e) {}
+      // V2.17.0 公共层 A：统一绑定（拖动 / 拉伸 / 位置尺寸记忆 / 缩放 / 事件隔离）
+      var gw = IS_MN ? Math.min(430, Math.round(roVw() * 0.9)) : 340;
+      var gh = IS_MN ? Math.min(700, roVh() - 60) : 380;
+      roWinBind(win, {
+        id: "fw-" + id,
+        drag: bar,
+        grip: roGrip(win),
+        minW: 240, minH: 140,
+        dw: gw, dh: gh,
+        ax: Math.max(0, Math.round((roVw() - gw * roScale()) / 2) + 60),
+        ay: Math.max(0, Math.round(roVh() * 0.12))
+      });
+      return win;
+    } catch (e) {
+      var bad = fwState[id] && fwState[id].win;
+      try { if (bad && bad.parentNode) bad.parentNode.removeChild(bad); } catch (e2) {}
+      if (fwState[id]) { fwState[id].win = null; fwState[id].body = null; }
+      fwError(id, "创建", e, false);
+      return null;
+    }
+  }
+  function fwOpen(id, quiet) {
+    try {
+      fwRefreshHosts(id);
+      var st = fwState[id];
+      if (!st) return fwError(id, "登记", new Error("模块未登记"), quiet);
+      if (fwActualOpen(id)) { fwSyncState(id); return true; }
+      if (!st.host || !st.host.isConnected) return fwError(id, "打开", new Error("内容节点未就绪"), quiet);
+      var win = fwMakeWin(id, st.title);
+      if (!win || !st.body) return fwError(id, "创建", new Error("窗口容器未创建"), quiet);
+      if (st.host.parentNode !== st.body && st.host.parentNode) {
+        st.parent = st.host.parentNode; st.next = st.host.nextSibling;
+        if (!st.origin || !st.origin.parentNode) { st.origin = document.createComment("dsh-fw-origin:" + id); st.parent.insertBefore(st.origin, st.host); }
+      }
+      st.body.appendChild(st.host);
+      win.style.display = "flex";
+      if (!fwSyncState(id)) return fwError(id, "校验", new Error("内容未进入窗口"), quiet);
+      fwPersist();
+      try { roBringFront(win); } catch (e0) {}
+      try { localStorage.setItem("dsh_ro_fwpos", JSON.stringify((function () { var m = {}; for (var k in fwState) { var w = fwState[k].win; if (w) m[k] = { l: w.offsetLeft, t: w.offsetTop }; } return m; })())); } catch (e1) {}
+      return true;
+    } catch (e) { fwOpenIds[id] = false; return fwError(id, "打开", e, quiet); }
+  }
+  function fwClose(id) {
+    try {
+      var st = fwState[id];
+      if (!st) return;
+      if (st.host) {
+        if (st.origin && st.origin.parentNode) st.origin.parentNode.insertBefore(st.host, st.origin.nextSibling);
+        else if (st.parent && st.parent.isConnected) st.parent.appendChild(st.host);
+      }
+      var win = st.win;
+      if (win) win.style.display = "none";
+      fwOpenIds[id] = false;
+      fwPersist();
+      try { var b = document.getElementById("dsh-fw-btn-" + id); if (b) b.textContent = "浮窗"; } catch (e) {}
+    } catch (e) {}
+  }
+  function fwToggle(id) {
+    try { if (fwActualOpen(id)) return fwClose(id); return fwOpen(id, false); }
+    catch (e) { return fwError(id, "切换", e, false); }
+  }
+  function fwCloseAll() { for (var id in fwState) if (fwActualOpen(id)) fwClose(id); }
+  // V2.23.0：浮窗开启状态持久化 —— 挂机时重开客户端后「当前目标/队伍血条」等浮窗自动回来
+  var fwRestored = false;
+  function fwPersist() {
+    try {
+      var m = {};
+      for (var k in fwOpenIds) { if (fwOpenIds[k]) m[k] = 1; }
+      localStorage.setItem("dsh_ro_fwopen_v1", JSON.stringify(m));
+    } catch (e) {}
+  }
+  function fwRestore() {
+    if (fwRestored) return true;
+    try {
+      fwRefreshHosts();
+      var m = JSON.parse(localStorage.getItem("dsh_ro_fwopen_v1") || "{}"), pending = false;
+      for (var k in m) {
+        if (!m[k] || !roModOn(k) || !fwState[k] || !fwState[k].getEl) continue; // V2.29.0：tgt/party 已改悬浮层，跳过残留记录
+        if (!fwActualOpen(k) && !fwOpen(k, true)) pending = true;
+      }
+      fwRestoreTries++;
+      fwRestored = !pending || fwRestoreTries >= FW_RESTORE_MAX;
+      if (pending && fwRestored) fwError("restore", "恢复", new Error("部分窗口内容尚未就绪"), false);
+      return fwRestored;
+    } catch (e) {
+      fwRestoreTries++;
+      if (fwRestoreTries >= FW_RESTORE_MAX) fwRestored = true;
+      return fwError("restore", "恢复", e, fwRestoreTries < FW_RESTORE_MAX);
+    }
+  }
+  // 注册区块：getEl 返回要浮窗化的容器节点（其父容器为原位）
+  function fwReg(id, title, getEl) {
+    try { console.log("[FW-DIAG] fwReg id=" + id + " title=" + title); if (!fwState[id]) fwState[id] = {}; fwState[id].title = title; fwState[id].getEl = getEl; var el = getEl(); if (el) { fwState[id].host = el; console.log("[FW-DIAG] fwReg id=" + id + " host found"); } else { console.log("[FW-DIAG] fwReg id=" + id + " host NOT found"); } } catch (e) { console.log("[FW-DIAG] fwReg error: " + e.message); }
+  }
+  // 面板重建后（host 节点已重挂）重新登记 host
+  function fwRefreshHosts(onlyId) {
+    try {
+      for (var id in fwState) {
+        if (onlyId && id !== onlyId) continue;
+        var st = fwState[id];
+        if (!st.getEl) continue;
+        var el = st.getEl();
+        if (el && el !== st.host) st.host = el;
+        if (fwOpenIds[id] && !fwActualOpen(id)) fwOpenIds[id] = false;
+      }
+      return true;
+    } catch (e) { return fwError(onlyId || "refresh", "刷新内容", e, true); }
+  }
+
+  // 三个可浮窗区块注册（V2.10.0）：本图怪物锁定 / 传送功能 / 助手技能设置
+  try {
+    fwReg("mlock", "攻击名单", function () { return document.getElementById("dsh-fw-mlock"); });
+    fwReg("tp", "传送功能", function () { return document.getElementById("dsh-fw-tp"); });
+    fwReg("zhu2", "助手战斗设置", function () { return document.getElementById("dsh-fw-zhu2"); });
+    fwReg("aid", "战斗辅助", function () { return document.getElementById("dsh-fw-aid"); });
+    // MVP 计时是独立 custom 窗口，由 roModOpen/roModClose 直接管理，不进入标准浮窗登记。
+    // V2.15.1 物品（拾取+背包整理）浮窗：标准浮窗（可拖动/透明/×收回）
+    fwReg("item", "物品 · 拾取+背包整理", function () { return document.getElementById("dsh-fw-item"); });
+    fwReg("perf", "画面性能", function () { return document.getElementById("dsh-fw-perf"); });
+    // V2.29.0：目标锁定条/队伍面板改为独立透明悬浮层（renderTgt/renderParty 直管，功能菜单 roModOn 开关），不再走 fwReg
+    fwReg("tpp", "传送点快捷条", function () { return document.getElementById("dsh-fw-tpp"); }); // V2.29.0
+  fwReg("dps", "伤害统计", function () { return document.getElementById("dsh-fw-dps"); });   // V2.24.0
+  fwReg("boss", "首领警报", function () { return document.getElementById("dsh-fw-boss"); }); // V2.24.0
+    panel.addEventListener("click", function (ev) {
+      try {
+        var b = ev.target && ev.target.closest ? ev.target.closest("[data-fw]") : null;
+        console.log("[FW-DIAG] panel click target=" + (ev.target ? ev.target.tagName : "null") + " fw=" + (b ? b.getAttribute("data-fw") : "null"));
+        if (b) { ev.stopPropagation(); fwToggle(b.getAttribute("data-fw")); return; }
+      } catch (e) { console.log("[FW-DIAG] panel click error: " + e.message); }
+    }, false);
+  } catch (e) {}
+
+
+
+  // ================= V2.17.1 公共层 C：功能菜单（点选式）=================
+  // 悬浮球点一下弹出菜单；菜单每行「打开」即弹出对应功能窗口，再点「收回」关掉。
+  // 每行左侧勾选框是该功能的总开关：关掉后功能不工作、快捷键也不响应。
+  // 后续阶段新增功能只需往 RO_MODULES 加一行，菜单/快捷键/开关会自动带上。
+  var RO_MOD_KEY = "dsh_ro_modules_v1";
+  var roModC = null;
+  function roMods() {
+    if (roModC) return roModC;
+    roModC = {};
+    try {
+      var o = JSON.parse(localStorage.getItem(RO_MOD_KEY) || "{}");
+      if (o && typeof o === "object") roModC = o;
+    } catch (e) {}
+    return roModC;
+  }
+  // V2.24.0：新增 defOff —— 表里标了 defOff 的功能（首领警报）默认关闭，其余默认开启。
+  function roModOn(id) {
+    var m = roMods();
+    if (m[id] === undefined) {
+      for (var i = 0; i < RO_MODULES.length; i++) { if (RO_MODULES[i].id === id) return !RO_MODULES[i].defOff; }
+      return true;
+    }
+    return !!m[id];
+  }
+  function roModPage(id) {
+    for (var i = 0; i < RO_MODULES.length; i++) { if (RO_MODULES[i].id === id) return RO_MODULES[i].page || null; }
+    return null;
+  }
+  function roModSet(id, on) {
+    roMods()[id] = !!on;
+    try { localStorage.setItem(RO_MOD_KEY, JSON.stringify(roMods())); } catch (e) {}
+    try { roMenuRender(); } catch (e) {}
+  }
+  // V2.24.1：菜单里 5 个「设置页」行合并为一行「旧版设置界面」（id 沿用 panel）。
+  //   点「打开」= 展开大面板，之后所有交互都在旧面板内进行（5 个页签 + 9 个子页签照旧）。
+  //   kind 仍标 "page" 只是为了让渲染层不给它画「总开关」勾选框（面板没有开/关语义）。
+  var RO_MODULES = [
+    { id: "menu",  name: "功能菜单快捷键",  kind: "menu", noToggle: true, sec: "常用" },
+    { id: "askcombo", name: "一键补 buff", kind: "action", noToggle: true, sec: "常用" },
+    { id: "mlock", name: "攻击名单",        kind: "fw", sec: "功能窗口" },
+    { id: "tp",    name: "传送功能",        kind: "fw", sec: "功能窗口" },
+    { id: "zhu2",  name: "助手战斗设置",    kind: "fw", sec: "功能窗口" },
+    { id: "aid",   name: "战斗辅助",        kind: "fw", sec: "功能窗口" },
+    { id: "item",  name: "物品 · 拾取与整理", kind: "fw", sec: "功能窗口" },
+    { id: "perf",  name: "画面性能",        kind: "fw", sec: "功能窗口" },
+    { id: "tgt",   name: "目标状态",        kind: "fw", sec: "功能窗口" },
+    { id: "party", name: "队伍血条",        kind: "fw", sec: "功能窗口" },
+    { id: "dps",   name: "伤害统计",        kind: "fw", sec: "功能窗口" },
+    { id: "boss",  name: "首领警报",        kind: "fw", sec: "功能窗口", defOff: true },
+    { id: "mvp",   name: "MVP 计时",        kind: "custom", sec: "功能窗口" },
+    { id: "zhud",  name: "战斗监控横条",    kind: "custom", sec: "功能窗口" },
+    { id: "ztip",  name: "动作提示条",      kind: "custom", noToggle: true, sec: "功能窗口" },
+    { id: "np",    name: "内挂自动战斗",    kind: "act", noToggle: true, sec: "动作" },
+    { id: "zhu",   name: "助手自动战斗",    kind: "act", noToggle: true, sec: "动作" },
+    { id: "panel", name: "高级设置",          kind: "page", sec: "高级" }
+  ];
+  function roModEl(id) {
+    if (roModPage(id) || id === "panel") return document.getElementById("dsh-ro-panel");
+    if (id === "mvp") return document.getElementById("dsh-mvp-timers");
+    if (id === "zhud") return document.getElementById("dsh-ro-z-hud");
+    if (id === "ztip") return document.getElementById("dsh-ztip");
+    if (id === "tgt") return document.getElementById("dsh-tgt-bar");     // V2.29.0 悬浮层
+    if (id === "party") return document.getElementById("dsh-party-float"); // V2.29.0 悬浮层
+    var fs = fwState[id];
+    return (fs && fs.win && fs.win.parentNode) ? fs.win : document.getElementById("dsh-win-fw-" + id);
+  }
+  function roPanelOpen() {
+    var p = document.getElementById("dsh-ro-panel");
+    return !!(p && p.style.display !== "none");
+  }
+  function roModIsOpen(id) {
+    var pg = roModPage(id);
+    if (pg) {
+      // 设置页行：面板开着且当前停在这一页才算「已打开」
+      if (!roPanelOpen()) return false;
+      var act = panel.querySelector(".page.active");
+      return !!(act && act.getAttribute("data-page") === pg);
+    }
+    if (id === "menu") { var mn = roMenuEl || document.getElementById("dsh-ro-menu"); return !!(mn && mn.style.display !== "none"); }
+    if (id === "panel" || id === "mvp" || id === "zhud" || id === "ztip") {
+      var e2 = roModEl(id);
+      return !!(e2 && e2.style.display !== "none");
+    }
+    if (id === "tgt" || id === "party") { var fel = document.getElementById(id === "tgt" ? "dsh-tgt-bar" : "dsh-party-float"); return !!(fel && fel.style.display !== "none"); } // V2.29.0 悬浮层
+    return fwSyncState(id);
+  }
+  function roModOpen(id) {
+    var pg = roModPage(id);
+    if (pg) {
+      // V2.24.0 设置页行 = 打开大面板并切到该页签（面板本身不重建，位置/缩放/透明度照旧）
+      saved.collapsed = false; try { saveSaved(saved); } catch (e) {}
+      try { applyCollapse(false); } catch (e) {}
+      try { switchPage(pg); } catch (e) {}
+      try { roBringFront(document.getElementById("dsh-ro-panel")); } catch (e) {}
+      return;
+    }
+    if (id === "menu") { var mn = roMenuBuild(); if (mn) { mn.style.display = "flex"; roMenuRender(); try { roBringFront(mn); } catch (e) {} } return; }
+    if (id === "np" || id === "zhu") return;   // 纯动作类（只有快捷键，没有窗口）
+    if (id === "panel") { fwCloseAll(); saved.collapsed = false; try { saveSaved(saved); } catch (e) {} applyCollapse(false); try { roBringFront(document.getElementById("dsh-ro-panel")); } catch (e) {} return; }
+    if (id === "mvp") { var m = roModEl("mvp"); if (m) { m.style.display = "flex"; try { roBringFront(m); } catch (e) {} } return; }
+    if (id === "zhud") { try { ensureZHud(); if (zHudEl) zHudEl.style.display = ""; } catch (e) {} return; }
+    if (id === "ztip") { try { ensureZTip(); if (zTipEl) zTipEl.style.display = ""; } catch (e) {} return; }
+    if (id === "tgt" || id === "party") { try { if (id === "tgt") renderTgt(); else renderParty(); } catch (e) {} return; } // V2.29.0 悬浮层（roModOn 已由菜单勾选）
+    if (!fwActualOpen(id)) fwOpen(id, false);
+    try { roBringFront(roModEl(id)); } catch (e) {}  // V2.19.0：打开就置顶
+  }
+  function roModClose(id) {
+    var pg = roModPage(id);
+    if (pg) {
+      saved.collapsed = true; try { saveSaved(saved); } catch (e) {}
+      try { applyCollapse(true); } catch (e) {}
+      return;
+    }
+    if (id === "menu") { var mn = roMenuBuild(); if (mn) mn.style.display = "none"; return; }
+    if (id === "np" || id === "zhu") return;   // 纯动作类（只有快捷键，没有窗口）
+    if (id === "panel") { saved.collapsed = true; try { saveSaved(saved); } catch (e) {} applyCollapse(true); return; }
+    if (id === "mvp" || id === "zhud" || id === "ztip") { var e3 = roModEl(id); if (e3) e3.style.display = "none"; return; }
+    if (id === "tgt" || id === "party") { var fce = document.getElementById(id === "tgt" ? "dsh-tgt-bar" : "dsh-party-float"); if (fce) fce.style.display = "none"; return; } // V2.29.0 悬浮层
+    if (fwActualOpen(id)) fwClose(id);
+  }
+  // V2.24.1：恢复 2.24.0 误删的总调度。菜单每行的「打开」按钮与快捷键 hkAction 都调用它，
+  //   缺了它两者全部 ReferenceError → 表现为「所有打开都没反应、所有快捷键全失效」。
+  function roModToggle(id) { if (roModIsOpen(id)) roModClose(id); else roModOpen(id); }
+
+  var roMenuEl = null;
+  function roMenuBuild() {
+    if (roMenuEl && roMenuEl.parentNode) return roMenuEl;
+    try {
+      var el = document.createElement("div");
+      el.id = "dsh-ro-menu";
+      el.style.cssText = "position:fixed;z-index:2147481000;display:none;flex-direction:column;overflow:hidden;" +
+        "border:1px solid #8e8e8e;border-radius:3px;background:#fff;box-shadow:1px 2px 2px rgba(0,0,0,.55);" +
+        "font:12px/1.6 'Microsoft YaHei',Arial,sans-serif;color:#111;";
+      var bar = document.createElement("div");
+      bar.className = "ro-fw-title";
+      bar.style.cssText = "display:flex;align-items:center;gap:3px;height:17px;min-height:17px;padding:0 3px;border-radius:3px 3px 0 0;" +
+        "background-color:#fff;background-image:var(--dsh-tb);background-repeat:repeat-x;background-size:auto 17px;" +
+        "color:#111;text-shadow:1px 1px #fff;cursor:move;user-select:none;flex:none;";
+      var orb = document.createElement("span");
+      orb.style.cssText = "flex:0 0 11px;width:11px;height:11px;background:var(--dsh-base) no-repeat;background-size:11px 11px;";
+      var tt = document.createElement("span");
+      tt.textContent = "功能菜单";
+      tt.style.cssText = "flex:1;min-width:0;font-weight:700;font-size:11px;line-height:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+      var x = document.createElement("button");
+      x.textContent = "";
+      x.title = "关闭功能菜单";
+      x.style.cssText = "flex:0 0 auto;width:11px;height:11px;min-width:11px;padding:0;border:0;border-radius:50%;" +
+        "background:var(--dsh-close) no-repeat;background-size:11px 11px;cursor:pointer;font-size:0;line-height:0;color:transparent;";
+      bar.appendChild(orb); bar.appendChild(tt); bar.appendChild(roAlphaSlider(el, "menu")); bar.appendChild(x);
+      var body = document.createElement("div");
+      body.className = "ro-fw-body";
+      body.id = "dsh-menu-body";
+      body.style.cssText = "overflow:auto;flex:1 1 auto;min-height:0;padding:5px;border-top:1px solid #7897b9;background:#fff;color:#111;";
+      el.appendChild(bar); el.appendChild(body);
+      el.style.display = "flex";   // 必须先显示再绑定：display:none 时 offsetWidth=0，定位夹紧会算错
+      document.documentElement.appendChild(el);
+      x.addEventListener("click", function () { roMenuToggle(); });
+      roWinBind(el, {
+        id: "menu", drag: bar, grip: roGrip(el),
+        minW: 300, minH: 180, dw: 372, dh: 470,
+        ax: Math.max(8, roVw() - 372 * roScale() - 16), ay: Math.max(8, Math.round(roVh() * 0.12))
+      });
+      el.style.display = "none";
+      roMenuEl = el;
+      roMenuRender();
+      return el;
+    } catch (e) { return null; }
+  }
+  function roMenuToggle() {
+    var el = roMenuBuild();
+    if (!el) return;
+    if (el.style.display === "none") { el.style.display = "flex"; roMenuRender(); }
+    else { el.style.display = "none"; }
+  }
+  function roMenuRow(parent, labelText, ctrl) {
+    var row = document.createElement("div"); row.className = "ro-row";
+    var nm = document.createElement("span"); nm.className = "nm"; nm.textContent = labelText;
+    row.appendChild(nm); row.appendChild(ctrl);
+    parent.appendChild(row);
+    return row;
+  }
+  function roMenuRender() {
+    var body = document.getElementById("dsh-menu-body");
+    if (!body) return;
+    body.textContent = "";
+    // V2.19.0：原说明行（勾选=启用 · 点键位=设快捷键 · 右键键位=清除）删除，改为「重启客户端」按钮。
+    //   设置本来就是改一下自动存（按角色），不需要「保存设置」按钮。
+    var rbRow = document.createElement("div"); rbRow.className = "ro-row"; rbRow.style.margin = "0 0 4px";
+    var rbBtn = document.createElement("button"); rbBtn.type = "button"; rbBtn.textContent = "重启客户端";
+    rbBtn.style.cssText = "flex:1;height:20px;font-size:11px;";
+    rbBtn.title = "重新加载客户端页面（设置已自动保存，不会丢）";
+    rbBtn.addEventListener("click", function () { try { location.reload(); } catch (e) {} });
+    rbRow.appendChild(rbBtn);
+    body.appendChild(rbRow);
+    var lastSec = null;
+    for (var i = 0; i < RO_MODULES.length; i++) {
+      (function (m) {
+        // V2.24.0：分区小标题（V2.24.1 起为 界面 / 功能窗口 / 动作，通用区另有标题）
+        if (m.sec && m.sec !== lastSec) {
+          lastSec = m.sec;
+          var sd = document.createElement("div"); sd.className = "ro-sec"; sd.style.marginTop = "7px";
+          sd.textContent = m.sec;
+          body.appendChild(sd);
+        }
+        var row = document.createElement("div"); row.className = "ro-row";
+        var lab = document.createElement("label");
+        lab.style.cssText = "display:flex;align-items:center;gap:4px;flex:1;min-width:0;cursor:pointer;";
+        var nm = document.createElement("span"); nm.className = "nm"; nm.textContent = m.name;
+        if (m.kind === "page" || m.kind === "menu" || m.kind === "action") {
+          // 无「总开关」语义的行：留一个与勾选框等宽的占位，保证功能名左对齐
+          var sp = document.createElement("span"); sp.style.cssText = "flex:none;width:13px;height:13px;";
+          lab.appendChild(sp);
+        } else {
+          var cb = document.createElement("input"); cb.type = "checkbox"; cb.className = "ro-cb";
+          cb.checked = roModOn(m.id);
+          cb.addEventListener("change", function () {
+            roModSet(m.id, cb.checked);
+            if (!cb.checked) { try { roModClose(m.id); } catch (e) {} }
+          });
+          lab.appendChild(cb);
+        }
+        lab.appendChild(nm); row.appendChild(lab);
+        // V2.18.0 键位按钮：左键设置/重设，右键清除
+        var kb = document.createElement("button"); kb.type = "button";
+        kb.style.cssText = "min-width:54px;max-width:104px;height:18px;padding:0 5px;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+        var hk = hkOf(m.id);
+        if (hkTarget === m.id) {
+          kb.textContent = "按组合键…";
+          kb.style.outline = "2px solid #e0a03a"; kb.style.outlineOffset = "1px";
+        } else {
+          kb.textContent = hk ? hkLabel(hk) : "未设键";
+          if (!hk) kb.style.color = "#8a8a8a";
+        }
+        kb.title = hk ? ("当前：" + hkLabel(hk) + "　左键重设 / 右键清除") : "点击后按下组合键即可绑定（右键清除）";
+        kb.addEventListener("click", function () { hkBeginSet(m.id); });
+        kb.addEventListener("contextmenu", function (ev) { ev.preventDefault(); ev.stopPropagation(); if (hkOf(m.id)) hkClear(m.id); });
+        row.appendChild(kb);
+        if (!m.noToggle) {
+          var b = document.createElement("button"); b.type = "button";
+          b.style.cssText = "min-width:46px;height:18px;padding:0 6px;font-size:11px;";
+          b.textContent = roModIsOpen(m.id) ? "收回" : "打开";
+          b.addEventListener("click", function () { roModToggle(m.id); roMenuRender(); });
+          row.appendChild(b);
+        }
+        body.appendChild(row);
+      })(RO_MODULES[i]);
+    }
+    // ---- 通用设置 ----
+    var sec2 = document.createElement("div"); sec2.className = "ro-sec"; sec2.style.marginTop = "9px";
+    sec2.textContent = "通用";
+    body.appendChild(sec2);
+    var sc = document.createElement("select");
+    var opts = [["auto", "自动（跟随窗口大小）"], ["1", "100%"], ["0.9", "90%"], ["0.8", "80%"], ["0.75", "75%"], ["0.7", "70%"], ["0.6", "60%"], ["0.5", "50%"], ["1.1", "110%"], ["1.25", "125%"]];
+    for (var oi = 0; oi < opts.length; oi++) {
+      var op2 = document.createElement("option"); op2.value = opts[oi][0]; op2.textContent = opts[oi][1]; sc.appendChild(op2);
+    }
+    sc.value = String(roUi().scale);
+    if (!sc.value) sc.value = "auto";
+    sc.addEventListener("change", function () { roScaleSet(sc.value === "auto" ? "auto" : parseFloat(sc.value)); roMenuRender(); });
+    roMenuRow(body, "界面缩放", sc);
+    var sl = document.createElement("select");
+    var lows = [0.5, 0.6, 0.7, 0.75, 0.8, 0.9];
+    for (var li = 0; li < lows.length; li++) {
+      var ol = document.createElement("option"); ol.value = String(lows[li]); ol.textContent = Math.round(lows[li] * 100) + "%"; sl.appendChild(ol);
+    }
+    sl.value = String(roUi().scaleMin);
+    sl.addEventListener("change", function () { roUi().scaleMin = parseFloat(sl.value); roUiSave(); roScaleAll(); roReclampAll(); roMenuRender(); });
+    roMenuRow(body, "自动缩放下限", sl);
+    var sk = document.createElement("input"); sk.type = "checkbox"; sk.className = "ro-cb";
+    sk.checked = roSkinOn();
+    sk.addEventListener("change", function () { roSkinSet(sk.checked); });
+    roMenuRow(body, "RO 原生皮肤", sk);
+    var info = document.createElement("div"); info.className = "ro-info";
+    info.textContent = "当前视口 " + roVw() + "×" + roVh() + " · 实际缩放 " + Math.round(roScale() * 100) + "%";
+    body.appendChild(info);
+    // V2.24.1：菜单底部灰色版本号（便于一眼确认油猴里装的是哪一版）
+    var vline = document.createElement("div"); vline.className = "ro-info";
+    vline.style.cssText = "color:#9a9a9a;margin-top:1px;";
+    vline.textContent = "仙境传说助手 v" + VER;
+    body.appendChild(vline);
+  }
+
+  // 鼠标→触摸模拟层：手机版（r=mn）游戏用 jquery.mobile-events 触摸事件驱动，只认触摸不认鼠标；
+  // 外接/蓝牙鼠标的 mousedown 不会变成触摸 → 游戏点不动。此处把「真实鼠标」事件合成为触摸派发到游戏。
+  // V2.8.1 严格化（修复：手指点开内挂设置页约 1s 后自动关闭）：
+  //   兼容 mouse 事件可能由手指触摸派生（iOS Safari / 部分国产内核的 mousedown 不带 sourceCapabilities），
+  //   旧逻辑把这类事件误判为外接鼠标，在刚展开页面的遮罩/空白处二次合成触摸 → 引擎按「点外部关窗」默认逻辑关掉窗口。
+  //   现在：优先 PointerEvent，仅 pointerType==="mouse" 才合成；无 PointerEvent 回退 mouse 事件仅 firesTouchEvents===false 合成；
+  //   属性缺失一律不合成。touchend 始终派发到「按下时」的原目标并保证无悬空触摸。
+  try {
+    if (IS_MN) {
+      var simTouchId = 1;
+      var simActive = null;
+      function simFromRealMouse(e) {
+        try {
+          if (e.pointerType !== undefined) return e.pointerType === "mouse";
+          if (e.sourceCapabilities) return e.sourceCapabilities.firesTouchEvents === false;
+          return false; // 无 PointerEvent 且无 sourceCapabilities → 无法证明是外接鼠标，一律不合成
+        } catch (err) { return false; }
+      }
+      function simMkTouch(x, y, target) {
+        try { return new Touch({ identifier: simTouchId, target: target, clientX: x, clientY: y, pageX: x, pageY: y, screenX: x, screenY: y }); }
+        catch (e) { return null; }
+      }
+      function simFire(type, touches, changed, target) {
+        try {
+          var ev = new TouchEvent(type, { bubbles: true, cancelable: true, touches: touches, targetTouches: touches, changedTouches: changed });
+          target.dispatchEvent(ev);
+        } catch (e) {}
+      }
+      function simInUi(t) {
+        return inAssistantUI(t);
+      }
+      function simDown(e) {
+        try {
+          if (e.button !== 0 || !simFromRealMouse(e) || simInUi(e.target)) return;
+          var t = simMkTouch(e.clientX, e.clientY, e.target);
+          if (!t) return;
+          simActive = { t: t, target: e.target, pid: e.pointerId || 0 };
+          simFire("touchstart", [t], [t], e.target);
+        } catch (e2) {}
+      }
+      function simMove(e) {
+        try {
+          if (!simActive) return;
+          if (e.pointerId !== undefined && e.pointerId !== simActive.pid) return;
+          if (!simFromRealMouse(e)) return;
+          var t = simMkTouch(e.clientX, e.clientY, simActive.target);
+          if (!t) return;
+          simActive.t = t;
+          simFire("touchmove", [t], [t], simActive.target);
+        } catch (e2) {}
+      }
+      function simUp(e) {
+        try {
+          if (!simActive) return;
+          if (e.pointerId !== undefined && e.pointerId !== simActive.pid) return;
+          var t = simActive.t;
+          var origin = simActive.target;
+          simActive = null;
+          // 始终派发到按下时的原目标：即使窗口/页面在光标下刚展开，完成点击也不会投到新窗口遮罩上；
+          // 落在助手 UI 上同样补发（保证游戏侧不残留按下的合成触摸）
+          try { if (origin && t) simFire("touchend", [], [t], origin); } catch (e3) {}
+        } catch (e2) {}
+      }
+      if (window.PointerEvent) {
+        document.addEventListener("pointerdown", simDown, true);
+        document.addEventListener("pointermove", simMove, true);
+        document.addEventListener("pointerup", simUp, true);
+        document.addEventListener("pointercancel", simUp, true);
+      } else {
+        document.addEventListener("mousedown", simDown, true);
+        document.addEventListener("mousemove", simMove, true);
+        document.addEventListener("mouseup", simUp, true);
+      }
+    }
+  } catch (e) {}
+  // 字体提档兜底：内联 font-size 以 10px/11px 结尾（无分号）的静态元素，统一 +1
+  // （CSS 属性选择器只覆盖带分号的；此处正则处理结尾不带分号的）
+  try {
+    var allStyled = panel.querySelectorAll("[style]");
+    for (var si = 0; si < allStyled.length; si++) {
+      var stTxt = allStyled[si].getAttribute("style") || "";
+      var stTxt2 = stTxt.replace(/font-size:\s*10px/g, "font-size:11px").replace(/font-size:\s*11px/g, "font-size:12px");
+      if (stTxt2 !== stTxt) allStyled[si].setAttribute("style", stTxt2);
+    }
+  } catch (e) {}
+
+  // 悬浮球（V2.17.2：波利 GIF + 右下角「助」字角标；GIF 走 data URI 所以动画保留）
+  var BALL_GIF = "data:image/gif;base64,R0lGODlhKQAnALMAAP///+h9ff/1z7VXWNFtbfywqf/RzP////qXjqJQUAAAAH05QnM1Q2EoOJRIUQAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQJCgAAACwAAAAAKQAnAAAE/xDISau9OOudQ+AgGAjCEJ7YQJpoSw2EK8/XMHgeS9e2V/xA3O8z6wFJAmABaWgaiCgb6YBUWpEHgy5kO3ir1utXgDjdvN+weokmg85pJWJOpyunh7IGHi/U/39HXlsWA2NAgImBbIQvAVSIipJ2BV4xFyNJfpOcCEAHlxUDSz+dpj8CAY0BpYkEr7CwAZKfUBI3ZAgJCR6vOL/AOIA/B6ovSwgqCgvBzcCvgSShAKwFAQwKy87bvdBzSwLTrAgBC9nM3M6x30vileQL6M67vM3rrOEUrLPpqgINDeo9g0WunT5y/a41yCbw1ysYBUu8mPPLgbMBCxU0xPGQALlUW3oGeCLgweK2BQzkDbThKZUFAgV8MbgGzGQ6AjZEVmp0I6YHBg5sOpg5C0EeeyyNTnPkq2RQBkQ91AGWc9SgDD0TXrRR6UAjUT96aFXFFc3XQjdwVBVLdq0AS2dTpA3wcG1OcNLibrAhq2m1t14QvNohaq1avYQTKwYRAQAh+QQJCgAAACwAAAAAKQAnAAAE/xDISau9OOvNA+IgGAhDaGpDea5s675wLIdBPUtpXatAUPwBWGpQ+xkLOoMS2coZBdCoFLoMnojQw/RYmFJ5HGLgQBZwz0+twBYeq7mIuFx+zB6sGSL5/Zv7/U8CB2AVelBHf4mAXWuEOGNmfYqTcz+CAQQWI5GUnZU/B5kUA12SnqeWAWA+BYoEr7Cxr5NGdxNYcQkJNbA6vr86s593KqQCCAMCCgvAzc2wlVCirAEMCsvO2b6xcYzTrQEL18za2rIIlt8HCOHk2rq7zwQDBN0C3x7lOskNDfG/r+jV6zKNnT4dDBpc+7ctxawuxeL4cqBtgEIFDIMNqdcIBzoCNWgollvAwB3AjV3wACBQ4FW1GgyAiSw3hF6BQaN8gKzmwEFMHT1rxFnXrCaCUBaIuATa0+dPoXJ81SRFxhEAMUgOFh1yEycGJzm0quK6x+oogfqmJrMzz4TDWL7qSPnRtonamvtS3NgbAQAh+QQJCgAAACwAAAAAKQAnAAAE/xDISau9eIbMew6bJ45kaZ5oqq5s675wBQ7xZwgC3Q4DOFMBXA7FK4IKyKRvIDgIDLpRD3SoOoXWLK4a9UytQkEyGd5aQ5zvdVxAuN/vsRl96WnFSLheT24GuhN2OGx7hXtIOH8VgmOGjocFfgRAg22Pl3xIB5MSA5F5mKFxkYoAAaCFBKqrrKuOSQcbPQJuCQk+qz66u7qqmbE8kQhMCgu8x8gBrnE4BKcFAQwKxcnVvQO+CJECzm0BC9PG1tYEPL6I3QcI3+LjtrfH5dmR3QHr40sCDQ3wu+XYBLRxs4dvF4MG0/pdAyiQh5tdDqwNQKhAIa4iAQX8GaDNGYiI42YWMGjnDyMpCQQKqALBgCUvkOOKYCtwQEcPlT4YOHDQUhdMN+qOyUSwiUKPlT53Mli6C44umZ64LDpVsJpMmjXrJDFSdWMwK4CMenzKlWwRRE02hbVgDhkbtEKglTvRihUuVUU8RAAAIfkECQoAAAAsAAAAACkAJwAABP8QyEmrvTjrzbv/YCiOZGkFRGB+wSEUw9oRQh3L24Acx10Og4Aw4KMQEEUQMBgoOJ9DGbDprNWqVgMCQQrWXNan2Co4bJVCnkvMZpdrwk6QdxVv7/hx+aDSzOkvTniDg09fSRRzdYKEjXkFcIgAik+OloWQfAQndZeejwUHm4mQjJ+nVUQUVI4Erq+wrpZPfBNeWwkJQq9Dvb5Dso98NwOQSAIKC7/Ly695NaNUAQwKyczXvbBbkALRBQgBC9XK2NixCFXeZuHk2Lm6zQQDR+jdEk0B4OVCAwINDfB8uZp3BFI0ffuEMGhQLWA2ILIgEdvSywG2AQwVOAS25IgAVZNr0KUIYLHcAgbtBHaE1EcCgQKupin8VbLcknmhigSBqZCBz4oMhGxZ9+vmjlGJUIyc5tOBg59D8PS6WYyHpJ0Jr90M1SNDMSdTshJZwrWrHyb7qPb7IkrShY6wlA7BEgamWw5qqQ5ZgqOvhAgAOw==";
+  var ball = $("div", "", '<img src="' + BALL_GIF + '" alt=""><span class="zhu">助</span><span class="dot"></span>' +
+    '<button type="button" class="qs" id="dsh-qs-nei" title="内挂自动战斗">内</button>' +
+    '<button type="button" class="qs" id="dsh-qs-zhu" title="助手自动战斗">助</button>');
+  ball.id = "dsh-ball";
+  ball.title = "点击展开功能菜单";
+  document.documentElement.appendChild(ball);
+  ball.style.display = "none";
+  // 悬浮球事件隔离：点球展开面板那一下不能穿透到游戏（防角色误走）
+  try { isolateEl(ball); } catch (e) {}
+
+  // ---------------- 页签切换 ----------------
+  function switchPage(name) {
+    var tabs = panel.querySelectorAll(".tab");
+    var pages = panel.querySelectorAll(".page");
+    for (var i = 0; i < tabs.length; i++) {
+      var on = tabs[i].getAttribute("data-page") === name;
+      tabs[i].className = "tab" + (on ? " active" : "");
+      pages[i].className = "page" + (on ? " active" : "");
+    }
+    // 登录页签已移除：角色状态条恒显示（原 login 时隐藏）
+    panel.querySelector("#dsh-statbar").style.display = "flex";
+    // V2.3.1 常驻开始/停止命令条：内挂页显内挂开/停，助手页显助手开/停，其余页隐藏
+    var cb = $id("dsh-cmdbar");
+    if (cb) {
+      var isNei = name === "nei", isZhu = name === "zhu";
+      cb.style.display = (isNei || isZhu) ? "flex" : "none";
+      var bo = $id("dsh-battleon"), bf = $id("dsh-battleoff"), zo = $id("dsh-z-on"), zf = $id("dsh-z-off");
+      if (bo) bo.style.display = isNei ? "" : "none";
+      if (bf) bf.style.display = isNei ? "" : "none";
+      if (zo) zo.style.display = isZhu ? "" : "none";
+      if (zf) zf.style.display = isZhu ? "" : "none";
+    }
+    try { if (typeof closeDrawer === "function") closeDrawer(); } catch (e) {}
+  }
+  panel.querySelector(".tabs").addEventListener("click", function (e) {
+    var t = e.target.closest && e.target.closest(".tab");
+    if (t) switchPage(t.getAttribute("data-page"));
+  });
+  // 子标签只切换同一组的直接兄弟页；不再向上猜测“第一个含 .sub-page 的祖先”，避免复杂页/浮窗选错作用域。
+  function onSubTabClick(e) {
+    if (e.__dshSubHandled) return;
+    var st = e.target.closest && e.target.closest(".sub-tab");
+    if (!st || !inAssistantUI(st)) return;
+    var tabs = st.parentNode;
+    if (!tabs || !(tabs.classList && tabs.classList.contains("sub-tabs")) && !(tabs.classList && tabs.classList.contains("a-nav"))) return;
+    var host = tabs.parentNode;
+    if (tabs.classList.contains("a-nav")) {
+      for (var hi = 0; host && hi < host.children.length; hi++) {
+        if (host.children[hi].classList && host.children[hi].classList.contains("a-body")) { host = host.children[hi]; break; }
+      }
+    }
+    if (!host || !host.children) return;
+    var key = st.getAttribute("data-sub");
+    for (var i = 0; i < tabs.children.length; i++) {
+      var t = tabs.children[i];
+      if (t.classList && t.classList.contains("sub-tab")) t.classList.toggle("active", t === st);
+    }
+    for (var j = 0; j < host.children.length; j++) {
+      var p = host.children[j];
+      if (p.classList && p.classList.contains("sub-page")) {
+        var active = p.getAttribute("data-subpage") === key;
+        p.classList.toggle("active", active);
+        p.style.display = active ? "block" : "none";
+      }
+    }
+    e.__dshSubHandled = true;
+    if (host.querySelector && host.querySelector("#dsh-book")) { try { renderBook(); } catch (err) {} }
+  }
+  panel.addEventListener("click", onSubTabClick, false);
+  // 助手战斗设置根节点随 DOM 一起移入浮窗；监听绑在自身，面板/浮窗两种位置都稳定生效。
+  var zhu2TabsRoot = $id("dsh-fw-zhu2");
+  if (zhu2TabsRoot) zhu2TabsRoot.addEventListener("click", onSubTabClick, false);
+
+  // ---------------- 拖动（标题栏 + 悬浮球 + 拉伸手柄）----------------
+  function dragEl(el, onmove, scaleFn, onEnd) {
+    var sx, sy, ox, oy, moving = false, dx0 = 0, dy0 = 0;
+    // V2.6.6 移动端防断触：禁掉浏览器对 pointer 的默认手势（滚动/缩放），否则 Kiwi/手机
+    // 会把拖动当页面滚动而打断 pointermove（断触）。标题栏/球/手柄三处统一。
+    try { el.style.touchAction = "none"; } catch (e) {}
+    function onMove(e) {
+      if (!moving) return;
+      // V2.6.8 防「未按住却跟手」：鼠标未按键仍在移动 = 此前的 pointerup 丢失（如
+      // captured 元素被隐藏/捕获隐式释放），立即按松手收尾，杜绝残留监听把悬浮标带着跑
+      if (e.pointerType === "mouse" && !(e.buttons & 1)) { onUp(e); return; }
+      // V2.17.0：窗口按比例缩放时，屏幕位移要除以缩放值才是窗口位移，
+      // 否则缩到 70% 后鼠标会跑在窗口前面（拖起来「跟不上手」）。
+      var sc = 1;
+      try { sc = (scaleFn && scaleFn()) || 1; } catch (err) { sc = 1; }
+      if (!(sc > 0)) sc = 1;
+      onmove(ox + (e.clientX - sx) / sc, oy + (e.clientY - sy) / sc);
+    }
+    // move/up/cancel 挂到 window：手指移出元素范围仍持续收到事件，拖动跟手不中断
+    function onUp(e) {
+      moving = false;
+      // V1.7.6：拖动位移 >8px = 拖动（松手不触发球展开），未拖动=单击（照常展开）
+      el.__dsDragged = Math.abs(e.clientX - dx0) + Math.abs(e.clientY - dy0) > 8;
+      try { onEnd && onEnd(); } catch (err) {}
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onUp);
+      try { el.releasePointerCapture && el.releasePointerCapture(e.pointerId); } catch (err) {}
+    }
+    // V2.6.8 捕获隐式释放兜底：元素被 display:none/移除等会导致 setPointerCapture 隐式释放，
+    // 此时浏览器只派发 lostpointercapture、不派发 pointerup/pointercancel → 残留监听未清理、
+    // moving 恒 true → 悬浮标/面板「没按住也跟鼠标走」。在此事件统一收尾。
+    // V2.6.10 回归修复:lostpointercapture 在正常拖拽中也常被派发(改样式重排/移动端手势取消捕获/
+    // 松手 releasePointerCapture),V2.6.8 的无脑清理会把正常拖拽打断(删监听+moving=false)→ 拖不动。
+    // 仅当「真的松开且未按住」才收尾;仍按住但捕获被临时取消=保留监听继续拖,由 onMove 未按键自愈收尾
+    el.addEventListener("lostpointercapture", function (e) {
+      if (!moving) return;         // 正常松手:onUp 已收尾,moving=false,忽略
+      if (e.buttons & 1) return;   // 仍按住但捕获被取消:保留监听继续拖
+      moving = false;
+      try { onEnd && onEnd(); } catch (err) {}
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onUp);
+    });
+    el.addEventListener("pointerdown", function (e) {
+      // V2.17.0：按钮 / 滑块 / 输入框 / 拉伸手柄上按下不算拖动（否则拖不动滑块、点不进输入框）
+      if (e.target.closest && e.target.closest("button,input,select,textarea,.dsh-grip")) return;
+      moving = true;
+      sx = e.clientX; sy = e.clientY;
+      dx0 = e.clientX; dy0 = e.clientY; // V1.7.6 拖动位移起点（>8px 判定为拖动，抑制随后 click）
+      // 关键修复：面板初始定位是 left:50% + transform:translateX(-50%)（居中），
+      // offsetLeft 返回布局坐标（居中值）而非实际渲染坐标，直接用它当拖动起点
+      // 会在第一次 move 时把面板「吸」到视口中央。改用 getBoundingClientRect 取
+      // 实际渲染位置并固化到 left/top（摊平 transform/right/bottom），拖动跟手不跳位。
+      var r = el.getBoundingClientRect();
+      el.style.transform = "none";
+      el.style.left = r.left + "px";
+      el.style.top = r.top + "px";
+      el.style.right = "auto";
+      el.style.bottom = "auto";
+      ox = r.left; oy = r.top;
+      try { if (e.cancelable) e.preventDefault(); } catch (err) {}
+      try { el.setPointerCapture && el.setPointerCapture(e.pointerId); } catch (err) {}
+      // 挂到元素本身（配合 setPointerCapture 持续收事件）——隔离层文档级阻断冒泡，window 收不到
+      el.addEventListener("pointermove", onMove);
+      el.addEventListener("pointerup", onUp);
+      el.addEventListener("pointercancel", onUp);
+    });
+  }
+  // V2.17.0 公共层 A：主面板接入统一窗口（拖动 / 拉伸 / 位置尺寸记忆 / 缩放 / 事件隔离一次到位）
+  // 旧存储 dsh_panel_pos / dsh_panel_size 一次性迁入统一的 dsh_ro_ui_v1，老用户的位置不丢。
+  try {
+    if (!roUi().win["panel"]) {
+      var migP = null, migS = null;
+      try { migP = JSON.parse(localStorage.getItem("dsh_panel_pos") || "null"); } catch (e) {}
+      try { migS = JSON.parse(localStorage.getItem("dsh_panel_size") || "null"); } catch (e) {}
+      if (migP && migP.length === 2) {
+        roUi().win["panel"] = { x: migP[0], y: migP[1], w: (migS && migS.length === 2) ? migS[0] : 0, h: (migS && migS.length === 2) ? migS[1] : 0 };
+        roUiSave();
+      }
+    }
+  } catch (e) {}
+  (function () {
+    var rh = panel.querySelector("#dsh-resize");
+    if (IS_MN && rh) rh.style.display = "none"; // 手机版铺满视口，隐藏手动缩放手柄
+    // V2.17.1：主面板标题栏加「透明」滑块（与功能浮窗同一套，每窗口独立记忆）
+    try {
+      var hb = panel.querySelector(".hd .hbtns");
+      if (hb) hb.insertBefore(roAlphaSlider(panel, "panel"), hb.firstChild);
+    } catch (e) {}
+    // V2.17.0：分屏（视口窄）时默认面板尺寸也收一档 —— 只靠缩字号会糊，尺寸+缩放一起收更清楚
+    var narrow = roVw() < 1100;
+    var pw0 = IS_MN ? Math.min(430, Math.round(roVw() * 0.92)) : (narrow ? 360 : 400);
+    var ph0 = IS_MN ? Math.min(780, roVh() - 12) : (narrow ? 560 : 640);
+    roWinBind(panel, {
+      id: "panel",
+      drag: panel.querySelector(".hd"),
+      grip: rh,
+      minW: 300, minH: 360,
+      dw: pw0, dh: ph0,
+      ax: Math.max(0, Math.round((roVw() - pw0 * roScale()) / 2)),
+      ay: IS_MN ? 6 : 60,
+      onResize: function () { try { fwRefreshHosts(); } catch (e) {} }
+    });
+  })();
+  // 悬浮球：不参与缩放（分屏后它是唯一能找回面板的入口，必须保持可点），只做视口内夹紧
+  dragEl(ball, function (x, y) {
+    var nx = Math.max(0, Math.min(roVw() - 40, x));
+    var ny = Math.max(0, Math.min(roVh() - 40, y));
+    ball.style.left = nx + "px"; ball.style.top = ny + "px";
+    ball.style.right = "auto"; ball.style.bottom = "auto";
+    try { localStorage.setItem("dsh_ball_pos", JSON.stringify([nx, ny])); } catch (e) {}
+  });
+  // V2.17.0：面板拉伸改由公共层 roWinBind 统一处理（含缩放换算 / 视口夹紧 / 尺寸记忆）。
+  // 旧实现见 git 历史，问题有两个：1) 拉伸手柄的位移没有除以缩放值，缩放后拉不动；
+  // 2) 每次 move 都写 localStorage，拖一次写几百次。
+
+  // 面板回中：复位默认居中（PC 400×640 top:60 水平居中 / 手机铺满视口），清掉记忆的位置/大小
+  function recenterPanel() {
+    try {
+      if (IS_MN) {
+        panel.style.left = "50%"; panel.style.top = "6px"; panel.style.transform = "translateX(-50%)";
+        panel.style.width = "92vw"; panel.style.maxWidth = "420px"; panel.style.height = "calc(100vh - 12px)";
+        panel.style.minHeight = "240px"; panel.style.maxHeight = "none";
+      } else {
+        panel.style.width = "400px"; panel.style.height = "640px";
+        panel.style.left = Math.max(0, Math.round((roVw() - 400 * roScale()) / 2)) + "px";
+        panel.style.top = "60px";
+      }
+      panel.style.right = "auto"; panel.style.bottom = "auto";
+      try { roApplyScale(panel); } catch (e) {}
+      try { delete roUi().win["panel"]; roUiSave(); } catch (e) {}
+      localStorage.removeItem("dsh_panel_pos");
+      localStorage.removeItem("dsh_panel_size");
+      var st = panel.querySelector("#dsh-status2");
+      if (st) { st.textContent = "面板已回中"; setTimeout(function () { st.textContent = "就绪"; }, 1500); }
+    } catch (e) {}
+  }
+  (function () {
+    var rcBtn = panel.querySelector("#dsh-recenter");
+    if (!rcBtn) return;
+    rcBtn.addEventListener("click", function (e) {
+      try { e.stopPropagation(); e.preventDefault(); } catch (err) {}
+      recenterPanel();
+    });
+    rcBtn.addEventListener("pointerdown", function (e) { try { e.stopPropagation(); } catch (err) {} });
+  })();
+
+  // 展开/收起
+  function applyCollapse(c) {
+    try {
+      if (c) { panel.style.display = "none"; }
+      else { panel.style.display = "flex"; }
+      // V2.17.1：悬浮球改为常驻 —— 它现在是「功能菜单」的唯一入口，不再随面板显隐而消失
+      ball.style.display = "flex";
+    } catch (e) {}
+  }
+  panel.querySelector("#dsh-min").addEventListener("click", function () {
+    saved.collapsed = true; saveSaved(saved); applyCollapse(true);
+  });
+  // V2.17.1：悬浮球点一下弹出「功能菜单」，再点一下收起（主面板改从菜单里打开）
+  // V2.22.0 悬浮球旁战斗快速开关：[内]=内挂自动战斗开/关，[助]=助手自动战斗开/关。
+  //   状态点：内挂读 npHuntOn（本地跟踪），助手读 zRunning；绿底=已开。点按钮要 stopPropagation，
+  //   否则冒泡到球会顺手把功能菜单也弹出来。
+  function qswPaint() {
+    try {
+      var bn = $id("dsh-qs-nei"), bz = $id("dsh-qs-zhu");
+      var neiOn = npBattleState();
+      if (neiOn !== null) { npHuntOn = neiOn; npBattleKnown = true; }
+      if (bn) { bn.className = "qs" + (neiOn === true ? " on" : (neiOn === null ? " unknown" : "")); bn.title = "内挂自动战斗：" + (neiOn === null ? "状态未知（点击切换一次）" : (neiOn ? "已开（点击关闭）" : "已关（点击开启）")); }
+      if (bz) { bz.className = "qs" + (zRunning ? " on" : ""); bz.title = "助手自动战斗：" + (zRunning ? "已开（点击停止）" : "已关（点击启动）"); }
+    } catch (e) {}
+  }
+  try {
+    var qswNei = $id("dsh-qs-nei"), qswZhu = $id("dsh-qs-zhu");
+    if (qswNei) qswNei.addEventListener("click", function (ev) {
+      ev.stopPropagation(); ev.preventDefault();
+      try { var state = npBattleState(); setBattle(state === null ? !npHuntOn : !state); } catch (e) {}
+      qswPaint();
+    });
+    if (qswZhu) qswZhu.addEventListener("click", function (ev) {
+      ev.stopPropagation(); ev.preventDefault();
+      try { if (zRunning) stopZhu(); else startZhu(); } catch (e) {}
+      qswPaint();
+    });
+    [qswNei, qswZhu].forEach(function (b) { if (b) b.addEventListener("pointerdown", function (ev) { ev.stopPropagation(); }); });
+    setInterval(qswPaint, 1000);
+    qswPaint();
+  } catch (e) {}
+  ball.addEventListener("click", function () {
+    if (ball.__dsDragged) { ball.__dsDragged = false; return; } // 拖动松手不弹菜单
+    roMenuToggle();
+  });
+  // V2.24.1：旧版设置界面入口 —— 启动不再自动弹出。
+  // V2.29.0：启动一律按收起处理，与历史 collapsed 值解耦（旧逻辑 collapsed===false 会在每次刷新后自动弹出）。
+  //   仍把 true 写回存档：否则快捷键 hkToggle 读到旧值会出现「按了没反应」（原注释已记录的坑）。
+  //   手动入口不受影响：功能菜单/悬浮球点击照常打开（菜单路径的 saved.collapsed=false 保留，本次会话内保持打开）。
+  saved.collapsed = true; try { saveSaved(saved); } catch (e) {}
+  applyCollapse(true);
+
+  // ---------------- 快捷键（V2.8.0 三组 · Switch 单键切换）：面板收起 / 内挂自动战斗 / 助手自动战斗 ----------------
+  // 捕获态 hkTarget：null|panel|np|zhu；三组存全局独立 key（V2.13.0 起所有角色共用，刷新/换角色不丢）
+  // ============ V2.18.0 快捷键系统（泛化：RO_MODULES 里每个功能都能绑一个键）============
+  // 存储 dsh_ro_hotkeys_v2 = { "<模块id>": {ctrl,alt,shift,meta,key} }
+  // 旧版 dsh_ro_hotkeys_v1 的三个固定键（hotkey / hotkeyNp / hotkeyZhu）首次自动迁移到 menu / np / zhu
+  var HK_KEY2 = "dsh_ro_hotkeys_v2";
+  var HK_KEY1 = "dsh_ro_hotkeys_v1";
+  var hkCfg = null;
+  function hkLoad() {
+    if (hkCfg) return hkCfg;
+    hkCfg = {};
+    try {
+      var o = JSON.parse(localStorage.getItem(HK_KEY2) || "{}");
+      if (o && typeof o === "object") hkCfg = o;
+    } catch (e) {}
+    try {
+      var migDone = false;
+      try { migDone = localStorage.getItem("dsh_ro_hotkeys_mig") === "1"; } catch (e0) {}
+      // V2.23.0：迁移只做一次。旧逻辑是「三个键位都空就重新导入旧数据」，
+      // 导致用户清除键位后一刷新又被旧数据复活。
+      if (!migDone && Object.keys(hkCfg).length === 0) {
+        var o1 = JSON.parse(localStorage.getItem(HK_KEY1) || "{}");
+        if (o1 && (o1.hotkey || o1.hotkeyNp || o1.hotkeyZhu)) {
+          if (o1.hotkey) hkCfg.menu = o1.hotkey;
+          if (o1.hotkeyNp) hkCfg.np = o1.hotkeyNp;
+          if (o1.hotkeyZhu) hkCfg.zhu = o1.hotkeyZhu;
+          hkSave();
+        }
+      }
+    } catch (e) {}
+    // V2.26.0：默认 Ctrl+Alt+Q 改开功能菜单；用户自设的其它高级面板键位保留。
+    try {
+      var oldMenuKey = hkCfg.menu || hkCfg["page-assist"];
+      var panelKey = hkCfg.panel;
+      if (!oldMenuKey && panelKey && panelKey.ctrl && panelKey.alt && !panelKey.shift && !panelKey.meta && panelKey.key === "KeyQ") { oldMenuKey = panelKey; delete hkCfg.panel; }
+      if (!oldMenuKey) oldMenuKey = { ctrl: true, alt: true, shift: false, meta: false, key: "KeyQ" };
+      hkCfg.menu = oldMenuKey;
+      if (hkCfg["page-assist"]) delete hkCfg["page-assist"];
+      hkSave();
+    } catch (e4) {}
+    try { localStorage.setItem("dsh_ro_hotkeys_mig", "1"); } catch (e0) {}
+    return hkCfg;
+  }
+  function hkSave() { try { localStorage.setItem(HK_KEY2, JSON.stringify(hkCfg || {})); } catch (e) {} }
+  function hkOf(id) { var c = hkLoad()[id]; return (c && c.key) ? c : null; }
+  function hkName(id) {
+    for (var i = 0; i < RO_MODULES.length; i++) { if (RO_MODULES[i].id === id) return RO_MODULES[i].name; }
+    return id;
+  }
+  function hkFriendly(code) {
+    try {
+      if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+      if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+      if (/^F[0-9]{1,2}$/.test(code)) return code;
+      var map = { Backquote: "`", Minus: "-", Equal: "=", BracketLeft: "[", BracketRight: "]", Backslash: "\\",
+        Semicolon: ";", Quote: "'", Comma: ",", Period: ".", Slash: "/", Space: "空格", Enter: "Enter", Tab: "Tab",
+        ArrowUp: "↑", ArrowDown: "↓", ArrowLeft: "←", ArrowRight: "→", NumpadAdd: "小键盘+", NumpadSubtract: "小键盘-" };
+      if (map[code]) return map[code];
+      return String(code || "").replace(/^(Numpad|Arrow)/, "");
+    } catch (e) { return code; }
+  }
+  function hkLabel(h) {
+    if (!h || !h.key) return "未设键";
+    var mods = [];
+    if (h.ctrl) mods.push("Ctrl");
+    if (h.alt) mods.push("Alt");
+    if (h.shift) mods.push("Shift");
+    if (h.meta) mods.push("Win");
+    return mods.concat([hkFriendly(h.key)]).join("+");
+  }
+  function hkIsSame(a, b) {
+    return !!(a && b && a.key === b.key && !!a.ctrl === !!b.ctrl && !!a.alt === !!b.alt && !!a.shift === !!b.shift && !!a.meta === !!b.meta);
+  }
+  function hkIsTyping(e) {
+    try {
+      var el = e.target;
+      if (!el) return false;
+      if (el.isContentEditable) return true;
+      if (el.tagName === "TEXTAREA") return true;
+      if (el.tagName === "INPUT") {
+        // V2.23.0：只有文本类输入框才屏蔽快捷键。旧版把所有 INPUT 都算「正在打字」，
+        // 导致点过面板里任意一个勾选框后焦点留在复选框上，之后所有快捷键全部失灵。
+        var t = String(el.type || "text").toLowerCase();
+        return t === "text" || t === "number" || t === "password" || t === "search" || t === "email" || t === "tel" || t === "url";
+      }
+      return false;
+    } catch (e2) { return false; }
+  }
+  function hkToggle() {
+    try {
+      if (saved.collapsed) { saved.collapsed = false; saveSaved(saved); applyCollapse(false); }
+      else { saved.collapsed = true; saveSaved(saved); applyCollapse(true); }
+    } catch (e) {}
+  }
+  // 内挂自动战斗快捷键：校准后 toggle 发包一次（无需开面板），本地 npHuntOn 跟随本次按下翻转
+  function npToggleFight() {
+    try {
+      npCalibrate();
+      if (!npToggleHunt()) return;
+      npHuntOn = !npHuntOn; npBattleKnown = true;
+      setStatus("内挂自动战斗：快捷键切换（toggle 一次）", "ok");
+      tlog("hk np-toggle");
+    } catch (e) {}
+  }
+  // 助手自动战斗快捷键：运行中→停止，否则→开始
+  function zToggleFight() {
+    try {
+      if (zRunning) stopZhu();
+      else startZhu();
+    } catch (e) {}
+  }
+  function hkAction(id) {
+    if (!roModOn(id)) { setStatus("「" + hkName(id) + "」功能已关闭，快捷键不响应", "warn"); return; }
+    if (id === "menu") { roMenuToggle(); return; }
+    if (id === "panel") { hkToggle(); return; }
+    if (id === "np") { npToggleFight(); return; }
+    if (id === "zhu") { zToggleFight(); return; }
+    if (id === "askcombo") { castBuffCombo(); return; }
+    roModToggle(id);
+  }
+  var hkTarget = null, hkTimer = null;
+  function hkBeginSet(id) {
+    if (hkTarget === id) { hkTarget = null; }
+    else {
+      hkTarget = id;
+      if (hkTimer) clearTimeout(hkTimer);
+      hkTimer = setTimeout(function () {
+        if (hkTarget) { hkTarget = null; try { roMenuRender(); } catch (e) {} setStatus("快捷键设置超时已取消", "st"); }
+      }, 20000);
+    }
+    try { roMenuRender(); } catch (e) {}
+    if (hkTarget) setStatus("请按下「" + hkName(id) + "」的快捷键组合（建议带 Ctrl/Alt），Esc 取消", "ok");
+  }
+  function hkClear(id) {
+    try { delete hkLoad()[id]; } catch (e) { hkLoad()[id] = null; }
+    hkSave();
+    try { roMenuRender(); } catch (e) {}
+    setStatus("「" + hkName(id) + "」快捷键已清除", "st");
+  }
+  document.addEventListener("keydown", function (e) {
+    try {
+      if (hkTarget) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === "Escape" || e.key === "Esc") { hkTarget = null; try { roMenuRender(); } catch (e0) {} setStatus("快捷键设置已取消", "st"); return; }
+        if (e.key === "Control" || e.key === "Alt" || e.key === "Shift" || e.key === "Meta") return; // 等待组合键完整按下
+        if (hkIsTyping(e)) { hkTarget = null; try { roMenuRender(); } catch (e0) {} setStatus("快捷键设置已取消（输入框内不响应）", "st"); return; }
+        var h = { ctrl: !!e.ctrlKey, alt: !!e.altKey, shift: !!e.shiftKey, meta: !!e.metaKey, key: e.code || e.key };
+        var dup = null, all = hkLoad();
+        for (var k in all) { if (k === hkTarget) continue; if (hkIsSame(h, all[k])) { dup = k; break; } }
+        if (dup) { try { roMenuRender(); } catch (e0) {} setStatus("此组合已用于「" + hkName(dup) + "」，请换一组", "warn"); return; }
+        var curT = hkTarget;
+        hkLoad()[curT] = h;
+        hkSave();
+        hkTarget = null;
+        if (hkTimer) { clearTimeout(hkTimer); hkTimer = null; }
+        try { roMenuRender(); } catch (e0) {}
+        setStatus("「" + hkName(curT) + "」快捷键已设为 " + hkLabel(h), "ok");
+        return;
+      }
+      if (e.repeat) return; // V2.23.0：按住不放的连发不再重复触发（旧版会把内挂开关连点发包几十次）
+      if (hkIsTyping(e)) return; // 打字/输入框聚焦时不响应
+      if (e.key === "Control" || e.key === "Alt" || e.key === "Shift" || e.key === "Meta") return;
+      var cfg = hkLoad();
+      var hit = null;
+      for (var id in cfg) {
+        var hh = cfg[id];
+        if (!hh || !hh.key) continue;
+        // V2.23.0：四个修饰键各自独立严格比对。旧版把 Ctrl 和 Win 混在一起比，
+        // 导致 Win 组合永远按不出来、而 Win+K 会误触发绑在 Ctrl+K 上的功能。
+        var match = (!!hh.ctrl === !!e.ctrlKey) && (!!hh.alt === !!e.altKey) && (!!hh.shift === !!e.shiftKey) && (!!hh.meta === !!e.metaKey) &&
+          ((hh.key === (e.code || e.key)) || (hh.key === e.key));
+        if (!match) continue;
+        e.preventDefault();
+        e.stopPropagation();
+        hkAction(id);
+        hit = id;
+        break;
+      }
+      if (!hit) hkProbe(e, null);
+    } catch (e3) {}
+  }, true);
+
+  // V2.23.0 键位检测：记录最近 3 次按键，显示在系统页 —— 用来区分「收不到按键」和「收到了但判定错」
+  var hkProbeLog = [];
+  function hkProbe(e, hitId) {
+    try {
+      var s = "键码 " + (e.code || e.key || "?") + " / " + (e.key || "?");
+      if (e.ctrlKey) s += " +Ctrl";
+      if (e.altKey) s += " +Alt";
+      if (e.shiftKey) s += " +Shift";
+      if (e.metaKey) s += " +Win";
+      s += hitId ? (" → 命中「" + hkName(hitId) + "」") : " → 未绑定";
+      hkProbeLog.unshift(s);
+      if (hkProbeLog.length > 3) hkProbeLog.length = 3;
+      renderHkProbe();
+    } catch (e2) {}
+  }
+  function renderHkProbe() {
+    try {
+      var el = document.getElementById("dsh-hkprobe");
+      if (!el || el.offsetParent === null) return; // 系统页没打开时不碰 DOM（不拖累游戏帧率）
+      el.textContent = hkProbeLog.length ? ("最近按键：" + hkProbeLog.join("　|　")) : "最近按键：还没有收到按键（把浏览器标签页点到最前面再按）";
+    } catch (e2) {}
+  }
+  // 悬浮球自动靠边：窗口尺寸变化时保持球在视口内（贴边不丢失）
+  function snapBallToEdge() {
+    try {
+      if (ball.style.display === "none") return;
+      var r = ball.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      var vw = window.innerWidth, vh = window.innerHeight, mar = 10, bw = r.width, bh = r.height;
+      if (r.left >= vw - 12) { ball.style.left = (vw - bw - mar) + "px"; ball.style.right = "auto"; }
+      if (r.right <= 12) { ball.style.left = mar + "px"; ball.style.right = "auto"; }
+      if (r.top >= vh - 12) { ball.style.top = (vh - bh - mar) + "px"; ball.style.bottom = "auto"; }
+      if (r.bottom <= 12) { ball.style.top = mar + "px"; ball.style.bottom = "auto"; }
+    } catch (e) {}
+  }
+  try { window.addEventListener("resize", snapBallToEdge); } catch (e) {}
+  setInterval(snapBallToEdge, 3000);
+
+  // 恢复位置/大小
+  try {
+    if (!IS_MN) { // 手机版铺满视口，不恢复 PC 端位置/尺寸（PC 存的 400×640 会在手机上超屏）
+      var pp = JSON.parse(localStorage.getItem("dsh_panel_pos"));
+      if (pp) { panel.style.left = pp[0] + "px"; panel.style.top = pp[1] + "px"; panel.style.transform = "none"; }
+      var ps = JSON.parse(localStorage.getItem("dsh_panel_size"));
+      // V2.6.0 防呆加严：宽>480 或高>680 即丢弃记忆（V2.5.0 实测 670×605 恰好在旧阈值 520×760 内被保留、
+      // 内容刚好放下/底部截断、滚动条临界消失——把边界收紧，多数"拖大残留"尺寸都会被复位回默认 400×640）。
+      if (ps) {
+        var vw = window.innerWidth, vh = window.innerHeight;
+        var oversize = ps[0] > 480 || ps[1] > 680 || ps[0] < 300 || ps[1] < 360 ||
+          (pp && (pp[0] + ps[0] > vw - 12 || pp[1] + ps[1] > vh - 12));
+        if (oversize) {
+          try { localStorage.removeItem("dsh_panel_size"); } catch (e) {}
+          panel.style.width = ""; panel.style.height = ""; // 回退 PANEL_CSS 默认 400×640
+          console.log("[RO助手] 忽略异常面板尺寸记忆，已复位 400×640（宽高需在 300-480 / 360-680 且不出屏）");
+        } else {
+          panel.style.width = ps[0] + "px"; panel.style.height = ps[1] + "px";
+        }
+      }
+    }
+  } catch (e) {}
+
+  // （已删除：「弹出独立窗口」按钮与 window.open 弹窗生成代码 —— 弹窗为独立 JS 环境，
+  //   读不到游戏 CLIENT，且弹窗内操作无法回传游戏。功能改由「功能菜单」承载。）
+
+  // ---------------- 统一反馈 ----------------
+  var roFeedbackEl = null, roFeedbackTimer = null;
+  function roFeedback(text, cls) {
+    setStatus(text, cls);
+    try {
+      if (!roFeedbackEl || !roFeedbackEl.isConnected) {
+        roFeedbackEl = document.createElement("div");
+        roFeedbackEl.id = "dsh-feedback";
+        roFeedbackEl.setAttribute("data-dsh-ui", "1");
+        roFeedbackEl.style.cssText = "position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:2147483600;max-width:min(560px,90vw);padding:7px 12px;border-radius:var(--dsh-radius,6px);background:#334155;color:#fff;box-shadow:0 4px 18px rgba(0,0,0,.35);font:12px/1.5 'Microsoft YaHei',sans-serif;display:none;pointer-events:none";
+        document.documentElement.appendChild(roFeedbackEl);
+      }
+      roFeedbackEl.textContent = String(text || "");
+      roFeedbackEl.style.background = cls === "err" ? "#b33535" : (cls === "ok" ? "#17793a" : (cls === "warn" ? "#a16207" : "#334155"));
+      roFeedbackEl.style.display = "block";
+      if (roFeedbackTimer) clearTimeout(roFeedbackTimer);
+      roFeedbackTimer = setTimeout(function () { if (roFeedbackEl) roFeedbackEl.style.display = "none"; }, cls === "err" ? 6000 : 2600);
+    } catch (e) {}
+  }
+  function setStatus(text, cls) {
+    var el = $id("dsh-status");
+    if (el) { el.textContent = text; el.className = cls || "warn"; }
+    var el2 = $id("dsh-status2");
+    if (el2) el2.textContent = text;
+    var ds = $id("dsh-datasrc");
+    if (ds) ds.textContent = useLocalData ? "本地镜像" : "原站（可能较慢）";
+  }
+
+  // ---------------- 角色状态条更新 ----------------
+  function renderStatbar() {
+    var sb = panel.querySelector("#dsh-statbar");
+    if (!sb) return;
+    try {
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      // V1.7.0：登录后识别角色 → 自动切档并加载上次保存
+      if (ent && ent.GID != null && gidInt(ent.GID) && (gidInt(ent.GID) !== lastCharGid || charNameOf(ent) !== lastCharName)) { try { onCharChanged(ent); } catch (e) {} }
+      if (!ent) { sb.querySelector(".nm").textContent = "—"; sb.querySelector(".job").textContent = "未登录"; return; }
+      var life = ent.life || {};
+      var name = (ent.display && ent.display.name) || ent.displayName || ent.name || (ent.character && ent.character.name) || "角色"; // V2.12.3：角色名在 display.name
+      sb.querySelector(".nm").textContent = name;
+      sb.querySelector(".job").textContent = getJobName(ent.job || (ent.character && ent.character.job)) + " · " + (getMapNameCn() || (ent.map ? ent.map : ""));
+      // 基础/职业等级：优先客户端 BasicInfo DOM（PAR_CHANGE 实时更新）；fallback 实体字段
+      var blvl = null, jlvl = null;
+      try {
+        var bl = document.querySelector(".blvl_value"), jl = document.querySelector(".jlvl_value");
+        if (bl && bl.textContent) blvl = parseInt(bl.textContent, 10);
+        if (jl && jl.textContent) jlvl = parseInt(jl.textContent, 10);
+      } catch (e1) {}
+      if (blvl == null) blvl = ent.clevel || ent.baseLevel || "?";
+      if (jlvl == null) jlvl = ent.jlevel || ent.jobLevel || ent.joblv || "?";
+      sb.querySelector(".lv").textContent = "Lv" + blvl + "/" + jlvl;
+      // HP/SP：客户端 life.hp / life.hp_max（PAR_CHANGE 写入 life），注意字段名 hp_max/sp_max
+      var hp = life.hp, maxhp = life.hp_max != null ? life.hp_max : life.maxhp;
+      var sp = life.sp, maxsp = life.sp_max != null ? life.sp_max : life.maxsp;
+      var hpPct = maxhp > 0 ? Math.round(hp / maxhp * 100) : 0;
+      var spPct = maxsp > 0 ? Math.round(sp / maxsp * 100) : 0;
+      sb.querySelector(".hp").style.width = Math.max(0, Math.min(100, hpPct)) + "%";
+      sb.querySelector(".sp").style.width = Math.max(0, Math.min(100, spPct)) + "%";
+      sb.querySelectorAll(".bnum")[0].textContent = (hp != null ? hp : "?") + "/" + (maxhp != null ? maxhp : "?");
+      sb.querySelectorAll(".bnum")[1].textContent = (sp != null ? sp : "?") + "/" + (maxsp != null ? maxsp : "?");
+      // 负重：客户端 BasicInfo DOM（.weight_value/.weight_total，单位已/10）；fallback 实体字段
+      var wt = null, maxwt = null;
+      try {
+        var wv = document.querySelector(".weight_value"), wvl = document.querySelector(".weight_total");
+        if (wv && wv.textContent) wt = parseInt(wv.textContent, 10);
+        if (wvl && wvl.textContent) maxwt = parseInt(wvl.textContent, 10);
+      } catch (e2) {}
+      if (wt == null && ent.weight != null) wt = Math.round(ent.weight / 10);
+      if (maxwt == null && (ent.maxWeight || ent.maxweight)) maxwt = Math.round((ent.maxWeight || ent.maxweight) / 10);
+      sb.querySelector(".warn").textContent = "负重" + (wt != null ? (wt + "/" + (maxwt != null ? maxwt : "?") + " " + (maxwt > 0 ? Math.round(wt / maxwt * 100) + "%" : "")) : "—");
+      // Zeny：SessionStorage.zeny（PAR_CHANGE MONEY 写入）
+      var zeny = CLIENT.SS && CLIENT.SS.zeny != null ? CLIENT.SS.zeny : (ent.zeny != null ? ent.zeny : null);
+      sb.querySelector(".zeny").textContent = "Zeny " + (zeny != null ? String(zeny).replace(/\B(?=(\d{3})+(?!\d))/g, ",") : "—");
+    } catch (e) {}
+  }
+
+  // ---------------- 遥控快照 buildRemoteSnapshot（多账号状态上报在用，保留）----------------
+  // 已删除的是 startRemoteSync()：它只为「弹出独立窗口」每秒推送一份快照。
+  // 弹窗是独立的 JS 环境，读不到游戏 CLIENT；原作者用 BroadcastChannel 做单向推送，
+  // 弹窗里能显示数据，但弹窗内的任何操作都回传不到游戏。功能改由「功能菜单」承载。
+  // remoteCh 保留：多账号同步器的即时通道 syncBCInit() 在复用它。
+  function buildRemoteSnapshot() {
+    var snap = { t: Date.now(), winInfo: "", account: null, online: false, stat: null, mobs: [] };
+    try { var wi = $id("dsh-wininfo"); if (wi) snap.winInfo = wi.textContent; } catch (e) {}
+    try {
+      if (window.account && window.account !== "undefined") snap.account = window.account;
+      else if (state.account) snap.account = state.account;
+    } catch (e) {}
+    try {
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      if (ent && ent.life) {
+        snap.online = true;
+        var blvl2 = null, jlvl2 = null, wt2 = null, mwt2 = null;
+        try {
+          var bl2 = document.querySelector(".blvl_value"), jl2 = document.querySelector(".jlvl_value");
+          var wv2 = document.querySelector(".weight_value"), wvl2 = document.querySelector(".weight_total");
+          if (bl2 && bl2.textContent) blvl2 = parseInt(bl2.textContent, 10);
+          if (jl2 && jl2.textContent) jlvl2 = parseInt(jl2.textContent, 10);
+          if (wv2 && wv2.textContent) wt2 = parseInt(wv2.textContent, 10);
+          if (wvl2 && wvl2.textContent) mwt2 = parseInt(wvl2.textContent, 10);
+        } catch (e5) {}
+        snap.stat = {
+          name: (ent.display && ent.display.name) || ent.displayName || ent.name || (ent.character && ent.character.name) || "角色", // V2.12.3
+          job: getJobName(ent.job || (ent.character && ent.character.job)),
+          map: ent.map || "",
+          lv: blvl2 != null ? blvl2 : (ent.clevel || ent.baseLevel || "?"),
+          jlv: jlvl2 != null ? jlvl2 : (ent.jlevel || ent.jobLevel || ent.joblv || "?"),
+          hp: ent.life.hp,
+          maxhp: ent.life.hp_max != null ? ent.life.hp_max : ent.life.maxhp,
+          sp: ent.life.sp,
+          maxsp: ent.life.sp_max != null ? ent.life.sp_max : ent.life.maxsp,
+          weight: wt2 != null ? wt2 : (ent.weight != null ? Math.round(ent.weight / 10) : null),
+          maxWeight: mwt2 != null ? mwt2 : ((ent.maxWeight || ent.maxweight) ? Math.round((ent.maxWeight || ent.maxweight) / 10) : null),
+          zeny: CLIENT.SS.zeny != null ? CLIENT.SS.zeny : ent.zeny
+        };
+      }
+    } catch (e) {}
+    try {
+      snap.mobs = scanMobs.slice(0, 20).map(function (m) { return { name: m.name, mid: m.mid, dist: m.dist }; });
+    } catch (e) {}
+    return snap;
+  }
+  var remoteCh = null;
+
+  // ---------------- 多账号平台 · 状态上报 + 同步器（P1 状态上报 / v2.15.8 同步器）----------------
+  // 上报：每 15s POST 到本机中心 8899；中心有未执行广播时 hurry → 临时 3s 轮询
+  // 同步器：本窗口用户点地板/点 NPC → 捕获 → 上报（syncPending）→ 中心广播给其他账号
+  //        本窗口轮询取回其他账号广播（sync）→ 地图相同则执行（moveXY / NPC 对话），执行后确认 seq
+  var ACCT_REPORT = true; // 上报开关：false 关闭（V2.15.14 起上报与同步器解耦——上报始终开启，同步器功能单独受 dsh-sync-en 控制）
+  var ACCT_REPORT_URL = "http://127.0.0.1:8899/api/acct/report";
+  var acctReportTimer = null;
+  // 同步器配置
+  // 同步器配置（V2.15.10 起从角色档读取 · 默认关）：dsh-sync-en / dsh-sync-mode / dsh-sync-int
+  function syncCfg() {
+    var ui = (saved && saved.ui) || {};
+    var en = ui["dsh-sync-en"];
+    var mode = ui["dsh-sync-mode"] || "both";
+    var intv = parseInt(ui["dsh-sync-int"], 10);
+    return { en: en === undefined ? false : !!en, mode: mode, interval: (intv >= 1 && intv <= 120) ? intv : 15 };
+  }
+  var syncPending = [];     // 待上报的本地捕获操作（主号侧）
+  var syncAcked = 0;        // 本窗口已执行的最大广播 seq（从号侧确认）
+  var acctHurry = false;    // 中心有未执行广播 → 临时 3s 轮询
+  var syncLastMove = 0, syncLastNpc = 0; // 捕获节流
+  var syncBCWin = "", syncBCSeq = 0, syncBCSeen = {}; // V2.15.11 即时通道（BroadcastChannel 同浏览器窗口毫秒级直达）
+  function buildAcctTask() {
+    try {
+      if (moveXY && moveXY.busy) return "移动中";
+      if (bagClean && bagClean.busy) return "存仓中";
+      if (npHuntOn) return "挂机中";
+    } catch (e) {}
+    return "空闲";
+  }
+  function syncMapKey() {
+    try { return String(getMapName() || "").replace(/\.gat$/i, "").toLowerCase(); } catch (e) { return ""; }
+  }
+  function buildAcctReport() {
+    var snap = buildRemoteSnapshot(); // 复用弹窗快照字段（账号/角色/地图/HP/SP/负重/zeny）
+    if (!snap || !snap.account) return null; // 未识别账号（未登录/登录页）不报
+    var rep = {
+      account: snap.account,
+      online: !!snap.online,
+      stat: snap.stat || null,
+      line: "",
+      task: buildAcctTask(),
+      ts: Date.now(),
+      syncPending: syncPending.splice(0, syncPending.length), // 取走并清空本地捕获队列
+      syncAcked: syncAcked
+    };
+    try { rep.line = SERVER_NAMES[pickCv()] || ""; } catch (e) {}
+    try {
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      if (ent && ent.position) { rep.x = Math.round(ent.position[0]); rep.y = Math.round(ent.position[1]); }
+    } catch (e) {}
+    return rep;
+  }
+  // ---- 捕获（主号侧）：包装游戏点击入口，记录点地板/点 NPC ----
+  function syncPush(op) {
+    try {
+      var now = Date.now();
+      if (op.type === "move") { if (now - syncLastMove < 500) return; syncLastMove = now; }
+      else { if (now - syncLastNpc < 200) return; syncLastNpc = now; }
+      syncPending.push(op);
+      syncBCBroadcast(op); // V2.15.11 即时通道：同浏览器窗口直达（不等轮询）
+      if (syncPending.length > 20) syncPending.splice(0, syncPending.length - 20);
+    } catch (e) {}
+  }
+  function syncCapture(ev) {
+    var cfg0 = syncCfg(); if (!cfg0.en || cfg0.mode === "slave") return;
+    var btn = (ev && (ev.which || ev.button)) || 1;
+    if (btn !== 1) return; // 仅左键
+    if (ev.altKey && !ev.ctrlKey && !ev.shiftKey) return; // ALT=佣兵攻击，不同步
+    try {
+      var Mouse = window.require && window.require("Controls/MouseEventHandler");
+      var EM = window.require && window.require("Renderer/EntityManager");
+      var SS = CLIENT.SS;
+      if (!Mouse || !EM || !SS || !SS.Entity) return;
+      if (!Mouse.intersect) return; // 点的是 UI 不是地图
+      var over = (typeof EM.getOverEntity === "function") ? EM.getOverEntity() : null;
+      var map = syncMapKey();
+      if (over && over !== SS.Entity && (over.objecttype === 6 || over.objecttype === 12)) {
+        // 点 NPC（TYPE_NPC=6 / TYPE_NPC2=12）
+        var npPos = over.position;
+        syncPush({ type: "npc", map: map, gid: over.GID, x: (npPos && isFinite(npPos[0])) ? Math.round(npPos[0]) : null, y: (npPos && isFinite(npPos[1])) ? Math.round(npPos[1]) : null });
+      } else if (!over || over === SS.Entity) {
+        // 点地面（无实体 / 点自己）→ 移动同步
+        var wx = Mouse.world && Mouse.world.x, wy = Mouse.world && Mouse.world.y;
+        if (typeof wx === "number" && typeof wy === "number") {
+          syncPush({ type: "move", map: map, x: Math.round(wx), y: Math.round(wy) });
+        }
+      }
+      // 点怪(5)/点物品(2)/点传送门(-1)/点其他玩家(0)：不同步
+    } catch (e) {}
+  }
+  function syncHookCapture() {
+    // 游戏在 window 冒泡阶段监听 mousedown（MapControl 模块级函数绑定）；我们并行挂一个
+    // 监听读状态（Mouse.world / getOverEntity），不干预游戏行为。助手 UI 已隔离不会冒泡到 window。
+    try {
+      if (window.__dshSyncHooked) return;
+      window.__dshSyncHooked = true;
+      window.addEventListener("mousedown", syncCapture, false);
+    } catch (e) {}
+  }
+  // ---- 执行（从号侧）：执行中心广播的指令 ----
+  function syncNpc(gid, nx, ny) {
+    try {
+      var EM = window.require && window.require("Renderer/EntityManager");
+      var npc = null;
+      if (EM && typeof EM.forEach === "function") {
+        EM.forEach(function (e) { if (!npc && e && e.GID === gid && (e.objecttype === 6 || e.objecttype === 12)) npc = e; });
+      }
+      var SS = CLIENT.SS, self = SS && SS.Entity;
+      function talk(g) { try { if (g && g.onMouseDown) g.onMouseDown(); } catch (e) {} }
+      if (npc && npc.position) {
+        // 视野内找到：近直接对话，远走近再对话
+        var p = npc.position;
+        if (self && self.position && (Math.abs(self.position[0] - p[0]) + Math.abs(self.position[1] - p[1])) > 3) {
+          walkToXY(p[0], p[1], function () { talk(npc); }, "dsh-synclog"); // 走近后对话
+        } else {
+          talk(npc);
+        }
+        return true;
+      }
+      // V2.15.12 跨屏：NPC 不在视野（不同屏）→ 按主号捕获的坐标先走过去，到达后再找（必同屏）
+      if (isFinite(nx) && isFinite(ny)) {
+        walkToXY(nx, ny, function () {
+          try {
+            var EM2 = window.require && window.require("Renderer/EntityManager");
+            var npc2 = null;
+            if (EM2 && EM2.forEach) EM2.forEach(function (e) { if (!npc2 && e && e.GID === gid && (e.objecttype === 6 || e.objecttype === 12)) npc2 = e; });
+            if (npc2) talk(npc2);
+          } catch (e) {}
+        }, "dsh-synclog");
+        return true;
+      }
+      return false;
+    } catch (e) { return false; }
+  }
+  function syncExecute(sync) {
+      if (!syncCfg().en) return; // V2.15.14 同步器关 → 不执行中心广播
+    try {
+      if (!sync || !sync.op || !sync.seq) return;
+      if (sync.seq <= syncAcked) return; // 已执行过
+      // V2.15.11：BC 即时通道已执行过同一条 → 直接确认跳过（防中心轮询重复执行）
+      var fp0 = syncOpFinger(sync.op);
+      if (fp0 && syncBCLast[fp0] && (Date.now() - syncBCLast[fp0]) < 10000) { syncAcked = Math.max(syncAcked, sync.seq); return; }
+      if (syncCfg().mode === "master") { syncAcked = sync.seq; return; } // 只当主号 → 直接确认跳过
+      var op = sync.op;
+      if (op.type === "perf") { perfPull(op); syncAcked = Math.max(syncAcked, sync.seq); return; } // V2.23.0：画面性能设置随同步器联动
+      var myMap = syncMapKey(), opMap = String(op.map || "").replace(/\.gat$/i, "").toLowerCase();
+      var ok = false;
+      if (op.type === "move" && opMap === myMap && isFinite(op.x) && isFinite(op.y)) {
+        ok = walkToXY(op.x, op.y, null, "dsh-synclog");
+      } else if (op.type === "npc" && opMap === myMap && op.gid) {
+        ok = syncNpc(op.gid, op.x, op.y);
+      }
+      if (ok) { syncAcked = Math.max(syncAcked, sync.seq); return; }
+      // 地图不同：永远无法执行 → 直接确认跳过，避免死循环重试
+      if (opMap !== myMap) { syncAcked = Math.max(syncAcked, sync.seq); }
+      // 同地图但执行失败（NPC 不在视野等）→ 不确认，3s 后重试
+    } catch (e) {}
+  }
+  var syncBCLast = {}; // V2.15.11：BC 即时通道已执行指纹 → 中心轮询取回同一条时跳过（防重复执行）
+  function syncOpFinger(op) {
+    try {
+      if (!op) return "";
+      if (op.type === "move") return "m" + (op.map || "") + ":" + op.x + "," + op.y;
+      if (op.type === "npc") return "n" + (op.map || "") + ":" + op.gid;
+    } catch (e) {}
+    return "";
+  }
+  function syncExecOp(op) {
+    try {
+      if (!op) return false;
+      if (op.type === "perf") { perfPull(op); return true; } // V2.23.0：画面性能设置随同步器联动
+      var myMap = syncMapKey(), opMap = String(op.map || "").replace(/\.gat$/i, "").toLowerCase();
+      if (opMap !== myMap) return true; // 地图不同：确认跳过
+      var ok = false;
+      if (op.type === "move" && isFinite(op.x) && isFinite(op.y)) {
+        ok = !!walkToXY(op.x, op.y, null, "dsh-synclog");
+      } else if (op.type === "npc" && op.gid) {
+        ok = syncNpc(op.gid, op.x, op.y);
+      }
+      if (ok) { try { syncBCLast[syncOpFinger(op)] = Date.now(); } catch (e) {} return true; }
+      return false;
+    } catch (e) { return false; }
+  }
+  // V2.15.11 即时通道：BroadcastChannel 同浏览器窗口毫秒级直达（中心轮询保留为跨浏览器/跨机器兜底）
+  function syncBCInit() {
+    try {
+      if (!("BroadcastChannel" in window)) return;
+      if (syncBCWin) return;
+      syncBCWin = "w" + Math.floor(Math.random() * 1e9).toString(36);
+      try { if (!remoteCh) remoteCh = new BroadcastChannel("dsh_ro_remote"); } catch (e) {}
+      if (remoteCh) remoteCh.onmessage = function (ev) {
+        try {
+          var m = ev && ev.data;
+          if (!m || m.cmd !== "sync" || !m.op) return;
+          if (m.src === syncBCWin) return; // 自己发的
+          var key = m.src + ":" + m.seq;
+          if (syncBCSeen[key]) return;
+          syncBCSeen[key] = 1;
+          var ks = Object.keys(syncBCSeen);
+          if (ks.length > 300) syncBCSeen = {};
+          if (!syncCfg().en) return; // 本窗口同步器已关 → 不执行任何广播
+          if (syncCfg().mode === "master") return; // 只广播不执行
+          syncExecOp(m.op);
+        } catch (e) {}
+      };
+    } catch (e) {}
+  }
+  function syncBCBroadcast(op) {
+    try {
+      if (!remoteCh) return;
+      syncBCSeq++;
+      remoteCh.postMessage({ cmd: "sync", src: syncBCWin, seq: syncBCSeq, op: op });
+    } catch (e) {}
+  }
+  function acctReportSend() {
+    try {
+      var rep = buildAcctReport();
+      if (!rep) return;
+      if (typeof fetch !== "function") return;
+      fetch(ACCT_REPORT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(rep)
+      }).then(function (r) { return r.json(); }).then(function (j) {
+        try {
+          acctHurry = !!(j && j.hurry);
+          try { renderSyncState(); } catch (e) {}
+          if (j && j.sync) syncExecute(j.sync);
+        } catch (e2) {}
+      }).catch(function () {});
+    } catch (e) {}
+  }
+  function acctReportTick() {
+    acctReportSend();
+    acctReportTimer = setTimeout(acctReportTick, acctHurry ? 3000 : (syncCfg().interval * 1000));
+  }
+  function startAcctReport() {
+    if (acctReportTimer || !ACCT_REPORT) return;
+    if (syncCfg().en) { syncHookCapture(); syncBCInit(); } // V2.15.14 同步器功能仍受 en 控制
+    acctReportTick();  // 启动立即报一次（上报始终开启，与同步器解耦）
+  }
+  // ---------------- 同步器设置页联动（V2.15.10：默认关 · 按角色存档）----------------
+  function renderSyncState() {
+    try {
+      var c = syncCfg();
+      var el = $id("dsh-sync-state");
+      if (!el) return;
+      var modeTxt = { both: "双向（广播+执行）", master: "只广播（主号）", slave: "只执行（从号）" }[c.mode] || c.mode;
+      el.textContent = c.en ? ("已启用 · " + modeTxt + " · 轮询 " + c.interval + "s" + (acctHurry ? " · 加速中(3s)" : "")) : "同步器关闭（不参与同步；状态上报仍进行）";
+    } catch (e) {}
+  }
+  function syncApplyRuntime() {
+    try {
+      var c = syncCfg();
+      if (c.en) { syncHookCapture(); syncBCInit(); } // 同步器功能：en 开才挂捕获/BC
+      startAcctReport(); // V2.15.14 上报始终开启，与同步器开关解耦
+    } catch (e) {}
+  }
+  // ---------------- 画面性能（V2.23.0：原「省内存模式」拆细 + 默认开启 + 多窗口跟随）----------------
+  //   画质 = Preferences/Graphics.quality（百分比渲染分辨率）；效果 = Preferences/Map 的 5 个开关
+  var PERF_ORIG_KEY = "dsh_ro_perf_orig";
+  var perfOrig = null;
+  function perfCfg() {
+    var u = (saved && saved.ui) || {};
+    var q = parseInt(u["dsh-perf-q"], 10);
+    if (!(q >= 20 && q <= 100)) q = 50;
+    return {
+      on: u["dsh-perf-on"] === undefined ? true : !!u["dsh-perf-on"],
+      q: q,
+      fog: !!u["dsh-perf-fog"],
+      lightmap: !!u["dsh-perf-lightmap"],
+      effect: !!u["dsh-perf-effect"],
+      mineffect: u["dsh-perf-mineffect"] === undefined ? true : !!u["dsh-perf-mineffect"],
+      miss: u["dsh-perf-miss"] === undefined ? true : !!u["dsh-perf-miss"]
+    };
+  }
+  function perfOrigGet() {
+    if (perfOrig) return perfOrig;
+    try { perfOrig = JSON.parse(localStorage.getItem(PERF_ORIG_KEY) || "null"); } catch (e) { perfOrig = null; }
+    return perfOrig;
+  }
+  function renderPerfState() {
+    try {
+      var el = $id("dsh-perf-state");
+      if (!el) return;
+      var c = perfCfg();
+      el.textContent = c.on ? ("已开 · 画质 " + c.q + "%") : "已关（原画质）";
+    } catch (e) {}
+  }
+  function perfApply(silent) {
+    try {
+      var c = perfCfg();
+      // 默认开启：首次运行把默认值写回角色档，保证复选框显示与判定一致
+      if (saved && saved.ui && saved.ui["dsh-perf-on"] === undefined) {
+        saved.ui["dsh-perf-on"] = true;
+        try { saveSaved(saved); } catch (e) {}
+      }
+      var GS = requireDB("Preferences/Graphics");
+      var MP = requireDB("Preferences/Map");
+      var CF = requireDB("Core/Configs");
+      var o = perfOrigGet();
+      if (!o) {
+        o = { q: (GS && GS.quality != null) ? GS.quality : 100,
+              fog: MP ? (MP.fog !== false) : true, lightmap: MP ? (MP.lightmap !== false) : true,
+              effect: MP ? (MP.effect !== false) : true, mineffect: MP ? (MP.mineffect !== false) : true,
+              miss: MP ? (MP.miss !== false) : true };
+        perfOrig = o;
+        try { localStorage.setItem(PERF_ORIG_KEY, JSON.stringify(o)); } catch (e) {}
+      }
+      var q = c.on ? c.q : o.q;
+      if (GS) { GS.quality = q; try { GS.save(); } catch (e) {} }
+      if (CF) { try { CF.set("quality", q); } catch (e) {} }
+      if (MP) {
+        MP.fog = c.on ? c.fog : o.fog;
+        MP.lightmap = c.on ? c.lightmap : o.lightmap;
+        MP.effect = c.on ? c.effect : o.effect;
+        MP.mineffect = c.on ? c.mineffect : o.mineffect;
+        MP.miss = c.on ? c.miss : o.miss;
+        try { MP.save(); } catch (e) {}
+      }
+      var R = requireDB("Renderer/Renderer");
+      if (R && R.resize) { try { R.resize(); } catch (e) {} }
+      renderPerfState();
+      if (!silent) setStatus(c.on ? ("画面优化已开：画质 " + q + "% · 特效" + (c.effect ? "开" : "关") + " · 雾" + (c.fog ? "开" : "关") + " · 光照" + (c.lightmap ? "开" : "关"))
+                                 : ("画面优化已关：已还原原始画质 " + o.q + "%"), "ok");
+    } catch (e) {}
+  }
+  // 客户端画质/效果存在浏览器本地（localStorage 的 Graphics / Map），同一浏览器所有窗口共用。
+  // 其他窗口改了设置 → 本窗口从存档重新拉取并让渲染器重算画布（不写回，避免互相打架）。
+  function perfPull(p) {
+    try {
+      var GS = requireDB("Preferences/Graphics");
+      var MP = requireDB("Preferences/Map");
+      var g = null, m = null;
+      if (p) { g = { quality: p.q }; m = p; }
+      else {
+        try { g = JSON.parse(localStorage.getItem("Graphics") || "null"); } catch (e) {}
+        try { m = JSON.parse(localStorage.getItem("Map") || "null"); } catch (e) {}
+      }
+      if (GS && g && g.quality != null) GS.quality = g.quality;
+      if (MP && m) {
+        if (m.fog != null) MP.fog = !!m.fog;
+        if (m.lightmap != null) MP.lightmap = !!m.lightmap;
+        if (m.effect != null) MP.effect = !!m.effect;
+        if (m.mineffect != null) MP.mineffect = !!m.mineffect;
+        if (m.miss != null) MP.miss = !!m.miss;
+      }
+      var R = requireDB("Renderer/Renderer");
+      if (R && R.resize) { try { R.resize(); } catch (e) {} }
+    } catch (e) {}
+  }
+  function perfSave() {
+    try { captureAll(); } catch (e) {}
+    perfApply(true);
+    try {
+      if (syncCfg().en) {
+        var c = perfCfg();
+        syncBCBroadcast({ type: "perf", q: c.on ? c.q : perfOrigGet().q, fog: c.on ? c.fog : true,
+          lightmap: c.on ? c.lightmap : true, effect: c.on ? c.effect : true,
+          mineffect: c.on ? c.mineffect : true, miss: c.on ? c.miss : true });
+      }
+    } catch (e) {}
+  }
+  function perfBind(id, ev, fn) { try { var el = $id(id); if (el) el.addEventListener(ev, fn); } catch (e) {} }
+  perfBind("dsh-perf-on", "change", perfSave);
+  perfBind("dsh-perf-q", "change", perfSave);
+  perfBind("dsh-perf-fog", "change", perfSave);
+  perfBind("dsh-perf-lightmap", "change", perfSave);
+  perfBind("dsh-perf-effect", "change", perfSave);
+  perfBind("dsh-perf-mineffect", "change", perfSave);
+  perfBind("dsh-perf-miss", "change", perfSave);
+  perfBind("dsh-perf-apply", "click", function () { perfApply(false); });
+  try { window.addEventListener("storage", function (ev) { if (ev && (ev.key === "Graphics" || ev.key === "Map")) perfPull(null); }); } catch (e) {}
+  try { renderPerfState(); } catch (e) {}
+  $id("dsh-sync-en").addEventListener("change", function () { try { captureAll(); } catch (e) {} syncApplyRuntime(); renderSyncState(); });
+  $id("dsh-sync-mode").addEventListener("change", function () { try { captureAll(); } catch (e) {} renderSyncState(); });
+  $id("dsh-sync-int").addEventListener("change", function () { try { captureAll(); } catch (e) {} renderSyncState(); });
+  // （V2.23.0：原「省内存模式」已拆到独立模块「画面性能」，控件与监听都移到那边）
+  // ---------------- 多开帧率限制（V2.15.20）：包装 Renderer._render 跳帧节流——多开挂机时每窗口满帧渲染拖垮 GPU 进程（整 Chrome 卡），锁帧后渲染成本按比例下降 --------------
+  var fpsLockWrapped = null; // 已包装的渲染函数引用（防重复包装/便于恢复）
+  var fpsLockOrigRender = null;
+  function fpsLockApply() {
+    try {
+      var on = !!(saved.ui && saved.ui["dsh-perf-fpslock"]);
+      var R = requireDB("Renderer/Renderer");
+      if (!R || typeof R._render !== "function") return;
+      if (on) {
+        if (fpsLockWrapped) return; // 已包装，只需更新目标帧率（包装内每次读取输入框）
+        fpsLockOrigRender = R._render;
+        var lastFrame = 0;
+        var wrap = function () {
+          try {
+            var now = Date.now();
+            var fpsEl = $id("dsh-perf-fps");
+            var fps = fpsEl ? (parseInt(fpsEl.value, 10) || 15) : 15;
+            fps = Math.max(5, Math.min(30, fps));
+            var gap = 1000 / fps;
+            if (now - lastFrame < gap) {
+              // 未到渲染点：补一帧空调度（不执行渲染逻辑，省 CPU；RAF 回调本身开销极小）
+              window.requestAnimationFrame(wrap);
+              return;
+            }
+            lastFrame = now;
+            return fpsLockOrigRender.apply(this, arguments); // 原函数内部自会调度下一帧
+          } catch (e) { try { window.requestAnimationFrame(wrap); } catch (e2) {} }
+        };
+        R._render = wrap;
+        fpsLockWrapped = wrap;
+        try { setStatus("多开帧率限制已开：" + ($id("dsh-perf-fps") ? $id("dsh-perf-fps").value : 15) + " 帧/秒", "ok"); } catch (e) {}
+      } else if (fpsLockWrapped) {
+        if (R._render === fpsLockWrapped && fpsLockOrigRender) R._render = fpsLockOrigRender;
+        fpsLockWrapped = null; fpsLockOrigRender = null;
+        try { setStatus("多开帧率限制已关（恢复满帧渲染）", "ok"); } catch (e) {}
+      }
+    } catch (e) {}
+  }
+  perfBind("dsh-perf-fpslock", "change", function () { try { captureAll(); } catch (e) {} fpsLockApply(); });
+  perfBind("dsh-perf-fps", "change", function () { try { captureAll(); } catch (e) {} });
+  renderSyncState();
+
+  // ---------------- 当前窗口账号信息（单账号 · saved 为准）----------------
+  function getWinAccountInfo() {
+    if (saved.account) return { account: saved.account, server: saved.server || DEFAULTS.ClientVer, via: "已保存自动登录" };
+    return null;
+  }
+  function renderWinInfo() {
+    var el = $id("dsh-wininfo");
+    if (!el) return;
+    var info = getWinAccountInfo();
+    var login = null;
+    try { if (window.account && window.account !== "undefined") login = window.account; } catch (e) {}
+    if (!login && state.account) login = state.account;
+    var parts = [];
+    if (info) parts.push("账号：" + info.account);
+    else parts.push("未保存账号（在上方登录框填写）");
+    if (info && info.server) parts.push(SERVER_NAMES[info.server] || ("线路" + info.server));
+    if (login && (!info || login !== info.account)) parts.push("已登录：" + login);
+    // V1.7.0：角色读取为 角色名（ID）
+    try {
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      if (ent) {
+        var cn = (ent.display && ent.display.name) || ent.displayName || ent.name || (ent.character && ent.character.name) || ""; // V2.12.3
+        if (cn) parts.push("角色：" + cn + (ent.GID != null ? "（ID" + ent.GID + "）" : ""));
+      }
+    } catch (e) {}
+    el.textContent = parts.join(" · ");
+    var pl = $id("dsh-proflabel");
+    if (pl) {
+      var k = activeProfileKey();
+      pl.textContent = "当前档: " + (profiles[k] && profiles[k].name ? profiles[k].name : k) + "（未登录自动存默认档）";
+    }
+  }
+  // ---------------- 战斗诊断（V2.12.5-diag：窗口日志+快照+坐标标记 · 默认关不改行为；V2.13.0 起模拟点击已拆出为独立测试包 ro-attack-test）----------------
+  var btDiagOn = false;
+  var askDiagOn = false; // V2.15.18：自动技能诊断日志开关（默认关——tickAskSkills 每秒全量 console.log 造成主线程阻塞→物品拖拽卡顿）
+  var btRing = []; // 最近 60 条诊断
+  function btLog(tag, msg) {
+    try {
+      var line = '[' + tag + '] ' + msg;
+      btRing.push(line); if (btRing.length > 60) btRing.splice(0, btRing.length - 60);
+      var el = $id('dsh-bt-log');
+      if (el) {
+        el.textContent = btRing.join('\n');
+        el.scrollTop = el.scrollHeight;
+      }
+      console.log('[BT-DIAG] ' + line);
+      // V2.15.27：诊断行自动上报接收服务（同 tag 5s 限 1 条防刷）
+      try {
+        var t5 = Date.now();
+        if (!btLog._t) btLog._t = {};
+        if (!btLog._t[tag] || t5 - btLog._t[tag] > 5000) {
+          btLog._t[tag] = t5;
+          ingest({ type: "diag", tag: tag, msg: msg, map: (typeof getMapName === "function") ? getMapName() : "", ts: new Date().toISOString() });
+        }
+      } catch (e2) {}
+    } catch (e) {}
+  }
+  function btState(t) { try { var el = $id('dsh-bt-state'); if (el) el.textContent = '诊断: ' + (t || (btDiagOn ? '开' : '关')); } catch (e) {} }
+  function btCanvas() {
+    try {
+      var cvs = document.querySelectorAll('canvas');
+      for (var i = 0; i < cvs.length; i++) { if (cvs[i].width > 400) return cvs[i]; }
+    } catch (e) {}
+    return null;
+  }
+  // 渲染坐标(Renderer尺寸) → 页面坐标(dispatchEvent 用 clientX/Y)
+  function btToPage(rx, ry) {
+    try {
+      var R = window.require && window.require('Renderer/Renderer');
+      var cv = btCanvas();
+      if (!R || !cv) return { x: rx, y: ry };
+      var br = cv.getBoundingClientRect();
+      return { x: br.left + rx * (br.width / R.width), y: br.top + ry * (br.height / R.height) };
+    } catch (e) { return { x: rx, y: ry }; }
+  }
+  // 最近的怪实体（优先 zLock 锁定目标，否则最近的一只 objecttype===5）
+  function btFindTarget() {
+    try {
+      if (!window.require) return null;
+      var EM = window.require('Renderer/EntityManager');
+      if (!EM || typeof EM.forEach !== 'function') return null;
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      var best = null, bestD = 1e9;
+      EM.forEach(function (e) {
+        try {
+          if (e.objecttype !== 5 || !e.position) return;
+          if (e.isDeath) return;
+          if (zLock && zLock.gid != null && e.GID === zLock.gid) { best = e; bestD = -1; return; }
+          if (bestD < 0) return;
+          if (ent && ent.position) {
+            var d = Math.abs(e.position[0] - ent.position[0]) + Math.abs(e.position[1] - ent.position[1]);
+            if (d < bestD) { bestD = d; best = e; }
+          } else if (!best) { best = e; }
+        } catch (e2) {}
+      });
+      return best;
+    } catch (e) { return null; }
+  }
+  // 坐标标记测试：在目标怪 boundingRect 中心画红框，验证渲染坐标→页面坐标换算
+  function btMarkTarget() {
+    try {
+      var t = btFindTarget();
+      if (!t) { btLog('mark', '未找到目标怪'); return; }
+      var b = t.boundingRect;
+      if (!b) { btLog('mark', '目标无 boundingRect'); return; }
+      var cx = (b.x1 + b.x2) / 2, cy = (b.y1 + b.y2) / 2;
+      var p = btToPage(cx, cy);
+      var d = document.createElement('div');
+      d.id = 'dsh-bt-mark';
+      d.style.cssText = 'position:fixed;left:' + p.x + 'px;top:' + p.y + 'px;width:16px;height:16px;border:2px solid red;background:rgba(255,0,0,.25);border-radius:50%;z-index:999999;pointer-events:none;transform:translate(-50%,-50%)';
+      var old = document.getElementById('dsh-bt-mark'); if (old) old.remove();
+      document.body.appendChild(d);
+      btLog('mark', 'GID' + t.GID + ' 渲染(' + cx.toFixed(0) + ',' + cy.toFixed(0) + ')→页面(' + p.x.toFixed(0) + ',' + p.y.toFixed(0) + ') 红框已画，看是否罩住怪');
+    } catch (e) { btLog('mark', '异常: ' + e.message); }
+  }
+
+  function btSnap() {
+    try {
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      var s = {
+        now: Date.now(), zRunning: !!zRunning, zLock: zLock || null,
+        atkRange: (function () { try { return calcAtkRange(); } catch (e) { return '?'; } })(),
+        pmRange: (function () { try { return parseInt($id('dsh-z-pmrange').value, 10) || 2; } catch (e) { return '?'; } })(),
+        scanMobs: scanMobs ? scanMobs.length : 0,
+        lastFly: lastFly || 0, flyFail: flyFailCount || 0, flyFailUntil: flyFailUntil || 0,
+        lastChase: zWalkState ? zWalkState.lastChase || 0 : 0,
+        lastMove: zWalkState ? zWalkState.lastMove || 0 : 0,
+        moveXYbusy: moveXY ? moveXY.busy : '?'
+      };
+      if (ent && ent.position) {
+        var t = btFindTarget();
+        if (t && t.position) s.targetDist = Math.abs(t.position[0] - ent.position[0]) + Math.abs(t.position[1] - ent.position[1]);
+      }
+      btLog('snap', JSON.stringify(s));
+      return s;
+    } catch (e) { btLog('snap', '异常: ' + e.message); return null; }
+  }
+  try {
+    var diagEl = $id('dsh-bt-diag');
+    if (diagEl) diagEl.addEventListener('change', function () { btDiagOn = this.checked; btState(); btLog('diag', btDiagOn ? '日志已启用' : '日志已关闭'); });
+    var snapB = $id('dsh-bt-snap'); if (snapB) snapB.addEventListener('click', btSnap);
+    var markB = $id('dsh-bt-mark'); if (markB) markB.addEventListener('click', btMarkTarget);
+    window.__dshBattle = { snap: btSnap, mark: btMarkTarget, log: btLog, on: function (v) { if (v !== undefined) btDiagOn = !!v; return btDiagOn; } };
+  } catch (e) {}
+  // ---------------- 诊断事件环（V1.7.1：供探针采集 · 不改任何行为）----------------
+  // window.__dshDiag = 最近 80 条助手事件（zhu-start/zhu-stop/np-calibrate/map-change/cast/cast-skip/ask-cast）
+  // window.__dshCast = 助手即将发出的 USE_SKILL 标记（探针据此判定「助手指令」而非内挂指令）
+  window.__dshDiag = [];
+  window.__dshCast = null;
+  function dshDiag(ev, obj) {
+    try {
+      var e = { t: Date.now(), ev: ev };
+      if (obj) for (var k in obj) if (obj[k] !== undefined) e[k] = obj[k];
+      window.__dshDiag.push(e);
+      if (window.__dshDiag.length > 80) window.__dshDiag.splice(0, window.__dshDiag.length - 80);
+    } catch (e2) {}
+  }
+  function dshCastMark(skid, lv, target, src) {
+    try { window.__dshCast = { skid: skid, lv: lv, target: target || 0, src: src || "zhu", t: Date.now() }; } catch (e) {}
+  }
+  var DSH_LEARN_KEY = "dsh_ro_skill_status_v1";
+  function dshLearnStatus(stId) {
+    try {
+      var c = window.__dshCast, n = Date.now();
+      if (askDiagOn) console.log("[LEARN-DIAG] dshLearnStatus called, stId=" + stId + " __dshCast=" + JSON.stringify(c || null));
+      if (!c || n - c.t > 8000 || !c.skid || c.target) { if (askDiagOn) console.log("[LEARN-DIAG] skip: " + (!c ? "no cast" : (n - c.t > 8000 ? "timeout" : (c.target ? "has target" : "no skid")))); return; }
+      stId = parseInt(stId, 10); if (isNaN(stId)) return;
+      var m = {}; try { m = JSON.parse(localStorage.getItem(DSH_LEARN_KEY) || "{}"); } catch (e) {}
+      m[String(c.skid)] = stId; localStorage.setItem(DSH_LEARN_KEY, JSON.stringify(m));
+      if (askDiagOn) console.log("[LEARN-DIAG] learned: skill " + c.skid + " -> status " + stId);
+      // 学到的自身状态立即回写对应 Buff，后续按状态消失自动重放同一技能。
+      // V2.15.3：用户已手动设置 st 时不覆盖（防误学写坏配置）；仅当该技能 st 为空时写回；学到的与手动一致时只清零 missCnt。
+      if (typeof askList !== "undefined" && Array.isArray(askList)) {
+        for (var i = 0; i < askList.length; i++) {
+          if (askList[i] && askList[i].skid === c.skid) {
+            var askSt = askList[i].st;
+            if (!askSt) {
+              askList[i].st = stId; askList[i].stInv = false; askList[i].missCnt = 0; saveAskList();
+              if (askDiagOn) console.log("[LEARN-DIAG] wrote back to askList[" + i + "] skid=" + askList[i].skid + " st=" + stId);
+            } else {
+              try { if (buffStId(askSt) === stId) askList[i].missCnt = 0; } catch (e) {}
+              if (askDiagOn) console.log("[LEARN-DIAG] keep manual st=" + askSt + " (learned " + stId + " skipped)");
+            }
+            break;
+          }
+        }
+      }
+      tlog("learn-skill-status skid=" + c.skid + " -> st=" + stId);
+    } catch (e2) { try { tlog("learn-skill-status error=" + e2.message); } catch (e3) {} }
+  }
+  function dshLearnedStatus(skid) { try { var m=JSON.parse(localStorage.getItem(DSH_LEARN_KEY)||"{}"); var v=parseInt(m[String(skid)],10); return isNaN(v)?-1:v; }catch(e){return -1;} }
+  function dshCastSkip(skid, why) {
+    dshDiag("cast-skip", { skid: skid, why: why });
+  }
+  // ---------------- 角色档案：加载/保存（V1.7.0）----------------
+  // 需要按角色保存的控件清单 [id, 类型]：c=勾选 v=输入/下拉 ta=多行文本
+  var PROF_CONTROLS = [
+    ["dsh-skillorder", "ta"],
+    ["dsh-askint", "v"], ["dsh-asksp", "v"], ["dsh-asken", "c"],
+    ["dsh-prereq", "c"], ["dsh-z-attmix", "c"],
+    ["dsh-scanen", "c"], ["dsh-scanint", "v"],
+    ["dsh-z-ona", "v"], ["dsh-z-grp", "v"], ["dsh-z-grpact", "v"], ["dsh-z-qoaskill", "v"], ["dsh-z-qoaskilllv", "v"],
+    ["dsh-z-flymode", "v"], ["dsh-z-flyauto", "c"], ["dsh-z-flystuck", "c"],
+    ["dsh-z-idlefly", "c"], ["dsh-z-idleflysec", "v"], ["dsh-z-bossfly", "c"], ["dsh-z-flyint", "v"],
+    ["dsh-z-flygrp", "c"], ["dsh-z-flykill", "c"],
+    ["dsh-z-hpfly", "v"], ["dsh-z-spfly", "v"], ["dsh-z-hpout", "v"], ["dsh-z-keep", "v"],
+    ["dsh-z-sit", "c"], ["dsh-z-sithplo", "v"], ["dsh-z-sithphi", "v"], ["dsh-z-sitsplo", "v"], ["dsh-z-sitsphi", "v"],
+    ["dsh-z-sitxw", "v"], ["dsh-z-sitback", "c"], ["dsh-z-sitnofight", "c"],
+    ["dsh-z-attint", "v"], ["dsh-z-range", "v"], ["dsh-z-pmrange", "v"], ["dsh-z-mgrange", "v"], ["dsh-z-minrange", "v"], ["dsh-z-mapbound", "c"], ["dsh-z-mapbound-r", "v"], ["dsh-z-mapbound-edge", "v"],
+    ["dsh-z-switchdelay", "v"], ["dsh-z-walkint", "v"], ["dsh-z-chaseint", "v"], ["dsh-z-huntmode", "v"], ["dsh-z-takeover", "v"], ["dsh-z-follow", "c"], ["dsh-z-next", "c"],
+    ["dsh-arrowen", "c"], ["dsh-invshot", "c"], ["dsh-invshotint", "v"],
+    ["dsh-autoskill", "v"], ["dsh-autoskilllv", "v"], ["dsh-autoskillpro", "v"],
+
+    ["dsh-automatic", "v"], ["dsh-touchskill", "v"], ["dsh-touchskillop", "c"],
+    ["dsh-qoautoskill", "v"], ["dsh-qoautoskilllv", "v"], ["dsh-autoshadow", "v"],
+    ["dsh-searchmode", "v"], ["dsh-distarget", "v"], ["dsh-onlynoattack", "v"],
+    ["dsh-ona2", "v"], ["dsh-mobnummin", "v"], ["dsh-mobnummax", "v"],
+    ["dsh-flygroup", "c"], ["dsh-flystuck", "c"], ["dsh-bossfly", "c"], ["dsh-flytimer", "v"],
+    ["dsh-minhpfly", "v"], ["dsh-minspfly", "v"], ["dsh-minhpout", "v"], ["dsh-keepway", "v"],
+    ["dsh-opensit", "c"], ["dsh-sithplo", "v"], ["dsh-sithphi", "v"], ["dsh-sitsplo", "v"], ["dsh-sitsphi", "v"], ["dsh-sitxw", "v"],
+    ["dsh-petfeedhp2", "v"], ["dsh-petfeedint2", "v"], ["dsh-peten2", "c"],
+    ["dsh-followtarget", "v"], ["dsh-followdist", "v"], ["dsh-followen", "c"],
+    ["dsh-itempick", "v"], ["dsh-itemcond", "v"], ["dsh-itemcondval", "v"], ["dsh-itemen", "c"],
+    ["dsh-lootprob", "v"], ["dsh-openpick", "c"], ["dsh-picken", "c"], ["dsh-pickwalk", "c"], ["dsh-picksafe", "c"], ["dsh-bountyhl", "c"], ["dsh-bgkeep", "c"], ["dsh-capauto", "c"], ["dsh-capwait", "v"], ["dsh-z-rein", "c"], ["dsh-sync-en", "c"], ["dsh-sync-mode", "v"], ["dsh-sync-int", "v"],
+    ["dsh-perf-on", "c"], ["dsh-perf-q", "v"], ["dsh-perf-fog", "c"], ["dsh-perf-lightmap", "c"], ["dsh-perf-effect", "c"], ["dsh-perf-mineffect", "c"], ["dsh-perf-miss", "c"], ["dsh-perf-fpslock", "c"], ["dsh-perf-fps", "v"]
+  ];
+  function captureAll() {
+    try {
+      var ui = {};
+      for (var i = 0; i < PROF_CONTROLS.length; i++) {
+        var id = PROF_CONTROLS[i][0], tp = PROF_CONTROLS[i][1];
+        var el = $id(id); if (!el) continue;
+        if (tp === "c") ui[id] = el.checked ? 1 : 0;
+        else ui[id] = String(el.value || "");
+      }
+      saved.ui = ui; saveSaved(saved);
+    } catch (e) {}
+  }
+  // V2.16.7：配置控件统一 change 即时保存——任何设置改动立即落盘（防「改完未到8s周期就刷新」丢配置）
+  try {
+    var profIds = {};
+    for (var pi = 0; pi < PROF_CONTROLS.length; pi++) profIds[PROF_CONTROLS[pi][0]] = 1;
+    document.addEventListener("change", function (e) {
+      var t = e.target;
+      if (!t || !t.id || !profIds[t.id]) return;
+      try { captureAll(); } catch (e2) {}
+    });
+  } catch (e) {}
+  function applyProfileUI() {
+    try {
+      // V2.32.1：重置回 HTML 默认值（checked/selected/value 属性），而非一刀切清空——修「防御瞬移总开关等默认勾选项被重置成关闭」
+      for (var ri = 0; ri < PROF_CONTROLS.length; ri++) {
+        var rid = PROF_CONTROLS[ri][0], rtp = PROF_CONTROLS[ri][1];
+        var rel = $id(rid); if (!rel) continue;
+        if (rtp === "c") rel.checked = !!rel.defaultChecked;
+        else if (rel.tagName === "SELECT") {
+          try {
+            var defIdx = 0;
+            for (var oi2 = 0; oi2 < rel.options.length; oi2++) {
+              if (rel.options[oi2].defaultSelected) { defIdx = oi2; break; }
+            }
+            rel.selectedIndex = defIdx;
+          } catch (e) {}
+        }
+        else { try { rel.value = (rel.defaultValue != null ? rel.defaultValue : ""); } catch (e) {} }
+      }
+      var ui = saved.ui || {};
+      for (var k in ui) {
+        var el = $id(k); if (!el) continue;
+        if (el.type === "checkbox") el.checked = !!ui[k];
+        else { try { el.value = String(ui[k] == null ? "" : ui[k]); } catch (e) {} }
+      }
+      // V1.9.4：高亮规则名单（localStorage dsh_ro_hlrules）随角色档重建样式与列表
+      try { rebuildBountyStyle(); renderHlList(); } catch (e) {}
+    } catch (e) {}
+  }
+  // 角色切换 → 切档 + 自动加载上次保存（第8项）
+  function onCharChanged(ent) {
+    try {
+      // V2.12.3：真实角色名在 ent.display.name；旧占位键「角色_GID」自动迁移到真实角色名键
+      var nm = charNameOf(ent) || "角色";
+      var gid = gidInt(ent.GID);
+      if (!gid) return;
+      var key = (nm + "_" + gid).replace(/[\\\/:"*?<>|]/g, "_");
+      try {
+        var legacyKey = ("角色_" + gid);
+        if (key !== legacyKey && !profiles[key] && profiles[legacyKey]) {
+          profiles[key] = profiles[legacyKey];
+          profiles[key].name = nm;
+          delete profiles[legacyKey];
+          saveProfiles();
+          console.log("[PROFILE] 档案迁移: " + legacyKey + " → " + key);
+        }
+      } catch (me) {}
+      if (activeProfileKey() === key && lastCharGid === gid) return;
+      if (typeof selfSpirits !== "undefined") selfSpirits = { aid: 0, num: 0, map: "" };
+      try { captureAll(); } catch (e) {} // 旧档先落盘
+      setActiveProfile(key);
+      ensureProfile(key);
+      profiles[key].name = nm; profiles[key].gid = gid;
+      saved = loadSaved();
+      if (btDiagOn) { try { btLog('hk', '切档=' + key + ' panel=' + JSON.stringify(hkOf('panel')) + ' np=' + JSON.stringify(hkOf('np')) + ' zhu=' + JSON.stringify(hkOf('zhu'))); } catch (e) {} }
+      lockList = profiles[key].lockList || {};
+      askList = profiles[key].askList || [];
+      applyProfileUI();
+      try { fillZhuQoaskill(); } catch (e) {} // V2.16.7：切档后重填解围下拉（新角色已学技能，清掉旧角色技能）
+      try { syncApplyRuntime(); renderSyncState(); } catch (e) {} // V2.15.10：切档后同步器按新档配置启停
+      try { perfApply(true); } catch (e) {} // V2.23.0：切档后按新档画面优化设置生效
+      renderWinInfo(); renderLockList(); renderAskList();
+      try { fwRefreshHosts(); fwRestore(); } catch (e4) {}
+      lastCharGid = gid;
+      lastCharName = nm;
+      setStatus("已加载角色档 " + nm + "（ID" + gid + "）", "ok");
+      tlog("profile-load " + key);
+      try { syncRealAtkRange(); } catch (e) {} // V2.16.7：切档后读真实射程并回写物理距离设置
+    } catch (e) { try { roFeedback("角色设置切换失败：" + (e.message || e), "err"); } catch (e2) {} }
+  }
+  $id("dsh-saveprofile").addEventListener("click", function () {
+    try { captureAll(); } catch (e) {}
+    renderWinInfo();
+    setStatus("已保存当前角色设置（档: " + activeProfileKey() + "）", "ok");
+  });
+  // 自动存储（第2项）：周期 + 切后台 + 关页面前兜底（V2.5.0：后台隐藏时周期自动拉长到 30s，省 CPU；切后台/关页兜底已在下面保留）
+  try { setInterval(function () { try { syncRealAtkRange(); } catch (e) {} if (!UI_BG || Date.now() - lastCaptureAt > 30000) { lastCaptureAt = Date.now(); captureAll(); } }, 8000); } catch (e) {}
+  try { window.addEventListener("beforeunload", function () { captureAll(); }); } catch (e) {}
+  try { document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") captureAll(); }); } catch (e) {}
+
+  // ---------------- 心跳 PING（V2.2.0 删定时防踢心跳；sendPing 仅保留给手机切后台 burst 连发用） ----------------
+  function sendPing() {
+    try {
+      if (!clientReady()) return;
+      var p = new CLIENT.PS.CZ.PING();
+      p.AID = CLIENT.SS.AID || 0;
+      CLIENT.NM.sendPacket(p);
+    } catch (e) {}
+  }
+
+  // ---------------- 后台保活（V1.8.2）：音频 + Web Lock 双豁免 Chrome 定时器深度节流 ----------------
+  // Chrome 后台 >5 分钟把定时器节流到约 1 次/分钟 → 打怪(zAttack)/用物品(tickItems)/拾取停摆。
+  // 页面「在发声」或「持有活跃 Web Lock」均满足 Chrome 不节流条件。
+  // 音频：60Hz 正弦波 + gain 0.003 ≈ 近无声；须发生在用户手势后（AudioContext 策略），开关 change 本身即手势。
+  // Web Lock：navigator.locks 永续 shared 锁（Chrome 87+），无需手势；AbortController 用于取消勾选时释放（Chrome 105+，旧版无 signal 则锁存续至页面关闭，可接受）。
+  var bgAc = null, bgOsc = null, bgGain = null, bgLockHeld = false, bgLockCtrl = null, bgEverGesture = false;
+  function bgKeepAudioStart() {
+    try {
+      if (bgAc && bgOsc) { if (bgAc.state === "suspended") { try { bgAc.resume(); } catch (e) {} } return; }
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      var ac = new Ctx();
+      var osc = ac.createOscillator();
+      var gain = ac.createGain();
+      osc.type = "sine";
+      osc.frequency.value = 60;
+      gain.gain.value = 0.003;
+      osc.connect(gain); gain.connect(ac.destination);
+      osc.start();
+      if (ac.state === "suspended") { try { ac.resume(); } catch (e) {} }
+      bgAc = ac; bgOsc = osc; bgGain = gain;
+    } catch (e) {}
+  }
+  function bgKeepAudioStop() {
+    try {
+      if (bgOsc) { try { bgOsc.stop(); } catch (e) {} bgOsc = null; }
+      if (bgAc) { try { bgAc.close(); } catch (e) {} bgAc = null; }
+      bgGain = null;
+    } catch (e) {}
+  }
+  function bgKeepLockAcquire() {
+    try {
+      if (bgLockHeld || !navigator.locks || typeof navigator.locks.request !== "function") return;
+      var opts = { mode: "shared" };
+      if (window.AbortController) { bgLockCtrl = new AbortController(); opts.signal = bgLockCtrl.signal; }
+      navigator.locks.request("dsh-bgkeep", opts, function () { return new Promise(function () {}); })
+        .then(function () { bgLockHeld = true; }).catch(function () {});
+    } catch (e) {}
+  }
+  function bgKeepLockRelease() {
+    try { if (bgLockCtrl) { bgLockCtrl.abort(); bgLockCtrl = null; } } catch (e) {}
+    bgLockHeld = false;
+  }
+  function bgKeepStart() { try { bgKeepAudioStart(); bgKeepLockAcquire(); } catch (e) {} }
+  function bgKeepStop() { try { bgKeepAudioStop(); } catch (e) {} }
+  function bgKeepInit() {
+    try {
+      var el = $id("dsh-bgkeep");
+      if (!el) return;
+      if (el.checked) {
+        // 默认勾选：页面加载无手势 → 挂一次性首次交互，交互后再真正启动音频（锁无需手势，后台补齐）
+        var once = function () {
+          bgEverGesture = true;
+          document.removeEventListener("click", once);
+          document.removeEventListener("keydown", once);
+          bgKeepStart();
+        };
+        document.addEventListener("click", once);
+        document.addEventListener("keydown", once);
+      }
+      el.addEventListener("change", function () {
+        bgEverGesture = true;
+        if (this.checked) bgKeepStart();
+        else { bgKeepStop(); bgKeepLockRelease(); }
+      });
+      document.addEventListener("visibilitychange", function () {
+        try {
+          var en = $id("dsh-bgkeep") && $id("dsh-bgkeep").checked;
+          if (!en) return;
+          if (document.hidden) {
+            bgKeepLockAcquire();              // 锁无需手势，后台立即可持
+            if (bgEverGesture) bgKeepStart(); // 已有手势 → 确保音频在播（幂等 + resume）
+          } else {
+            bgKeepAudioStop();                // 回前台停音频省电（锁保留，不重复申请）
+            bgKeepLockAcquire();              // 兜底确保锁仍在
+          }
+        } catch (e) {}
+      });
+      try { window.addEventListener("beforeunload", function () { bgKeepStop(); bgKeepLockRelease(); }); } catch (e) {}
+    } catch (e) {}
+  }
+  bgKeepInit();
+
+  // ---------------- 后台降帧（V2.2.0）：切后台 RAF 压到 ~2fps，回前台恢复，多开省 CPU/GPU 防白屏 ----------------
+  // 游戏逻辑靠 WebSocket 发包驱动，requestAnimationFrame 只负责画面渲染；后台挂机不需要 60fps。
+  // hook RAF：hidden 时每 500ms 至多执行一次回调（约 2fps），visible 走原速；回调不丢，只稀疏，游戏重调度链不断。
+  var frameSaveOrig = null, frameSaveLastT = 0, frameSaveTimer = null;
+  function frameSaverInit() {
+    try {
+      if (!window.requestAnimationFrame) return;
+      frameSaveOrig = window.requestAnimationFrame.bind(window);
+      window.requestAnimationFrame = function (cb) {
+        return frameSaveOrig(function (ts) {
+          if (!document.hidden) { cb(ts); return; }
+          var now = Date.now();
+          if (now - frameSaveLastT >= 500) { frameSaveLastT = now; cb(ts); return; }
+          if (frameSaveTimer) return; // 已有等待中的补帧，避免累积
+          frameSaveTimer = setTimeout(function () {
+            frameSaveTimer = null;
+            frameSaveLastT = Date.now();
+            cb(ts);
+          }, 500 - (now - frameSaveLastT));
+        });
+      };
+    } catch (e) {}
+  }
+  frameSaverInit();
+
+  // ---------------- 手机版后台保活 ----------------
+  // 手机浏览器切后台会冻结标签页（Page Lifecycle frozen）或把定时器节流到 ≥1 分钟，
+  // 心跳在后台完全失效；且 Android 省电策略可能直接断开 WebSocket。服务器 60~90s 无包判定掉线。
+  // 对策（仅 IS_MN 启用）：
+  //  ① hidden 瞬间同步连发多个 PING，把服务器端「最后活跃」推到切后台那一刻（撑满判定窗口）；
+  //  ② visible 回前台立即补 PING；后台超过判定窗口 → 带 ?auto=1 重载，自动重登（不依赖手动点启动）；
+  try {
+    if (IS_MN) {
+      var mnHiddenAt = 0;
+      var mnBgBurst = 6; // 切后台瞬间同步连发 PING 数（处理器同步执行，冻结前全部发出）
+      document.addEventListener("visibilitychange", function () {
+        try {
+          if (document.hidden) {
+            mnHiddenAt = Date.now();
+            // 同步连发：visibilitychange 处理器内事件循环不让出，冻结前包全部到达服务器
+            for (var bi = 0; bi < mnBgBurst; bi++) sendPing();
+            tlog("mn-hidden burst x" + mnBgBurst);
+          } else {
+            sendPing(); // 回前台立即补心跳
+            var gap = mnHiddenAt ? (Date.now() - mnHiddenAt) : 0;
+            tlog("mn-visible gap=" + gap + "ms");
+            // 后台超过服务器判定窗口（约 90s）→ 大概率已掉线。
+            // 带 ?auto=1 重载：buildConfig 检测到 auto= 才注入 autoLogin → 自动重登，
+            // 比 onDisconnect 的 10s 延迟 + 无参 reload（还需手动启动）更可靠。
+            if (gap > 90000 && $id("dsh-reconn") && $id("dsh-reconn").checked && saved.account) {
+              setStatus("注意：切后台超时，自动重连并重登…", "err");
+              tlog("mn-visible auto-reload gap=" + gap);
+              var autoU = switchServerUrl(pickCv());
+              autoU = autoU.replace(/([?&])(run|auto)=/g, "$1auto=");
+              if (!/\bauto=/.test(autoU)) autoU += (autoU.indexOf("?") >= 0 ? "&" : "?") + "auto=1";
+              location.replace(autoU);
+            } else if (gap > 90000) {
+              setStatus("注意：切后台超过 90 秒，可能已掉线（未开自动重连）", "err");
+            }
+          }
+        } catch (e) {}
+      });
+    }
+  } catch (e) {}
+
+  // ---------------- 多辅助（OpenKore useSelf_skill 语义：whenStatusInactive → 状态没了才补）----------------
+  // V1.7.5 方案A：行格式 技能ID:等级[:状态]，如 12:5:加速 / 14:5:BLESSING。
+  //   状态段=状态判活键：读 StatusIcons 状态环（服务器 buff 通知），状态不在身上/已过期 → 才施放该技能；
+  //   无状态段 → 按原固定间隔全放（兼容旧行）。
+  //   V1.7.6 扩展：状态段加 ! 前缀（如 21:5:!中毒）= 反转语义「状态在身才放」，
+  //     用于 debuff 场景（中毒/冰冻在身时才自动净化/治疗）；无前缀保持「不在身才放」。
+  //   中文别名映射（常用 buff/debuff → 客户端 StatusConst 状态ID）
+  var BUFF_STATUS_CN = {
+    "加速": "INC_AGI", "加速术": "INC_AGI",
+    "赐福": "BLESSING", "天赐": "BLESSING", "天使赐福": "BLESSING", "天使之赐福": "BLESSING",
+    "霸体": "ENDURE",
+    "加速武器": "ADRENALINE", "速度激发": "ADRENALINE",
+    "武器值最大化": "WEAPONPERFECT", "武器增加值": "WEAPONPERFECT",
+    "凶砍": "OVERTHRUST",
+    "神威": "IMPOSITIO", "神威祈福": "IMPOSITIO", // V2.16.3 修正：神威祈福=IMPOSITIO（21），非 GLORIA
+    "幸运颂歌": "GLORIA", // V2.16.3 补：幸运颂歌=GLORIA（46，+LUK）
+    "灵剑气": "AURABLADE", "灵气剑": "AURABLADE", // V2.16.6 补：骑士灵剑气=AURABLADE（103），旧表只有英文名识别不到
+    "牺牲祈福": "SUFFRAGIUM", "牺牲": "SUFFRAGIUM",
+    "撒水祈福": "ASPERSIO", "撒水": "ASPERSIO",
+    "圣母颂歌": "MAGNIFICAT", "圣母": "MAGNIFICAT",
+    "霸邪之阵": "KYRIE", "霸邪": "KYRIE",
+    "圣母之祈福": "ASSUMPTIO", "祈福": "ASSUMPTIO",
+    "天使之障壁": "ANGELUS", "障壁": "ANGELUS",
+    "能量外套": "ENERGYCOAT",
+    "灵魂": "SOULLINK",
+    "爆气": "EXPLOSIONSPIRITS",
+    "钢体": "STEELBODY",
+    "集中攻击": "LKCONCENTRATION", "集中": "LKCONCENTRATION", // V2.15.30 修正：骑士集中攻击=LKCONCENTRATION(105)
+    "心神凝聚": "CONCENTRATION", "心神": "CONCENTRATION", // V2.15.30 修正：猎人心神凝聚=CONCENTRATION(3)
+    "双手剑加速": "TWOHANDQUICKEN",
+    "长矛加速": "SPEARQUICKEN",
+    "风之步": "WINDWALK",
+    "凫魅超快感": "CHASEWALK", "追猎者疾走": "CHASEWALK"
+  };
+  // V1.7.6 debuff 中文别名：多辅助 ! 状态段 / 技能条件段通用；
+  //   解析走 buffStId（StatusConst 运行时 + SC_ 前缀兜底），不硬编码 rAthena ID 防错
+  var BUFF_DEBUFF_CN = {
+    "中毒": "POISON", "剧毒": "DPOISON",
+    "冰冻": "FREEZE", "石化": "STONE",
+    "诅咒": "CURSE", "沉默": "SILENCE",
+    "晕眩": "STUN", "眩晕": "STUN",
+    "流血": "BLEEDING", "出血": "BLEEDING",
+    "失明": "BLIND", "黑暗": "BLIND",
+    "睡眠": "SLEEP", "恐惧": "FEAR",
+    "着火": "BURNING", "点燃": "BURNING",
+    "混乱": "CONFUSION", "发疯": "CONFUSION",
+    "缓速": "DECREASEAGI", "减速": "DECREASEAGI", "缓速术": "DECREASEAGI"
+  };
+  // V2.3.0 状态联想表（Buff/Debuff 中文 => EFST 图标ID，与 status_cn_table.txt 一致）
+  // deb:1=负面(在身才放)；供「物品状态输入」与「辅助技能 Debuff 判定」模糊联想
+  var STATUS_ID_TABLE = [
+    { cn: "霸体", id: 1 }, { cn: "双手剑加速", id: 2 }, { cn: "集中攻击", id: 105 }, { cn: "心神凝聚", id: 3 }, // V2.15.30：集中攻击=105 心神凝聚=3
+    { cn: "天使之障壁", id: 9 }, { cn: "赐福", id: 10 }, { cn: "加速术", id: 12 },
+    { cn: "牺牲祈福", id: 16 }, { cn: "撒水祈福", id: 17 }, { cn: "圣之祝福", id: 18 },
+    { cn: "霸邪之阵", id: 19 }, { cn: "圣母颂歌", id: 20 }, { cn: "神威", id: 21 }, { cn: "幸运颂歌", id: 46 }, // V2.16.3 补：幸运颂歌=GLORIA(46)
+    { cn: "加速武器", id: 23 }, { cn: "武器值最大化", id: 24 }, { cn: "凶砍", id: 25 },
+    { cn: "能量外套", id: 31 }, { cn: "自动防御", id: 58 }, { cn: "反射盾", id: 59 },
+    { cn: "长矛加速", id: 68 }, { cn: "爆气", id: 86 }, { cn: "钢体", id: 87 },
+    { cn: "力量增幅", id: 98 }, { cn: "敏捷增幅", id: 99 }, { cn: "光环剑", id: 103 }, { cn: "灵剑气", id: 103 }, { cn: "灵气剑", id: 103 }, // V2.16.6 补：灵剑气/灵气剑=103
+    { cn: "防御架势", id: 104 }, { cn: "狂暴", id: 107 }, { cn: "圣洁祝福", id: 473 },
+    { cn: "涂毒强化", id: 114 }, { cn: "真视", id: 115 }, { cn: "风之步", id: 116 },
+    { cn: "手推车加速", id: 118 }, { cn: "经验保护", id: 130 }, { cn: "灵魂链接", id: 149 },
+    { cn: "单剑加速", id: 161 }, { cn: "太阳抚慰", id: 169 }, { cn: "月亮抚慰", id: 170 },
+    { cn: "星星抚慰", id: 171 }, { cn: "经验提升", id: 172 }, { cn: "防御提升", id: 179 },
+    { cn: "再生术", id: 336 }, { cn: "咏唱辨识", id: 355 }, { cn: "灵感", id: 407 },
+    { cn: "圣礼", id: 472 }, { cn: "圣洁祝福(强化)", id: 473 }, { cn: "圣母之祈福", id: 473 }, { cn: "再生之光", id: 580 },
+    { cn: "挑衅", id: 0, deb: 1 }, { cn: "泥沼地", id: 8, deb: 1 }, { cn: "减速术", id: 13, deb: 1 },
+    { cn: "减速", id: 180, deb: 1 }, { cn: "血污染", id: 124, deb: 1 }, { cn: "关节破坏", id: 125, deb: 1 },
+    { cn: "念力冲击", id: 126, deb: 1 }, { cn: "记忆下降", id: 127, deb: 1 }, { cn: "雾墙", id: 128, deb: 1 },
+    { cn: "蛛网", id: 129, deb: 1 }, { cn: "咏唱迟缓", id: 282, deb: 1 }, { cn: "致命伤口", id: 286, deb: 1 },
+    { cn: "麻痹", id: 343, deb: 1 }, { cn: "毒流血", id: 344, deb: 1 }, { cn: "魔菇中毒", id: 345, deb: 1 },
+    { cn: "死亡之痛", id: 346, deb: 1 }, { cn: "高热", id: 347, deb: 1 }, { cn: "遗忘诅咒", id: 348, deb: 1 },
+    { cn: "霜雾", id: 351, deb: 1 }, { cn: "恐惧之风", id: 352, deb: 1 }, { cn: "电击", id: 353, deb: 1 },
+    { cn: "深渊沼泽", id: 354, deb: 1 }, { cn: "静止", id: 356, deb: 1 }, { cn: "过热", id: 373, deb: 1 },
+    { cn: "变形", id: 374, deb: 1 }, { cn: "卸除饰品", id: 421, deb: 1 }, { cn: "深井", id: 422, deb: 1 },
+    { cn: "帝国陨落", id: 424, deb: 1 }, { cn: "深眠", id: 435, deb: 1 }, { cn: "寒冷", id: 437, deb: 1 },
+    { cn: "阴郁之日", id: 438, deb: 1 }, { cn: "毒云", id: 440, deb: 1 }, { cn: "坐下压倒", id: 449, deb: 1 },
+    { cn: "沉没的旋律", id: 452, deb: 1 }, { cn: "SP冻结", id: 458, deb: 1 }, { cn: "胃痛", id: 476, deb: 1 },
+    { cn: "麻痹之针", id: 576, deb: 1 }, { cn: "根绊", id: 896, deb: 1 }, { cn: "咬痕", id: 917, deb: 1 },
+    { cn: "压迫", id: 1180, deb: 1 }, { cn: "石化", id: 875, deb: 1 }, { cn: "冰冻", id: 876, deb: 1 },
+    { cn: "晕眩", id: 877, deb: 1 }, { cn: "睡眠", id: 878, deb: 1 }, { cn: "不死", id: 879, deb: 1 },
+    { cn: "着火", id: 881, deb: 1 }, { cn: "禁锢", id: 882, deb: 1 }, { cn: "中毒", id: 883, deb: 1 },
+    { cn: "诅咒", id: 884, deb: 1 }, { cn: "沉默", id: 885, deb: 1 }, { cn: "混乱", id: 886, deb: 1 },
+    { cn: "失明", id: 887, deb: 1 }, { cn: "流血", id: 889, deb: 1 }, { cn: "剧毒", id: 890, deb: 1 },
+    { cn: "恐惧", id: 891, deb: 1 }
+  ];
+  // V2.15.4 已查明物品→状态表（来源 ro-wiki/buff_status.json，2026-11 生成，与状态查看器 [ID:N] 同源）
+  // 仅收录能解析出数字 EFST ID 的条目（卷轴/料理等）；物品效果分类名（攻速药水/ATK强化等）无客户端 EFST ID，不收录
+  // 用途：选择物品加入自动使用列表时自动带出状态 ID（第一参考），可手动改；自动学习仍作兜底
+  var DSH_ITEM_STATE = {12215:[10],12216:[12],12217:[17],12218:[18],12219:[116],12220:[23],12235:[10],12280:[18],12290:[10],12291:[12],12350:[10],12405:[10],12414:[12],12645:[17],12858:[19],12860:[18],23259:[10],23261:[9],28023:[1],101394:[12],300451:[18],300453:[31],312799:[18]};
+
+  // V2.3.0 状态模糊联想：输入中文子串/ID 即联想（不必完全一致），选中回填中文名并记 data-sid
+  function bindStatusAc(input, listEl) {
+    if (!input || !listEl) return;
+    function match(kw) {
+      kw = String(kw || "").trim().toLowerCase();
+      var hits = [];
+      for (var i = 0; i < STATUS_ID_TABLE.length; i++) {
+        var it = STATUS_ID_TABLE[i];
+        if (!kw) { hits.push(it); continue; }
+        if (it.cn.toLowerCase().indexOf(kw) >= 0 || String(it.id).indexOf(kw) >= 0) hits.push(it);
+        if (hits.length >= 40) break;
+      }
+      return hits;
+    }
+    function render() {
+      var hits = match(input.value);
+      listEl.style.display = "block";
+      listEl.innerHTML = "";
+      if (!hits.length) { listEl.innerHTML = '<div style="padding:4px 6px;color:#8a97a6;font-size:11px">无匹配</div>'; return; }
+      hits.forEach(function (it) {
+        var row = document.createElement("div");
+        row.textContent = it.cn + " (ID" + it.id + ")" + (it.deb ? "·debuff" : "");
+        row.className = "prow"; row.style.cursor = "pointer";
+        row.addEventListener("mousedown", function (ev) { ev.preventDefault(); });
+        row.addEventListener("click", function () {
+          input.value = it.cn;
+          try { input.setAttribute("data-sid", it.id); } catch (e) {}
+          listEl.style.display = "none";
+          try { input.blur(); } catch (e) {} // 选中后失焦，防止 focus 再弹
+        });
+        listEl.appendChild(row);
+      });
+    }
+    input.addEventListener("focus", function () { if (!(input.getAttribute("data-sid") && input.value.trim())) render(); });
+    input.addEventListener("input", render);
+    input.addEventListener("blur", function () { listEl.style.display = "none"; });
+    document.addEventListener("mousedown", function (ev) {
+      if (listEl.style.display === "block" && ev.target !== input && !listEl.contains(ev.target)) listEl.style.display = "none";
+    });
+    // 触屏：下拉框内 touch 不外泄到游戏层，保留默认滚动（passive）
+    ["touchstart", "touchmove", "touchend"].forEach(function (t) {
+      listEl.addEventListener(t, function (ev) { ev.stopPropagation(); }, { passive: true });
+    });
+  }
+  // 状态输入值 → 数字状态ID：数字直返 / 联想表中文精确匹配 / buffStId 别名兜底
+  function statusIdOf(val) {
+    try {
+      val = String(val == null ? "" : val).trim();
+      if (!val) return -1;
+      if (/^\d+$/.test(val)) return parseInt(val, 10);
+      for (var i = 0; i < STATUS_ID_TABLE.length; i++) if (STATUS_ID_TABLE[i].cn === val) return STATUS_ID_TABLE[i].id;
+      return buffStId(val);
+    } catch (e) { return -1; }
+  }
+  var buffActive = {}; // V1.7.5 状态判活表：{状态ID: {on:bool, endAt:ms|Infinity, seenAt:ms}}，由 StatusIcons hook 更新
+  var dshSIState = "pending"; // StatusIcons hook 状态：pending/ok/no-require/no-mod/no-update/err（诊断用）
+  function parseBuffs(txt) {
+    var out = [];
+    var lines = String(txt || "").split(/\r?\n/);
+    for (var i = 0; i < lines.length; i++) {
+      var ln = lines[i].replace(/#.*$/, "").trim();
+      if (!ln) continue;
+      var parts = ln.split(":");
+      var skid = parseInt(parts[0], 10);
+      if (isNaN(skid)) continue;
+      var lv = parts[1] !== undefined && parts[1].length ? parseInt(parts[1], 10) : 5;
+      if (isNaN(lv)) lv = 5;
+      var st = parts[2] !== undefined ? parts.slice(2).join(":").trim() : "";
+      var stInv = false; // V1.7.6 ! 前缀 = 状态在身才放（反转语义）
+      if (st.charAt(0) === "!") { stInv = true; st = st.substr(1).trim(); }
+      if (!st) stInv = false;
+      out.push({ skid: skid, lv: lv, st: st, stInv: stInv });
+    }
+    return out;
+  }
+  // V2.12.4 日志实测补充表：StatusConst 后半段（526-2001）键值快照（服务器 StatusIcons.update 同源 EFST ID，仅 StatusConst 模块不可用时的兜底）
+  var DSH_EFST_EXTRA = {
+    "WIND_CURTAIN_OPTION":526,"WATER_BARRIER":527,"ZEPHYR":528,"SOLID_SKIN":529,"SOLID_SKIN_OPTION":530,
+    "STONE_SHIELD":531,"STONE_SHIELD_OPTION":532,"POWER_OF_GAIA":533,"EL_WAIT":534,"EL_PASSIVE":535,
+    "EL_DEFENSIVE":536,"EL_OFFENSIVE":537,"EL_COST":538,"PYROTECHNIC":539,"PYROTECHNIC_OPTION":540,
+    "HEATER":541,"HEATER_OPTION":542,"TROPIC":543,"TROPIC_OPTION":544,"AQUAPLAY":545,
+    "AQUAPLAY_OPTION":546,"COOLER":547,"COOLER_OPTION":548,"CHILLY_AIR":549,"CHILLY_AIR_OPTION":550,
+    "GUST":551,"GUST_OPTION":552,"BLAST":553,"BLAST_OPTION":554,"WILD_STORM":555,
+    "WILD_STORM_OPTION":556,"PETROLOGY":557,"PETROLOGY_OPTION":558,"CURSED_SOIL":559,"CURSED_SOIL_OPTION":560,
+    "UPHEAVAL":561,"UPHEAVAL_OPTION":562,"TIDAL_WEAPON":563,"TIDAL_WEAPON_OPTION":564,"ROCK_CRUSHER":565,
+    "ROCK_CRUSHER_ATK":566,"FIRE_INSIGNIA":567,"WATER_INSIGNIA":568,"WIND_INSIGNIA":569,"EARTH_INSIGNIA":570,
+    "EQUIPED_FLOOR":571,"GUARDIAN_RECALL":572,"MORA_BUFF":573,"REUSE_LIMIT_G":574,"REUSE_LIMIT_H":575,
+    "NEEDLE_OF_PARALYZE":576,"PAIN_KILLER":577,"G_LIFEPOTION":578,"VITALIZE_POTION":579,"LIGHT_OF_REGENE":580,
+    "OVERED_BOOST":581,"SILENT_BREEZE":582,"ODINS_POWER":583,"STYLE_CHANGE":584,"SONIC_CLAW_POSTDELAY":585,
+    "SILVERVEIN_RUSH_POSTDELAY":596,"MIDNIGHT_FRENZY_POSTDELAY":597,"GOLDENE_FERSE":598,"ANGRIFFS_MODUS":599,"TINDER_BREAKER":600,
+    "TINDER_BREAKER_POSTDELAY":601,"CBC":602,"CBC_POSTDELAY":603,"EQC":604,"MAGMA_FLOW":605,
+    "GRANITIC_ARMOR":606,"PYROCLASTIC":607,"VOLCANIC_ASH":608,"SPIRITS_SAVEINFO1":609,"SPIRITS_SAVEINFO2":610,
+    "MAGIC_CANDY":611,"SEARCH_STORE_INFO":612,"ALL_RIDING":613,"ALL_RIDING_REUSE_LIMIT":614,"MACRO":615,
+    "MACRO_POSTDELAY":616,"BEER_BOTTLE_CAP":617,"OVERLAPEXPUP":618,"PC_IZ_DUN05":619,"CRUSHSTRIKE":620,
+    "MONSTER_TRANSFORM":621,"SIT":622,"ONAIR":623,"MTF_ASPD":624,"MTF_RANGEATK":625,
+    "MTF_MATK":626,"MTF_MLEATKED":627,"MTF_CRIDAMAGE":628,"REUSE_LIMIT_MTF":629,"MACRO_PERMIT":630,
+    "MACRO_PLAY":631,"SKF_CAST":632,"SKF_ASPD":633,"SKF_ATK":634,"SKF_MATK":635,
+    "REWARD_PLUSONLYJOBEXP":636,"HANDICAPSTATE_NORECOVER":637,"SET_NUM_DEF":638,"SET_NUM_MDEF":639,"SET_PER_DEF":640,
+    "SET_PER_MDEF":641,"PARTYBOOKING_SEARCH_DELAY":642,"PARTYBOOKING_REGISTER_DELAY":643,"PERIOD_TIME_CHECK_DETECT_SKILL":644,"KO_JYUMONJIKIRI":645,
+    "MEIKYOUSISUI":646,"ATTHASTE_CASH":647,"EQUIPPED_DIVINE_ARMOR":648,"EQUIPPED_HOLY_ARMOR":649,"RWC2011":650,
+    "KYOUGAKU":651,"IZAYOI":652,"ZENKAI":653,"KG_KAGEHUMI":654,"KYOMU":655,
+    "KAGEMUSYA":656,"ZANGETSU":657,"PHI_DEMON":658,"GENSOU":659,"AKAITSUKI":660,
+    "TETANY":661,"GM_BATTLE":662,"GM_BATTLE2":663,"RWC2011_SCROLL":664,"ACTIVE_MONSTER_TRANSFORM":665,
+    "MYSTICPOWDER":666,"ECLAGE_RECALL":667,"ENTRY_QUEUE_APPLY_DELAY":668,"REUSE_LIMIT_ECL":669,"M_LIFEPOTION":670,
+    "ENTRY_QUEUE_NOTIFY_ADMISSION_TIME_OUT":671,"UNKNOWN_NAME":672,"ON_PUSH_CART":673,"HAT_EFFECT":674,"FLOWER_LEAF":675,
+    "RAY_OF_PROTECTION":676,"GLASTHEIM_ATK":677,"GLASTHEIM_DEF":678,"GLASTHEIM_HEAL":679,"GLASTHEIM_HIDDEN":680,
+    "GLASTHEIM_STATE":681,"GLASTHEIM_ITEMDEF":682,"GLASTHEIM_HPSP":683,"FOLLOWER_NPC_SKILL_POSTDELAY":684,"ALMIGHTY":685,
+    "GVG_GIANT":686,"GVG_GOLEM":687,"GVG_STUN":688,"GVG_STONE":689,"GVG_FREEZ":690,
+    "GVG_SLEEP":691,"GVG_CURSE":692,"GVG_SILENCE":693,"GVG_BLIND":694,"CLIENT_ONLY_EQUIP_ARROW":695,
+    "CLAN_INFO":696,"JP_EVENT01":697,"JP_EVENT02":698,"JP_EVENT03":699,"JP_EVENT04":700,
+    "TELEPORT_FIXEDCASTINGDELAY":701,"GEFFEN_MAGIC1":702,"GEFFEN_MAGIC2":703,"GEFFEN_MAGIC3":704,"QUEST_BUFF1":705,
+    "QUEST_BUFF2":706,"QUEST_BUFF3":707,"REUSE_LIMIT_RECALL":708,"SAVEPOSITION":709,"NPC_ICEEXPLO":710,
+    "FENRIR_CARD":711,"REUSE_LIMIT_ASPD_POTION":712,"MAXPAIN":713,"PC_STOP":714,"FRIGG_SONG":715,
+    "OFFERTORIUM":716,"TELEKINESIS_INTENSE":717,"MOONSTAR":718,"STRANGELIGHTS":719,"FULL_THROTTLE":720,
+    "REBOUND":721,"UNLIMIT":722,"KINGS_GRACE":723,"ITEM_ATKMAX":724,"ITEM_ATKMIN":725,
+    "ITEM_MATKMAX":726,"ITEM_MATKMIN":727,"SUPER_STAR":728,"HIGH_RANKER":729,"DARKCROW":730,
+    "VALENTINE_2013_1":731,"VALENTINE_2013_2":732,"VALENTINE_2013_3":733,"ILLUSIONDOPING":734,"WIDEWEB":735,
+    "CHILL":736,"BURNT":737,"PCCAFE_PLAY_TIME":738,"TWISTED_TIME":739,"FLASHCOMBO":740,
+    "JITTER_BUFF1":741,"JITTER_BUFF2":742,"JITTER_BUFF3":743,"JITTER_BUFF4":744,"JITTER_BUFF5":745,
+    "JITTER_BUFF6":746,"JITTER_BUFF7":747,"JITTER_BUFF8":748,"JITTER_BUFF9":749,"JITTER_BUFF10":750,
+    "CUP_OF_BOZA":751,"B_TRAP":752,"E_CHAIN":753,"E_QD_SHOT_READY":754,"C_MARKER":755,
+    "H_MINE":756,"H_MINE_SPLASH":757,"P_ALTER":758,"HEAT_BARREL":759,"ANTI_M_BLAST":760,
+    "SLUGSHOT":761,"SWORDCLAN":762,"ARCWANDCLAN":763,"GOLDENMACECLAN":764,"CROSSBOWCLAN":765,
+    "PACKING_ENVELOPE1":766,"PACKING_ENVELOPE2":767,"PACKING_ENVELOPE3":768,"PACKING_ENVELOPE4":769,"PACKING_ENVELOPE5":770,
+    "PACKING_ENVELOPE6":771,"PACKING_ENVELOPE7":772,"PACKING_ENVELOPE8":773,"PACKING_ENVELOPE9":774,"PACKING_ENVELOPE10":775,
+    "GLASTHEIM_TRANS":776,"ZONGZI_POUCH_TRANS":777,"HEAT_BARREL_AFTER":778,"DECORATION_OF_MUSIC":779,"OVERSEAEXPUP":780,
+    "CLOWN_N_GYPSY_CARD":781,"OPEN_NPC_MARKET":782,"BEEF_RIB_STEW":783,"PORK_RIB_STEW":784,"CHUSEOK_MONDAY":785,
+    "CHUSEOK_TUESDAY":786,"CHUSEOK_WEDNESDAY":787,"CHUSEOK_THURSDAY":788,"CHUSEOK_FRIDAY":789,"CHUSEOK_WEEKEND":790,
+    "ALL_LIGHTGUARD":791,"ALL_LIGHTGUARD_COOL_TIME":792,"MTF_MHP":793,"MTF_MSP":794,"MTF_PUMPKIN":795,
+    "MTF_HITFLEE":796,"MTF_CRIDAMAGE2":797,"MTF_SPDRAIN":798,"ACUO_MINT_GUM":799,"S_HEALPOTION":800,
+    "REUSE_LIMIT_S_HEAL_POTION":801,"PLAYTIME_STATISTICS":802,"GN_CHANGEMATERIAL_OPERATOR":803,"GN_MIX_COOKING_OPERATOR":804,"GN_MAKEBOMB_OPERATOR":805,
+    "GN_S_PHARMACY_OPERATOR":806,"SO_EL_ANALYSIS_DISASSEMBLY_OPERATOR":807,"SO_EL_ANALYSIS_COMBINATION_OPERATOR":808,"NC_MAGICDECOY_OPERATOR":809,"GUILD_STORAGE":810,
+    "GC_POISONINGWEAPON_OPERATOR":811,"WS_WEAPONREFINE_OPERATOR":812,"BS_REPAIRWEAPON_OPERATOR":813,"UNREADMAIL_CHECK":814,"JUMPINGCLAN":815,
+    "JP_OTP":816,"HANDICAPTOLERANCE_LEVELGAP":817,"MTF_RANGEATK2":818,"MTF_ASPD2":819,"MTF_MATK2":820,
+    "SHOW_NPCHPBAR":821,"FLOWERSMOKE":822,"FSTONE":823,"DAILYSENDMAILCNT":824,"QSCARABA":825,
+    "LJOSALFAR":826,"PAD_READER_KNIGHT":827,"PAD_READER_CRUSADER":828,"PAD_READER_BLACKSMITH":829,"PAD_READER_ALCHEMIST":830,
+    "PAD_READER_ASSASSIN":831,"PAD_READER_ROGUE":832,"PAD_READER_WIZARD":833,"PAD_READER_SAGE":834,"PAD_READER_PRIEST":835,
+    "PAD_READER_MONK":836,"PAD_READER_HUNTER":837,"PAD_READER_BARD":838,"PAD_READER_DANCER":839,"PAD_READER_TAEKWON":840,
+    "PAD_READER_NINJA":841,"PAD_READER_GUNSLINGER":842,"PAD_READER_SUPERNOVICE":843,"ESSENCE_OF_TIME":844,"MINIGAME_ROULETTE":845,
+    "MINIGAME_GOLD_POINT":846,"MINIGAME_SILVER_POINT":847,"MINIGAME_BRONZE_POINT":848,"HAPPINESS_STAR":849,"SUMMEREVENT01":850,
+    "SUMMEREVENT02":851,"SUMMEREVENT03":852,"SUMMEREVENT04":853,"SUMMEREVENT05":854,"MINIGAME_ROULETTE_BONUS_ITEM":855,
+    "DRESS_UP":856,"MAPLE_FALLS":857,"ALL_NIFLHEIM_RECALL":858,"MARKING_USE_CHANGEMONSTER":859,"MTF_MARIONETTE":860,
+    "MTF_LUDE":861,"MTF_CRUISER":862,"MERMAID_LONGING":863,"MAGICAL_FEATHER":864,"DRACULA_CARD":865,
+    "ALL_PRONTERA_RECALL":866,"LIMIT_POWER_BOOSTER":867,"GIFT_OF_SNOW":868,"NPC_HALLUCINATIONWALK":869,"NPC_HALLUCINATIONWALK_POSTDELAY":870,
+    "NPC_XXXWALK":871,"TIME_ACCESSORY":872,"EP16_DEF":873,"NORMAL_ATKED_SP":874,"BODYSTATE_STONECURSE":875,
+    "BODYSTATE_FREEZING":876,"BODYSTATE_STUN":877,"BODYSTATE_SLEEP":878,"BODYSTATE_UNDEAD":879,"BODYSTATE_STONECURSE_ING":880,
+    "BODYSTATE_BURNNING":881,"BODYSTATE_IMPRISON":882,"HEALTHSTATE_POISON":883,"HEALTHSTATE_CURSE":884,"HEALTHSTATE_SILENCE":885,
+    "HEALTHSTATE_CONFUSION":886,"HEALTHSTATE_BLIND":887,"HEALTHSTATE_ANGELUS":888,"HEALTHSTATE_BLOODING":889,"HEALTHSTATE_HEAVYPOISON":890,
+    "HEALTHSTATE_FEAR":891,"CHERRY_BLOSSOM_CAKE":892,"SU_STOOP":893,"CATNIPPOWDER":894,"HEAD_EQUIPMENT_EFFECT":895,
+    "SV_ROOTTWIST":896,"ATTACK_PROPERTY_NOTHING":897,"ATTACK_PROPERTY_WATER":898,"ATTACK_PROPERTY_GROUND":899,"ATTACK_PROPERTY_FIRE":900,
+    "ATTACK_PROPERTY_WIND":901,"ATTACK_PROPERTY_POISON":902,"ATTACK_PROPERTY_SAINT":903,"ATTACK_PROPERTY_DARKNESS":904,"ATTACK_PROPERTY_TELEKINESIS":905,
+    "ATTACK_PROPERTY_UNDEAD":906,"RESIST_PROPERTY_NOTHING":907,"RESIST_PROPERTY_WATER":908,"RESIST_PROPERTY_GROUND":909,"RESIST_PROPERTY_FIRE":910,
+    "RESIST_PROPERTY_WIND":911,"RESIST_PROPERTY_POISON":912,"RESIST_PROPERTY_SAINT":913,"RESIST_PROPERTY_DARKNESS":914,"RESIST_PROPERTY_TELEKINESIS":915,
+    "RESIST_PROPERTY_UNDEAD":916,"BITESCAR":917,"ARCLOUSEDASH":918,"TUNAPARTY":919,"SHRIMP":920,
+    "FRESHSHRIMP":921,"PERIOD_RECEIVEITEM":922,"PERIOD_PLUSEXP":923,"PERIOD_PLUSJOBEXP":924,"RUNEHELM":925,
+    "HELM_VERKANA":926,"HELM_RHYDO":927,"HELM_TURISUS":928,"HELM_HAGALAS":929,"HELM_ISIA":930,
+    "HELM_ASIR":931,"HELM_URJ":932,"SUHIDE":933,"REUSE_LIMIT_MG":934,"DORAM_BUF_01":935,
+    "DORAM_BUF_02":936,"SPRITEMABLE":937,"AID_PERIOD_RECEIVEITEM":938,"AID_PERIOD_PLUSEXP":939,"AID_PERIOD_PLUSJOBEXP":940,
+    "AID_PERIOD_DEADPENALTY":941,"AID_PERIOD_ADDSTOREITEMCOUNT":942,"ALL_GLASTHEIM_RECALL":943,"REUSE_LIMIT_PEPO_MD":944,"ALL_THANATOS_RECALL":945,
+    "KAFRA_STORE":946,"REUSE_ABBYS":947,"MAGICSTONE_OF_GRACE_SET":948,"PRIVATE_AIRPLANE":949,"HISS":950,
+    "HISS_AVOID":951,"NYANGGRASS":952,"CHATTERING":953,"CHATTERING_OPT_ATK_MATK":954,"CHATTERING_OPT_HASTE":955,
+    "SPIRITOFLAND_STEMSPEAR":956,"SPIRITOFLAND_ROOTTWIST":957,"SPIRITOFLAND_POWDERING":958,"SPIRITOFLAND_METEOR":959,"SPIRITOFLAND_NYANGGRASS":960,
+    "GROOMING":961,"PROTECTIONOFSHRIMP":962,"EP16_2_BUFF_SS":963,"EP16_2_BUFF_SC":964,"EP16_2_BUFF_AC":965,
+    "GS_MAGICAL_BULLET":966,"FALLEN_ANGEL":976,"REUSE_LIMIT_MOVEPOINT":977,"MACRO_DETECTOR_ANSWER_WAITING":978,"BLAZE_BEAD":979,
+    "FROZEN_BEAD":980,"BREEZE_BEAD":981,"SOULATTACK":982,"AID_PERIOD_RECEIVEITEM_2ND":983,"AID_PERIOD_PLUSEXP_2ND":984,
+    "AID_PERIOD_PLUSJOBEXP_2ND":985,"PRONTERA_JP":986,"ASSISTANT_VENDING":987,"GLOOM_CARD":988,"PHARAOH_CARD":989,
+    "KIEL_CARD":990,"ASSISTANT_BUYING":991,"CHEERUP":992,"GET_CNT_UNREAD_RODEX_CHARDB":993,"GET_CNT_UNREAD_RODEX_GLOBALDB":994,
+    "S_MANAPOTION":995,"M_DEFSCROLL":996,"OPEN_REFINING_UI":997,"ALL_LIGHTHALZEN_RECALL":998,"SWAP_EQUIPITEM":999,
+    "AS_RAGGED_GOLEM_CARD":1000,"LHZ_DUN_N1":1001,"LHZ_DUN_N2":1002,"LHZ_DUN_N3":1003,"LHZ_DUN_N4":1004,
+    "TAEKWON_MISSION":1005,"SUN_PLACE":1006,"MOON_PLACE":1007,"STAR_PLACE":1008,"SUN_MONSTER":1009,
+    "MOON_MONSTER":1010,"STAR_MONSTER":1011,"AL_WARP_ADDSLOT":1012,"ALL_STAT_DOWN":1013,"GRADUAL_GRAVITY":1014,
+    "DAMAGE_HEAL":1015,"IMMUNE_PROPERTY_NOTHING":1016,"IMMUNE_PROPERTY_WATER":1017,"IMMUNE_PROPERTY_GROUND":1018,"IMMUNE_PROPERTY_FIRE":1019,
+    "IMMUNE_PROPERTY_WIND":1020,"IMMUNE_PROPERTY_POISON":1021,"IMMUNE_PROPERTY_SAINT":1022,"IMMUNE_PROPERTY_DARKNESS":1023,"IMMUNE_PROPERTY_TELEKINESIS":1024,
+    "IMMUNE_PROPERTY_UNDEAD":1025,"REUSE_LIMIT_NP":1026,"SPECIALCOOKIE":1027,"DAMAGE_HEAL2":1028,"DAMAGE_HEAL3":1029,
+    "GLORY_OF_RETURN":1030,"ATK_POPCORN":1031,"MATK_POPCORN":1032,"ASPD_POPCORN":1033,"ULTIMATECOOK":1034,
+    "LIGHTOFMOON":1035,"LIGHTOFSUN":1036,"LIGHTOFSTAR":1037,"LUNARSTANCE":1038,"UNIVERSESTANCE":1039,
+    "SUNSTANCE":1040,"FLASHKICK":1041,"NEWMOON":1042,"STARSTANCE":1043,"DIMENSION":1044,
+    "DIMENSION1":1045,"DIMENSION2":1046,"CREATINGSTAR":1047,"FALLINGSTAR":1048,"NOVAEXPLOSING":1049,
+    "GRAVITYCONTROL":1050,"XXX_WORLDSTORE_ACTIVE":1051,"WORLDSTORE_ITEMMOVEINFO_SENDCOMPLETE":1052,"SOULCOLLECT":1053,"SOULREAPER":1054,
+    "SOULUNITY":1055,"SOULSHADOW":1056,"SOULFAIRY":1057,"SOULFALCON":1058,"SOULGOLEM":1059,
+    "SOULDIVISION":1060,"SOULENERGY":1061,"USE_SKILL_SP_SPA":1062,"USE_SKILL_SP_SHA":1063,"SP_SHA":1064,
+    "INFINITY_DRINK":1065,"ABYSS_001":1066,"ABYSS_002":1067,"ABYSS_003":1068,"ABYSS_004":1069,
+    "ABYSS_005":1070,"ABYSS_006":1071,"ABYSS_007":1072,"ABYSS_008":1073,"REUSE_LIMIT_THM":1075,
+    "REUSE_LIMIT_TLI":1076,"REUSE_LIMIT_TKC":1077,"REUSE_LIMIT_TRP":1078,"REUSE_LIMIT_TBG":1079,"REUSE_LIMIT_TBM":1080,
+    "YGGDRASIL_BLESS":1081,"USE_SKILL_SP_SWHOO":1082,"HUNTING_EVENT":1083,"PERIOD_RECEIVEITEM_2ND":1084,"PERIOD_PLUSEXP_2ND":1085,
+    "EXPDROPUP":1086,"TW_NEWYEAR_EVENT":1087,"ENSEMBLEFATIGUE":1088,"ADAPTATION":1089,"DANCINGLESSON":1090,
+    "MUSICALLESSON":1091,"REUSE_LIMIT_RC":1092,"DANCINGLESSON_EQUIPPED":1093,"MUSICALLESSON_EQUIPPED":1094,"ANCILLA":1095,
+    "REUSE_LIMIT_POTION_A":1096,"REUSE_LIMIT_POTION_B":1097,"REUSE_LIMIT_POTION_C":1098,"REUSE_LIMIT_POTION_D":1099,"REUSE_LIMIT_POTION_E":1100,
+    "REUSE_LIMIT_POTION_F":1101,"BRAVESET":1102,"MACEMASTERY_EQUIPPED":1103,"FESTIVE_ENERGY":1104,"TEST_KR01":1105,
+    "STARFISH_JP":1106,"WEAPONBLOCK_ON":1107,"CRI_DAMAGE":1108,"DEF_POWER":1109,"DEF_IGNORE":1110,
+    "BOW_ATK_POWER":1111,"RED_ORG_POTION":1112,"CAST_TIME":1113,"BLADESTOPREADY":1114,"TELEPORT_BR":1115,
+    "SA_WEAPON_PROPERTY":1116,"LEAPIMPAIRED":1117,"SENDING_ITEMLIST":1118,"EXCLUSIVE_RECEIVEITEM":1119,"EXCLUSIVE_PLUSEXP":1120,
+    "ASSUMPTIO_BUFF":1121,"BASILICA_BUFF":1122,"OVERLAPEXPUP2":1123,"STOPMOVE_IMMEDIATELY":1124,"SOULCURSE":1125,
+    "SOUND_OF_DESTRUCTION":1126,"DF_MANAPLUS":1127,"DF_FULLSWINGK":1128,"NV_BREAKTHROUGH":1129,"HELPANGEL":1130,
+    "NV_TRANSCENDENCE":1131,"SWEETSFAIR_ATK":1132,"SWEETSFAIR_MATK":1133,"REUSE_SKILL":1134,"FLOWER_LEAF2":1135,
+    "FLOWER_LEAF3":1136,"FLOWER_LEAF4":1137,"CHARM_BOOST":1138,"EARTHSHAKER":1139,"PERIOD_USE_WORLDMAP":1140,
+    "MISTY_FROST":1141,"MAGIC_POISON":1142,"KAUTE":1143,"REUSE_JPNONLY_LIMIT_I":1144,"REUSE_JPNONLY_LIMIT_J":1145,
+    "REUSE_JPNONLY_LIMIT_K":1146,"JPNONLY_TACTICS":1147,"PRISON":1148,"MADOGEAR":1149,"DEADLY_DEFEASANCE":1150,
+    "CLIMAX_DES_HU":1151,"CLIMAX":1152,"FEINTBOMB":1153,"LUXANIMA":1154,"BATH_FOAM_A":1155,
+    "BATH_FOAM_B":1156,"BATH_FOAM_C":1157,"AROMA_OIL":1158,"REUSE_LIMIT_LUXANIMA":1159,"POWERFUL_FAITH":1160,
+    "SINCERE_FAITH":1161,"FIRM_FAITH":1162,"AIRSHIP_PIPE":1163,"PIECES_OF_SHADOW":1164,"HELLS_PLANT_ARMOR":1165,
+    "RELIEVE_DAMAGE":1166,"LOCKON_LASER":1167,"GRADE_ENCHANT_UI_OPEN":1168,"REF_T_POTION":1169,"ADD_ATK_DAMAGE":1170,
+    "ADD_MATK_DAMAGE":1171,"SERVANTWEAPON":1172,"SERVANT_SIGN":1173,"CHARGINGPIERCE":1174,"CHARGINGPIERCE_COUNT":1175,
+    "DRAGONIC_AURA":1176,"BIG_SCAR":1177,"VIGOR":1178,"WILL_OF_FAITH":1179,"PRESSURE":1180,
+    "SA_DRAGONOLOGY":1181,"CLIMAX_EARTH":1182,"CLIMAX_BLOOM":1183,"CLIMAX_CRYIMP":1184,"MD_ME_POTION":1185,
+    "MD_MA_POTION":1186,"MD_TA_POTION":1187,"MD_RA_POTION":1188,"REUSE_MEGAPHONE":1189,"HOLY_OIL":1190,
+    "CRYSTAL_IMPACT":1191,"SHADOW_EXCEED":1192,"DANCING_KNIFE":1193,"POTENT_VENOM":1194,"SHADOW_SCAR":1195,
+    "E_SLASH_COUNT":1196,"MEDIALE":1197,"A_VITA":1198,"A_TELUM":1199,"PRE_ACIES":1200,
+    "COMPETENTIA":1201,"GUARD_STANCE":1202,"ATTACK_STANCE":1203,"GUARDIAN_S":1204,"HANDICAPSTATE_DEEPBLIND":1205,
+    "HANDICAPSTATE_DEEPSILENCE":1206,"HANDICAPSTATE_LASSITUDE":1207,"HANDICAPSTATE_FROSTBITE":1208,"HANDICAPSTATE_SWOONING":1209,"HANDICAPSTATE_LIGHTNINGSTRIKE":1210,
+    "HANDICAPSTATE_CRYSTALLIZATION":1211,"HANDICAPSTATE_CONFLAGRATION":1212,"HANDICAPSTATE_MISFORTUNE":1213,"HANDICAPSTATE_DEADLYPOISON":1214,"HANDICAPSTATE_DEPRESSION":1215,
+    "HANDICAPSTATE_HOLYFLAME":1216,"REBOUND_S":1217,"SHIELD_MASTERY":1218,"SPEAR_SWORD_M":1219,"HOLY_S":1220,
+    "ULTIMATE_S":1221,"SPEAR_SCAR":1222,"SHIELD_POWER":1223,"FIDUS_ANIMUS":1224,"MACE_BOOK_M":1225,
+    "SHADOW_WEAPON":1226,"RELIGIO":1227,"BENEDICTUM":1228,"MVPCARD_KIEL":1229,"FIRST_BRAND":1230,
+    "SECOND_BRAND":1231,"SECOND_JUDGE":1232,"THIRD_EXOR_FLAME":1233,"FIRST_FAITH_POWER":1234,"AXE_STOMP":1235,
+    "A_MACHINE":1236,"D_MACHINE":1237,"MT_M_MACHINE_OPERATOR":1238,"TWOAXEDEF":1239,"DAGGER_AND_BOW_M":1240,
+    "MAGIC_SWORD_M":1241,"SHADOW_STRIP":1242,"ABYSS_DAGGER":1243,"ABYSSFORCEWEAPON":1244,"ABYSS_SLAYER":1245,
+    "TWOHANDDEF":1246,"PROTECTSHADOWEQUIP":1247,"RESEARCHREPORT":1248,"BO_HELL_DUSTY":1249,"WINDSIGN":1250,
+    "CRESCIVEBOLT":1251,"CALAMITYGALE":1252,"CRESCIVEBOLT3":1253,"STAGE_MANNER":1254,"RETROSPECTION":1255,
+    "MYSTIC_SYMPHONY":1256,"KVASIR_SONATA":1257,"SOUNDBLEND":1258,"GEF_NOCTURN":1259,"AIN_RHAPSODY":1260,
+    "MUSICAL_INTERLUDE":1261,"JAWAII_SERENADE":1262,"PRON_MARCH":1263,"ROSEBLOSSOM":1264,"BO_BIONIC_PHARMACY_OPERATOR":1265,
+    "ACIDIFIED_ZONE_WATER":1266,"ACIDIFIED_ZONE_GROUND":1267,"ACIDIFIED_ZONE_WIND":1268,"ACIDIFIED_ZONE_FIRE":1269,"MAGIC_BOOK_M":1270,
+    "SPELL_ENCHANTING":1271,"SUMMON_ELEMENTAL_ARDOR":1272,"SUMMON_ELEMENTAL_DILUVIO":1273,"SUMMON_ELEMENTAL_PROCELLA":1274,"SUMMON_ELEMENTAL_TERREMOTUS":1275,
+    "SUMMON_ELEMENTAL_SERPENS":1276,"FLAMETECHNIC":1277,"FLAMETECHNIC_OPTION":1278,"FLAMEARMOR":1279,"FLAMEARMOR_OPTION":1280,
+    "COLD_FORCE":1281,"COLD_FORCE_OPTION":1282,"CRYSTAL_ARMOR":1283,"CRYSTAL_ARMOR_OPTION":1284,"GRACE_BREEZE":1285,
+    "GRACE_BREEZE_OPTION":1286,"EYES_OF_STORM":1287,"EYES_OF_STORM_OPTION":1288,"EARTH_CARE":1289,"EARTH_CARE_OPTION":1290,
+    "STRONG_PROTECTION":1291,"STRONG_PROTECTION_OPTION":1292,"DEEP_POISONING":1293,"DEEP_POISONING_OPTION":1294,"POISON_SHIELD":1295,
+    "POISON_SHIELD_OPTION":1296,"ABR_BATTLE_WARIOR":1297,"ABR_DUAL_CANNON":1298,"ABR_MOTHER_NET":1299,"ABR_INFINITY":1300,
+    "ELEMENTAL_VEIL":1301,"RENOVATIO_EXT":1302,"HOMUN_TIME":1303,"POWER_ACCELERATION":1304,"MAX_HP_SP_AVOID":1305,
+    "ADD_ALL_STATE":1306,"AID_PERIOD_POWER_ACCELERATION":1307,"AID_PERIOD_MAX_HP_SP_AVOID":1308,"AID_PERIOD_ADD_ALL_STATE":1309,"POISON_MIST":1310,
+    "HACKANDSLASHER":1311,"GET_CNT_UNREAD_RETURN_RODEX_CHARDB":1312,"STONE_WALL":1313,"REUSE_LIMIT_I":1314,"OVERBRANDREADY":1315,
+    "SHIELDSPELL":1316,"AUTOSHADOWSPELL_CHECK2":1317,"CLOUD_POISON":1318,"SPORE_EXPLOSION_DEBUFF":1319,"DEFSCROLL":1321,
+    "MASSIVE_F_BLASTER":1326,"NOEQUIPWEAPON2":1330,"NOEQUIPARMOR2":1331,"NOEQUIPSHIELD2":1332,"NOEQUIPSHOES2":1333,
+    "NOEQUIPPENDANT2":1334,"NOEQUIPEARING2":1335,"NOEQUIPFULL2":1336,"CURSE_R_CUBE":1337,"CURSE_B_CUBE":1338,
+    "KILLING_AURA":1339,"TOXIN_OF_MANDARA":1341,"GOLDENE_TONE":1342,"TEMPERING":1343,"NW_P_F_I":1344,
+    "INTENSIVE_AIM":1345,"INTENSIVE_AIM_COUNT":1346,"GRENADE_FRAGMENT_1":1347,"GRENADE_FRAGMENT_2":1348,"GRENADE_FRAGMENT_3":1349,
+    "GRENADE_FRAGMENT_4":1350,"GRENADE_FRAGMENT_5":1351,"GRENADE_FRAGMENT_6":1352,"AUTO_FIRING_LAUNCHEREFST":1353,"HIDDEN_CARD":1354,
+    "NW_GRENADE_MASTERY":1355,"TALISMAN_OF_PROTECTION":1356,"TALISMAN_OF_WARRIOR":1357,"TALISMAN_OF_MAGICIAN":1358,"TALISMAN_OF_FIVE_ELEMENTS":1359,
+    "T_FIRST_GOD":1360,"T_SECOND_GOD":1361,"T_THIRD_GOD":1362,"T_FOURTH_GOD":1363,"T_FIVETH_GOD":1364,
+    "HEAVEN_AND_EARTH":1365,"HOGOGONG":1366,"MARINE_FESTIVAL":1367,"SANDY_FESTIVAL":1368,"KI_SUL_RAMPAGE":1369,
+    "COLORS_OF_HYUN_ROK_1":1370,"COLORS_OF_HYUN_ROK_2":1371,"COLORS_OF_HYUN_ROK_3":1372,"COLORS_OF_HYUN_ROK_4":1373,"COLORS_OF_HYUN_ROK_5":1374,
+    "COLORS_OF_HYUN_ROK_6":1375,"COLORS_OF_HYUN_ROK_BUFF":1376,"TEMPORARY_COMMUNION":1377,"BLESSING_OF_M_CREATURES":1378,"BLESSING_OF_M_C_DEBUFF":1379,
+    "SHIELDCHAINRUSH":1380,"MISTYFROST":1381,"GROUNDGRAVITY":1382,"BREAKINGLIMIT":1383,"RULEBREAK":1384,
+    "RISING_SUN":1385,"NOON_SUN":1386,"SUNSET_SUN":1387,"RISING_MOON":1388,"MIDNIGHT_MOON":1389,
+    "DAWN_MOON":1390,"STAR_BURST":1391,"SKY_ENCHANT":1392,"SHADOW_CLOCK":1393,"SHINKIROU_CALL":1394,
+    "NIGHTMARE":1395,"NOODLE_FES_1":1396,"NOODLE_FES_2":1397,"NOODLE_FES_3":1398,"NOODLE_FES_4":1399,
+    "NOODLE_FES_5":1400,"RUSH_QUAKE1":1402,"RUSH_QUAKE2":1403,"SBUNSHIN":1415,"MTP_W_POTION_100":1418,
+    "CHANGE_SIZE":1420,"CHANGE_SIZE_MONSTER":1421,"SHOW_EFFECT1":1422,"SHOW_EFFECT2":1423,"SHOW_EFFECT3":1424,
+    "VR_SPEED":1425,"VR_ASPD":1426,"VR_MHP":1427,"VR_MSP":1428,"VR_HIT":1429,
+    "VR_DEF":1430,"VR_MDEF":1431,"VR_BOOK001":1432,"VR_BOOK002":1433,"VR_BOOK003":1434,
+    "VR_BOOK004":1435,"REUSE_LIMIT_VR_BOOK":1436,"VR_BOOK005":1439,"VR_BOOK006":1440,"VR_BOOK007":1441,
+    "VR_BOOK008":1442,"VR_BOOK009":1443,"ALL_T_STAT":1444,"P_ATK_PLUS":1445,"S_MATK_PLUS":1446,
+    "C_RATE_PLUS":1447,"RESIST_PLUS":1448,"PVP_DUN_BUFF":1449,"BPOWER":2000,"MAX":2001
+  };
+  // V2.32.2 中文名归一化：去助词（之/的/·/空格）并转小写，供 buffStId 归一化后精确匹配（统一处理翻译名差异）
+  function normCjk(s) { try { return String(s || "").toLowerCase().replace(/[之的· ]/g, ""); } catch (e) { return String(s || ""); } }
+  // 状态键 → 客户端状态ID（StatusConst 常量表；支持 数字/英文SC名/中文别名；查不到返回 -1）
+  function buffStId(key) {
+    try {
+      if (!key) return -1;
+      if (/^\d+$/.test(key)) return parseInt(key, 10);
+      var up = String(key).toUpperCase();
+      var cn = BUFF_STATUS_CN[key.toLowerCase()] || BUFF_STATUS_CN[key] ||
+        BUFF_DEBUFF_CN[key.toLowerCase()] || BUFF_DEBUFF_CN[key] || "";
+      // V2.32.2 统一处理：精确匹配失败时，做 CJK 归一化后再精确匹配（天使之赐福→天使赐福），不再逐个补别名
+      if (!cn) {
+        var nk = normCjk(key);
+        if (nk && nk !== String(key).toLowerCase()) {
+          var NK;
+          for (NK in BUFF_STATUS_CN) { if (normCjk(NK) === nk) { cn = BUFF_STATUS_CN[NK]; break; } }
+          if (!cn) for (NK in BUFF_DEBUFF_CN) { if (normCjk(NK) === nk) { cn = BUFF_DEBUFF_CN[NK]; break; } }
+        }
+      }
+      var tryN = cn ? cn.toUpperCase() : up;
+      // V2.16.26 修：本服实测值与客户端 StatusConst 表不一致时，以实测为准。
+      // 旧写法把实测修正放在「兜底2」，而 StatusConst 优先命中，导致修正永远轮不到
+      // （典型：圣母之祈福本服实测 473=ASSUMPTIO2，客户端表 ASSUMPTIO=110 → 永远判「不在身」空放）。
+      var MEASURED = { "ASSUMPTIO": 473, "KYRIE": 19, "BLESSING": 10 };
+      try {
+        if (typeof MEASURED[tryN] === "number") return MEASURED[tryN];
+        if (tryN !== up && typeof MEASURED[up] === "number") return MEASURED[up];
+      } catch (eM) {}
+      // V2.12.4 重构：探查日志证实本服 StatusConst 键=英文状态名、值=EFST 图标ID，与 StatusIcons.update 同源
+      //（实测 ALL_RIDING=613/SIT=622 一一对应）。故 StatusConst 运行时查询优先（权威），
+      // 硬编码表与日志补充表 DSH_EFST_EXTRA 仅作 StatusConst 模块不可用时的兜底。
+      try {
+        var SC = window.require && window.require("DB/Status/StatusConst");
+        if (SC) {
+          if (typeof SC[tryN] === "number") return SC[tryN];
+          if (typeof SC["SC_" + tryN] === "number") return SC["SC_" + tryN];
+          if (tryN !== up) {
+            if (typeof SC[up] === "number") return SC[up];
+            if (typeof SC["SC_" + up] === "number") return SC["SC_" + up];
+          }
+        }
+      } catch (e2) {}
+      // 兜底1：日志实测补充表（StatusConst 526-2001 快照，同源值）
+      try {
+        if (typeof DSH_EFST_EXTRA[tryN] === "number") return DSH_EFST_EXTRA[tryN];
+        if (tryN !== up && typeof DSH_EFST_EXTRA[up] === "number") return DSH_EFST_EXTRA[up];
+      } catch (e3) {}
+      // 兜底2：硬编码 EFST 表（rAthena 抄录，已按实测修正 ASSUMPTIO=473 等）
+      var map = {
+        "INC_AGI": 12, "BLESSING": 10, "ENDURE": 1, "ADRENALINE": 23, "WEAPONPERFECT": 24,
+        "OVERTHRUST": 25, "IMPOSITIO": 21, "GLORIA": 46, "SUFFRAGIUM": 16, "ASPERSIO": 17, "MAGNIFICAT": 20, // V2.16.3 修正：神威=IMPOSITIO(21) 幸运颂歌=GLORIA(46)，旧值 GLORIA:21 张冠李戴
+        "KYRIE": 19, "ANGELUS": 9, "ENERGYCOAT": 31, "SOULLINK": 149, "EXPLOSIONSPIRITS": 86,
+        "STEELBODY": 87, "LKCONCENTRATION": 105, "TWOHANDQUICKEN": 2, "SPEARQUICKEN": 68,
+        "WINDWALK": 116, "CHASEWALK": 119, "MAXIMIZE": 26, "AUTOGUARD": 58, "REFLECTSHIELD": 59,
+        "AURABLADE": 103, "BERSERK": 107, "ASSUMPTIO": 473, "EDP": 114, "TRUESIGHT": 115,
+        "PARRYING": 104, "CONCENTRATION": 3, "POWERUP": 98, "AGIUP": 99, "STRUP": 145,
+        "RIDING": 27, "FALCON": 28, "GOSPEL": 109, "INSPIRATION": 407, "ADORAMUS": 401,
+        "RENOVATIO": 336, "ORATIO": 330, "LAUDAAGNUS": 331, "LAUDARAMUS": 332, "EPICLESIS": 329,
+        "VENOMIMPRESS": 328, "WEAPONBLOCKING": 337, "ROLLINGCUTTER": 339, "POISONINGWEAPON": 341,
+        "CRESCENTELBOW": 419, "RAISINGDRAGON": 410, "GN_CARTBOOST": 461, "CARTBOOST": 118,
+        "UNLIMIT": 722, "FRIGG_SONG": 715, "KINGS_GRACE": 723, "MOONLIT_SERENADE": 447,
+        "SUN_COMFORT": 169, "MOON_COMFORT": 170, "STAR_COMFORT": 171
+      };
+      var e = map[cn ? cn.toUpperCase() : up];
+      if (e != null) return e;
+      return -1;
+    } catch (e) { return -1; }
+  }
+  // V1.7.5 hook StatusIcons.update：服务器 buff 生效/失效的唯一通知入口，维护 buffActive 判活表
+  function hookStatusIcons() {
+    try {
+      if (window.__dshSIHook) return;
+      if (!window.require) { dshSIState = "no-require"; return; }
+      var SI = null;
+      var cands = ["UI/Components/StatusIcons/StatusIcons", "UI/Components/StatusIcons", "UI/Components/StatusIcons/StatusIcons.js", "UI/Components/StatusIcons.js"];
+      for (var ci = 0; ci < cands.length; ci++) {
+        try { var m = window.require(cands[ci]); if (m && typeof m.update === "function") { SI = m; break; } } catch (e2) {}
+      }
+      if (!SI) { dshSIState = "no-mod"; return; }
+      var orig = SI.update;
+      if (typeof orig !== "function") { dshSIState = "no-update"; return; }
+      window.__dshSIHook = true;
+      // V2.16.26 修：客户端真实签名是 update(index, state, life)——第 3 个参数才是剩余时间，
+      // 旧代码读的是第 4 个（永远是 undefined）→ 所有 buff 剩余时间都被当成固定 30 秒。
+      SI.update = function (stId, active, life) {
+        try {
+          stId = parseInt(stId, 10);
+          if (!isNaN(stId)) {
+            var now = Date.now();
+            var ms = Number(life);
+            var endAt;
+            if (ms === 9999) endAt = Infinity;                        // 官方用 9999 表示无限
+            else if (!isFinite(ms) || ms <= 0) endAt = now + 30000;   // 拿不到时间就退回 30 秒（不早于旧行为）
+            else endAt = now + Math.max(ms, 30000);                   // 有真实剩余时间就用它（下限 30 秒防误判）
+            if (active) { dshLearnStatus(stId); buffActive[stId] = { on: true, endAt: endAt, seenAt: now, life: ms }; try { for (var qi = 0; qi < askList.length; qi++) { var qs = askList[qi]; if (qs && qs.st && buffStId(qs.st) === stId) qs.missCnt = 0; } } catch (qe) {} }
+            else if (buffActive[stId]) { buffActive[stId].on = false; buffActive[stId].endAt = 0; buffActive[stId].seenAt = now; }
+          }
+        } catch (e) {}
+        return orig.apply(this, arguments);
+      };
+      dshSIState = "ok";
+      tlog("statusicons hooked (cand " + (ci || 1) + ")");
+    } catch (e) { dshSIState = "err"; }
+  }
+  // 状态是否判为目标"在身上"：on && (未过期)；对从未见过的状态（无通知）→ 视为不在身上（触发补）
+  // 状态是否判为目标"在身上"：优先读客户端实体字段（不依赖 hook），实体字段查不到再回落判活表 buffActive（StatusIcons hook）
+  // 实体字段映射：EFST ID → 实体字段判定函数（返回 bool；字段缺失返回 undefined 表示该状态无实体字段，回落判活表）
+  var DSH_ENT_STATE = {
+    // 字段缺失返回 undefined = 该状态无实体字段，回落判活表；字段存在才返回 true/false
+    12: function (en) { if (en.inc_agi !== undefined) return en.inc_agi === 1; if (en.IncAgi !== undefined) return en.IncAgi === 1; if (en.incAgi !== undefined) return en.incAgi === 1; return undefined; },
+    10: function (en) { if (en.blessing !== undefined) return en.blessing === 1; if (en.Blessing !== undefined) return en.Blessing === 1; return undefined; },
+    1: function (en) { if (en.endure !== undefined) return en.endure === 1; if (en.Endure !== undefined) return en.Endure === 1; return undefined; },
+    86: function (en) { if (en.getOpt3) { try { return !!en.getOpt3(86); } catch (e) {} } if (en.explosion !== undefined) return en.explosion === 1; return undefined; }, // V2.15.30 爆气读 virtue 位
+    87: function (en) { if (en.SteelBody !== undefined) return en.SteelBody === 1; if (en.steelbody !== undefined) return en.steelbody === 1; if (en.steel_body !== undefined) return en.steel_body === 1; return undefined; },
+    149: function (en) { if (en.getOpt3) { try { return !!en.getOpt3(149); } catch (e) {} } if (en.soullink !== undefined) return en.soullink === 1; return undefined; }, // V2.15.30 灵魂读 virtue 位
+    107: function (en) { if (en.getOpt3) { try { return !!en.getOpt3(107); } catch (e) {} } if (en.berserk !== undefined) return en.berserk === 1; return undefined; }, // V2.15.30 狂暴读 virtue 位
+    27: function (en) { if (en.riding !== undefined) return en.riding === 1; if (en.riding_ !== undefined) return en.riding_ === 1; return undefined; },
+    28: function (en) { if (en.falcon !== undefined) return en.falcon === 1; return undefined; },
+    4: function (en) { if (en.isHide !== undefined) return en.isHide === true; if (en.hiding !== undefined) return en.hiding === 1; return undefined; },
+    5: function (en) { if (en.isHide !== undefined) return en.isHide === true; if (en.hiding !== undefined) return en.hiding === 1; return undefined; }
+  };
+  function buffStateOn(stId) {
+    try {
+      stId = parseInt(stId, 10);
+      // 1) 实体字段优先（引擎 Entity 实时字段，权威）
+      var f = DSH_ENT_STATE[stId];
+      if (f) {
+        var en = CLIENT.SS && CLIENT.SS.Entity;
+        if (en) { var v = f(en); if (v !== undefined) return v === true || v === 1; }
+      }
+      // 2) 回落判活表（StatusIcons hook 维护；hook 未挂/无通知时表为空 → 视为不在身，触发补）
+      var st = buffActive[stId];
+      if (!st) return false;
+      if (!st.on) return false;
+      if (st.endAt <= Date.now()) return false;
+      return true;
+    } catch (e) { return false; }
+  }
+  // V1.7.7 状态速查弹层按钮：多辅助区「状态速查」→ 打开全屏速查表（可选中复制）
+  var stateHelpBtn = $id("dsh-statehelp");
+  if (stateHelpBtn) {
+    stateHelpBtn.addEventListener("click", function (e) {
+      if (e) { try { e.stopPropagation(); e.preventDefault(); } catch (err) {} }
+      openStatePop();
+      setStatus("状态名速查已展开（可选中复制）", "ok");
+    });
+  }
+  // V1.7.7 技能框回车换行：挡住 Enter 冒泡到游戏层（游戏监听 Enter 会抢焦点切聊天框），
+  //   保留 textarea 原生换行；中文输入法选字确认回车（isComposing/229）放行
+  function dshTaEnterGuard(ta) {
+    if (!ta) return;
+    var kd = function (e) {
+      try {
+        if (e.key === "Enter" || e.keyCode === 13) {
+          if (e.isComposing || e.keyCode === 229) return;
+          e.stopPropagation(); // 不 preventDefault：textarea 原生插入换行
+        }
+      } catch (err) {}
+    };
+    var kp = function (e) {
+      try {
+        if (e.key === "Enter" || e.keyCode === 13) {
+          if (e.isComposing || e.keyCode === 229) return;
+          e.stopPropagation();
+        }
+      } catch (err) {}
+    };
+    var ku = function (e) {
+      try {
+        if (e.key === "Enter" || e.keyCode === 13) {
+          if (e.isComposing || e.keyCode === 229) return;
+          e.stopPropagation();
+        }
+      } catch (err) {}
+    };
+    ta.addEventListener("keydown", kd, true);
+    if (ta.addEventListener) { try { ta.addEventListener("keypress", kp, true); } catch (err) {} }
+    if (ta.addEventListener) { try { ta.addEventListener("keyup", ku, true); } catch (err) {} }
+  }
+  dshTaEnterGuard($id("dsh-skillorder")); // 技能顺序 textarea
+  
+
+  // ---------------- 宠物（喂食/变蛋/表演/召唤蛋 · C阶段完整版）----------------
+  var petFeedTimer = null, petLastFeed = 0, petLastRender = 0;
+  // 宠物实体 objecttype=7（客户端 Entity TYPE_PET=7 实证）
+  function getPetEntity() {
+    try {
+      if (!window.require) return null;
+      var EM = window.require("Renderer/EntityManager");
+      var pet = null;
+      if (EM && typeof EM.forEach === "function") {
+        EM.forEach(function (e) {
+          if (pet) return;
+          if (e && e.objecttype === 7) pet = e; // TYPE_PET
+        });
+      }
+      return pet;
+    } catch (e) { return null; }
+  }
+  function getPetInfo() {
+    try {
+      if (!CLIENT.SS) return null;
+      var petId = CLIENT.SS.petId;
+      var p = CLIENT.SS.pet || {};
+      // 兜底1：SS 里 petId/pet 没写全（PROPERTY_PET 与 CHANGESTATE 到达顺序不定）→ 直接扫宠物实体
+      // 客户端实证：宠物实体 objecttype=7；实体 life.hp=饱食度(0~100)、life.hp_max=100；display.name=宠物名
+      if ((!petId || !p.name) && CLIENT.SS.Entity) {
+        var pe = getPetEntity();
+        if (pe) {
+          if (!petId) { petId = pe.GID; try { CLIENT.SS.petId = petId; } catch (e) {} }
+          if (!p.name) p.name = (pe.display && pe.display.name) || pe.displayName || pe.name;
+          if (!p.job && pe.job != null) p.job = pe.job;
+          if (!p.clevel && pe.clevel != null) p.clevel = pe.clevel;
+          if (p.hungry == null && pe.life && pe.life.hp != null) p.hungry = pe.life.hp;
+          if (p.friendly == null && pe.life && pe.life.friendly != null) p.friendly = pe.life.friendly;
+          try { CLIENT.SS.pet = p; } catch (e) {}
+        }
+      }
+      if (!petId) return null;
+      return { id: petId, hungry: p.hungry, oldHungry: p.oldHungry, friendly: p.friendly, name: p.name, job: p.job, clevel: p.clevel };
+    } catch (e) { return null; }
+  }
+  function hungryText(h) {
+    if (h == null) return "?";
+    if (h < 10) return "饥饿(" + h + ")";
+    if (h < 25) return "饿(" + h + ")";
+    if (h < 75) return "满足(" + h + ")";
+    if (h < 90) return "足够(" + h + ")";
+    return "吃饱(" + h + ")";
+  }
+  function renderPetInfo() {
+    var p = getPetInfo();
+    var txt = !p ? "未召唤宠物（登录后自动显示）" : ((p.name || "宠物") + (p.job != null ? " (job" + p.job + ")" : "") + " · 饱食度 " + hungryText(p.hungry) + " · " + (p.friendly != null ? ("亲密度 " + p.friendly + "/1000") : "亲密度 ?"));
+    var el = $id("dsh-petinfo");
+    if (el) el.textContent = txt;
+    var el2 = $id("dsh-petinfo2");
+    if (el2) el2.textContent = txt;
+  }
+  // 宠物指令：1=喂食 2=表演 3=变蛋(收回) 4=卸装备（客户端真实机制=COMMAND_PET）
+  function petCmd(cSub, logName) {
+    try {
+      if (!clientReady()) { petLog("客户端未就绪"); return false; }
+      var p = new CLIENT.PS.CZ.COMMAND_PET();
+      p.cSub = cSub;
+      CLIENT.NM.sendPacket(p);
+      if (cSub === 1) petLastFeed = Date.now();
+      tlog("pet-cmd cSub=" + cSub);
+      return true;
+    } catch (e) { petLog("宠物指令异常: " + e.message); return false; }
+  }
+  function petFeedNow(manual) {
+    var p = getPetInfo();
+    if (!p) { petLog("无宠物"); return false; }
+    if (petCmd(1)) {
+      if (manual) setStatus("已向宠物发送喂食指令", "ok");
+      return true;
+    }
+    return false;
+  }
+  function petLog(msg) { var el = $id("dsh-petlog"); if (el) el.textContent = msg; var el2 = $id("dsh-petlog2"); if (el2) el2.textContent = msg; }
+  function tickPetFeed() {
+    try {
+      var en = ($id("dsh-peten") && $id("dsh-peten").checked) || ($id("dsh-peten2") && $id("dsh-peten2").checked);
+      var now = Date.now();
+      // 每 2s 刷新状态显示
+      if (now - petLastRender > 2000) { petLastRender = now; renderPetInfo(); }
+      if (!en) return;
+      if (!clientReady()) return;
+      var p = getPetInfo();
+      if (!p) { petLog("无宠物，跳过"); return; }
+      var thr = parseInt(($id("dsh-petfeedhp") || $id("dsh-petfeedhp2")).value, 10) || 25;
+      var intv = (parseInt(($id("dsh-petfeedint") || $id("dsh-petfeedint2")).value, 10) || 10) * 1000;
+      if (p.hungry != null && p.hungry < thr && now - petLastFeed >= intv) {
+        if (petFeedNow(false)) petLog("饱食度 " + p.hungry + "<" + thr + "，已喂食");
+      }
+    } catch (e) {}
+  }
+  // 兼容旧辅助页宠物区块（已迁移到宠物/道具页；元素存在才绑定）
+  if ($id("dsh-petfeednow")) $id("dsh-petfeednow").addEventListener("click", function () { petFeedNow(true); });
+  if ($id("dsh-peten")) $id("dsh-peten").addEventListener("change", function () {
+    saved.petFeed = this.checked; saveSaved(saved);
+    if (this.checked) { if (!petFeedTimer) petFeedTimer = setInterval(tickPetFeed, 1000); tickPetFeed(); petLog("自动喂食已启用"); }
+    else { if (petFeedTimer) { clearInterval(petFeedTimer); petFeedTimer = null; } petLog("自动喂食已停"); }
+  });
+  if (saved.petFeed && $id("dsh-peten")) { $id("dsh-peten").checked = true; if (!petFeedTimer) petFeedTimer = setInterval(tickPetFeed, 1000); }
+
+  // ---------------- 宠物/职业道具页按钮（C阶段）----------------
+  // 召唤宠物蛋：SELECT_PETEGG（背包宠物蛋 index）
+  function findPetEgg() {
+    try {
+      var inv = findInventory();
+      if (!inv) return null;
+      var DB = CLIENT.DB || requireDB("DB/DBManager");
+      for (var i = 0; i < inv.length; i++) {
+        var it = inv[i] || {};
+        var itid = it.ITID != null ? it.ITID : (it.itemid != null ? it.itemid : null);
+        if (itid == null) continue;
+        var info = null;
+        try { info = DB && typeof DB.getItemInfo === "function" && DB.getItemInfo(itid); } catch (e) {}
+        var nm = (info && (info.identifiedDiSPlayName || info.name)) || "";
+        if (/宠物蛋|蛋|egg/i.test(nm) || (info && info.Type === 7)) return { index: it.index != null ? it.index : i, itid: itid, name: nm };
+      }
+      return null;
+    } catch (e) { return null; }
+  }
+  $id("dsh-petegg").addEventListener("click", function () {
+    try {
+      if (!clientReady()) { setStatus("客户端未就绪", "err"); return; }
+      var egg = findPetEgg();
+      if (!egg) { setStatus("背包未找到宠物蛋", "err"); return; }
+      var p = new CLIENT.PS.CZ.SELECT_PETEGG();
+      p.index = egg.index;
+      CLIENT.NM.sendPacket(p);
+      setStatus("已召唤宠物蛋 " + (egg.name || egg.itid), "ok");
+      tlog("pet-egg idx=" + egg.index);
+    } catch (e) { setStatus("召唤异常: " + e.message, "err"); }
+  });
+  $id("dsh-petback").addEventListener("click", function () {
+    if (petCmd(3)) setStatus("宠物已变蛋（收回）", "ok");
+  });
+  $id("dsh-petperf").addEventListener("click", function () {
+    if (petCmd(2)) setStatus("宠物表演指令已发送", "ok");
+  });
+  $id("dsh-petfeed2").addEventListener("click", function () { petFeedNow(true); });
+  $id("dsh-peten2").addEventListener("change", function () {
+    saved.petFeed = this.checked; saveSaved(saved);
+    if (this.checked) { if (!petFeedTimer) petFeedTimer = setInterval(tickPetFeed, 1000); tickPetFeed(); petLog("自动喂食已启用"); }
+    else { if (petFeedTimer) { clearInterval(petFeedTimer); petFeedTimer = null; } petLog("自动喂食已停"); }
+  });
+  if (saved.petFeed && $id("dsh-peten2")) { $id("dsh-peten2").checked = true; }
+
+  // 主循环里也顺带刷新宠物状态（不进辅助页也能看到）
+  var petTicker = setInterval(function () {
+    try {
+      if (clientReady() && $id("dsh-petinfo")) {
+        var now2 = Date.now();
+        // V2.5.0：渲染本体门控（后台隐藏跳过），喂食逻辑保留
+        if (!UI_BG && now2 - petLastRender > 2000) { petLastRender = now2; try { renderPetInfo(); } catch (e) {} }
+        var en2 = ($id("dsh-peten") && $id("dsh-peten").checked) || ($id("dsh-peten2") && $id("dsh-peten2").checked);
+        if (en2 && !petFeedTimer) petFeedTimer = setInterval(tickPetFeed, 1000);
+      }
+    } catch (e) {}
+  }, 3000);
+
+  // ---------------- B1：辅助对象 · 自动跟随玩家 ----------------
+  // 机制：读取目标玩家坐标 → 轮询 REQUEST_MOVE 靠近 → 距离 ≤ 设定值自动停（纯侦测，不走 shift+右键/内挂）
+  var followTargetGID = null, followLastMove = 0, followListCache = [];
+  function followLog(msg) { var el = $id("dsh-followlog"); if (el) el.textContent = msg; }
+  function scanPlayers() {
+    // 枚举附近玩家（objecttype=0=PC），排除自己
+    var sel = $id("dsh-followtarget");
+    if (!sel) return;
+    var list = [];
+    try {
+      if (!window.require) return;
+      var EM = window.require("Renderer/EntityManager");
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      var myGID = ent && ent.GID;
+      EM.forEach(function (e) {
+        if (e.objecttype !== 0) return;
+        if (e.GID === myGID) return;
+        var nm = (e.display && e.display.name) || e.displayName || e.name;
+        if (!nm) return;
+        list.push({ GID: e.GID, name: nm });
+      });
+    } catch (e) {}
+    followListCache = list;
+    var cur = sel.value;
+    var html = '<option value="">选择玩家…（' + list.length + '人）</option>';
+    for (var i = 0; i < list.length; i++) {
+      html += '<option value="' + list[i].GID + '"' + (String(list[i].GID) === cur ? " selected" : "") + '>' + list[i].name + '</option>';
+    }
+    sel.innerHTML = html;
+    followLog("侦测到 " + list.length + " 名玩家");
+  }
+  function getFollowTarget() {
+    try {
+      if (!window.require || !CLIENT.SS) return null;
+      var EM = window.require("Renderer/EntityManager");
+      var target = null;
+      EM.forEach(function (e) {
+        if (e.objecttype !== 0) return;
+        if (String(e.GID) === String(followTargetGID)) target = e;
+      });
+      return target;
+    } catch (e) { return null; }
+  }
+  function tickFollow() {
+    try {
+      var en = $id("dsh-followen") && $id("dsh-followen").checked;
+      if (!en) return;
+      if (moveXY && moveXY.busy) return; // 手动坐标走路中 → 跟随让位
+      if (!clientReady()) return;
+      var ent = CLIENT.SS.Entity;
+      if (!ent || !ent.position) return;
+      var tg = getFollowTarget();
+      if (!tg) { followLog("目标玩家不在附近（消失/换图）"); followTargetGID = null; return; }
+      if (!tg.position) return;
+      var now = Date.now();
+      var dist = parseInt($id("dsh-followdist").value, 10) || 3;
+      var d = Math.abs(tg.position[0] - ent.position[0]) + Math.abs(tg.position[1] - ent.position[1]);
+      if (d <= dist) {
+        followLog("已在跟随距离内（" + d + "≤" + dist + "），停止移动");
+        return; // 距离达标自动停
+      }
+      if (now - followLastMove < 1000) return; // 1s 节流
+      followLastMove = now;
+      // 用 A* 避障走向目标
+      var r = pathFindTo(tg.position[0], tg.position[1]);
+      if (!r) { followLog("目标不可达（避障失败）"); return; }
+      var pm = new CLIENT.PS.CZ.REQUEST_MOVE();
+      pm.dest = [r.x, r.y];
+      CLIENT.NM.sendPacket(pm);
+      followLog("跟随中… 距离 " + d + " 格（目标 " + ((tg.display && tg.display.name) || tg.name || tg.GID) + "）");
+    } catch (e) {}
+  }
+  $id("dsh-followscan").addEventListener("click", function () { scanPlayers(); });
+  $id("dsh-followtarget").addEventListener("change", function () {
+    followTargetGID = this.value ? this.value : null;
+    followLog(followTargetGID ? "跟随目标已设为 GID " + followTargetGID : "已清除跟随目标");
+  });
+  $id("dsh-followen").addEventListener("change", function () {
+    saved.followEn = this.checked; saveSaved(saved);
+    if (this.checked && !followTargetGID) { setStatus("请先选择跟随目标玩家", "err"); this.checked = false; return; }
+    followLog(this.checked ? "自动跟随已启用" : "自动跟随已停");
+    setStatus(this.checked ? "自动跟随已启用" : "自动跟随已停", "ok");
+  });
+  if (saved.followEn) { $id("dsh-followen").checked = true; }
+  // V2.5.0 性能：合并 5 根 1s 功能 tick → 单根 masterTick（减定时器数量）；后台隐藏时跳过纯 UI 渲染（降 CPU/垃圾回收）
+  var UI_BG = false; try { UI_BG = document.hidden; } catch (e) {}
+  try { document.addEventListener("visibilitychange", function () { UI_BG = document.hidden; }); } catch (e) {}
+  var masterTicks = [];
+  var lastCaptureAt = 0;
+  function masterTickReg(fn) { masterTicks.push(fn); }
+  setInterval(function () { for (var i = 0; i < masterTicks.length; i++) { try { masterTicks[i](); } catch (e) {} } }, 1000);
+  masterTickReg(function () { try { tickFollow(); } catch (e) {} });
+  setTimeout(scanPlayers, 3000);
+
+  // ---------------- B2：自动吃药（背包红/蓝药 + HP/SP 阈值）----------------
+  var potLastUse = 0;
+  function potLog(msg) { var el = $id("dsh-potlog"); if (el) el.textContent = msg; }
+  function findPotion(isHeal) {
+    // 读背包，找 红色药水(HP) 或 蓝色药水/圣水(SP)，按名字匹配
+    try {
+      var inv = findInventory();
+      if (!inv) return null;
+      var DB = CLIENT.DB || requireDB("DB/DBManager");
+      for (var i = 0; i < inv.length; i++) {
+        var it = inv[i] || {};
+        var itid = it.ITID != null ? it.ITID : (it.itemid != null ? it.itemid : null);
+        if (itid == null) continue;
+        var info = null;
+        try { info = DB && typeof DB.getItemInfo === "function" && DB.getItemInfo(itid); } catch (e) {}
+        var nm = (info && (info.identifiedDiSPlayName || info.name)) || "";
+        if (isHeal && /红色药水|红水|红色魔力药水|红草|药草/.test(nm)) return { index: it.index != null ? it.index : i, itid: itid, name: nm };
+        if (!isHeal && /蓝色药水|蓝水|蓝色魔力药水|圣水/.test(nm)) return { index: it.index != null ? it.index : i, itid: itid, name: nm };
+      }
+      return null;
+    } catch (e) { return null; }
+  }
+  // V2.21.0：助手「自动吃药」已与「自动使用物品」合并（同一套 HP/SP 条件 + 用物品机制，避免两边同时喝）。
+  //   tickPots 删除；红蓝药改由「一键加红蓝药」按钮生成规则，统一交给 tickItems 执行。
+  //   喝水线（用于「低血无药被围 → 升级瞬移」瀑布）改从物品列表里的 HP 规则取，没有则按 40%。
+  function potHpThr() {
+    try {
+      for (var i = 0; i < itemList.length; i++) { if (itemList[i] && itemList[i].cond === "hp") return itemList[i].condval || 40; }
+    } catch (e) {}
+    return 40;
+  }
+
+  // ---------------- B4：自动使用物品（点选背包 + 调序 + 条件触发）----------------
+  var itemList = (function () { try { return JSON.parse(localStorage.getItem("dsh_ro_itemlist")) || []; } catch (e) { return []; } })();
+  var itemPickIdx = -1;
+  function saveItemList() { try { localStorage.setItem("dsh_ro_itemlist", JSON.stringify(itemList)); } catch (e) {} renderItemList(); }
+  function itemCondText(it) {
+    var s = { manual: "手动", hp: "HP<" + it.condval + "%", sp: "SP<" + it.condval + "%", interval: "每" + it.condval + "s", status: "状态在身用" + (it.st ? "·" + it.st : ""), statusgone: "状态消失用" + (it.st ? "·" + it.st : "") }[it.cond] || it.cond;
+    return s;
+  }
+  function renderItemList() {
+    var el = $id("dsh-itemlist");
+    if (!el) return;
+    $id("dsh-itemcount").textContent = itemList.length + " 项";
+    if (!itemList.length) { el.innerHTML = '<span class="st">空（选物品加入，可拖拽调序）</span>'; return; }
+    var html = "";
+    for (var i = 0; i < itemList.length; i++) {
+      var it = itemList[i];
+      html += '<div class="list-item drag-item' + (i === itemPickIdx ? ' active' : '') + '" data-item-i="' + i + '" data-drag-i="' + i + '" draggable="true" style="cursor:grab" title="拖动调整顺序"><span class="dh">⠿</span><span>' + (i + 1) + '. ' + (it.name || ("ID" + it.itid)) + ' ×' + (it.count != null ? it.count : "?") + '</span>' +
+        '<span style="color:#5a6b7f;font-size:10px">' + itemCondText(it) + (it.st ? ' ·状态' + it.st : '') + '</span></div>';
+    }
+    el.innerHTML = html;
+    el.querySelectorAll("[data-item-i]").forEach(function (row) {
+      row.addEventListener("click", function () {
+        itemPickIdx = parseInt(this.getAttribute("data-item-i"), 10);
+        var itp = itemList[itemPickIdx];
+        if (itp) {
+          $id("dsh-itemcond").value = itp.cond || "manual";
+          $id("dsh-itemcondval").value = itp.condval != null ? itp.condval : 0;
+          if ($id("dsh-itemstatus")) $id("dsh-itemstatus").value = itp.st || "";
+        }
+        renderItemList();
+      });
+    });
+    enableDragSort(el, function (from, to) {
+      var moved = itemList.splice(from, 1)[0];
+      itemList.splice(to, 0, moved);
+      itemPickIdx = to;
+      saveItemList();
+      setStatus("物品顺序已调整（第" + (from + 1) + "→第" + (to + 1) + "）", "ok");
+    });
+  }
+  function loadInvItems() {
+    var sel = $id("dsh-itempick");
+    if (!sel) return;
+    var inv = findInventory();
+    if (!inv) { setStatus("背包未读取（登录后重试）", "err"); return; }
+    var DB = CLIENT.DB || requireDB("DB/DBManager");
+    var html = '<option value="">选择物品…</option>';
+    var seen = {};
+    for (var i = 0; i < inv.length; i++) {
+      var it = inv[i] || {};
+      var itid = it.ITID != null ? it.ITID : (it.itemid != null ? it.itemid : null);
+      if (itid == null || seen[itid]) continue;
+      var ityp = it.type != null ? it.type : it.itemType;
+      if (ityp != null && ityp !== 0 && ityp !== 2 && ityp !== 11) continue; // 只列可使用的消耗品（回复0/使用2/延迟11），剔装备4/防具5/卡片6/宠物/材料
+      seen[itid] = true;
+      var info = null;
+      try { info = DB && typeof DB.getItemInfo === "function" && DB.getItemInfo(itid); } catch (e) {}
+      var nm = (info && (info.identifiedDiSPlayName || info.name)) || ("ID" + itid);
+      html += '<option value="' + itid + '">' + nm + ' (ID' + itid + ')</option>';
+    }
+    sel.innerHTML = html;
+    setStatus("已读取背包 " + Object.keys(seen).length + " 种物品", "ok");
+  }
+  $id("dsh-itempickload").addEventListener("click", loadInvItems);
+  // V2.21.0 一键加红蓝药：从背包找红药/蓝药，生成 HP低于50% / SP低于30% 两条规则（可在列表里改数值）
+  $id("dsh-potquick").addEventListener("click", function () {
+    try {
+      if (!clientReady()) { setStatus("客户端未就绪，进图后再点", "err"); return; }
+      var hp = findPotion(true), sp = findPotion(false);
+      if (!hp && !sp) { setStatus("背包里没找到红药/蓝药（药名需含「红色药水/白色药水/蓝色药水」等关键词）", "err"); return; }
+      var added = 0;
+      var push = function (p, cond, val) {
+        if (!p) return;
+        for (var i = 0; i < itemList.length; i++) { if (itemList[i].itid === p.itid && itemList[i].cond === cond) return; }
+        itemList.push({ itid: p.itid, index: p.index, name: p.name, cond: cond, condval: val, st: "", stInv: false });
+        added++;
+      };
+      push(hp, "hp", 50); push(sp, "sp", 30);
+      saveItemList();
+      setStatus(added ? ("已加入 " + added + " 条红蓝药规则（HP低于50% / SP低于30%，可改数值）") : "红蓝药规则已存在，未重复添加", added ? "ok" : "warn");
+    } catch (e) { setStatus("一键加红蓝药失败: " + e.message, "err"); }
+  });
+  bindStatusAc($id("dsh-itemstatus"), $id("dsh-itemstatus-ac"));
+  (function () {
+    var icSel = $id("dsh-itemcond"), isIn = $id("dsh-itemstatus");
+    if (!icSel || !isIn) return;
+    function updateItemStatusHint() {
+      var need = icSel.value === "status" || icSel.value === "statusgone";
+      isIn.style.borderColor = need ? "#e6a23c" : "";
+      isIn.style.background = need ? "#fff7e6" : "";
+      isIn.placeholder = need ? (icSel.value === "status" ? "填状态：在身才用（如中毒ID）" : "填状态：消失才用（如加速ID）") : "状态中文/ID";
+    }
+    icSel.addEventListener("change", updateItemStatusHint);
+    updateItemStatusHint();
+  })();
+  $id("dsh-itempickadd").addEventListener("click", function () {
+    var sel = $id("dsh-itempick");
+    var itid = sel.value;
+    if (!itid) { setStatus("先选择物品", "err"); return; }
+    var inv = findInventory();
+    var found = null;
+    for (var i = 0; i < (inv ? inv.length : 0); i++) {
+      var it = inv[i] || {};
+      if (it.ITID === parseInt(itid, 10) || it.itemid === parseInt(itid, 10)) { found = { index: it.index != null ? it.index : i, itid: parseInt(itid, 10) }; break; }
+    }
+    var DB = CLIENT.DB || requireDB("DB/DBManager");
+    var info = null;
+    try { info = DB && typeof DB.getItemInfo === "function" && DB.getItemInfo(parseInt(itid, 10)); } catch (e) {}
+    var nm = (info && (info.identifiedDiSPlayName || info.name)) || ("ID" + itid);
+    var cond = $id("dsh-itemcond").value;
+    var condval = parseFloat($id("dsh-itemcondval").value) || 0;
+    var _isid = $id("dsh-itemstatus") ? statusIdOf($id("dsh-itemstatus").value) : -1;
+    // V2.15.4：未填状态时自动从已查明物品表带出状态ID（第一参考，可手动改）
+    if (_isid < 0) { var stA = DSH_ITEM_STATE[parseInt(itid, 10)]; if (stA && stA.length) { _isid = stA[0]; if ($id("dsh-itemstatus")) { $id("dsh-itemstatus").value = String(stA[0]); try { $id("dsh-itemstatus").setAttribute("data-sid", stA[0]); } catch (e) {} } } }
+    var ist = _isid >= 0 ? _isid : "";
+    itemList.push({ itid: parseInt(itid, 10), index: found ? found.index : -1, name: nm, cond: cond, condval: condval, st: ist, stInv: cond === "status" });
+    saveItemList();
+    setStatus("已加入物品 " + nm + "（" + itemCondText({ cond: cond, condval: condval, st: ist }) + "）", "ok");
+  });
+  $id("dsh-itemup").addEventListener("click", function () {
+    if (itemPickIdx > 0) { var t = itemList[itemPickIdx]; itemList[itemPickIdx] = itemList[itemPickIdx - 1]; itemList[itemPickIdx - 1] = t; itemPickIdx--; saveItemList(); }
+  });
+  $id("dsh-itemdown").addEventListener("click", function () {
+    if (itemPickIdx >= 0 && itemPickIdx < itemList.length - 1) { var t2 = itemList[itemPickIdx]; itemList[itemPickIdx] = itemList[itemPickIdx + 1]; itemList[itemPickIdx + 1] = t2; itemPickIdx++; saveItemList(); }
+  });
+  $id("dsh-itemdel").addEventListener("click", function () {
+    if (itemPickIdx >= 0) { itemList.splice(itemPickIdx, 1); itemPickIdx = -1; saveItemList(); }
+  });
+  $id("dsh-itemupd").addEventListener("click", function () {
+    if (itemPickIdx < 0) { setStatus("先点选列表里的物品", "err"); return; }
+    var itp = itemList[itemPickIdx];
+    if (!itp) return;
+    itp.cond = $id("dsh-itemcond").value;
+    itp.condval = parseFloat($id("dsh-itemcondval").value) || 0;
+    var _isid2 = $id("dsh-itemstatus") ? statusIdOf($id("dsh-itemstatus").value) : -1;
+    // V2.15.4：未填状态时自动从已查明物品表带出状态ID
+    if (_isid2 < 0) { var stB = DSH_ITEM_STATE[itp.itid]; if (stB && stB.length) { _isid2 = stB[0]; if ($id("dsh-itemstatus")) { $id("dsh-itemstatus").value = String(stB[0]); try { $id("dsh-itemstatus").setAttribute("data-sid", stB[0]); } catch (e) {} } } }
+    itp.st = _isid2 >= 0 ? _isid2 : "";
+    itp.stInv = itp.cond === "status";
+    saveItemList();
+    setStatus("已更新 " + (itp.name || ("ID" + itp.itid)) + " " + itemCondText(itp), "ok");
+  });
+  $id("dsh-itemen").addEventListener("change", function () { saved.itemEn = this.checked; saveSaved(saved); if (this.checked) hookStatusIcons(); });
+  $id("dsh-healfirst").addEventListener("change", function () { saved.healFirst = this.checked; saveSaved(saved); });
+  function tickItems() {
+    try {
+      var en = $id("dsh-itemen") && $id("dsh-itemen").checked;
+      if (!en || !itemList.length) return;
+      if (ordinaryCastBlocked()) return; // 紧急脱战绝对优先；确认位移前不执行普通恢复动作
+      if (!clientReady()) return;
+      var ent = CLIENT.SS.Entity;
+      if (!ent || !ent.life) return;
+      var now = Date.now();
+      var life = ent.life;
+      var hpPct = life.maxhp > 0 ? life.hp / life.maxhp * 100 : 100;
+      var spPct = life.maxsp > 0 ? life.sp / life.maxsp * 100 : 100;
+      for (var i = 0; i < itemList.length; i++) {
+        var it = itemList[i];
+        var fire = false;
+        if (it.cond === "hp" && hpPct < it.condval) fire = true;
+        else if (it.cond === "sp" && spPct < it.condval) fire = true;
+        else if (it.cond === "interval" && now - (it.last || 0) >= (it.condval * 1000)) fire = true;
+        else if (it.cond === "status" || it.cond === "statusgone") {
+          // 状态识别：status=状态在身才用(debuff 净化·中毒解毒)；statusgone=状态消失才用(buff 补)。5s 冷却防狂喝。
+          if (it.st && now - (it.last || 0) >= 5000) {
+            var istId = buffStId(it.st);
+            if (istId >= 0) {
+              var istOn = buffStateOn(istId);
+              fire = (it.cond === "status") ? istOn : !istOn;
+            }
+          }
+        }
+        if (!fire) continue;
+        if (it.cond === "hp" && saved.healFirst && Date.now() < selfHealHoldUntil) continue;
+        // 重新找背包 index（可能已变动）
+        var inv = findInventory();
+        var idx = -1, found = false;
+        if (inv) {
+          for (var k = 0; k < inv.length; k++) {
+            var ik = inv[k] || {};
+            if (ik.ITID === it.itid || ik.itemid === it.itid) { idx = ik.index != null ? ik.index : k; found = true; break; }
+          }
+        }
+        if (!found || idx < 0) { if (it.cond === "hp") potNoPotion = true; continue; } // 不复用陈旧格号，防止误用已换位的其他道具
+        it.index = idx;
+        if (it.cond === "hp") potNoPotion = false;
+        useItemByIndex(idx);
+        it.last = now;
+        return; // 每轮只用一项
+      }
+    } catch (e) {}
+  }
+  // 自愈先于物品规则；治愈不可用/冷却时，原有自动物品仍作为可配置兜底。
+  masterTickReg(function () { try { tickSelfHeal(); } catch (e) {} });
+  masterTickReg(function () { try { tickItems(); } catch (e) {} });
+  if (saved.itemEn) { $id("dsh-itemen").checked = true; hookStatusIcons(); }
+  $id("dsh-healfirst").checked = saved.healFirst === true;
+  renderItemList();
+
+  // ---------------- 自动装箭矢（V2.15.26）：箭矢耗尽 → 用魔法箭袋(2000030)放箭 → 装到装备栏 ----------------
+  var zArrow = { lastBag: 0, lastEquip: 0, lastLog: "", failBag: 0 };
+  function setArrowLog(msg) {
+    try {
+      if (msg === zArrow.lastLog) return; // 内容不变不重写（防闪）
+      zArrow.lastLog = msg;
+      var el = $id("dsh-arrowlog"); if (el) el.textContent = msg;
+    } catch (e) {}
+  }
+  // V2.16.27：读当前装备武器的武器类型（客户端 WeaponType：11=弓 13=乐器 14=鞭子）
+  // 自动换箭只在手持这三类武器时生效——其它职业没有箭矢槽，旧代码会一路走到
+  // 「背包无箭矢 → 使用魔法箭袋(2000030)」，白白消耗箭袋。
+  function readEquippedWeaponType() {
+    try {
+      var eq = null;
+      try { eq = window.require && window.require("UI/Components/Equipment/Equipment"); } catch (e1) {}
+      if (!eq && window.requireDB) { try { eq = window.requireDB("UI/Components/Equipment/Equipment"); } catch (e2) {} }
+      var slot = eq && eq.ui && eq.ui.find('.weapon .item[data-index]');
+      var index = slot && slot.length ? Number(slot.attr('data-index')) : null;
+      if (index == null || isNaN(index)) return { wt: -1, itid: null, why: "未装备武器" };
+      var item = (eq.getItemByIndex && eq.getItemByIndex(index)) || null;
+      if (!item) return { wt: -1, itid: null, why: "取不到武器实例" };
+      var itid = item.ITID != null ? item.ITID : item.itemid;
+      if (itid == null) return { wt: -1, itid: null, why: "武器无 ITID" };
+      var db = itipDB();
+      if (!db) return { wt: -1, itid: itid, why: "DB 不可用" };
+      if (typeof db.getWeaponType === "function") {
+        var t = Number(db.getWeaponType(itid));
+        return { wt: isNaN(t) ? -1 : t, itid: itid, why: "getWeaponType" };
+      }
+      // 兜底：ItemTable 的 ClassNum 就是武器类型（客户端 DBManager.getWeaponType 内部同逻辑）
+      var info = (db.getItemInfo && db.getItemInfo(itid)) || null;
+      var cn = info && info.ClassNum != null ? Number(info.ClassNum) : NaN;
+      return { wt: isNaN(cn) ? -1 : cn, itid: itid, why: "ClassNum兜底" };
+    } catch (e) { return { wt: -1, itid: null, why: "异常:" + e.message }; }
+  }
+  function readEquippedAmmo() {
+    try {
+      var eq = null;
+      try { eq = window.require && window.require("UI/Components/Equipment/Equipment"); } catch (e1) {}
+      if (!eq && window.requireDB) { try { eq = window.requireDB("UI/Components/Equipment/Equipment"); } catch (e2) {} }
+      var slot = eq && eq.ui && eq.ui.find('.ammo .item[data-index]');
+      var index = slot && slot.length ? Number(slot.attr('data-index')) : null;
+      if (index == null || isNaN(index)) return null; // 空槽/无箭矢槽
+      var item = (eq.getItemByIndex && eq.getItemByIndex(index)) || null;
+      if (!item) return null;
+      var cnt = item.count != null ? item.count : (item.amount != null ? item.amount : 0);
+      return { index: index, count: cnt, itid: item.ITID != null ? item.ITID : item.itemid };
+    } catch (e) { return null; }
+  }
+  function readBagArrows() {
+    var out = [];
+    try {
+      var inv = findInventory();
+      if (!inv) return out;
+      for (var i = 0; i < inv.length; i++) {
+        var it = inv[i] || {};
+        if (it.type !== 10) continue; // 10=箭矢
+        var cnt = it.count != null ? it.count : (it.amount != null ? it.amount : 0);
+        if (Number(cnt) <= 0) continue;
+        out.push({ index: it.index != null ? it.index : i, itid: it.ITID != null ? it.ITID : it.itemid, count: Number(cnt) });
+      }
+    } catch (e) {}
+    return out;
+  }
+  function equipArrow(index) {
+    try {
+      if (!clientReady() || index == null) return false;
+      var p = new CLIENT.PS.CZ.REQ_WEAR_EQUIP();
+      p.index = index;
+      p.wearLocation = 32768; // 箭矢槽（参考 ro-v4-extras MVP 换箭同款机制）
+      CLIENT.NM.sendPacket(p);
+      return true;
+    } catch (e) { return false; }
+  }
+  function tickArrow() {
+    try {
+      if (!clientReady()) return;
+      var en = $id("dsh-arrowen");
+      if (!en || !en.checked) { setArrowLog("未启用"); return; }
+      var now = Date.now();
+      // V2.16.27：先判武器类型，非弓/乐器/鞭子直接不动作（防止非弓箭手白耗魔法箭袋）
+      var wq = readEquippedWeaponType();
+      zArrow.wt = wq.wt; zArrow.wItid = wq.itid; zArrow.wWhy = wq.why;
+      if (wq.wt !== 11 && wq.wt !== 13 && wq.wt !== 14) {
+        setArrowLog("当前武器不是弓/乐器/鞭子（类型 " + wq.wt + "，武器ID " + (wq.itid == null ? "无" : wq.itid) + "），自动换箭不生效");
+        return;
+      }
+      var ammo = readEquippedAmmo();
+      var arrows = readBagArrows();
+      var bagN = arrows.reduce(function (a, b) { return a + b.count; }, 0);
+      // 已装箭矢且未耗尽 → 正常，仅刷新状态
+      if (ammo && ammo.count > 0) { setArrowLog("当前箭矢 ×" + ammo.count + (bagN > 0 ? "，背包箭矢 " + bagN + " 支" : "，背包无箭矢")); return; }
+      // 耗尽：背包有箭矢 → 直接装上
+      if (arrows.length) {
+        if (now - zArrow.lastEquip < 3000) return; // 3s 节流防反复
+        if (equipArrow(arrows[0].index)) { zArrow.lastEquip = now; setArrowLog("箭矢耗尽，已请求装上背包箭矢（余 " + bagN + " 支）"); }
+        return;
+      }
+      // 背包无箭矢 → 用魔法箭袋(2000030)放箭
+      if (now - zArrow.lastBag < 2000) return; // 2s 节流
+      if (useItemById(2000030)) { zArrow.lastBag = now; zArrow.failBag = 0; setArrowLog("箭矢耗尽且背包无箭，使用魔法箭袋(2000030)…"); }
+      else {
+        zArrow.failBag++;
+        setArrowLog(zArrow.failBag >= 3 ? "背包无箭矢且无魔法箭袋(2000030)，请准备箭袋" : "背包无箭矢，魔法箭袋(2000030)未找到");
+      }
+    } catch (e) {}
+  }
+  masterTickReg(function () { try { tickArrow(); } catch (e) {} });
+  if (saved.arrowEn === false) { var ae = $id("dsh-arrowen"); if (ae) ae.checked = false; } // V2.16.7：默认开，仅当用户明确关过(saved.arrowEn===false)才恢复为关
+
+  // ---------------- 背包快照定期上报（V2.15.27：复用仓库查询读取，到点上报道本机采集服务）----------------
+  var invShotLast = 0, invShotSent = 0, invShotFail = 0;
+  function renderInvShot() {
+    try { var el = $id("dsh-invshotlog"); if (el) el.textContent = "已上报 " + invShotSent + " 次" + (invShotFail ? "，失败 " + invShotFail + " 次" : ""); } catch (e) {}
+  }
+  function tickInvShot() {
+    try {
+      if (!clientReady()) return;
+      var en = $id("dsh-invshot"); if (!en || !en.checked) return;
+      var int = parseInt($id("dsh-invshotint") ? $id("dsh-invshotint").value : "120", 10);
+      if (!(int > 0)) int = 120;
+      var now = Date.now();
+      if (now - invShotLast < int * 1000) return;
+      invShotLast = now;
+      try { readStorageAndInventory(); } catch (e) {} // 复用仓库查询读取（背包必有，仓库需开窗）
+      var data = {};
+      try { data = JSON.parse(localStorage.getItem("dsh_ro_inventory_v1") || "{}"); } catch (e) {}
+      var account = (typeof getInventoryAccount === "function") ? getInventoryAccount() : "";
+      var charName = (typeof getCurrentCharName === "function") ? getCurrentCharName() : "";
+      var acc = (data[account] || {}), ch = (acc.characters || {})[charName] || {};
+      var bag = ch.bag || null, sto = acc.storage || null;
+      if (!bag && !sto) return;
+      if (typeof fetch !== "function") return;
+      fetch(INGEST_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "invshot", account: account, charName: charName, bag: bag, storage: sto, ts: new Date().toISOString() }) })
+        .then(function (r) { if (r && r.ok) invShotSent++; else invShotFail++; renderInvShot(); })
+        .catch(function () { invShotFail++; renderInvShot(); });
+    } catch (e) {}
+  }
+  masterTickReg(function () { try { tickInvShot(); } catch (e) {} });
+  try { renderInvShot(); } catch (e) {}
+  if (saved.invshot === false) { var iv = $id("dsh-invshot"); if (iv) iv.checked = false; }
+
+  // ---------------- B5：自动使用技能（点选技能栏主动辅助 · 调序）----------------
+  var askList = (function () {
+    try { ensureProfilesInit(); var k = activeProfileKey(); return (profiles[k] && profiles[k].askList) || []; } catch (e) { return []; }
+  })();
+  var askPickIdx = -1;
+  function saveAskList() {
+    try { var k = activeProfileKey(); ensureProfile(k); profiles[k].askList = askList; profiles[k].lastAt = Date.now(); saveProfiles(); } catch (e) {}
+    renderAskList();
+  }
+  function renderAskList() {
+    var el = $id("dsh-asklist");
+    if (!el) return;
+    $id("dsh-askcount").textContent = askList.length + " 项";
+    if (!askList.length) { el.innerHTML = '<span class="st">空（点选技能加入，可拖拽调序）</span>'; return; }
+    var html = "";
+    for (var i = 0; i < askList.length; i++) {
+      var s = askList[i];
+      html += '<div class="list-item drag-item' + (i === askPickIdx ? ' active' : '') + '" data-ask-i="' + i + '" data-drag-i="' + i + '" draggable="true" style="cursor:grab" title="拖动调整顺序"><span class="dh">⠿</span><span>' + (i + 1) + '. ' + (s.name || ("技能" + s.skid)) + ' Lv' + s.lv + '</span>' + (s.st ? '<span class="tag blue" style="margin-left:4px">' + (s.stInv ? "在身补" : "消失补") + (/^\d+$/.test(String(s.st)) ? "·状态" + s.st : "") + '</span>' : '<span class="tag gray" style="margin-left:4px;color:#8a97a6">按间隔放（未识别状态）</span>') + '</div>';
+    }
+    el.innerHTML = html;
+    el.querySelectorAll("[data-ask-i]").forEach(function (row) {
+      row.addEventListener("click", function () { askPickIdx = parseInt(this.getAttribute("data-ask-i"), 10); renderAskList(); });
+    });
+    enableDragSort(el, function (from, to) {
+      var moved = askList.splice(from, 1)[0];
+      askList.splice(to, 0, moved);
+      askPickIdx = to;
+      saveAskList();
+      setStatus("技能顺序已调整（第" + (from + 1) + "→第" + (to + 1) + "）", "ok");
+    });
+  }
+  function loadAskSkills() {
+    var sel = $id("dsh-askskill");
+    if (!sel) return;
+    var skills = learnedActiveSkills(); // 已学主动技能（含名字）
+    var html = '<option value="">选择技能…</option>';
+    for (var i = 0; i < skills.length; i++) {
+      html += '<option value="' + skills[i].skid + '">' + skills[i].name + ' Lv' + skills[i].lv + ' (ID' + skills[i].skid + ')</option>';
+    }
+    sel.innerHTML = html;
+    setStatus("已读取 " + skills.length + " 个已学主动技能", "ok");
+  }
+  $id("dsh-askskillload").addEventListener("click", loadAskSkills);
+  bindStatusAc($id("dsh-askdebuff"), $id("dsh-askdebuff-ac"));
+  bindStatusAc($id("dsh-askstatus"), $id("dsh-askstatus-ac")); // V2.10.5 自身状态输入框联想（内部只认ID/英文，中文仅展示辅助）
+  $id("dsh-askskilladd").addEventListener("click", function () {
+    var sel = $id("dsh-askskill");
+    var skid = parseInt(sel.value, 10);
+    if (!skid) { setStatus("先选择技能", "err"); return; }
+    if (askList.some(function (x) { return x.skid === skid; })) { setStatus("该技能已在列表", "err"); return; }
+    var skills = learnedActiveSkills();
+    var found = null;
+    for (var i = 0; i < skills.length; i++) if (skills[i].skid === skid) found = skills[i];
+    var sname = found ? found.name : getSkillNameById(skid);
+    // Debuff 判定：选中某 debuff → 存 debuff 状态 + stInv=true（该 debuff 在身才放，如缓速在身放加速术、诅咒在身放赐福）
+    var debuff = $id("dsh-askdebuff") ? $id("dsh-askdebuff").value.trim() : "";
+    if (debuff) {
+      var debId = statusIdOf(debuff);
+      askList.push({ skid: skid, lv: found ? found.lv : 5, name: sname, st: debId >= 0 ? debId : debuff, stInv: true });
+      saveAskList();
+      setStatus("已加入 " + sname + "（Debuff「" + debuff + "」在身才放" + (debId >= 0 ? "·ID" + debId : "·ID未识别，请从状态速查确认") + "）", debId >= 0 ? "ok" : "warn");
+      return;
+    }
+    // 自动判定条件 → 存数字状态ID（EFST）：判定语句用ID、UI 显示用中文技能名；buffStId 已修复返回 EFST
+    var stId = -1;
+    var cond = $id("dsh-askcond") ? $id("dsh-askcond").value : "self";
+    // V2.10.5 状态识别：内部只认数字ID/英文EFST；中文仅用于交互联想展示。自身状态框优先（消失才补），
+    // 填的数字/英文经 statusIdOf 直认；没填才回退旧「技能名→状态」自动识别（兼容旧配置）。
+    var selfSt = $id("dsh-askstatus") ? $id("dsh-askstatus").value.trim() : "";
+    if (cond === "self" && selfSt) {
+      stId = statusIdOf(selfSt);
+      if (stId < 0) { setStatus("未识别状态「" + selfSt + "」：请填数字ID或英文EFST（如 12 / INC_AGI），或从联想表点选", "warn"); return; }
+    } else if (cond && sname) {
+      stId = buffStId(sname); if (stId < 0) { for (var sk in SKILL_STATUS_SRC) { var arr = SKILL_STATUS_SRC[sk]; for (var ai = 0; ai < arr.length; ai++) { if (arr[ai] === skid) { var tryId = buffStId(sk); if (tryId >= 0) { stId = tryId; } break; } } if (stId >= 0) break; } }
+    }
+    askList.push({ skid: skid, lv: found ? found.lv : 5, name: sname, st: stId >= 0 ? stId : "", stInv: false });
+    saveAskList();
+    setStatus("已加入 " + sname + (stId >= 0 ? "（自身状态消失才补·ID" + stId + "）" : (cond === "party" ? "（队友判定待支持，暂按间隔）" : "（未识别状态，按间隔放）")), "ok");
+  });
+  $id("dsh-askup").addEventListener("click", function () {
+    if (askPickIdx > 0) { var t = askList[askPickIdx]; askList[askPickIdx] = askList[askPickIdx - 1]; askList[askPickIdx - 1] = t; askPickIdx--; saveAskList(); }
+  });
+  $id("dsh-askdown").addEventListener("click", function () {
+    if (askPickIdx >= 0 && askPickIdx < askList.length - 1) { var t2 = askList[askPickIdx]; askList[askPickIdx] = askList[askPickIdx + 1]; askList[askPickIdx + 1] = t2; askPickIdx++; saveAskList(); }
+  });
+  $id("dsh-askdel").addEventListener("click", function () {
+    if (askPickIdx >= 0) { askList.splice(askPickIdx, 1); askPickIdx = -1; saveAskList(); }
+  });
+  function tickAskSkills() {
+    try {
+      var en = $id("dsh-asken") && $id("dsh-asken").checked;
+      if (!en || !askList.length || !zRunning) return;
+      if (ordinaryCastBlocked()) return; // 紧急脱战期间禁止普通辅助技能抢占瞬移
+      if (!clientReady()) return;
+      var ent = CLIENT.SS.Entity;
+      if (!ent || !ent.life) return;
+      var now = Date.now();
+      var intv = (parseInt($id("dsh-askint").value, 10) || 120) * 1000;
+      var spMax = ent.life.sp_max != null ? ent.life.sp_max : ent.life.maxsp;
+      var spPct = spMax > 0 ? (ent.life.sp != null ? ent.life.sp / spMax * 100 : 100) : 100;
+      var spGuard = parseInt($id("dsh-asksp").value, 10) || 30;
+      if (spPct < spGuard) return;
+      // 修「掉 buff 不及时补」：去掉全局 askLastCast 门禁，改每技能独立 lastAt。
+      // 状态判活技能 = 状态消失/在身即补（仅 5s 防抖防重复）；无状态技能 = 按全局间隔放。
+      if (askDiagOn) console.log("[ASK-DIAG] tick start, askList.length=" + askList.length + " en=" + en + " spPct=" + spPct.toFixed(1) + " spGuard=" + spGuard);
+      var castAny = false;
+      for (var i = 0; i < askList.length; i++) {
+        var s = askList[i];
+        try {
+          if (!s.st) {
+            var learnedSt = dshLearnedStatus(s.skid);
+            if (learnedSt >= 0) { s.st = learnedSt; s.stInv = false; saveAskList(); }
+          }
+          if (s.st) {
+            var stId = buffStId(s.st);
+            if (stId < 0) {
+              // V2.15.30：状态名未识别不再静默跳过（否则该 buff 永不补，看起来只补第一个）——按全局间隔放兜底，并提示一次
+              if (!s.stWarned) { s.stWarned = true; setStatus("自动技能状态未识别：" + s.name + "（st=" + s.st + "），按间隔放兜底，建议填数字状态ID", "warn"); }
+              var elInv = s.lastAt ? (now - s.lastAt) : -1;
+              if (s.lastAt && now - s.lastAt < intv) { if (askDiagOn) console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " st=INVALID interval wait, elapsed=" + elInv); continue; }
+              if (askDiagOn) console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " st=INVALID will cast (interval fallback), elapsed=" + elInv);
+            } else {
+              var stOn = buffStateOn(stId);
+              // V2.15.5：集中攻击(357)特判——lastRO 客户端把 LK_CONCENTRATION(105) 渲染成霸体(ENDURE)图标，
+              // 状态图标 hook 只收到 update(1) 收不到 update(105)，判活改看 状态1(ENDURE) 兜底命中，
+              // 避免判活永远缺失导致每 5s 空放 + missCnt 退避 30s 循环。V2.15.30 适配新映射(stId=105)。
+              if (s.skid === 357 && (stId === 105 || stId === 3)) { stOn = stOn || buffStateOn(1); }
+              var need = s.stInv ? stOn : !stOn; // 在身补 / 消失补
+              if (!need) { s.missCnt = 0; if (askDiagOn) console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " st=" + s.st + " stId=" + stId + " stOn=" + stOn + " need=false"); continue; }
+              // 防抖：刚放出去状态未上身不重复；连续 2 次补后仍未上身（hook 未收到/状态实际加不上）→ 退避到全局间隔，避免每 5s 狂补
+              var waitMs = s.missCnt >= 2 ? 30000 : 5000; // V2.10.5 退避固定 30s（原 intv 120s 会卡死补状态）；上身通知会清零 missCnt
+              if (s.lastAt && now - s.lastAt < waitMs) { if (askDiagOn) console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " WAIT missCnt=" + (s.missCnt || 0) + " elapsed=" + (now - s.lastAt) + " waitMs=" + waitMs); continue; }
+              if (askDiagOn) console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " st=" + s.st + " stId=" + stId + " stOn=" + stOn + " need=true missCnt=" + (s.missCnt || 0));
+            }
+          } else {
+            var elapsed = s.lastAt ? (now - s.lastAt) : -1;
+            if (s.lastAt && now - s.lastAt < intv) { if (askDiagOn) console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " NO-ST interval wait, elapsed=" + elapsed); continue; } // 纯间隔技能
+            if (askDiagOn) console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " NO-ST will cast, elapsed=" + elapsed);
+          }
+          if (askDiagOn) console.log("[ASK-DIAG] CAST skid=" + s.skid + " lv=" + s.lv + " target=0");
+          var p = new CLIENT.PS.CZ.USE_SKILL();
+          p.SKID = s.skid;
+          p.selectedLevel = s.lv;
+          p.targetID = 0; // 对自己/无目标
+          dshCastMark(s.skid, s.lv, 0, "ask");
+          CLIENT.NM.sendPacket(p);
+          s.lastAt = now;
+          if (s.st) s.missCnt = (s.missCnt || 0) + 1; // 补了但判活仍缺 → missCnt++（连续2次退避到全局间隔）
+          castAny = true;
+          if (btDiagOn) btLog('ask-cast', 'skid=' + s.skid + ' st=' + s.st + ' stInv=' + !!s.stInv + ' missCnt=' + (s.missCnt || 0));
+        } catch (e) {
+          try { tlog("ask-cast-error skid=" + (s && s.skid) + " " + (e.message || e)); dshDiag("ask-cast-error", { skid: s && s.skid, error: String(e.message || e) }); } catch (e2) {}
+        }
+      }
+      if (castAny) {
+        dshDiag("ask-cast", { list: askList.length });
+        setStatus("自动技能已补缺失状态", "ok");
+      }
+    } catch (e) {}
+  }
+  // 一键补 buff 组合：手动快捷键触发，按 askList 顺序强制施放全部 buff（无视状态判活/间隔），
+  // 每技能约 300ms 链式施放；不受 dsh-asken 总开关影响；组合进行中再按忽略（防重入）。
+  var castComboBusy = false;
+  function castBuffCombo() {
+    if (castComboBusy) { setStatus("补 buff 组合进行中，请稍候", "warn"); return; }
+    if (!askList || !askList.length) { setStatus("补 buff 组合：buff 列表为空", "warn"); return; }
+    if (!clientReady() || !CLIENT.SS || !CLIENT.SS.Entity) { setStatus("补 buff 组合：未进入游戏", "warn"); return; }
+    castComboBusy = true;
+    var list = askList.slice(), idx = 0;
+    function next() {
+      if (idx >= list.length) { castComboBusy = false; setStatus("补 buff 组合完成", "ok"); return; }
+      var s = list[idx++];
+      try {
+        var p = new CLIENT.PS.CZ.USE_SKILL();
+        p.SKID = s.skid;
+        p.selectedLevel = s.lv;
+        p.targetID = 0;
+        dshCastMark(s.skid, s.lv, 0, "combo");
+        CLIENT.NM.sendPacket(p);
+      } catch (e) {
+        try { tlog("combo-cast-error skid=" + (s && s.skid) + " " + (e.message || e)); } catch (e2) {}
+      }
+      setTimeout(next, 300);
+    }
+    next();
+  }
+  masterTickReg(function () { try { tickAskSkills(); } catch (e) {} });
+  // 状态挂钩定时重试：asken 开着但 SI 模块未就绪时持续重试，确保 buffActive 判活表可用（否则状态判活失效）
+  setInterval(function () { try { if ($id("dsh-asken") && $id("dsh-asken").checked) hookStatusIcons(); } catch (e) {} }, 3000);
+  renderAskList();
+  // V2.10.8 修复：启动时从缓存恢复状态 ID + 改进回写逻辑
+  (function restoreStatusFromCache() {
+    try {
+      var cache = localStorage.getItem('dsh_ro_skill_status_v1');
+      if (!cache) return;
+      var statusMap = JSON.parse(cache);
+      var restored = 0;
+      
+      // V2.15.3：仅当 ask.st 为空时用缓存恢复（不覆盖用户手动设置）；用户已设置且与缓存冲突 → 缓存项视为误学删除并落盘
+      var dropped = 0;
+      askList.forEach(function(ask) {
+        if (!statusMap[ask.skid]) return;
+        var cachedSt = statusMap[ask.skid];
+        if (!ask.st) {
+          ask.st = cachedSt;
+          ask.stInv = false;
+          ask.missCnt = 0;
+          restored++;
+          console.log('[LEARN-DIAG] restore: skid=' + ask.skid + ' st -> ' + ask.st);
+        } else {
+          try {
+            if (buffStId(ask.st) !== parseInt(cachedSt, 10)) {
+              delete statusMap[ask.skid];
+              dropped++;
+              console.log('[LEARN-DIAG] drop mislearned cache: skid=' + ask.skid + ' manual st=' + ask.st + ' cached st=' + cachedSt);
+            } else {
+              ask.missCnt = 0;
+            }
+          } catch (e) {}
+        }
+      });
+      if (dropped > 0) { try { localStorage.setItem('dsh_ro_skill_status_v1', JSON.stringify(statusMap)); } catch (e) {} }
+      if (restored > 0) {
+        saveAskList();
+        console.log('[LEARN-DIAG] restored ' + restored + ' status IDs from cache');
+      }
+    } catch (e) {
+      console.error('[LEARN-DIAG] restore failed:', e);
+    }
+  })();
+  // V2.15.30：旧配置迁移——此前 BUFF_STATUS_CN 把 集中攻击(LKCONCENTRATION=105)/心神凝聚(CONCENTRATION=3) 写反，
+  // askList 已存 st 值也随之反了（集中攻击存 3、心神凝聚存 105）。按技能ID精确迁移互换，一次性标记防重复。
+  (function migrateConcentrationStatus() {
+    try {
+      if (localStorage.getItem('dsh_ro_st_migrate_v21530')) return;
+      var moved = 0;
+      askList.forEach(function (ask) {
+        if (ask.skid === 357 && parseInt(ask.st, 10) === 3) { ask.st = 105; moved++; }        // 旧集中攻击 st=3 → 105
+        else if (ask.skid === 45 && parseInt(ask.st, 10) === 105) { ask.st = 3; moved++; }    // 旧心神凝聚 st=105 → 3
+      });
+      if (moved > 0) { saveAskList(); console.log('[PROFILE] 集中攻击/心神凝聚 状态ID迁移 ' + moved + ' 项'); }
+      localStorage.setItem('dsh_ro_st_migrate_v21530', '1');
+    } catch (e) {}
+  })();
+  // V2.1.0 合并多辅助到辅助技能：旧 saved.buffs 文本（技能ID:等级:状态）迁移进 askList
+  if (saved.buffs) {
+    try {
+      var oldBuffs = parseBuffs(saved.buffs);
+      for (var obi = 0; obi < oldBuffs.length; obi++) {
+        var obb = oldBuffs[obi];
+        if (askList.some(function (x) { return x.skid === obb.skid; })) continue;
+        askList.push({ skid: obb.skid, lv: obb.lv, name: getSkillNameById(obb.skid), st: obb.st || "", stInv: obb.stInv || false });
+      }
+      saveAskList();
+      setStatus("已迁移旧多辅助 " + oldBuffs.length + " 项到辅助技能", "st");
+    } catch (e) {}
+    saved.buffs = "";
+  }
+  if (saved.buffInterval) { var abi = $id("dsh-askint"); if (abi) abi.value = saved.buffInterval; saved.buffInterval = ""; }
+  if (saved.buffSP) { var abs = $id("dsh-asksp"); if (abs) abs.value = saved.buffSP; saved.buffSP = ""; }
+  if (saved.buffEnabled) { var abe = $id("dsh-asken"); if (abe) abe.checked = true; saved.askEn = true; saved.buffEnabled = ""; saveSaved(saved); }
+  if (saved.askEn) { $id("dsh-asken").checked = true; hookStatusIcons(); }
+  $id("dsh-asken").addEventListener("change", function () { saved.askEn = this.checked; saveSaved(saved); if (this.checked) hookStatusIcons(); });
+  // V1.7.0 一次性清空：多辅助/自动技能 历史数据（用户要求默认清空「助手内按间隔自动施放的增益」）
+  if (!saved.uiClear170) {
+    try { askList.length = 0; saveAskList(); } catch (e) {}
+    saved.buffs = ""; saved.buffEnabled = false; saved.askEn = false;
+    saved.uiClear170 = true; saveSaved(saved);
+    var aek170 = $id("dsh-asken"); if (aek170) aek170.checked = false;
+    setStatus("已按新版本要求清空多辅助/自动技能历史列表", "st");
+  }
+
+  // ---------------- 标签页标题带账号（V2.15.6）----------------
+  // 登录成功后浏览器标签页标题 = 「仙境的传说 - 账号」；掉线闪烁期间闪「掉线了！」，结束恢复带账号标题。
+  // 无专门登录成功事件 → 5s 轻量轮询：客户端就绪且标题不符才设置；闪烁期间跳过避免互相覆盖。
+  var titleFlashing = false;
+  function baseTitle() {
+    var acct = state.account || (saved && saved.account) || "";
+    return acct ? ("仙境的传说 - " + acct) : "仙境的传说";
+  }
+  function applyBaseTitle() {
+    try {
+      if (titleFlashing) return;
+      if (clientReady() && document.title !== baseTitle()) document.title = baseTitle();
+    } catch (e) {}
+  }
+  setInterval(applyBaseTitle, 5000);
+
+  // ---------------- 掉线提醒 + 重连 ----------------
+  function hookDisconnect() {
+    try {
+      if (CLIENT.hooked) return;
+      if (!CLIENT.UI) CLIENT.UI = window.require && window.require("UI/UIManager");
+      if (!CLIENT.UI || typeof CLIENT.UI.showErrorBox !== "function") return;
+      var orig = CLIENT.UI.showErrorBox;
+      CLIENT.hooked = true;
+      CLIENT.UI.showErrorBox = function (msg) {
+        try { if (/断开/.test(String(msg || ""))) onDisconnect(msg); } catch (e) {}
+        return orig.apply(this, arguments);
+      };
+    } catch (e) {}
+  }
+  var reconnecting = false;
+  function onDisconnect(msg) {
+    if (reconnecting) return;
+    var doAlert = $id("dsh-alert") && $id("dsh-alert").checked;
+    var doReload = $id("dsh-reconn") && $id("dsh-reconn").checked && saved.account;
+    setStatus("注意：已断开连接", "err");
+    if (doAlert) {
+      var flashes = 0;
+      titleFlashing = true;
+      var iv = setInterval(function () {
+        document.title = (flashes++ % 2) ? "掉线了！" : baseTitle();
+        if (flashes > 14) { clearInterval(iv); titleFlashing = false; applyBaseTitle(); }
+      }, 600);
+    }
+    if (doReload) {
+      reconnecting = true;
+      setStatus("已断开，10 秒后自动重连…", "err");
+      setTimeout(function () { try { location.reload(); } catch (e) {} }, 10000);
+    }
+  }
+
+  // ---------------- 线路切换 ----------------
+  function switchServerUrl(cv) {
+    var href = location.href, hashIdx = href.indexOf("#");
+    var base = hashIdx >= 0 ? href.slice(0, hashIdx) : href;
+    var hash = hashIdx >= 0 ? href.slice(hashIdx) : "";
+    if (/[?&]cv=\d+/i.test(base)) base = base.replace(/([?&])cv=\d+/i, "$1cv=" + cv);
+    else base += (base.indexOf("?") >= 0 ? "&" : "?") + "cv=" + cv;
+    return base + hash;
+  }
+  var serverSel = $id("dsh-server");
+  serverSel.value = String(DEFAULTS.ClientVer);
+  serverSel.addEventListener("change", function () {
+    var v = parseInt(serverSel.value, 10);
+    if (v === DEFAULTS.ClientVer) return;
+    if (!window.confirm("切换线路将重启客户端并重新登录（" + (SERVER_NAMES[v] || "未知服") + "）。\n注意：两服账号不互通，切换后需用对应服的账号登录。")) {
+      serverSel.value = String(DEFAULTS.ClientVer);
+      return;
+    }
+    saved.server = v;
+    saveSaved(saved);
+    setStatus("已切换到「" + (SERVER_NAMES[v] || "未知服") + "」，正在重启客户端…", "ok");
+    tlog("switch-server cv=" + v);
+    location.replace(switchServerUrl(v));
+  });
+  $id("dsh-save").addEventListener("click", function () {
+    var acc = $id("dsh-acc").value.trim();
+    var pwd = $id("dsh-pwd").value;
+    if (!acc || !pwd) { setStatus("请填写账号和密码", "err"); return; }
+    saved.account = acc; saved.password = pwd;
+    saveSaved(saved);
+    setStatus("已保存，重启客户端生效", "ok");
+    renderWinInfo();
+  });
+  $id("dsh-clear").addEventListener("click", function () {
+    saved = {};
+    try {
+      var k = activeProfileKey(); ensureProfile(k);
+      profiles[k].saved = {}; profiles[k].lockList = {}; profiles[k].askList = [];
+      lockList = {}; askList = [];
+      localStorage.setItem(LS_KEY, JSON.stringify({}));
+      saveProfiles();
+    } catch (e) {}
+    $id("dsh-acc").value = ""; $id("dsh-pwd").value = "";
+    try { renderLockList(); renderAskList(); } catch (e) {}
+    setStatus("已清除", "st");
+  });
+  $id("dsh-reboot").addEventListener("click", function () { location.reload(); });
+  // 中转确认后登录已保存账号：默认打开不自动登录（防挤掉中转会话），用户在中转页确认后点此按钮
+  // → 用输入框当前账号（或已保存 saved）写 saved → 带 ?auto=1 重载（buildConfig 检测到 auto= 才注入 autoLogin）
+  $id("dsh-save-confirm").addEventListener("click", function () {
+    var acc = ($id("dsh-acc") && $id("dsh-acc").value.trim()) || saved.account;
+    var pwd = ($id("dsh-pwd") && $id("dsh-pwd").value) || saved.password;
+    if (!acc || !pwd) { setStatus("请先填写账号和密码（登录框）", "err"); return; }
+    saved.account = acc; saved.password = pwd; saved.server = DEFAULTS.ClientVer;
+    saveSaved(saved);
+    setStatus("中转确认完成，登录账号 " + acc + "…", "ok");
+    tlog("confirm-login saved account");
+    var u = switchServerUrl(DEFAULTS.ClientVer);
+    u = u.replace(/([?&])(run|auto)=/g, "$1auto=");
+    if (!/\bauto=/.test(u)) u += (u.indexOf("?") >= 0 ? "&" : "?") + "auto=1";
+    location.replace(u);
+  });
+  if (saved.account) { var accEl = $id("dsh-acc"); if (accEl) accEl.value = saved.account; }
+  if (saved.password) { var pwdEl = $id("dsh-pwd"); if (pwdEl) pwdEl.value = saved.password; }
+
+  // ---------------- V2.20.0 内挂齿轮直连（替代助手的「内挂配置」镜像页）----------------
+  // 游戏内挂窗口 = AMD 模块 UI/Components/vbk/vbk；右下角齿轮 = #vbk .btn.setAuto button.setAutokey。
+  // 点齿轮 = 游戏自己的开关（toggle #vbk .btns 的 setAuto 类），面板靠 CSS 显隐、DOM 常驻，
+  // 所以助手既能直接开它，也能在它没开的时候照样读写里面的值 —— 只有一份数据源，不会两边打架。
+  function neiGearBtn() {
+    var sels = ["#vbk .btn.setAuto .blocks button.setAutokey", "#vbk button.setAutokey", ".setAutokey"];
+    for (var i = 0; i < sels.length; i++) {
+      try { var el = document.querySelector(sels[i]); if (el) return el; } catch (e) {}
+    }
+    return null;
+  }
+  function neiGearIsOpen() {
+    try {
+      var b = document.querySelector("#vbk .btns");
+      return !!(b && b.className && String(b.className).indexOf("setAuto") >= 0);
+    } catch (e) { return false; }
+  }
+  function neiGearOpen() {
+    try {
+      if (neiGearIsOpen()) return true;
+      var btn = neiGearBtn();
+      if (!btn) return false;
+      btn.click();
+      return neiGearIsOpen();
+    } catch (e) { return false; }
+  }
+  // 切到内挂面板指定页签：openattack 战斗 / openpick 拾取 / openeat 吃药 / openfollow 模式
+  function neiGearTab(name) {
+    try {
+      if (!neiGearOpen()) return false;
+      var sp = document.querySelector("#vbk .btn.setAuto .container .content .nav span." + name);
+      if (!sp) return false;
+      sp.click();
+      return true;
+    } catch (e) { return false; }
+  }
+
+  // ---------------- 内挂桥接：读取战斗设置 ----------------
+  function readBot() {
+    var out = [];
+    try {
+      // V2.20.0：读不到内挂控件就先直接点开齿轮再读（面板 DOM 常驻，通常不需要这一步）
+      if (!document.querySelector(".onlyattack_block")) neiGearOpen();
+      var q = function (s) { return document.querySelector(s); };
+      var sv = function (s) { var el = q(s); return el ? el.value : null; };
+      var sm = q(".searchMode");
+      if (sm) {
+        out.push("寻怪: " + (sm.options[sm.selectedIndex] ? sm.options[sm.selectedIndex].textContent : sm.value));
+        var smT = $id("dsh-searchmode"); if (smT) smT.innerHTML = sm.innerHTML;
+      }
+      var ona = q(".onlynoattack");
+      if (ona) {
+        out.push("被攻: " + (ona.options[ona.selectedIndex] ? ona.options[ona.selectedIndex].textContent : ona.value));
+        var onaT = $id("dsh-onlynoattack"); if (onaT) onaT.innerHTML = ona.innerHTML;
+      }
+      var dt = sv(".disTarget");
+      if (dt != null) { var dtT = $id("dsh-distarget"); if (dtT) dtT.value = dt; out.push("距离: " + dt + "格"); }
+      var tg = [];
+      var checks = document.querySelectorAll(".onlyattack_block input");
+      for (var i = 0; i < checks.length; i++) {
+        var c = checks[i];
+        var mobid = c.getAttribute("data-id");
+        if (mobid && c.checked) tg.push(c.getAttribute("data-name") || mobid);
+      }
+      var tgT = $id("dsh-targets"); if (tgT) tgT.textContent = tg.length ? tg.join("、") : "（未勾选）";
+      out.push("目标: " + (tg.length ? tg.join("、") : "无"));
+      // 技能下拉（只显示已学）
+      fillSkillSelects();
+      // 防御设置
+      syncBotVal(".mobnumMin", "dsh-mobnummin");
+      syncBotVal(".mobnumMax", "dsh-mobnummax");
+      syncBotVal(".flytimer", "dsh-flytimer");
+      syncBotVal(".MinHpValFly", "dsh-minhpfly");
+      syncBotVal(".MinSpValFly", "dsh-minspfly");
+      syncBotVal(".MinHpVal", "dsh-minhpout");
+      syncBotCheck(".bossfly", "dsh-bossfly");
+      syncBotCheck(".opensit", "dsh-opensit");
+      syncNeiAddiFromPanel(); // V2.8.0：辅助技能多槽逐槽回填
+      syncBotVal(".AutoUseSit_reHpVal", "dsh-sithplo");
+      syncBotVal(".AutoUseSit_reHpUpVal", "dsh-sithphi");
+      syncBotVal(".AutoUseSit_reSpVal", "dsh-sitsplo");
+      syncBotVal(".AutoUseSit_reSpUpVal", "dsh-sitsphi");
+    } catch (e) { out.push("读取异常: " + e.message); }
+    if (!out.length) out.push("未找到内挂窗口（游戏内打开智能手机会话后重试）");
+    return out.join(" | ");
+  }
+  function syncBotVal(sel, id) {
+    try {
+      var el = document.querySelector(sel);
+      if (el && el.value != null) { var t = $id(id); if (t) t.value = el.value; }
+    } catch (e) {}
+  }
+  function syncBotCheck(sel, id) {
+    try {
+      var el = document.querySelector(sel);
+      if (el) { var t = $id(id); if (t) t.checked = !!el.checked; }
+    } catch (e) {}
+  }
+  // V2.16.5 助手坐下关联内挂：用户改助手坐下设置（开关+HP/SP四阈值）→ 直接写入内挂 DOM 字段，
+  //   内挂原生坐下（.opensit/.AutoUseSit_*）与助手自实现共用同一套值，不再两套判定打架。
+  //   内挂 DOM 不存在（未开内挂窗口）→ 静默跳过，助手自实现兜底。
+  var sitSyncGuard = false; // V2.16.8：防回环——pushSitToBot 触发内挂 change 时不回读助手（避免无限循环）
+  function pushSitToBot() {
+    try {
+      sitSyncGuard = true;
+      var fire = function (el) { try { if (el && typeof el.dispatchEvent === "function") el.dispatchEvent(new Event("change", { bubbles: true })); } catch (e) {} };
+      var setV = function (sel, v) { var el = document.querySelector(sel); if (el && el.value != null) { el.value = String(v); fire(el); } };
+      var setC = function (sel, c) { var el = document.querySelector(sel); if (el && el.checked !== !!c) { el.checked = !!c; fire(el); } };
+      var zsit = $id("dsh-z-sit");
+      setC(".opensit", zsit ? zsit.checked : true);
+      setV(".AutoUseSit_reHpVal", ($id("dsh-z-sithplo") && $id("dsh-z-sithplo").value) || 30);
+      setV(".AutoUseSit_reHpUpVal", ($id("dsh-z-sithphi") && $id("dsh-z-sithphi").value) || 80);
+      setV(".AutoUseSit_reSpVal", ($id("dsh-z-sitsplo") && $id("dsh-z-sitsplo").value) || 10);
+      setV(".AutoUseSit_reSpUpVal", ($id("dsh-z-sitsphi") && $id("dsh-z-sitsphi").value) || 70);
+    } catch (e) {}
+    sitSyncGuard = false;
+  }
+  // V2.16.5 助手坐下控件 change → 写入内挂（幂等，控件存在才挂）
+  try {
+    ["dsh-z-sit", "dsh-z-sithplo", "dsh-z-sithphi", "dsh-z-sitsplo", "dsh-z-sitsphi"].forEach(function (sid) {
+      var el = $id(sid);
+      if (el) el.addEventListener("change", function () { try { captureAll(); } catch (e) {} pushSitToBot(); });
+    });
+    pushSitToBot(); // 启动时同步一次（内挂窗口未开则静默）
+  } catch (e) {}
+  // V2.16.8 内挂坐下控件 change → 回读助手（双向同步，对齐怪物锁定 .onlyattack_block 的做法）
+  try {
+    document.addEventListener("change", function (e) {
+      if (sitSyncGuard) return;
+      var t = e.target;
+      if (!t || !t.matches) return;
+      try {
+        if (t.matches(".opensit")) {
+          var zsit2 = $id("dsh-z-sit");
+          if (zsit2) zsit2.checked = !!t.checked;
+          captureAll();
+        } else if (t.matches(".AutoUseSit_reHpVal") && $id("dsh-z-sithplo")) {
+          $id("dsh-z-sithplo").value = t.value; captureAll();
+        } else if (t.matches(".AutoUseSit_reHpUpVal") && $id("dsh-z-sithphi")) {
+          $id("dsh-z-sithphi").value = t.value; captureAll();
+        } else if (t.matches(".AutoUseSit_reSpVal") && $id("dsh-z-sitsplo")) {
+          $id("dsh-z-sitsplo").value = t.value; captureAll();
+        } else if (t.matches(".AutoUseSit_reSpUpVal") && $id("dsh-z-sitsphi")) {
+          $id("dsh-z-sitsphi").value = t.value; captureAll();
+        }
+      } catch (e2) {}
+    });
+  } catch (e) {}
+  // V2.16.5 解围技能下拉填充：独立函数，无论内挂 DOM 是否存在都执行（角色已学技能，保留已选值）。
+  //   根因：旧实现只在 fillSkillSelects 的 DB 分支（domSynced=false 时）填充 dsh-z-qoaskill，
+  //   而内挂窗口开过（DOM 存在）时 domSynced 提前 return，解围下拉永远停在空的「- 请选择 -」。
+  function fillZhuQoaskill() {
+    try {
+      var sel = $id("dsh-z-qoaskill");
+      if (!sel) return;
+      var DB = CLIENT.DB;
+      if (!DB) { CLIENT.DB = window.require && window.require("DB/DBManager"); DB = CLIENT.DB; }
+      if (!DB || typeof DB.getAllSkillInfo !== "function") return;
+      var info = DB.getAllSkillInfo();
+      if (!info) return;
+      var learned = {};
+      Object.keys(info).forEach(function (k) {
+        var s = info[k];
+        if (s && s.level > 0 && !isPassiveSkill(s.SKID != null ? s.SKID : k)) learned[s.SKID != null ? s.SKID : k] = s;
+      });
+      var ids = Object.keys(learned);
+      if (!ids.length) return;
+      var cur = sel.value;
+      var html = '<option value="">- 请选择 -</option>';
+      for (var i = 0; i < ids.length; i++) {
+        var nm = getSkillNameById(ids[i]) || (learned[ids[i]] && (learned[ids[i]].name || learned[ids[i]].SkillName)) || ids[i];
+        html += '<option value="' + ids[i] + '">' + nm + ' Lv' + (learned[ids[i]].level || "?") + '</option>';
+      }
+      sel.innerHTML = html;
+      // V2.16.7：换角色后已选技能不在新角色已学列表 → 清空（防读成上个角色的技能）
+      if (cur && learned[cur]) sel.value = cur;
+      else sel.value = "";
+    } catch (e) {}
+  }
+  // V2.16.5 周期兜底：解围下拉仍是空（未点「读取内挂」）且客户端 DB 就绪 → 自动填充；每 ~8s 检查一次，填上即停
+  try {
+    setInterval(function () {
+      try {
+        var selQ = $id("dsh-z-qoaskill");
+        if (!selQ) return;
+        if (selQ.options.length > 1) return; // 已有技能选项 → 不再重复填
+        fillZhuQoaskill();
+      } catch (e) {}
+    }, 8000);
+  } catch (e) {}
+  function fillSkillSelects() {
+    try {
+      fillZhuQoaskill(); // V2.16.5 解围技能独立填充：每次调用都执行（不再依赖 DB 分支是否到达）
+      // 优先：内挂 DOM 自己的技能下拉（带中文名 textContent）
+      var domMap = { "dsh-autoskill": ".autoskillid", "dsh-automatic": ".automaticid", "dsh-touchskill": ".touchskillid", "dsh-qoautoskill": ".qoautoskillid", "dsh-autoshadow": ".autoshadowid" };
+      var domSynced = false;
+      Object.keys(domMap).forEach(function (sid) {
+        var src = document.querySelector(domMap[sid]);
+        var tgt = $id(sid);
+        if (src && tgt && src.options && src.options.length > 1) {
+          // 内挂 option 的 value 常为空、data-index 才是技能ID → 转换
+          var html = '<option value="">- 请选择 -</option>';
+          for (var oi = 0; oi < src.options.length; oi++) {
+            var op = src.options[oi];
+            var val = op.value || op.getAttribute("data-index") || op.getAttribute("data-id") || "";
+            if (!val) continue;
+            // 过滤被动技能（data-index=SKID）
+            if (/^\d+$/.test(val) && isPassiveSkill(parseInt(val, 10))) continue;
+            html += '<option value="' + val + '">' + (op.textContent || val).trim() + '</option>';
+          }
+          tgt.innerHTML = html;
+          domSynced = true;
+        }
+      });
+      if (domSynced) return;
+      neiAddiFillOptions(); // V2.8.0：多槽辅助技能下拉填充（面板 option 优先，兜底已学技能）
+      var DB = CLIENT.DB;
+      if (!DB) { CLIENT.DB = window.require && window.require("DB/DBManager"); DB = CLIENT.DB; }
+      if (!DB || typeof DB.getAllSkillInfo !== "function") return;
+      var info = DB.getAllSkillInfo();
+      if (!info) return;
+      var learned = {};
+      Object.keys(info).forEach(function (k) {
+        var s = info[k];
+        // 只收主动技能（type≠0 或 SpAmount 非全0）；被动技能不参与自动施放
+        if (s && s.level > 0 && !isPassiveSkill(s.SKID != null ? s.SKID : k)) learned[s.SKID != null ? s.SKID : k] = s;
+      });
+      var ids = Object.keys(learned);
+      var map = { "dsh-autoskill": ids, "dsh-automatic": ids, "dsh-touchskill": ids, "dsh-qoautoskill": ids, "dsh-autoshadow": ids }; // V2.16.5 解围 dsh-z-qoaskill 已由 fillZhuQoaskill 独立填充
+      Object.keys(map).forEach(function (sid) {
+        var sel = $id(sid);
+        if (!sel) return;
+        var cur = sel.value;
+        var html = '<option value="">- 请选择 -</option>';
+        for (var i = 0; i < ids.length; i++) {
+          var nm = getSkillNameById(ids[i]) || (learned[ids[i]] && (learned[ids[i]].name || learned[ids[i]].SkillName)) || ids[i];
+          html += '<option value="' + ids[i] + '">' + nm + ' Lv' + (learned[ids[i]].level || "?") + '</option>';
+        }
+        sel.innerHTML = html;
+        if (cur) sel.value = cur;
+      });
+      setStatus("已读取内挂 + 已学技能 " + ids.length + " 个", "ok");
+    } catch (e) { console.log("[RO助手] fillSkillSelects: " + e.message); }
+  }
+  // ---------------- 内挂辅助技能多槽（V2.8.0）：每槽独立技能/等级/开关，可增删、整批导入 ----------------
+  function neiAddiDefault() { return [{ sid: "", lv: "10", on: true }]; }
+  function neiAddiLoad() {
+    if (Array.isArray(saved.neiAddi) && saved.neiAddi.length) return saved.neiAddi;
+    // 旧档案迁移：V2.8.0 之前单槽存于 saved.ui（dsh-addiskill/lv/op）
+    try {
+      var u = saved.ui || {};
+      if (u["dsh-addiskill"] || u["dsh-addiskilllv"] || u["dsh-addiskillop"]) {
+        var mig = [{ sid: String(u["dsh-addiskill"] || ""), lv: String(u["dsh-addiskilllv"] != null ? u["dsh-addiskilllv"] : "10"), on: !!u["dsh-addiskillop"] }];
+        saved.neiAddi = mig;
+        saveSaved(saved);
+        return mig;
+      }
+    } catch (e) {}
+    return neiAddiDefault();
+  }
+  function neiAddiFillOptions() {
+    try {
+      var sels = document.querySelectorAll(".dsh-addi-sel");
+      if (!sels.length) return;
+      var src = document.querySelector(".addiskillid");
+      var html = null;
+      if (src && src.options && src.options.length > 1) {
+        html = '<option value="">- 请选择 -</option>';
+        for (var oi = 0; oi < src.options.length; oi++) {
+          var op = src.options[oi];
+          var val = op.value || op.getAttribute("data-index") || op.getAttribute("data-id") || "";
+          if (!val) continue;
+          if (/^\d+$/.test(val) && isPassiveSkill(parseInt(val, 10))) continue;
+          html += '<option value="' + val + '">' + (op.textContent || val).trim() + '</option>';
+        }
+      } else {
+        var DB = CLIENT.DB;
+        if (!DB) { CLIENT.DB = window.require && window.require("DB/DBManager"); DB = CLIENT.DB; }
+        if (!DB || typeof DB.getAllSkillInfo !== "function") return;
+        var info = DB.getAllSkillInfo();
+        if (!info) return;
+        var learned = {};
+        Object.keys(info).forEach(function (k) {
+          var s = info[k];
+          if (s && s.level > 0 && !isPassiveSkill(s.SKID != null ? s.SKID : k)) learned[s.SKID != null ? s.SKID : k] = s;
+        });
+        var ids = Object.keys(learned);
+        html = '<option value="">- 请选择 -</option>';
+        for (var i = 0; i < ids.length; i++) {
+          var nm = getSkillNameById(ids[i]) || (learned[ids[i]] && (learned[ids[i]].name || learned[ids[i]].SkillName)) || ids[i];
+          html += '<option value="' + ids[i] + '">' + nm + ' Lv' + (learned[ids[i]].level || "?") + '</option>';
+        }
+      }
+      for (var si = 0; si < sels.length; si++) {
+        var cur = sels[si].value;
+        sels[si].innerHTML = html;
+        if (!cur) continue;
+        for (var oi2 = 0; oi2 < sels[si].options.length; oi2++) {
+          if (sels[si].options[oi2].value === cur) { sels[si].selectedIndex = oi2; break; }
+        }
+      }
+    } catch (e) { console.log("[RO助手] neiAddiFillOptions: " + e.message); }
+  }
+  function neiAddiRender() {
+    var box = $id("dsh-nei-addi");
+    if (!box) return;
+    var list = neiAddiLoad();
+    if (list.length > 6) { list = list.slice(0, 6); saved.neiAddi = list; }
+    var html = "";
+    for (var i = 0; i < list.length; i++) {
+      var it = list[i] || {};
+      var sid = String(it.sid || ""), lv = String(it.lv != null ? it.lv : "10"), on = !!it.on;
+      html += '<div class="row" style="gap:3px"><select class="dsh-addi-sel" data-i="' + i + '" style="flex:1 1 90px;min-width:0"><option>- 请选择 -</option></select>' +
+        '<span class="lb" style="min-width:22px">Lv</span><input class="dsh-addi-lv" data-i="' + i + '" type="number" value="' + lv + '" min="1" max="10" style="flex:0 0 34px">' +
+        '<label class="switch"><input class="dsh-addi-on" data-i="' + i + '" type="checkbox"' + (on ? " checked" : "") + '>开</label>' +
+        '<button class="ghost dsh-addi-del" data-i="' + i + '" style="flex:0 0 auto">删</button></div>';
+    }
+    box.innerHTML = html;
+    var cnt = $id("dsh-nei-addi-count");
+    if (cnt) cnt.textContent = list.length + " 槽";
+    neiAddiFillOptions();
+    var sels = box.querySelectorAll(".dsh-addi-sel");
+    for (var j = 0; j < sels.length; j++) {
+      var v = String((list[j] || {}).sid || "");
+      if (!v) continue;
+      for (var oi3 = 0; oi3 < sels[j].options.length; oi3++) {
+        if (sels[j].options[oi3].value === v) { sels[j].selectedIndex = oi3; break; }
+      }
+    }
+    box.querySelectorAll(".dsh-addi-sel").forEach(function (el) {
+      el.addEventListener("change", function () {
+        var k = parseInt(el.getAttribute("data-i"), 10);
+        var l2 = neiAddiLoad();
+        if (!l2[k]) l2[k] = { sid: "", lv: "10", on: true };
+        l2[k].sid = el.value;
+        saved.neiAddi = l2; saveSaved(saved);
+      });
+    });
+    box.querySelectorAll(".dsh-addi-lv").forEach(function (el) {
+      el.addEventListener("input", function () {
+        var k = parseInt(el.getAttribute("data-i"), 10);
+        var l2 = neiAddiLoad();
+        if (!l2[k]) l2[k] = { sid: "", lv: "10", on: true };
+        l2[k].lv = el.value;
+        saved.neiAddi = l2; saveSaved(saved);
+      });
+    });
+    box.querySelectorAll(".dsh-addi-on").forEach(function (el) {
+      el.addEventListener("change", function () {
+        var k = parseInt(el.getAttribute("data-i"), 10);
+        var l2 = neiAddiLoad();
+        if (!l2[k]) l2[k] = { sid: "", lv: "10", on: true };
+        l2[k].on = el.checked;
+        saved.neiAddi = l2; saveSaved(saved);
+      });
+    });
+    box.querySelectorAll(".dsh-addi-del").forEach(function (el) {
+      el.addEventListener("click", function () {
+        var k = parseInt(el.getAttribute("data-i"), 10);
+        var l2 = neiAddiLoad();
+        if (l2.length <= 1) { setStatus("至少保留 1 个辅助技能槽", "warn"); return; }
+        l2.splice(k, 1);
+        saved.neiAddi = l2; saveSaved(saved);
+        neiAddiRender();
+      });
+    });
+  }
+  var neiAddiAddBtn = $id("dsh-nei-addi-add");
+  if (neiAddiAddBtn) neiAddiAddBtn.addEventListener("click", function () {
+    var l2 = neiAddiLoad();
+    if (l2.length >= 6) { setStatus("辅助技能最多 6 槽", "warn"); return; }
+    l2.push({ sid: "", lv: "10", on: true });
+    saved.neiAddi = l2; saveSaved(saved);
+    neiAddiRender();
+  });
+  var neiAddiClearBtn = $id("dsh-nei-addi-clear");
+  if (neiAddiClearBtn) neiAddiClearBtn.addEventListener("click", function () {
+    saved.neiAddi = neiAddiDefault(); saveSaved(saved); neiAddiRender();
+    setStatus("已清空辅助技能（保留 1 空槽）", "ok");
+  });
+  var neiAddiImportBtn = $id("dsh-nei-addi-import"), neiAddiImportBox = $id("dsh-nei-addi-importbox");
+  if (neiAddiImportBtn && neiAddiImportBox) neiAddiImportBtn.addEventListener("click", function () {
+    var show = neiAddiImportBox.style.display === "none";
+    neiAddiImportBox.style.display = show ? "flex" : "none";
+    if (show) { var ta = $id("dsh-nei-addi-importta"); if (ta) ta.focus(); }
+  });
+  var neiAddiImportCancel = $id("dsh-nei-addi-importcancel");
+  if (neiAddiImportCancel) neiAddiImportCancel.addEventListener("click", function () {
+    var b = $id("dsh-nei-addi-importbox"); if (b) b.style.display = "none";
+  });
+  var neiAddiImportOk = $id("dsh-nei-addi-importok");
+  if (neiAddiImportOk) neiAddiImportOk.addEventListener("click", function () {
+    try {
+      var ta = $id("dsh-nei-addi-importta");
+      var parsed = [], skipped = [];
+      String(ta ? ta.value : "").split(/\r?\n/).forEach(function (lnRaw) {
+        var ln = String(lnRaw || "").replace(/#.*$/, "").trim();
+        if (!ln) return;
+        var parts = ln.split(":");
+        var nameOrId = (parts[0] || "").trim();
+        var lv2 = parts[1] !== undefined && String(parts[1]).trim().length ? parseInt(parts[1], 10) : 10;
+        if (isNaN(lv2) || lv2 <= 0 || lv2 > 10) lv2 = 10;
+        if (/^\d+$/.test(nameOrId)) { parsed.push({ sid: nameOrId, lv: String(lv2), on: true }); }
+        else {
+          var sid3 = neiSkillIdByName(nameOrId);
+          if (sid3) parsed.push({ sid: String(sid3), lv: String(lv2), on: true });
+          else skipped.push(nameOrId);
+        }
+      });
+      if (!parsed.length) { setStatus("未解析到任何辅助技能行（格式：技能名或ID:等级）", "warn"); return; }
+      if (parsed.length > 6) parsed = parsed.slice(0, 6);
+      saved.neiAddi = parsed; saveSaved(saved);
+      neiAddiRender();
+      setStatus("已导入 " + parsed.length + " 个辅助技能槽" + (skipped.length ? "；未识别跳过：" + skipped.join("、") : ""), "ok");
+      if (ta) ta.value = "";
+      var b2 = $id("dsh-nei-addi-importbox"); if (b2) b2.style.display = "none";
+    } catch (e) { setStatus("导入异常: " + e.message, "err"); }
+  });
+  function neiSkillIdByName(nm) {
+    try {
+      var DB = CLIENT.DB;
+      if (!DB) { CLIENT.DB = window.require && window.require("DB/DBManager"); DB = CLIENT.DB; }
+      if (!DB || typeof DB.getAllSkillInfo !== "function") {
+        var dsel = document.querySelector(".dsh-addi-sel");
+        if (dsel) {
+          var found = null, n = 0;
+          for (var oi4 = 0; oi4 < dsel.options.length; oi4++) {
+            if (String(dsel.options[oi4].textContent || "").indexOf(nm) >= 0) { n++; if (n === 1) found = dsel.options[oi4].value; }
+          }
+          return n === 1 ? found : null;
+        }
+        return null;
+      }
+      var info = DB.getAllSkillInfo(); if (!info) return null;
+      var exact = null, exactN = 0, pre = null, preN = 0;
+      Object.keys(info).forEach(function (k) {
+        var s = info[k];
+        if (!s || !(s.level > 0)) return;
+        var skid = s.SKID != null ? s.SKID : k;
+        if (isPassiveSkill(skid)) return;
+        var nm2 = getSkillNameById(skid) || s.SkillName || s.name || "";
+        if (!nm2) return;
+        if (String(nm2) === nm) { exactN++; if (exactN === 1) exact = skid; }
+        if (String(nm2).indexOf(nm) >= 0) { preN++; if (preN === 1) pre = skid; }
+      });
+      if (exactN === 1) return exact;
+      return preN === 1 ? pre : null;
+    } catch (e) { return null; }
+  }
+  function syncNeiAddiFromPanel() {
+    try {
+      var sels = document.querySelectorAll(".addiskillid");
+      var lvs = document.querySelectorAll(".addiskilllv");
+      var ops = document.querySelectorAll(".addiskillop");
+      if (!sels.length) return;
+      var list = Array.isArray(saved.neiAddi) ? saved.neiAddi.slice() : [];
+      for (var i = 0; i < sels.length; i++) {
+        var sel = sels[i];
+        var sid = "";
+        if (sel.selectedIndex >= 0 && sel.options[sel.selectedIndex]) {
+          var opx = sel.options[sel.selectedIndex];
+          sid = opx.value || opx.getAttribute("data-index") || opx.getAttribute("data-id") || "";
+        }
+        var lv = lvs[i] && lvs[i].value != null ? lvs[i].value : "";
+        var on = ops[i] ? !!ops[i].checked : true;
+        if (i < list.length) list[i] = { sid: sid, lv: String(lv), on: on };
+        else list.push({ sid: sid, lv: String(lv), on: on });
+      }
+      saved.neiAddi = list; saveSaved(saved);
+      neiAddiRender();
+    } catch (e) { console.log("[RO助手] syncNeiAddiFromPanel: " + e.message); }
+  }
+  neiAddiRender();
+  $id("dsh-readbot").addEventListener("click", function () {
+    setStatus("内挂: " + readBot(), "ok");
+  });
+  // V2.20.0 内挂齿轮直连按钮
+  try {
+    $id("dsh-open-gear").addEventListener("click", function () {
+      if (neiGearOpen()) { neiGearTab("openattack"); setStatus("已打开游戏内挂设置（战斗设置页）", "ok"); }
+      else setStatus("没找到内挂齿轮（客户端内挂组件未就绪，进图后再试）", "err");
+    });
+    $id("dsh-open-gear-skill").addEventListener("click", function () {
+      if (neiGearOpen()) { neiGearTab("openattack"); setStatus("已打开游戏内挂设置（技能在战斗设置页里）", "ok"); }
+      else setStatus("没找到内挂齿轮（客户端内挂组件未就绪，进图后再试）", "err");
+    });
+  } catch (e) {}
+  // ---------------- 内挂 DOM 探查（V2.15.9 一次性工具：拿内挂窗口真实控件位置，服务端落盘）----------------
+  // 用法：游戏里打开内挂窗口（任意页）→ 点「探查内挂DOM」→ 自动 POST 到本地 8899 落盘 collect.log / p-*.json
+  var NEI_ANCHOR_SELS = [".startButton", ".setAutokey", ".openattack", ".searchMode", ".onlynoattack", ".disTarget", ".onlyattack_block", ".mobnumMin", ".mobnumMax", ".flytimer", ".MinHpValFly", ".MinSpValFly", ".MinHpVal", ".bossfly", ".opensit", ".AutoUseSit_reHpVal", ".openpick", ".lootProbability", ".setAutoBlock"];
+  function neiFindRoot() {
+    // 从已知内挂锚点向上找「包含最多锚点」的容器（即内挂窗口本体，含隐藏 tab）
+    try {
+      var els = [];
+      for (var i = 0; i < NEI_ANCHOR_SELS.length; i++) {
+        try { var el = document.querySelector(NEI_ANCHOR_SELS[i]); if (el) els.push(el); } catch (e) {}
+      }
+      if (!els.length) return null;
+      var best = null, bestN = 1, n = els[0].parentElement;
+      for (var d = 0; n && d < 20; d++, n = n.parentElement) {
+        var hit = 0;
+        for (var j = 0; j < els.length; j++) { if (n === els[j] || (n.contains && n.contains(els[j]))) hit++; }
+        if (hit > bestN) { bestN = hit; best = n; }
+      }
+      return best || els[0].parentElement;
+    } catch (e) { return null; }
+  }
+  function neiProbe() {
+    var out = [];
+    var items = [];
+    try {
+      var root = neiFindRoot();
+      out.push("### 容器: " + (root ? (root.tagName.toLowerCase() + (root.id ? "#" + root.id : "") + (root.className ? "." + String(root.className).split(" ").slice(0, 3).join(".") : "")) : "未定位(改用全页可见控件)"));
+      var pool = [];
+      if (root) { try { pool = Array.prototype.slice.call(root.querySelectorAll("select, input, button")); } catch (e) {} }
+      if (!pool.length) { try { pool = Array.prototype.slice.call(document.querySelectorAll("select, input, button")).filter(function (el) { return el.offsetParent != null; }); } catch (e) {} }
+      for (var i = 0; i < pool.length && items.length < 300; i++) {
+        var el = pool[i];
+        var cls = (el.className && el.className.baseVal != null ? el.className.baseVal : el.className) || "";
+        var vis = el.offsetParent != null;
+        var val = "";
+        if (el.tagName === "SELECT") {
+          var opts = [];
+          for (var o = 0; o < el.options.length && o < 30; o++) {
+            var op = el.options[o];
+            opts.push((op.textContent || op.text || "").trim().replace(/\s+/g, " ") + "=" + op.value + (op.selected ? "*" : ""));
+          }
+          val = opts.join(" | ");
+        } else if (el.type === "checkbox" || el.type === "radio") {
+          val = el.checked ? "开" : "关";
+        } else if (el.tagName === "BUTTON") {
+          val = (el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 24);
+        } else {
+          val = String(el.value == null ? "" : el.value).slice(0, 30);
+        }
+        items.push((vis ? "" : "[隐藏] ") + el.tagName.toLowerCase() + (el.type ? "[" + el.type + "]" : "") + (el.id ? "#" + el.id : "") + (cls ? "." + String(cls).split(" ")[0] : "") + " = " + val);
+      }
+      out.push("### 控件 " + items.length + " 个（[隐藏]=当前 tab 不可见但仍存在）");
+      out = out.concat(items);
+    } catch (e) { out.push("探查异常: " + e.message); }
+    var txt = out.join("\n");
+    var sent = false;
+    try {
+      fetch("http://127.0.0.1:8899/api/acct/probe", { method: "POST", body: JSON.stringify({ t: "probe-neidom", ts: new Date().toISOString(), url: location.href, dom: txt }) })
+        .then(function () { sent = true; }).catch(function () { sent = false; });
+      sent = true;
+    } catch (e) { sent = false; }
+    setStatus(sent ? "内挂 DOM 探查已发送（" + items.length + " 个控件）" : "探查完成但发送失败（请先启动中心服务 8899）", sent ? "ok" : "err");
+    var ta = document.createElement("textarea");
+    ta.value = txt;
+    ta.style.cssText = "position:fixed;top:8%;left:8%;width:84%;height:76%;z-index:999999;font-size:12px;background:#fff;color:#000;";
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    try { alert(sent ? "探查完成：已发送 " + items.length + " 个控件到本地服务，弹窗内容已全选可复制备用。" : "发送失败（请先启动中心服务 8899）。弹窗内容已全选，请 Ctrl+C 复制发我。"); } catch (e) {}
+  }
+  $id("dsh-probe-neidom").addEventListener("click", function () { neiProbe(); });
+  // 内挂开关真实状态：读聊天窗绿色系统字（服务器回执「开启自动战斗/关闭自动战斗」）。
+  // 内挂开关是单一 toggle（点一次翻转一次），点击前必须判断真实状态，否则把已开翻成关。
+  var CHAT_BATTLE_SELS = ['#chatbox .containers .border', '#chatbox .containers', '#chatbox .border', '#chatbox', '.chatbox .containers .border', '.chatbox .border', '.chatbox'];
+  function readChatBattle() {
+    try {
+      for (var i = 0; i < CHAT_BATTLE_SELS.length; i++) {
+        var el = document.querySelector(CHAT_BATTLE_SELS[i]);
+        if (!el) continue;
+        var ps = el.querySelectorAll('p');
+        var st = null;
+        for (var j = 0; j < ps.length; j++) {
+          var t = String(ps[j].textContent || '').trim();
+          if (/开启自动战斗/.test(t)) st = true;
+          else if (/关闭自动战斗/.test(t)) st = false;
+        }
+        if (st !== null) return st; // 返回最后一条开关回执
+      }
+    } catch (e) {}
+    return null; // 聊天框没读到开关回执（未知）
+  }
+  // 登录角色后自动读取内挂配置（一次性 + 读不到重试几次，等内挂窗口渲染）
+  var autoReadBotDone = false, autoReadBotTries = 0;
+  function autoReadBotOnce() {
+    try {
+      var r = readBot();
+      if (autoReadBotTries < 5 && /未找到内挂窗口/.test(r || "")) {
+        autoReadBotTries++;
+        setTimeout(autoReadBotOnce, 2500);
+      }
+    } catch (e) {}
+  }
+  function npBattleState() {
+    var panelState = npReadPanelState();
+    if (panelState !== null) return panelState;
+    var chatState = readChatBattle();
+    if (chatState !== null) return chatState;
+    return npBattleKnown ? !!npHuntOn : null;
+  }
+  function setBattle(on) {
+    // 当前 checkbox 是权威状态；聊天回执只在面板不可读时兜底。
+    var real = npBattleState();
+    dshDiag("set-battle", { on: on, real: real, panel: npReadPanelState(), chat: readChatBattle() });
+    if (real === !!on) {
+      npHuntOn = !!on;
+      setStatus("内挂自动战斗已处于" + (on ? "开启" : "关闭") + "状态，无需重复操作", "ok");
+      return;
+    }
+    // 面板未打开也直接复用内挂的 toggle 协议；一次操作只发一次，绝不自动重试反相。
+    if (!npToggleHunt()) { setStatus("内挂开关发送失败：客户端未就绪", "err"); return; }
+    npHuntOn = !!on; npBattleKnown = true;
+    setStatus("已请求" + (on ? "开启" : "关闭") + "内挂自动战斗，正在校准", "ok");
+    setTimeout(function () {
+      var actual = npBattleState();
+      if (actual !== null) { npHuntOn = actual; npBattleKnown = true; }
+      qswPaint();
+      setStatus(actual === null ? "内挂自动战斗：等待状态回执" : ("内挂自动战斗：" + (actual ? "已开启" : "已关闭") + (actual === !!on ? "" : "（未切换到目标状态）")), actual === null ? "warn" : (actual === !!on ? "ok" : "warn"));
+    }, 350);
+    tlog("setBattle on=" + on + " real=" + real);
+  }
+  $id("dsh-battleon").addEventListener("click", function () { setBattle(true); });
+  $id("dsh-battleoff").addEventListener("click", function () { setBattle(false); });
+
+  // ---------------- 模拟内挂指令（直接发服务器 · 套用内挂机制）----------------
+  // 机制（vbk 逆向）：二转 ClientVer=5 → CZ.NOTIFY_UPDATEINFO{id,value}；三转 ClientVer=3 → CZ.WHISPER{receiver:"NPC:setauto*", msg:"0"}
+  // id: 34=自动战斗(含移动寻怪) 35=自动拾取 36=自动吃药 37=自动跟随 38=寻怪模式(0移动/1范围/2原地)
+  function npLog(msg) { var el = $id("dsh-np-log"); if (el) el.textContent = msg; }
+  function npIsThree() { return DEFAULTS.ClientVer === 3; }
+  function npSendUpdate(id, value) {
+    try {
+      if (!clientReady()) { npLog("客户端未就绪"); return false; }
+      var p = new CLIENT.PS.CZ.NOTIFY_UPDATEINFO();
+      p.id = id; p.value = value;
+      CLIENT.NM.sendPacket(p);
+      return true;
+    } catch (e) { npLog("发包异常: " + e.message); return false; }
+  }
+  function npSendWhisper(receiver) {
+    try {
+      if (!clientReady()) { npLog("客户端未就绪"); return false; }
+      var p = new CLIENT.PS.CZ.WHISPER();
+      p.receiver = receiver; p.msg = "0";
+      CLIENT.NM.sendPacket(p);
+      return true;
+    } catch (e) { npLog("发包异常: " + e.message); return false; }
+  }
+  function npCmd(label, id3, id5, val) {
+    // 三转 → WHISPER NPC:setauto*；二转 → NOTIFY_UPDATEINFO
+    if (npIsThree()) {
+      var ok = npSendWhisper(id3);
+      npLog((ok ? "成功 " : "失败 ") + label + "（三转 WHISPER " + id3 + "）");
+    } else {
+      var ok2 = npSendUpdate(id5, val != null ? val : 1);
+      npLog((ok2 ? "成功 " : "失败 ") + label + "（二转 UPDATEINFO id=" + id5 + " val=" + (val != null ? val : 1) + "）");
+    }
+    setStatus("已发送模拟内挂指令：" + label, "ok");
+    tlog("np-cmd " + label + " cv=" + DEFAULTS.ClientVer);
+  }
+  $id("dsh-np-atk").addEventListener("click", function () {
+    npCmd("开自动战斗(移动寻怪)", "NPC:setautoattack", 34, 1);
+    // 三转开自动战斗后也清掉客户端导航目标（同 vbk z.removeDestination()）
+    try { var MM = window.require && window.require("UI/Components/MiniMap/MiniMap"); if (MM && MM.removeDestination) MM.removeDestination(); } catch (e) {}
+  });
+  $id("dsh-np-pick").addEventListener("click", function () { npCmd("开自动拾取", "NPC:setautopick", 35, 1); });
+  $id("dsh-np-eat").addEventListener("click", function () { npCmd("开自动吃药", "NPC:setautoeat", 36, 1); });
+  $id("dsh-np-hunt").addEventListener("click", function () {
+    var v = parseInt($id("dsh-np-huntmode").value, 10);
+    if (isNaN(v)) v = 0;
+    // 寻怪模式仅二转 UPDATEINFO id=38；三转无此字段则提示
+    if (npIsThree()) { npLog("三转寻怪模式由 NPC:setautoattack 自动处理，无需单独发送"); setStatus("三转：自动战斗已含移动寻怪", "ok"); return; }
+    var ok = npSendUpdate(38, v);
+    npLog((ok ? "成功 " : "失败 ") + "寻怪模式已设为 " + ["移动", "范围", "原地"][v] + "寻怪（id=38 val=" + v + "）");
+    setStatus("已发送寻怪模式：" + ["移动", "范围", "原地"][v] + "寻怪", ok ? "ok" : "err");
+    tlog("np-hunt mode=" + v);
+  });
+
+  // ---------------- 内挂机制寻怪（套用内挂：服务器驱动移动 · 战斗判断仍助手控制）----------------
+  // 用法：无目标时发内挂指令让服务器移动寻怪；有目标时助手自己打（锁定目录/技能顺序/换怪延迟全由助手）
+  // 二转(5)：UPDATEINFO id=38(移动寻怪) + id=34(toggle 自动战斗)；三转(3)：WHISPER NPC:setautoattack
+  // 客户端 vbk 源码实证（Online_mn.js @3336649）：setautoattack 是 toggle 型——
+  //    .openattack 勾选/取消都发同一包（二转 id=34 value=1、三转 WHISPER msg="0"），服务器收到就翻转一次。
+  //    客户端从不发 value=0；因此「关闭」=再发一次同一包（toggle 回来），绝不能周期重发（否则每 1.5s 开关一次）。
+  // 通过 NOTIFY_ONLYTARGET 同步锁定目录 → 服务器寻怪只追锁定怪
+  var npHuntOn = false, npBattleKnown = false; // 三态：未知时不冒充关闭；成功读到状态或发出一次 toggle 后才可信
+  function npHuntMode() {
+    var el = $id("dsh-z-huntmode");
+    return el ? el.value : "self";
+  }
+  // V2.33.0 混合寻怪：内挂长距离寻怪走路 + 助手按接管距离提前接管最后靠近+打怪
+  function isHybrid() { return npHuntMode() === "hybrid"; }
+  function takeoverDist() { try { var v = parseInt($id("dsh-z-takeover") ? $id("dsh-z-takeover").value : "12", 10); return (isFinite(v) && v >= 3) ? v : 12; } catch (e) { return 12; } }
+  function npSyncTargets() {
+    // 把锁定目录同步给内挂：NOTIFY_ONLYTARGET{id=mobid(4字节), value=1} 只打勾选怪
+    try {
+      if (!clientReady() || !CLIENT.PS.CZ.NOTIFY_ONLYTARGET) return;
+      var ids = Object.keys(lockList);
+      for (var i = 0; i < ids.length; i++) {
+        var p = new CLIENT.PS.CZ.NOTIFY_ONLYTARGET();
+        p.id = parseInt(ids[i], 10) || 0;
+        p.value = 1;
+        CLIENT.NM.sendPacket(p);
+      }
+      // V2.16.8：清空内挂历史非锁定怪——读内挂 DOM 当前勾选，勾了但不在锁定目录 → 发 value=0 取消（value=0 语义待实测）
+      try {
+        var checks2 = document.querySelectorAll(".onlyattack_block input");
+        for (var j = 0; j < checks2.length; j++) {
+          var cc = checks2[j];
+          var cmid = cc.getAttribute("data-id");
+          if (!cmid) continue;
+          if (cc.checked && !lockList[String(cmid)]) {
+            var p0 = new CLIENT.PS.CZ.NOTIFY_ONLYTARGET();
+            p0.id = parseInt(cmid, 10) || 0;
+            p0.value = 0;
+            CLIENT.NM.sendPacket(p0);
+          }
+        }
+      } catch (e) {}
+      tlog("np-sync-targets n=" + ids.length);
+      npSyncTargetsDom(); // V2.16.7：发包后对齐内挂 DOM 勾选状态
+    } catch (e) {}
+  }
+  // V2.16.7 内挂名单 DOM 双向同步：助手 lockList ↔ 内挂 .onlyattack_block 勾选状态
+  //   助手勾选/解除锁定 → 写内挂复选框（程序设 checked 不触发 change，避免回环）
+  function npSyncTargetsDom() {
+    try {
+      var checks = document.querySelectorAll(".onlyattack_block input");
+      if (!checks.length) return;
+      for (var i = 0; i < checks.length; i++) {
+        var c = checks[i];
+        var mid = c.getAttribute("data-id");
+        if (!mid) continue;
+        var want = !!lockList[String(mid)];
+        if (c.checked !== want) c.checked = want;
+      }
+    } catch (e) {}
+  }
+  // V2.16.7 内挂勾选/取消勾选 → 写回助手锁定目录（change 委托，内挂操作为准）
+  try {
+    document.addEventListener("change", function (e) {
+      var t = e.target;
+      if (!t || !t.getAttribute || !t.getAttribute("data-id")) return;
+      if (!t.closest || !t.closest(".onlyattack_block")) return;
+      var mid = t.getAttribute("data-id");
+      var nm = t.getAttribute("data-name") || ("ID" + mid);
+      if (t.checked) addLock(mid, nm);
+      else removeLock(mid);
+    });
+  } catch (e) {}
+  // toggle 一次自动战斗（发同一包：二转 id=34 value=1 / 三转 WHISPER msg="0"）
+  function npToggleHunt() {
+    return npIsThree() ? npSendWhisper("NPC:setautoattack") : npSendUpdate(34, 1);
+  }
+  function npEnsureHunt() {
+    // 需要开启内挂寻怪：本地认为已开 → 不再发包（避免 toggle 多翻一次变关）；未开 → toggle 一次
+    try {
+      if (npHuntOn) return;
+      if (npIsThree()) {
+        npToggleHunt();
+      } else {
+        npSendUpdate(38, 0); // 0=移动寻怪（设置型，可重复）
+        npToggleHunt();      // toggle 开自动战斗
+      }
+      npHuntOn = true;
+      tlog("np-hunt-on (toggle) cv=" + DEFAULTS.ClientVer);
+    } catch (e) {}
+  }
+  function npHuntStop() {
+    // 停止助手时关闭内挂自动战斗：本地认为已开 → toggle 一次关掉；已关 → 不发
+    try {
+      if (!npHuntOn) return;
+      if (clientReady()) npToggleHunt();
+      npHuntOn = false;
+      tlog("np-hunt-off (toggle)");
+    } catch (e) {}
+  }
+  // 寻怪方式下拉 change：切到「内挂机制」→ 仅校准面板状态 + 同步锁定目录，不发 toggle（等点开自动战斗后由 zWalk 状态机自动发第一次）；
+  // 切走 → 若内挂在跑则关掉（toggle 一次）
+  try {
+    $id("dsh-z-huntmode").addEventListener("change", function () {
+      if (this.value === "np" || this.value === "hybrid") {
+        npCalibrate();               // 对齐服务器实际状态（面板=服务器，不发包）
+        npSyncTargets();             // 锁定目录同步给内挂（只追锁定怪）
+        setStatus(this.value === "hybrid" ? "已切到混合寻怪（内挂长距离寻怪，锁定怪≤接管距离才由助手接管）" : "已切到内挂机制寻怪（点开自动战斗后由助手状态机自动发包寻怪）", "ok");
+        tlog("huntmode->" + this.value + " (no toggle until start)");
+      } else {
+        npHuntStop();
+        setStatus("已切到自研直走寻怪", "st");
+        tlog("huntmode->self");
+      }
+    });
+  } catch (e) {}
+  // 攻击距离计算：物理/魔法按技能射程自动选择（普攻=物理距离；技能=技能射程+1 与普攻取大）
+  // 客户端 onUseSkill 机制：attackRange+1；无技能则用普攻物理距离
+  // V2.16.7：读取角色真实普攻射程（客户端 Session.Entity.attack_range，来源服务器 ZC.ATTACK_RANGE 的 currentAttRange）
+  //   真实射程优先于写死的物理距离；物理距离(dsh-z-pmrange)仅在用户主动设上限(>默认2)且小于真实射程时才限制。
+  function realAtkRange() {
+    try {
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      if (ent && ent.attack_range && ent.attack_range > 0) return ent.attack_range + 1; // 攻击判定统一 attack_range+1
+    } catch (e) {}
+    return 0;
+  }
+  function calcAtkRange() {
+    try {
+      var pmRange = parseInt($id("dsh-z-pmrange").value, 10) || 0;
+      var real = realAtkRange();
+      var base = real > 0 ? real : (pmRange > 0 ? pmRange : 2);
+      // 用户主动设物理距离上限（>默认2）且小于真实射程 → 按用户限制；否则用真实射程（弓箭手不再贴脸）
+      if (pmRange > 2 && base > pmRange) base = pmRange;
+      var order0 = parseSkillOrder($id("dsh-skillorder").value);
+      var atkRange = base;
+      if (order0.length) {
+        var maxSkillRange = base;
+        for (var oi = 0; oi < order0.length; oi++) {
+          var sr = getSkillRange(order0[oi].skid, order0[oi].lv);
+          if (sr + 1 > maxSkillRange) maxSkillRange = sr + 1;
+        }
+        atkRange = maxSkillRange;
+      }
+      return atkRange;
+    } catch (e) { return 2; }
+  }
+  // V2.16.7：真实射程自动回写「物理距离」设置并写档（仅在当前值还是默认 0/1/2 时覆盖，避免覆盖用户手动限制）
+  function syncRealAtkRange() {
+    try {
+      var real = realAtkRange();
+      if (real <= 1) return;
+      var el = $id("dsh-z-pmrange");
+      if (!el) return;
+      var cur = parseInt(el.value, 10) || 0;
+      if (cur !== real && (cur === 0 || cur === 1 || cur === 2)) {
+        el.value = real;
+        try { captureAll(); } catch (e) {}
+        tlog("atk-range auto=" + real);
+      }
+    } catch (e) {}
+  }
+  // 侦查扫描是否扫到「可攻击到的锁定怪物」：基于 scanMobs（侦查实时结果，含 mid/距离/锁定目录比对）
+  // 内挂寻怪开关依据（用户需求状态机）：
+  //   - 可攻击到的锁定怪（dist ≤ atkRange，非超出）→ 停内挂，助手接管战斗
+  //   - 只有超出的锁定怪（dist > atkRange）/ 无怪 → 持续内挂寻怪（服务器驱动移动）
+  function scanHasAttackableLockedMob(atkRange) {
+    try {
+      if (!scanMobs || !scanMobs.length) return false;
+      if (!atkRange) atkRange = calcAtkRange();
+      for (var i = 0; i < scanMobs.length; i++) {
+        var m = scanMobs[i];
+        if (!m || m.mid == null) continue;
+        if (!lockList[String(m.mid)]) continue; // 只认锁定怪
+        if (m.dist >= 0 && m.dist <= atkRange) return true; // 可攻击（非超出）
+      }
+      return false;
+    } catch (e) { return false; }
+  }
+  // 侦查扫描是否扫到「超出攻击范围的锁定怪物」（有锁定怪但够不着 → 需内挂移动靠近）
+  function scanHasOutOfRangeLockedMob(atkRange) {
+    try {
+      if (!scanMobs || !scanMobs.length) return false;
+      if (!atkRange) atkRange = calcAtkRange();
+      for (var i = 0; i < scanMobs.length; i++) {
+        var m = scanMobs[i];
+        if (!m || m.mid == null) continue;
+        if (!lockList[String(m.mid)]) continue;
+        if (m.dist < 0 || m.dist > atkRange) return true; // 距离未知或超出
+      }
+      return false;
+    } catch (e) { return false; }
+  }
+
+  // ---------------- 助手模式：侦查扫描 + 锁定 + 攻击循环 ----------------
+  var scanTimer = null, scanMobs = [], zAttTimer = null, zRunning = false;
+  var zUseCounts = {}; // V1.7.0 本轮技能释放次数计数（maxUses；开/停自动战斗时清空）
+  var zLockCounts = {}; // V1.7.5 每次锁定释放次数计数（换目标/重新锁定时清零）
+  var zCastIdx = 0;     // V1.7.5 技能轮换游标：下轮从该索引开始扫（拖拽顺序真正生效）
+  var lockList = (function () {
+    try { ensureProfilesInit(); var k = activeProfileKey(); return (profiles[k] && profiles[k].lockList) || {}; } catch (e) { return {}; }
+  })();
+  var zLastPos = null, zStuckSince = null;
+
+  function renderLockList() {
+    var el = $id("dsh-locklist");
+    if (!el) return;
+    var ids = Object.keys(lockList);
+    $id("dsh-lockcount").textContent = ids.length + " 种";
+    if (!ids.length) { el.innerHTML = '<span class="st">名单为空（勾选本图怪物或侦查扫描到的怪）</span>'; return; }
+    var html = "";
+    ids.forEach(function (id) {
+      html += '<div class="list-item"><span>' + (lockList[id].name || ("ID" + id)) + ' · ID' + id + '</span>' +
+        mobRefLinksHtml(id) + // V2.29.0：任务目标怪外链（数量→RO321 / 资料→DVG，按怪物ID）
+        '<button class="ghost" data-unlock="' + id + '" style="flex:0 0 auto;padding:0 8px;font-size:11px">解除</button></div>';
+    });
+    el.innerHTML = html;
+  }
+  function profileLockSave() {
+    try { var k = activeProfileKey(); ensureProfile(k); profiles[k].lockList = lockList; profiles[k].lastAt = Date.now(); saveProfiles(); } catch (e) {}
+  }
+  function addLock(id, name) {
+    id = String(id);
+    if (!lockList[id]) lockList[id] = { name: name || ("ID" + id), ts: Date.now() };
+    profileLockSave();
+    renderLockList();
+    try { npSyncTargetsDom(); npSyncTargets(); } catch (e) {} // V2.16.7 双向同步内挂名单
+  }
+  function removeLock(id) {
+    delete lockList[String(id)];
+    profileLockSave();
+    renderLockList();
+    try { npSyncTargetsDom(); npSyncTargets(); } catch (e) {} // V2.16.7 双向同步内挂名单
+  }
+  $id("dsh-locklist").addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest("[data-unlock]");
+    if (b) removeLock(b.getAttribute("data-unlock"));
+  });
+  $id("dsh-lockclear").addEventListener("click", function () {
+    lockList = {};
+    profileLockSave();
+    renderLockList();
+    try { renderMapLock($id("dsh-z-maplock")); } catch (e) {}
+    try { renderMapMobs(); } catch (e) {}
+    setStatus("已清空怪物锁定目录", "ok");
+  });
+
+  // 内挂模式页「当前地图怪物」：同内挂检测目标方式——直接读地图怪物表
+  // getworldData(currentMap).mobs（怪物ID数组）→ getmobData(id).kName（中文名）
+  // 通用：读当前地图信息（同内挂检测目标数据源）
+  function getCurrentMapInfo() {
+    try {
+      if (!window.require) return null;
+      var MR = null;
+      try { MR = window.require("Renderer/MapRenderer"); } catch (e) {}
+      var mapKey = MR && MR.currentMap ? String(MR.currentMap).split(".")[0] : "";
+      if (!mapKey) return null;
+      var DB = CLIENT.DB || requireDB("DB/DBManager");
+      if (!DB || typeof DB.getworldData !== "function") return null;
+      var wd = DB.getworldData(mapKey);
+      var mobArr = wd && wd.mobs;
+      if (mobArr && typeof mobArr === "string") mobArr = mobArr.split(",");
+      return { key: mapKey, name: (wd && wd.name) || mapKey, mobIds: mobArr && mobArr.length ? mobArr : null };
+    } catch (e) { return null; }
+  }
+  // 当前地图的怪物列表 [{id, m}]（mob_db 有数据才返回）
+  function getMapMobList() {
+    try {
+      var info = getCurrentMapInfo();
+      if (!info || !info.mobIds || !info.mobIds.length) return null;
+      var mobDB = getMobDb();
+      if (!mobDB) return null;
+      var list = [], seen = {};
+      for (var i = 0; i < info.mobIds.length; i++) {
+        var id = info.mobIds[i];
+        if (id == null || seen[id]) continue;
+        seen[id] = true;
+        var m = mobDB[id];
+        if (m) list.push({ id: id, m: m });
+      }
+      return list.length ? list : null;
+    } catch (e) { return null; }
+  }
+  function renderMapMobs() {
+    try {
+      var el = $id("dsh-nei-mapmobs");
+      if (!el) return;
+      var info = getCurrentMapInfo();
+      var mobArr = info && info.mobIds;
+      if (!mobArr || !mobArr.length) {
+        // 地图表无数据（如未进图/表缺失）→ 回退侦查实体列表
+        fallbackMobs(el);
+        return;
+      }
+      var DB = CLIENT.DB || requireDB("DB/DBManager");
+      var html = "";
+      var seen = {};
+      for (var i = 0; i < mobArr.length; i++) {
+        var id = mobArr[i];
+        if (id == null || seen[id]) continue;
+        seen[id] = true;
+        var mob = null;
+        try { mob = DB.getmobData(id); } catch (e) {}
+        var nm = (mob && (mob.kName || mob.name)) || getMobName(id) || ("ID" + id);
+        var lv = mob && mob.LV != null ? mob.LV : "";
+        var locked = lockList[String(id)] ? true : false;
+        html += '<div class="list-item"><label class="switch"><input type="checkbox"' + (locked ? " checked" : "") + ' data-lock="' + id + '" data-nm="' + nm + '">' + nm +
+          ' <span class="st">ID' + id + (lv ? " · Lv" + lv : "") + "</span></label></div>";
+      }
+      el.innerHTML = html || '<span class="st">该地图表无怪物</span>';
+      el.querySelectorAll("input[data-lock]").forEach(function (c) {
+        c.addEventListener("change", function () {
+          var id = this.getAttribute("data-lock");
+          if (!id) return;
+          if (this.checked) addLock(id, this.getAttribute("data-nm"));
+          else removeLock(id);
+        });
+      });
+    } catch (e) {}
+  }
+  // 回退：把侦查实体列表同步到内挂模式页
+  function fallbackMobs(nei) {
+    try {
+      if (!scanMobs.length) { nei.innerHTML = '<span class="st">附近没有怪物（开启侦查扫描后同步）</span>'; return; }
+      var nh = "";
+      for (var ni = 0; ni < scanMobs.length; ni++) {
+        var mm = scanMobs[ni];
+        nh += '<div class="list-item"><label class="switch"><input type="checkbox"' + (lockList[String(mm.mid)] ? " checked" : "") + ' data-lock="' + (mm.mid != null ? mm.mid : "") + '" data-nm="' + mm.name + '">' + mm.name +
+          (mm.mid != null ? ' <span class="st">ID' + mm.mid + (mm.lv ? " · Lv" + mm.lv : "") + "</span>" : "") +
+          '</label><span style="color:#5a6b7f">' + (mm.dist >= 0 ? mm.dist + "m" : "?") + "</span></div>";
+      }
+      nei.innerHTML = nh;
+      nei.querySelectorAll("input[data-lock]").forEach(function (c) {
+        c.addEventListener("change", function () {
+          var id = this.getAttribute("data-lock");
+          if (!id) return;
+          if (this.checked) addLock(id, this.getAttribute("data-nm"));
+          else removeLock(id);
+        });
+      });
+    } catch (e) {}
+  }
+  function startScan() {
+    stopScan();
+    if (!$id("dsh-scanen").checked) return;
+    var sec = Math.max(0.3, parseFloat($id("dsh-scanint").value) || 0.5);
+    scanTimer = setInterval(scanOnce, sec * 1000);
+    scanOnce();
+    $id("dsh-scanst").textContent = "扫描中 " + sec + "s";
+  }
+  function stopScan() {
+    if (scanTimer) { clearInterval(scanTimer); scanTimer = null; }
+    $id("dsh-scanst").textContent = "已停止";
+  }
+  function scanOnce() {
+    try {
+      var el = $id("dsh-scanlist");
+      if (!el) return;
+      if (!window.require) { el.textContent = "客户端未就绪"; return; }
+      var EM = window.require("Renderer/EntityManager");
+      if (!EM || !EM.forEach) { el.textContent = "实体管理器不可用"; return; }
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      var mobs = [];
+      EM.forEach(function (e) {
+        try {
+          if (e.objecttype !== 5) return;
+          // V2.16.20：跳过死亡实体（原来漏了，其余三处侦查都有 isDeath/ACTION.DIE/remove_tick）——死怪残留会导致：
+          //   解围技能持续判定群殴并对着尸体放技能 / 误判「有可攻击锁定怪」停掉内挂寻怪 / 坐下判断误以为在战斗
+          if (e.isDeath) return;
+          if (e.ACTION && e.action != null && e.action === e.ACTION.DIE) return;
+          if (e.remove_tick) return;
+          var d = -1;
+          if (ent && ent.position && e.position) {
+            d = Math.abs(e.position[0] - ent.position[0]) + Math.abs(e.position[1] - ent.position[1]);
+          }
+          // 怪物类ID在 e._job（vbk 用 _job 与地图表怪物ID比对；job 会被变身覆盖）
+          var mid = e._job != null ? e._job : (e.job != null ? e.job : (e.mobId != null ? e.mobId : e.GID));
+          var nm = getMobName(mid) || (e.display && e.display.name) || e.displayName || e.name || null;
+          var lv = "";
+          var mb = null;
+          try { var dbx = getMobDb(); mb = dbx && dbx[mid]; } catch (e3) {}
+          if (mb && mb.LV != null) lv = mb.LV;
+          // BOSS 判定：只认 mob_db.MvpDropsNum>0（126只MVP/BOSS），不做地图级 fallback（hasBoss 会把查不到的怪全标成 BOSS）
+          var isBoss = !!(mb && mb.MvpDropsNum > 0);
+          mobs.push({ GID: e.GID, mid: mid, name: nm || String(mid != null ? mid : e.GID), dist: d, lv: lv, isBoss: isBoss });
+        } catch (e2) {}
+      });
+      scanMobs = mobs;
+      if (btDiagOn) { try { var cm = getCurrentMapInfo(); btLog('scan', 'mobs=' + mobs.length + ' map=' + (cm ? cm.name : '?') + ' isCombatMap=' + (defSnap ? defSnap.isCombatMap : '?')); } catch (e) {} }
+      var range = parseInt($id("dsh-z-range").value, 10) || 12;
+      var html = "";
+      for (var i = 0; i < mobs.length; i++) {
+        var m = mobs[i];
+        var locked = m.mid != null && lockList[String(m.mid)] ? true : false;
+        var inR = m.dist >= 0 && m.dist <= range;
+        html += '<div class="list-item"><label class="switch"><input type="checkbox"' + (locked ? " checked" : "") + ' data-lock="' + (m.mid != null ? m.mid : "") + '" data-nm="' + m.name + '">' + m.name + (m.mid != null ? " · ID" + m.mid : "") + (m.lv ? ' <span class="st">Lv' + m.lv + "</span>" : "") + '</label>' +
+          '<span style="color:#5a6b7f">' + (m.dist >= 0 ? m.dist + "m" : "?") + (inR ? "" : " · 超出") + '</span></div>';
+      }
+      el.innerHTML = html || '<span class="st">附近没有怪物</span>';
+      // 内挂模式页「当前地图怪物」：优先读地图表（getworldData().mobs，同内挂检测目标），失败回退侦查实体
+      renderMapMobs();
+      // 勾选=锁定
+      el.querySelectorAll('input[data-lock]').forEach(function (c) {
+        c.addEventListener("change", function () {
+          var id = this.getAttribute("data-lock");
+          if (!id) return;
+          if (this.checked) addLock(id, this.getAttribute("data-nm"));
+          else removeLock(id);
+        });
+      });
+      // 被攻击检测（HP 下降 → 反击/瞬移依据）
+      try { if (ent) updateHpWatch(ent); } catch (e2) {}
+      // 卡死检测
+      if (ent && ent.position) {
+        var px = ent.position[0], py = ent.position[1];
+        if (zLastPos && px === zLastPos[0] && py === zLastPos[1]) {
+          if (!zStuckSince) zStuckSince = Date.now();
+        } else { zStuckSince = null; }
+        zLastPos = [px, py];
+      }
+      // V2.16.19：坐着不动不算卡死（坐下时坐标本来就不变，否则会被误判卡死→瞬移打断回血）
+      try { if (isSitting()) zStuckSince = null; } catch (e3) {}
+      // 群殴/防御检测
+      checkDefense(mobs, ent);
+      // V1.8.5：缓存侦查结果（拾取走过去安全判定用）
+      lastMobs = mobs || [];
+    } catch (e) {}
+  }
+
+  // ---- 助手防御：群殴 / 低血 / 卡死 / BOSS → 瞬移（翅膀601 或 瞬移术）----
+  var lastFly = 0;
+  // V1.8.5：最近一次侦查的怪物数组（isBoss 判定供「拾取走过去」安全复查用）
+  var lastMobs = [];
+  // ================= V1.9.4：中心危险快照 + 动作互斥（防判断冲突锁死）=================
+  // 目标：喝水/坐下/瞬移/拾取不再各算各的危险边界——每周期由 checkDefense 刷新一份快照，
+  //       所有子系统同读；动作互斥由决策层保证（同 tick 只出一个动作），无等待 → 无死锁。
+  var DS_BOSS_DIST = 25;   // Boss 危险距离统一口径（原瞬移=侦测即飞、拾取=20 格，语义分裂已统一）
+  var defSnap = { hpPct: 100, spPct: 100, isCombatMap: false, mobCount: 0, bossDist: -1, sitting: false, now: 0 };
+  var actLock = { act: null, until: 0 };  // 主动作锁：每 tick 决策重写，超时视为空闲
+  var ESCAPE_TIMEOUT_MS = 2500, ESCAPE_MAX_ATTEMPTS = 3;
+  var escapeSeq = 0, escapeBackoffUntil = 0;
+  var escapeState = { pending: false, id: 0, map: "", x: null, y: null, lastCast: 0, ackAt: 0, deadline: 0, attempts: 0, nextRetry: 0, reason: "" };
+  var selfHealHoldUntil = 0;
+  var potNoPotion = false;                // 喝水无药标记（瀑布：低血无药被围 → 升级瞬移）
+  var flyFailCount = 0, flyFailUntil = 0; // 瞬移连续失败冷却（3 次 → 10s 不重试）
+  var sitSince = 0, sitHpAt = -1;         // 坐下看门狗（30s 血未回升 → 站起并入瞬移链）
+  var sitSendAt = 0;                      // V2.15.22：坐/立发包节流（1.5s，防多路重复发）
+  var sitStandAt = 0;                     // V2.15.22：被打站起冷却（站起后 5s 内不立刻坐下，防坐-站抖动）
+  // V2.15.22：坐/立直发包（CZ.REQUEST_ACT 2坐/3站，与客户端 /sit 同路径，不依赖界面按钮；按钮仅兜底）
+  function sendSit(down) {
+    try {
+      var nowS = Date.now();
+      if (nowS - sitSendAt < 1500) return;
+      sitSendAt = nowS;
+      try {
+        var p = new CLIENT.PS.CZ.REQUEST_ACT();
+        p.action = down ? 2 : 3;
+        CLIENT.NM.sendPacket(p);
+        tlog("sit-" + (down ? "down" : "up") + "-pkt");
+      } catch (e) {
+        try { var b = document.querySelector(down ? ".sitButton, .btn.sit button" : ".standButton"); if (b) b.click(); } catch (e2) {}
+      }
+    } catch (e) {}
+  }
+  // V2.15.22：游戏窗口(pt-page 弹层)打开判断（弹层打开期间不点坐/站）
+  function isWinOpen() {
+    try {
+      var pgsW = (document.getElementById("vbk") || document).querySelectorAll("[class*='pt-page']");
+      for (var piW = 0; piW < pgsW.length; piW++) {
+        var pstW = getComputedStyle(pgsW[piW]);
+        if (pstW.display === "none") continue;
+        var prW = pgsW[piW].getBoundingClientRect();
+        if (prW.width > 100 && prW.height > 100) return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+  // V2.15.22：当前是否需要坐下（HP/SP 低于坐下阈值且坐开关开）——供无目标瞬移/SP 瞬移让位判断
+  function needSitNow() {
+    try {
+      if (!$id("dsh-z-sit") || !$id("dsh-z-sit").checked) return false;
+      var entN = CLIENT.SS && CLIENT.SS.Entity;
+      var lfN = entN && entN.life;
+      if (!lfN || !lfN.maxhp || !lfN.maxsp) return false;
+      var hpN = lfN.hp / lfN.maxhp * 100;
+      var spN = lfN.sp / lfN.maxsp * 100;
+      var loN = parseInt($id("dsh-z-sithplo").value, 10) || 30;
+      var sLoN = parseInt($id("dsh-z-sitsplo").value, 10) || 10;
+      return hpN < loN || spN < sLoN;
+    } catch (e) { return false; }
+  }
+  // V2.15.22：坐下状态维护——坐下期间被打/回满/30s 看门狗 → 自动站起（无需手动）
+  function sitMaintain() {
+    try {
+      if (!$id("dsh-z-sit") || !$id("dsh-z-sit").checked) return;
+      if (!isSitting()) { sitSince = 0; sitHpAt = -1; return; } // V2.16.9：没坐着（无论谁站起）清坐下标记，防手动站起残留
+      var nowM = Date.now();
+      var entM = CLIENT.SS && CLIENT.SS.Entity;
+      var lifeM = entM && entM.life;
+      if (!lifeM) return;
+      var hpM = lifeM.maxhp > 0 ? lifeM.hp / lifeM.maxhp * 100 : 100;
+      var spM = lifeM.maxsp > 0 ? lifeM.sp / lifeM.maxsp * 100 : 100;
+      var hiM = parseInt($id("dsh-z-sithphi").value, 10) || 80;
+      var sHiM = parseInt($id("dsh-z-sitsphi").value, 10) || 70;
+      var hitM = (nowM - zHpWatch.lastHitAt) < 3000;
+      var winM = isWinOpen();
+      // 被打 → 立刻站起逃生（自动）
+      if (hitM) {
+        sendSit(false);
+        sitSince = 0; sitHpAt = -1;
+        if (actLock.act === "sit") actLock.act = null;
+        sitStandAt = nowM;
+        setStatus("坐下被打，自动站起应战…", "warn");
+        return;
+      }
+      // 回满 → 站起继续（V2.16.9：只对脚本自己坐下的生效，手动坐下不干预；受「回满后继续战斗」开关控制）
+      var sitBackM = !$id("dsh-z-sitback") || $id("dsh-z-sitback").checked;
+      if (sitSince && sitBackM && hpM > hiM && spM > sHiM && !winM) {
+        sendSit(false);
+        sitSince = 0; sitHpAt = -1;
+        if (actLock.act === "sit") actLock.act = null;
+        return;
+      }
+      // 看门狗：坐下 30s 血未回升（坐不住）→ 站起
+      if (sitSince && (nowM - sitSince > 30000) && !winM && hpM <= (sitHpAt >= 0 ? sitHpAt + 2 : hpM)) {
+        sendSit(false);
+        sitSince = 0; sitHpAt = -1;
+        if (actLock.act === "sit") actLock.act = null;
+      }
+    } catch (e) {}
+  }
+  // V2.15.22：坐下周期（战斗循环挂点，不依赖侦查扫描）——无目标时安全才坐；坐下后由 sitMaintain 自动站起
+  function doSitCycle(mobs) {
+    try {
+      // V2.16.8：内挂模式不再让位——助手自己发包坐下（sendSit 直接发包，不依赖内挂 .opensit 是否真正生效）；
+      //   坐下期间 zWalk 有 isSitting 保护（检测到坐着直接 return 不寻怪），与内挂寻怪不冲突；数值已由 pushSitToBot 双向同步
+      sitMaintain();
+      if (isSitting()) return;
+      if (!$id("dsh-z-sit") || !$id("dsh-z-sit").checked) return;
+      if (zLock.gid) return; // 有锁定目标（战斗/还击中）→ 不坐下
+      var entD = CLIENT.SS && CLIENT.SS.Entity;
+      var lifeD = entD && entD.life;
+      if (!lifeD) return;
+      var nowD = Date.now();
+      var hpD = lifeD.maxhp > 0 ? lifeD.hp / lifeD.maxhp * 100 : 100;
+      var spD = lifeD.maxsp > 0 ? lifeD.sp / lifeD.maxsp * 100 : 100;
+      var loD = parseInt($id("dsh-z-sithplo").value, 10) || 40;
+      var sLoD = parseInt($id("dsh-z-sitsplo").value, 10) || 30;
+      var shouldSitD = (hpD < loD || spD < sLoD) && !($id("dsh-z-sitnofight").checked && mobs && mobs.length > 0) && !pendingPick;
+      if (shouldSitD && (nowD - zHpWatch.lastHitAt) >= 3000 && !isWinOpen() && (nowD - sitStandAt > 5000) && isActFreeOnline("sit")) {
+        sendSit(true);
+        sitSince = Date.now(); sitHpAt = hpD;
+        lockAct("sit", 60000);
+        setStatus("HP/SP 低，自动坐下回血(" + Math.round(hpD) + "%/" + Math.round(spD) + "%)…", "st");
+      }
+    } catch (e) {}
+  }
+  // V2.15.23：逃脱=直接移动避开怪（往远离最近怪的方向走，A* 避障；4s 内不重复发；逃脱中 zWalk 让位）
+  function walkEscape(att) {
+    try {
+      var nowE = Date.now();
+      if (zEscape.until > nowE) return; // 已在逃脱中（上次移动未完）
+      var entE = CLIENT.SS && CLIENT.SS.Entity;
+      if (!entE || !entE.position) return;
+      if (!att) {
+        // 攻击者未知 → 扫 EM 最近的怪当方向参照
+        try {
+          var EM2 = window.require("Renderer/EntityManager");
+          var bestE = 1e9;
+          EM2.forEach(function (e2) {
+            try {
+              if (e2.objecttype !== 5 || e2.isDeath || !e2.position) return;
+              if (e2.ACTION && e2.action != null && e2.action === e2.ACTION.DIE) return;
+              var d2 = Math.abs(e2.position[0] - entE.position[0]) + Math.abs(e2.position[1] - entE.position[1]);
+              if (d2 < bestE) { bestE = d2; att = e2; }
+            } catch (e3) {}
+          });
+        } catch (e3) {}
+      }
+      if (!att || !att.position) return;
+      var dx = entE.position[0] - att.position[0];
+      var dy = entE.position[1] - att.position[1];
+      var adx = Math.abs(dx), ady = Math.abs(dy);
+      var sx = dx > 0 ? 1 : (dx < 0 ? -1 : 0);
+      var sy = dy > 0 ? 1 : (dy < 0 ? -1 : 0);
+      var tx = entE.position[0] + (adx >= ady ? sx * 8 : 0);
+      var ty = entE.position[1] + (adx >= ady ? 0 : sy * 8);
+      var dest = pathFindTo(tx, ty) || [tx, ty];
+      var pmE = new CLIENT.PS.CZ.REQUEST_MOVE();
+      pmE.dest = [dest[0], dest[1]];
+      CLIENT.NM.sendPacket(pmE);
+      zEscape.until = nowE + 4000;
+      zWalkState.lastPos = null; zWalkState.stuckCnt = 0; zWalkState.tried = 0;
+      tlog("escape-walk 远离怪 " + (att._job != null ? att._job : att.GID) + " -> " + dest[0] + "," + dest[1]);
+    } catch (e) {}
+  }
+  function lockAct(act, ms) {
+    try {
+      var now = Date.now();
+      if (actLock.act && actLock.act !== act && now < actLock.until) return false;
+      actLock.act = act; actLock.until = now + ms;
+      return true;
+    } catch (e) { return false; }
+  }
+  function isActFreeOnline(act) {
+    try { return !actLock.act || actLock.act === act || Date.now() >= actLock.until; } catch (e) { return true; }
+  }
+  function isSitting() {
+    try {
+      var st = CLIENT && CLIENT.SS && CLIENT.SS.Entity;
+      if (!st) return false;
+      // V2.15.30：引擎坐姿=动画状态 st.action===ACTION.SIT(=2)（EntityAction L148 实证；st.sit 字段不存在恒 false 导致坐下判活全失效）
+      if (st.action != null && st.ACTION && st.ACTION.SIT != null) return st.action === st.ACTION.SIT;
+      if (st.action != null) return st.action === 2;
+      if (st.sit != null) return !!st.sit;
+      if (st.basic_status && st.basic_status.sit != null) return !!st.basic_status.sit;
+      return false;
+    } catch (e) { return false; }
+  }
+  function refreshDefSnap(mobs, ent) {
+    try {
+      var cMap = getCurrentMapInfo();
+      var life = ent && ent.life;
+      var hpPct = life && life.maxhp > 0 ? life.hp / life.maxhp * 100 : 100;
+      var spPct = life && life.maxsp > 0 ? life.sp / life.maxsp * 100 : 100;
+      var bossDist = -1, mobCount = 0;
+      for (var i = 0; i < (mobs || []).length; i++) {
+        var mb = mobs[i];
+        if (!mb) continue;
+        if (mb.dist >= 0) mobCount++;
+        if (mb.isBoss && mb.dist >= 0 && (bossDist < 0 || mb.dist < bossDist)) bossDist = mb.dist;
+      }
+      defSnap = { hpPct: hpPct, spPct: spPct,
+        isCombatMap: !!(cMap && cMap.mobIds && cMap.mobIds.length),
+        mobCount: mobCount, bossDist: bossDist, sitting: isSitting(), now: Date.now() };
+    } catch (e) {}
+  }
+  function escapePos() {
+    try {
+      var ent = CLIENT.SS && CLIENT.SS.Entity, p = ent && ent.position;
+      return { map: normMapKey(getMapName()), x: p && p[0] != null ? Number(p[0]) : null, y: p && p[1] != null ? Number(p[1]) : null };
+    } catch (e) { return { map: "", x: null, y: null }; }
+  }
+  function resetEmergencyEscape(cooldown) {
+    escapeState.pending = false; escapeState.reason = ""; escapeState.lastCast = 0; escapeState.ackAt = 0; escapeState.deadline = 0; escapeState.nextRetry = 0;
+    if (cooldown) escapeBackoffUntil = Date.now() + cooldown;
+    if (actLock.act === "escape") actLock.act = null;
+  }
+  function castEmergencyEscape() {
+    var now = Date.now();
+    escapeState.attempts++; escapeState.lastCast = now; escapeState.ackAt = 0; escapeState.deadline = now + ESCAPE_TIMEOUT_MS;
+    if (castTeleport()) { setStatus("紧急脱战：瞬移(" + escapeState.reason + ")，等待回执和位移…", "warn"); return "teleport"; }
+    escapeState.lastCast = 0; escapeState.deadline = now; escapeState.nextRetry = now + Math.min(1200, 300 * Math.pow(2, escapeState.attempts - 1));
+    return "reject";
+  }
+  function escapePending() {
+    if (!escapeState.pending) return false;
+    var now = Date.now(), p = escapePos();
+    var moved = !!(p.map && escapeState.map && p.map !== escapeState.map) ||
+      (p.x != null && p.y != null && escapeState.x != null && escapeState.y != null && Math.abs(p.x - escapeState.x) + Math.abs(p.y - escapeState.y) >= 8);
+    if (escapeState.ackAt >= escapeState.lastCast && escapeState.lastCast > 0 && moved) {
+      resetEmergencyEscape(0); tlog("escape-confirmed " + p.map + " " + p.x + "," + p.y); return false;
+    }
+    if (escapeState.deadline && now >= escapeState.deadline) {
+      if (escapeState.attempts >= ESCAPE_MAX_ATTEMPTS) { resetEmergencyEscape(5000); tlog("escape-timeout-final"); return false; }
+      if (!escapeState.nextRetry) escapeState.nextRetry = now + Math.min(1200, 300 * Math.pow(2, escapeState.attempts - 1));
+      if (now >= escapeState.nextRetry) { escapeState.nextRetry = 0; castEmergencyEscape(); }
+    }
+    return escapeState.pending;
+  }
+  function requestEmergencyEscape(reason) {
+    try {
+      var now = Date.now();
+      if (!escapeState.pending) {
+        if (now < escapeBackoffUntil) return "backoff";
+        var p = escapePos();
+        escapeState = { pending: true, id: ++escapeSeq, map: p.map, x: p.x, y: p.y, lastCast: 0, ackAt: 0, deadline: 0, attempts: 0, nextRetry: 0, reason: reason || "紧急脱战" };
+      }
+      lockAct("escape", ESCAPE_TIMEOUT_MS);
+      if (isSitting()) { sendSit(false); setStatus("紧急脱战：先站起…", "warn"); return "stand"; }
+      if (escapeState.lastCast > 0 || (escapeState.nextRetry && now < escapeState.nextRetry)) { escapePending(); return escapeState.pending ? "wait" : "backoff"; }
+      escapeState.nextRetry = 0;
+      var result = castEmergencyEscape();
+      if (result === "reject" && escapeState.attempts >= ESCAPE_MAX_ATTEMPTS) resetEmergencyEscape(5000);
+      return result;
+    } catch (e) { resetEmergencyEscape(5000); return "blocked"; }
+  }
+  function emergencyThreatReason(mobs) {
+    try {
+      mobs = mobs || lastMobs || [];
+      var group = parseInt($id("dsh-z-grp").value, 10) || 0;
+      var mobbing = group > 0 && mobs.length >= group && $id("dsh-z-grpact") && $id("dsh-z-grpact").value === "瞬移" && $id("dsh-z-flygrp") && $id("dsh-z-flygrp").checked;
+      if (mobbing) return "群殴(" + mobs.length + "只)";
+      var recentHit = Date.now() - zHpWatch.lastHitAt < 3000;
+      if (recentHit && $id("dsh-z-ona") && $id("dsh-z-ona").value === "瞬移") return "最近受击";
+    } catch (e) {}
+    return "";
+  }
+  function ordinaryCastBlocked() {
+    var threat = emergencyThreatReason();
+    if (threat) requestEmergencyEscape(threat);
+    return escapePending();
+  }
+  function tickSelfHeal() {
+    try {
+      if (saved.healFirst !== true || ordinaryCastBlocked() || !clientReady() || !isActFreeOnline("heal")) return false;
+      var ent = CLIENT.SS && CLIENT.SS.Entity, life = ent && ent.life;
+      if (!life || !life.maxhp || life.hp / life.maxhp * 100 >= potHpThr()) return false;
+      var lv = learnedSkillLv(28), sp = life.sp != null ? Number(life.sp) : 0;
+      if (lv <= 0 || sp < 10 + lv * 3 || (skillNextAt[28] && Date.now() < skillNextAt[28])) return false;
+      var p = new CLIENT.PS.CZ.USE_SKILL();
+      p.SKID = 28; p.selectedLevel = lv; p.targetID = ent.GID || (CLIENT.SS && CLIENT.SS.AID) || 0;
+      CLIENT.NM.sendPacket(p);
+      var cd = skillCdMs({ skid: 28, cd: 0 });
+      skillNextAt[28] = Date.now() + cd; selfHealHoldUntil = skillNextAt[28]; lockAct("heal", cd);
+      dshCastMark(28, lv, p.targetID, "self-heal");
+      tlog("self-heal lv" + lv);
+      return true;
+    } catch (e) { return false; }
+  }
+  function markFlyFail() { try { flyFailCount++; if (flyFailCount >= 3) flyFailUntil = Date.now() + 10000; } catch (e) {} }
+  function markFlyOk() { flyFailCount = 0; }
+  // ================= /V1.9.4 =================
+  function checkDefense(mobs, ent) {
+    try {
+      // V1.9.4：每周期只刷一次中心快照（本节内所有判定同源，喝水/拾取复用之）
+      refreshDefSnap(mobs, ent);
+      // V1.8.1：防御瞬移分层——防BOSS/低血/群殴恢复常驻（不绑定战斗态 zRunning），
+      //   仅卡死瞬移绑定战斗态；全部防御瞬移仅在「有怪」战斗地图生效（主城/无怪图不触发）。
+      var cMap = getCurrentMapInfo();
+      var isCombatMap = defSnap.isCombatMap;
+      if (!clientReady()) return;
+      var now = Date.now();
+      var urgentReason = emergencyThreatReason(mobs);
+      if (urgentReason) { requestEmergencyEscape(urgentReason); return; }
+      doSitCycle(mobs);
+      // V1.9.4：瞬移连续失败冷却（无翅膀/无瞬移术/SP不足 3 次后 10s 停手，避免空转抖动）
+      if (now < flyFailUntil) return;
+      var flyInt = (parseInt($id("dsh-z-flyint").value, 10) || 30) * 1000;
+      if (now - lastFly < flyInt) return;
+      var needFly = false, reason = "";
+      var group = parseInt($id("dsh-z-grp").value, 10);
+      if (btDiagOn) btLog('def', 'mobs=' + mobs.length + ' isCombatMap=' + isCombatMap + ' grp=' + group + ' zRunning=' + zRunning);
+      if (!group || group < 0) group = 0; // 0 = 群殴处理关闭
+      var grpAct = $id("dsh-z-grpact") ? $id("dsh-z-grpact").value : "瞬移";
+      if (group > 0 && mobs.length >= group) {
+        if (grpAct === "解围技能") {
+          // 群殴 → 解围技能：优先用独立解围技能（dsh-z-qoaskill），未设置回退技能顺序第一个（目标在攻击距离内）
+          var qoSkid = $id("dsh-z-qoaskill") ? parseInt($id("dsh-z-qoaskill").value, 10) : 0;
+          var qoLv = $id("dsh-z-qoaskilllv") ? parseInt($id("dsh-z-qoaskilllv").value, 10) : 0;
+          if (isNaN(qoSkid)) qoSkid = 0; if (isNaN(qoLv)) qoLv = 0;
+          var qoSkill = qoSkid > 0 ? { skid: qoSkid, lv: qoLv > 0 ? qoLv : 1 } : null;
+          var orderG = parseSkillOrder($id("dsh-skillorder").value);
+          var entG = CLIENT.SS && CLIENT.SS.Entity;
+          var tgG = null, tdG = 1e9, atkG = 3;
+          try {
+            atkG = parseInt($id("dsh-z-mgrange").value, 10) || 9;
+            for (var gi = 0; gi < mobs.length; gi++) {
+              var mmG = mobs[gi];
+              if (mmG && mmG.dist >= 0 && mmG.dist < tdG && mmG.dist <= atkG) { tdG = mmG.dist; tgG = mmG; }
+            }
+          } catch (e5) {}
+          var qoUse = qoSkill || (orderG.length ? orderG[0] : null);
+          if (tgG && qoUse && tgG.GID) {
+            try {
+              var pg = new CLIENT.PS.CZ.USE_SKILL();
+              pg.SKID = qoUse.skid;
+              pg.selectedLevel = qoUse.lv;
+              pg.targetID = tgG.GID;
+              CLIENT.NM.sendPacket(pg);
+              setStatus("群殴(" + mobs.length + "只)，解围技能 " + getSkillNameById(qoUse.skid), "warn");
+              tlog("defense-qo skill=" + qoUse.skid);
+            } catch (e6) {}
+            return; // 已施放解围，本轮不做其他防御
+          }
+        }
+        // V2.16.0：群殴自动瞬移恢复独立开关（dsh-z-flygrp，默认关）——grp>0 且 grpact=「瞬移」且勾选才启用
+        if (grpAct === "瞬移" && isCombatMap && $id("dsh-z-flygrp") && $id("dsh-z-flygrp").checked) {
+          needFly = true;
+          reason = "群殴(" + mobs.length + "只)";
+        }
+      }
+      // BOSS 瞬移（dsh-z-bossfly 开关，默认关）：V1.9.4 统一距离口径 DS_BOSS_DIST（默认25格），与拾取共用
+      if (isCombatMap && $id("dsh-z-bossfly") && $id("dsh-z-bossfly").checked && !needFly) {
+        for (var bi = 0; bi < mobs.length; bi++) {
+          if (mobs[bi] && mobs[bi].isBoss && mobs[bi].dist >= 0 && mobs[bi].dist <= DS_BOSS_DIST) {
+            needFly = true;
+            reason = "BOSS(" + (mobs[bi].name || mobs[bi].mid) + ")";
+            break;
+          }
+        }
+      }
+      var life = ent && ent.life;
+      if (life) {
+        var hpPct = life.maxhp > 0 ? life.hp / life.maxhp * 100 : 100;
+        var spPct = life.maxsp > 0 ? life.sp / life.maxsp * 100 : 100;
+        if (isCombatMap && hpPct < (parseInt($id("dsh-z-hpfly").value, 10) || 20)) { needFly = true; reason = "HP" + Math.round(hpPct) + "%"; }
+        if (isCombatMap && spPct < (parseInt($id("dsh-z-spfly").value, 10) || 10)) { needFly = true; reason = "SP" + Math.round(spPct) + "%"; }
+        if (hpPct < (parseInt($id("dsh-z-hpout").value, 10) || 5)) { setStatus("HP极低，10秒后下线", "err"); }
+        // V1.9.4 瀑布接管：低血(喝水线) + 无药 + 被围 → 升级瞬移（消 25% 无药死区）
+        var potThrNow = potHpThr();
+        if (isCombatMap && potNoPotion && mobs.length > 0 && hpPct < potThrNow && !needFly) {
+          needFly = true; reason = "低血无药被围";
+        }
+      }
+      // V2.16.15 卡死判定升级：坐标 4s 不变 +（无锁定 或 锁定怪血量 4s 没掉）→ 瞬移
+      //   站桩正常打怪（血量在掉）不误判；空打/到不了/免疫（血量不掉）4s 即换点
+      var atkInvalid = false;
+      if (zLock.gid) {
+        var _ht = zAtkHpTrack[zLock.gid];
+        atkInvalid = !!(_ht && (now - _ht.at >= 4000));
+      }
+      // V2.16.19：已坐下 / 正在等坐下（无怪无锁定且 HP·SP 低于坐下阈值）都不算卡死
+      var waitingSit = !zLock.gid && !(mobs && mobs.length) && needSitNow();
+      if (isCombatMap && zRunning && $id("dsh-z-flystuck").checked && zStuckSince && (now - zStuckSince > 4000) && (!zLock.gid || atkInvalid) && !isSitting() && !waitingSit) { needFly = true; reason = "卡死4s"; }
+      // V2.16.0：防御瞬移总开关（dsh-z-flykill，默认开）——关掉后群殴/BOSS/低血/SP/被围/卡死/坐下看门狗全部不再瞬移，坐下回血不受影响
+      if ($id("dsh-z-flykill") && !$id("dsh-z-flykill").checked) needFly = false;
+      // V2.15.22：SP 低瞬移让位——坐下条件满足且未被围、HP 未到危险线时，SP 瞬移让位给坐下回蓝
+      if (needFly && /^SP/.test(reason) && needSitNow() && mobs.length < 3 && life && life.maxhp > 0 && (life.hp / life.maxhp * 100) >= (parseInt($id("dsh-z-hpfly").value, 10) || 20)) {
+        needFly = false;
+        reason = "";
+      }
+      if (needFly) {
+        // 紧急防御只走已学瞬移术；确认地图/坐标变化前持续阻塞治愈与普通技能。
+        var flyResult = requestEmergencyEscape(reason);
+        var flyOk = flyResult === "teleport" || flyResult === "wait" || flyResult === "stand";
+        if (btDiagOn) btLog('def-fly', reason + ' -> ' + (flyOk ? '成功' : '失败') + ' (failCnt=' + flyFailCount + ' failUntil=' + (flyFailUntil - now > 0 ? ((flyFailUntil - now) / 1000).toFixed(1) + 's后' : '无') + ')');
+        if (!flyOk) markFlyFail(); else markFlyOk();
+        lastFly = now;
+        setStatus("瞬移(" + reason + ")", "warn");
+      }
+      // V2.16.19：坐下周期已提前到本函数开头（不受瞬移冷却影响），此处不再重复调用
+      // V1.9.4 面板防御状态行
+      var dsEl = $id("dsh-defstate");
+      if (dsEl) {
+        if (needFly) dsEl.textContent = "防御状态：瞬移(" + reason + ")";
+        else if (defSnap.sitting) dsEl.textContent = "防御状态：坐下回血";
+        else if (potNoPotion && life && life.maxhp > 0 && (life.hp / life.maxhp * 100) < potHpThr() && mobs.length > 0) dsEl.textContent = "防御状态：低血无药被围";
+        else dsEl.textContent = "防御状态：正常";
+      }
+    } catch (e) {}
+  }
+  function doFly() {
+    try {
+      if (!clientReady()) return false;
+      var mode = $id("dsh-z-flymode").value;
+      // V1.7.0 默认「瞬移术→翅膀」：瞬移术Lv1 成功判定（已学+SP足）失败才回退苍蝇翅膀
+      if (mode === "瞬移术→翅膀") {
+        if (castTeleport()) return true;
+        var wingfb = findFlyWing();
+        if (wingfb && useItemByIndex(wingfb.index)) {
+          zWalkState.dir = Math.floor(Math.random() * 8); // 瞬移后随机换方向，避免走回原地
+          zWalkState.lastPos = null; zWalkState.stuckCnt = 0; zWalkState.tried = 0;
+          tlog("fly-item-" + wingfb.itid);
+          return true;
+        }
+        return false; // 无瞬移术也无翅膀 → 计失败（V1.9.4 失败冷却用）
+      }
+      // 优先苍蝇翅膀（模糊搜索：名字含翅膀 + 描述确认瞬移效果）→ 用背包物品；否则瞬移术
+      if (mode === "苍蝇翅膀优先" || mode === "翅膀→瞬移术") {
+        var wing = findFlyWing();
+        if (wing && useItemByIndex(wing.index)) {
+          zWalkState.dir = Math.floor(Math.random() * 8); // 瞬移后随机换方向，避免走回原地
+          zWalkState.lastPos = null; zWalkState.stuckCnt = 0; zWalkState.tried = 0;
+          tlog("fly-item-" + wing.itid);
+          return true;
+        }
+        if (mode === "翅膀→瞬移术" && $id("dsh-z-flyauto").checked) return castTeleport();
+        return false;
+      }
+      if (mode === "瞬移术Lv1") return castTeleport();
+      return false;
+    } catch (e) { return false; }
+  }
+  // 模糊搜索背包中的瞬移翅膀（苍蝇翅膀系列）：名字含"翅膀"，且确认具备瞬间移动效果
+  function findFlyWing() {
+    try {
+      var inv = findInventory();
+      if (!inv) return null;
+      var DB = CLIENT.DB || requireDB("DB/DBManager");
+      for (var i = 0; i < inv.length; i++) {
+        var it = inv[i] || {};
+        var itid = it.ITID != null ? it.ITID : (it.itemid != null ? it.itemid : null);
+        if (itid == null) continue;
+        var info = null;
+        try { info = DB && typeof DB.getItemInfo === "function" && DB.getItemInfo(itid); } catch (e) {}
+        var nm = (info && (info.identifiedDiSPlayName || info.name)) || "";
+        var desc = (info && (info.identifiedDescriptionName || "")) || "";
+        // 名字含"翅膀"（苍蝇翅膀/巨型苍蝇翅膀…）且描述确认瞬移效果（排除蝴蝶翅膀=回城）
+        var isFly = /翅膀|fly\s*wing/i.test(nm);
+        if (!isFly) continue;
+        var isTeleport = /瞬移|瞬间移动|随机移动/i.test(desc) || /苍蝇/i.test(nm);
+        if (isTeleport) return { index: it.index != null ? it.index : i, itid: itid, name: nm };
+      }
+      return null;
+    } catch (e) { return null; }
+  }
+  function useItemByIndex(index) {
+    try {
+      var p = new CLIENT.PS.CZ.USE_ITEM();
+      p.index = index;
+      CLIENT.NM.sendPacket(p);
+      return true;
+    } catch (e) { return false; }
+  }
+  function useItemById(itemid) {
+    try {
+      var inv = findInventory();
+      if (!inv) return false;
+      for (var i = 0; i < inv.length; i++) {
+        var it = inv[i] || {};
+        if (it.ITID === itemid || it.itemid === itemid) {
+          return useItemByIndex(it.index != null ? it.index : i);
+        }
+      }
+      return false;
+    } catch (e) { return false; }
+  }
+  // 瞬移术成功判定（V1.7.0）：技能26(AL_TELEPORT)已学 且 SP≥10 才发；失败=false（调用方回退翅膀）
+  function castTeleport() {
+    try {
+      var lv = 0;
+      try { lv = learnedSkillLv(26); } catch (e) {}
+      if (!lv) { tlog("fly-skill-nolearn"); return false; }
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      var sp = ent && ent.life ? ent.life.sp : null;
+      if (sp != null && sp < 10) { tlog("fly-skill-losp"); return false; }
+      var p = new CLIENT.PS.CZ.USE_SKILL();
+      p.SKID = 26; // AL_TELEPORT 瞬移术
+      p.selectedLevel = 1;
+      p.targetID = 0;
+      CLIENT.NM.sendPacket(p);
+      zWalkState.dir = Math.floor(Math.random() * 8); // 瞬移后随机换方向
+      zWalkState.lastPos = null; zWalkState.stuckCnt = 0; zWalkState.tried = 0;
+      tlog("fly-skill-teleport");
+      return true;
+    } catch (e) { return false; }
+  }
+  function findInventory() {
+    try {
+      // 优先从 UIManager 组件实例取背包 .list（数据源已由探针 v0.13.17 确认：inventory/BasicInventory.list）
+      try {
+        if (!CLIENT.UI) CLIENT.UI = window.require && window.require("UI/UIManager");
+        var UM = CLIENT.UI;
+        if (UM) {
+          var cands = ["BasicInventory", "Inventory", "ItemInfo"];
+          for (var c = 0; c < cands.length; c++) {
+            var inst = null;
+            try { if (typeof UM.get === "function") inst = UM.get(cands[c]); } catch (e) {}
+            if (!inst && UM.components) inst = UM.components[cands[c]] || null;
+            if (!inst && UM.instance && UM.instance.components) inst = UM.instance.components[cands[c]] || null;
+            if (inst && Array.isArray(inst.list) && inst.list.length && inst.list[0] && typeof inst.list[0] === "object" && ("ITID" in inst.list[0] || "itemid" in inst.list[0])) return inst.list;
+          }
+        }
+      } catch (e) {}
+      // 兜底：旧客户端 SessionStorage 顶层直接挂的背包数组
+      if (CLIENT.SS) {
+        var keys = Object.keys(CLIENT.SS);
+        for (var i = 0; i < keys.length; i++) {
+          var v = CLIENT.SS[keys[i]];
+          if (v && typeof v === "object" && Array.isArray(v) && v.length && v[0] && typeof v[0] === "object" && ("ITID" in v[0] || "itemid" in v[0])) return v;
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  // ---- 助手攻击循环 ----
+  // 内挂面板开关读取：vbk 面板 .openattack checkbox（自动战斗）当前勾选状态 = 服务器内挂实际开关
+  // toggle 语义下必须与服务器同步，否则发错次数会反相；用户可能手动在内挂面板点过 → 启动时校准
+  function npReadPanelState() {
+    try {
+      var el = document.querySelector("#vbk input.openattack");
+      if (el) return !!el.checked;
+    } catch (e) {}
+    return null; // 面板不可读（未知）
+  }
+  // 校准本地 npHuntOn 与内挂面板实际状态一致（防用户误操作导致 toggle 反相）
+  function npCalibrate() {
+    try {
+      var panel = npReadPanelState();
+      if (panel === null) return; // 读不到就不动（保持本地跟踪）
+      if (panel !== npHuntOn) {
+        dshDiag("np-calibrate", { panel: panel, local: npHuntOn });
+        tlog("np-calibrate panel=" + panel + " local=" + npHuntOn + " → 同步");
+        npHuntOn = panel; // 与服务器实际状态对齐
+      }
+    } catch (e) {}
+  }
+  function startZhu() {
+    if (zRunning) return;
+    zRunning = true;
+    $id("dsh-z-state").textContent = "助手运行中…";
+    startScan();
+    // 重置锁定模式/监控：重新开始一轮自动战斗（含「打死换下一个=关」的停手状态）
+    zLock.gid = null; zLock.name = ""; zLock.dist = null; zLock.done = false;
+    zMon.action = "启动中";
+    // V2.16.4 地图边界：记录启动点为锚点（圆心），寻怪走出半径就回头
+    try {
+      var eStart = CLIENT.SS && CLIENT.SS.Entity;
+      if (eStart && eStart.position) zWalkState.center = [Math.round(eStart.position[0]), Math.round(eStart.position[1])];
+    } catch (e) {}
+    // V2.16.8 换图回走：记录启动地图键，检测换图后反向走/传送回
+    try { zWalkState.startMap = getMapName(); } catch (e) {}
+    zUseCounts = {}; // V1.7.0 重置本轮技能释放次数（maxUses）
+    zLockCounts = {}; // V1.7.5 重置锁定次数（开/停自动战斗清空）
+    dshDiag("zhu-start", { mode: npHuntMode(), panel: (function () { try { return npReadPanelState(); } catch (e) { return null; } })() });
+    // 内挂机制寻怪：启动时先校准内挂面板实际开关状态（防用户手动点过内挂开关导致 toggle 不同步），
+    // 再同步锁定目录给内挂（服务器寻怪只追锁定怪）
+    if (npHuntMode() === "np" || isHybrid()) {
+      npCalibrate();
+      npSyncTargets();
+      tlog("zhu-start np-hunt");
+    }
+    var sec = Math.max(0.25, parseFloat($id("dsh-z-attint").value) || 0.25);
+    zAttTimer = setInterval(zAttack, sec * 1000);
+    setStatus("助手模式已启动（扫描+攻击）", "ok");
+  }
+  function stopZhu() {
+    zRunning = false;
+    stopScan();
+    if (zAttTimer) { clearInterval(zAttTimer); zAttTimer = null; }
+    // 内挂机制寻怪：停止时关闭内挂自动战斗
+    npHuntStop();
+    zLock.gid = null; zLock.done = false; // 解除锁定/停手状态
+    zUseCounts = {}; // V1.7.0 重置本轮技能释放次数（maxUses）
+    zLockCounts = {}; // V1.7.5 重置锁定次数（开/停自动战斗清空）
+    dshDiag("zhu-stop");
+    zMon.action = "已停止";
+    $id("dsh-z-state").textContent = "助手未启动";
+    setStatus("助手模式已停止", "st");
+  }
+  // 无目标自动走路寻怪（2s 判定一次）
+  // 直走策略：持续朝一个方向走 + A*避障，遇障碍/卡住才转向（不再 8 方向轮转兜圈）
+  // ================= 坐标走路（指定 xy / 走到 NPC / 跨图落点共用原语）=================
+  // moveXY.busy 全局移动锁：手动走路期间，自动寻怪走位 / 跟随 / 拾取接近一律让位，避免移动打架
+  // 走路原语 = pathFindTo(A* 避障) 循环 REQUEST_MOVE，曼哈顿距离 ≤2 判到达停（与跟随 tickFollow 同款模式）
+  var moveXY = { busy: false, tx: 0, ty: 0, since: 0, last: 0, fail: 0, onArrive: null, logId: "dsh-mvlog" };
+  function mvLog(msg) {
+    try { var el = $id(moveXY.logId); if (el) el.textContent = msg; } catch (e) {}
+    try { setStatus(msg, "st"); } catch (e) {}
+  }
+  function walkToXY(tx, ty, onArrive, logId) {
+    try {
+      // V2.15.12：内挂自动战斗开着时角色移动由服务器控制，客户端走路包会被覆盖 → 先关内挂再走（走完不自动恢复，用户可再开）
+      try { if (npHuntOn) npHuntStop(); } catch (e) {}
+      if (!clientReady()) { mvLog("客户端未就绪"); return false; }
+      var ent = CLIENT.SS.Entity;
+      if (!ent || !ent.position) { mvLog("未获取到角色坐标"); return false; }
+      moveXY.busy = true;
+      moveXY.tx = Math.floor(tx);
+      moveXY.ty = Math.floor(ty);
+      moveXY.since = Date.now();
+      moveXY.last = 0;
+      moveXY.fail = 0;
+      moveXY.onArrive = (typeof onArrive === "function") ? onArrive : null;
+      moveXY.logId = logId || "dsh-mvlog";
+      mvLog("走路中 → (" + moveXY.tx + "," + moveXY.ty + ")");
+      return true;
+    } catch (e) { return false; }
+  }
+  function stopWalkXY() {
+    moveXY.busy = false;
+    moveXY.onArrive = null;
+    mvLog("走路已停止");
+  }
+  // 引擎点地走 y() 同款：目标格不可走时 3×3 由近及远吸附到最近可走格（防终点在墙/障碍上被服务器拒收）
+  function mvSnapWalkable(tx, ty) {
+    try {
+      var ALT = window.require && window.require("Renderer/Map/Altitude");
+      var WALK = ALT && ALT.TYPE && ALT.TYPE.WALKABLE;
+      if (!ALT || !ALT.getCellType || !WALK) return [tx, ty];
+      // V2.15.17：目标点边界钳制——越界坐标环形索引/不可走，先拉回界内再找可走格
+      var cw = ALT.width || 0, ch = ALT.height || 0;
+      var cx = tx, cy = ty;
+      if (cw > 0) cx = Math.max(0, Math.min(cw - 1, tx));
+      if (ch > 0) cy = Math.max(0, Math.min(ch - 1, ty));
+      if (ALT.getCellType(cx, cy) & WALK) return [cx, cy];
+      for (var g = 0; g <= 1; ++g)
+        for (var e = -g; e <= g; ++e)
+          for (var f = -g; f <= g; ++f) {
+            var nx = cx + e, ny = cy + f;
+            if (nx < 0 || ny < 0 || (cw > 0 && nx >= cw) || (ch > 0 && ny >= ch)) continue;
+            if (ALT.getCellType(nx, ny) & WALK) return [nx, ny];
+          }
+      return [cx, cy]; // 兜底返回钳制后的点（不再返回越界坐标）
+    } catch (e) {}
+    return [tx, ty];
+  }
+  // V2.10.0 客户端 A* 寻路：基于本图全量地形数据（Renderer/Map/Altitude.getGat().cells）
+  // 8 方向、WALKABLE=2 判定、终点吸附可走格；节点上限防卡死，返回路径点数组（不含起点）或 null
+  var dshAStarCache = null; // {w, h, cells, types} 缓存（换图自动失效：地图名变化重建）
+  function dshAStarData() {
+    try {
+      var ALT = window.require && window.require("Renderer/Map/Altitude");
+      if (!ALT || !ALT.getGat || !ALT.TYPE) return null;
+      var g = ALT.getGat();
+      if (!g || !g.cells || !g.width || !g.height) return null;
+      var mapK = ""; try { var MR2 = window.require && window.require("Renderer/MapRenderer"); if (MR2 && MR2.currentMap) mapK = String(MR2.currentMap); } catch (e) {}
+      var mk = mapK + "|" + g.width + "x" + g.height;
+      if (!dshAStarCache || dshAStarCache.k !== mk) dshAStarCache = { k: mk, w: g.width, h: g.height, cells: g.cells, walk: ALT.TYPE.WALKABLE || 2 };
+      return dshAStarCache;
+    } catch (e) { return null; }
+  }
+  function dshWalkable(x, y) {
+    try {
+      var d = dshAStarData();
+      if (!d) return true;
+      if (x < 0 || y < 0 || x >= d.w || y >= d.h) return false;
+      return (d.cells[x + y * d.w] & d.walk) !== 0;
+    } catch (e) { return true; }
+  }
+  function dshFindPath(sx, sy, tx, ty) {
+    try {
+      var d = dshAStarData();
+      if (!d) return null;
+      var s = dshSnapWalk(sx, sy), t = dshSnapWalk(tx, ty);
+      if (!s || !t) return null;
+      var w = d.w, h = d.h;
+      var MAXN = 8000;
+      var open = [s], closed = {}, g = {}, f = {}, came = {}, dirs = [[1,0],[0,1],[-1,0],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+      var k0 = s[0] + "," + s[1];
+      g[k0] = 0; f[k0] = Math.abs(s[0] - t[0]) + Math.abs(s[1] - t[1]);
+      var key = function (x, y) { return x + "," + y; };
+      var step = 0;
+      while (open.length && step < MAXN) {
+        step++;
+        // 取 f 最小
+        var bi = 0;
+        for (var oi = 1; oi < open.length; oi++) { if (f[key(open[oi][0], open[oi][1])] < f[key(open[bi][0], open[bi][1])]) bi = oi; }
+        var cur = open.splice(bi, 1)[0];
+        var ck = key(cur[0], cur[1]);
+        if (cur[0] === t[0] && cur[1] === t[1]) {
+          var path = [];
+          var nk = ck;
+          while (nk != null && nk !== k0) { var pp = nk.split(","); path.unshift([parseInt(pp[0], 10), parseInt(pp[1], 10)]); nk = came[nk] != null ? came[nk] : null; }
+          return path;
+        }
+        if (closed[ck]) continue;
+        closed[ck] = true;
+        for (var di = 0; di < dirs.length; di++) {
+          var nx = cur[0] + dirs[di][0], ny = cur[1] + dirs[di][1];
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          if (!dshWalkable(nx, ny)) continue;
+          var nk2 = key(nx, ny);
+          if (closed[nk2]) continue;
+          var ng = g[ck] + ((di < 4) ? 10 : 14);
+          if (g[nk2] == null || ng < g[nk2]) {
+            g[nk2] = ng; came[nk2] = ck;
+            f[nk2] = ng + Math.abs(nx - t[0]) + Math.abs(ny - t[1]);
+            if (open.indexOf(cur) < 0) { var found = false; for (var oi2 = 0; oi2 < open.length; oi2++) { if (open[oi2][0] === nx && open[oi2][1] === ny) { found = true; break; } } if (!found) open.push([nx, ny]); }
+          }
+        }
+      }
+      return null; // 超限/不可达
+    } catch (e) { return null; }
+  }
+  function dshSnapWalk(x, y) {
+    try {
+      var d = dshAStarData();
+      if (!d) return [x, y];
+      if (dshWalkable(x, y)) return [Math.floor(x), Math.floor(y)];
+      for (var g = 1; g <= 4; g++)
+        for (var e = -g; e <= g; e++)
+          for (var f2 = -g; f2 <= g; f2++) {
+            var nx = x + e, ny = y + f2;
+            if (nx >= 0 && ny >= 0 && nx < d.w && ny < d.h && dshWalkable(nx, ny)) return [nx, ny];
+          }
+      return null;
+    } catch (e) { return [x, y]; }
+  }
+
+  function tickMoveXY() {
+    if (!moveXY.busy) return;
+    try {
+      if (!clientReady()) { moveXY.busy = false; mvLog("客户端掉线，停止走路"); return; }
+      var ent = CLIENT.SS.Entity;
+      if (!ent || !ent.position) return;
+      var d = Math.abs(ent.position[0] - moveXY.tx) + Math.abs(ent.position[1] - moveXY.ty);
+      if (d <= 2) {
+        moveXY.busy = false;
+        mvLog("已到达 (" + moveXY.tx + "," + moveXY.ty + ")");
+        var cb = moveXY.onArrive; moveXY.onArrive = null;
+        if (cb) { try { cb(); } catch (e) {} }
+        return;
+      }
+      if (Date.now() - moveXY.since > 90000) { moveXY.busy = false; mvLog("走路超时（90s 未到达）已停止"); return; }
+      if (Date.now() - moveXY.last < 1000) return; // 1s 节流
+      moveXY.last = Date.now();
+      // 坐标走路修复（V2.15.11）：跟随同款渐进走——pathFindTo 取沿路径约 5 格处中间点发包，
+      // 服务器每次只收到近距离移动请求（直发终点超远被服务器拒收 → 客户端本地预测假到达 → 角色不动却提示已到达）
+      var r = pathFindTo(moveXY.tx, moveXY.ty);
+      var dest = (r && isFinite(r.x) && isFinite(r.y)) ? [r.x, r.y] : mvSnapWalkable(moveXY.tx, moveXY.ty); // 寻路失败回退吸附终点
+      var pm = new CLIENT.PS.CZ.REQUEST_MOVE();
+      pm.dest = [dest[0], dest[1]];
+      CLIENT.NM.sendPacket(pm);
+    } catch (e) {}
+  }
+  masterTickReg(function () { try { tickMoveXY(); } catch (e) {} });
+  // ---------------- V2.14.0 寻怪自动上马（缰绳 12622：骑乘状态不在身即用，1s 防抖，连续失败退避30s）----------------
+  var reinLastUse = 0, reinFailStreak = 0, reinBackoffUntil = 0;
+  // V2.16.7：锁定怪是否在攻击距离内（正在打）——超射程=追怪赶路中，允许上马
+  function lockMobInAtkRange() {
+    try {
+      if (!zLock.gid) return false;
+      var entR = CLIENT.SS && CLIENT.SS.Entity;
+      if (!entR || !entR.position) return false;
+      var atkR = calcAtkRange();
+      var EM = window.require && window.require("Renderer/EntityManager");
+      var inR = false;
+      if (EM && typeof EM.forEach === "function") {
+        EM.forEach(function (e) {
+          if (inR) return;
+          if (e.GID === zLock.gid && e.objecttype === 5 && e.position) {
+            var d = Math.abs(e.position[0] - entR.position[0]) + Math.abs(e.position[1] - entR.position[1]);
+            if (d <= atkR) inR = true;
+          }
+        });
+      }
+      return inR;
+    } catch (e) { return false; }
+  }
+  function tickRein() {
+    try {
+      var sw = $id("dsh-z-rein");
+      if (!sw || !sw.checked) { reinFailStreak = 0; return; }
+      if (!zRunning) { reinFailStreak = 0; return; } // V2.16.9：寻怪自动上马只在助手运行时生效
+      var now = Date.now();
+      if (now < reinBackoffUntil) return;
+      if (!clientReady()) return;
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      if (!ent || !ent.life) return;
+      // V2.16.7 上马判定细化：锁定怪在攻击距离内（正在打）→ 不上马；超射程（追怪赶路）→ 允许上马（骑马追怪）
+      //   平A noctrl 连击锁定中 → 不上马；内挂指挥打怪（npHuntOn）→ 不上马
+      //   被打 3s 内：仅当需反击（非选中怪攻击=还击）或瞬移（=瞬移）时视为战斗不上马；「无视」→ 继续骑马跑
+      try {
+        if (zLock.gid && lockMobInAtkRange()) { reinFailStreak = 0; return; }
+        if (zAtkLast && zAtkLast.gid && !zAtkLast.outOfRange) { reinFailStreak = 0; return; } // 平A锁定中（目标在射程内正在打）；出射程追怪放行上马
+        if (npHuntOn) { reinFailStreak = 0; return; } // 内挂自动战斗开（角色正在打怪）
+        if (zRunning && Date.now() - zHpWatch.lastHitAt < 3000) {
+          var onaR = ($id("dsh-z-ona") && $id("dsh-z-ona").value) || "还击";
+          if (onaR === "还击" || onaR === "瞬移") { reinFailStreak = 0; return; } // 需反击/瞬移 → 不上马；无视 → 继续骑马
+        }
+      } catch (e) {}
+      try { hookStatusIcons(); } catch (e3) {} // 确保判活表工作（幂等）
+      if (buffStateOn(613) || buffStateOn(27)) { reinFailStreak = 0; return; }
+      if (now - reinLastUse < 1000) return;
+      if (useItemById(12622)) {
+        reinLastUse = now; reinFailStreak++;
+        if (reinFailStreak >= 3) { reinBackoffUntil = now + 30000; reinFailStreak = 0; }
+      }
+    } catch (e) {}
+  }
+  masterTickReg(function () { try { tickRein(); } catch (e) {} });
+  var zWalkState = { lastMove: 0, lastChase: 0, dir: 0, noTargetSince: 0, lastIdleFly: 0, lastPos: null, stuckCnt: 0, stuckAt: 0, tried: 0, lastSeenDir: null, lastSeenAt: 0, center: null, chaseGid: null, chaseDist: 0, chaseSince: 0, startMap: null, lastMoveDir: 0, backMapAt: 0, backDir: 0, backTeleportAt: 0 }; // V2.16.4 stuckAt=卡住时间窗口起点；center=地图边界锚点(启动点)；V2.16.7 chase*=追怪卡住检测
+  var zEscape = { until: 0 };                 // V2.15.23：逃脱状态（坐下被打→移动避开怪，期间不寻怪不打怪）
+  var zAStarState = { active: false, tx: 0, ty: 0, since: 0, lastTry: 0, stuckSince: 0, lastPos: null, aim: null }; // V2.10.0 A* 绕障行走状态
+  // 状态前置穿插平A计时：zWaitSince = 上次穿插普攻时间（间隔跟随攻击循环，见 zAttack wait 分支）
+  var zWaitSince = 0;
+  // 补状态节流：距上次补状态技能 <1s 不重复补 → 间隙让普攻穿插（蓄气链不再霸占每轮）
+  var zPrepAt = 0;
+  var zPrepSpam = 0; // V2.32.2 补球节流：连续补球仍无球则封顶，杜绝无限狂蓄气（气弹数>0 即清零）
+  // 技能释放最小间隔：放完一次技能（含补状态）后 800ms 内不再放 → 转 wait 穿插普攻（避免技能链霸占每轮）
+  var zLastCastAt = 0;
+  var zLastCastSkid = 0; // V2.15.24：最近一次释放的技能ID（配合 skillDelay 用真实后摇等待）
+  var skillDelay = {};   // V2.15.24+：服务器下发真实延迟表（0x43d/0x43e POSTDELAY + 0xb1a USESKILL_ACK3 动态覆盖）SKID→延迟ms
+  var skillNextAt = {};  // V2.15.28：每技能独立 CD 计时（skillNextAt[SKID]=下次可释放时间戳），到点才发，不再按攻击轮次全局窗口
+  var selfSpirits = { aid: 0, num: 0, map: "" }; // 0x1d0/0x1e1 自身气弹权威缓存；换图或身份变化即失效
+  var __dshSphereLog = []; // V2.32.2 气弹自采集诊断环形缓冲（自动采集，无需手动开关）
+  function dshSphereLog(msg) {
+    try {
+      __dshSphereLog.push({ t: Date.now(), m: msg });
+      if (__dshSphereLog.length > 400) __dshSphereLog.splice(0, __dshSphereLog.length - 400);
+      try { window.__dshSphereLog = __dshSphereLog; } catch (e) {}
+    } catch (e) {}
+  }
+  try { window.__dshSphereLog = __dshSphereLog; } catch (e) {}
+  // V2.33.0 施法轨迹自回传：每轮记录 cast 决策 + 剩余CD + 距离；节流落盘到 dsh_ro_casttrace → 8899 KV 中继 → 助手直接提取
+  var __dshCastTrace = [];
+  function dshCastLog(msg) {
+    try {
+      __dshCastTrace.push({ t: Date.now(), m: msg });
+      if (__dshCastTrace.length > 400) __dshCastTrace.splice(0, __dshCastTrace.length - 400);
+      try { window.__dshCastTrace = __dshCastTrace; } catch (e) {}
+      if (!dshCastLog._at || Date.now() - dshCastLog._at > 2000) {
+        dshCastLog._at = Date.now();
+        try { localStorage.setItem("dsh_ro_casttrace", JSON.stringify(__dshCastTrace)); } catch (e) {}
+      }
+    } catch (e) {}
+  }
+  try { window.__dshCastTrace = __dshCastTrace; } catch (e) {}
+  try { window.__dshCdScale = 0.5; } catch (e) {} // V2.33.0 CD压缩系数
+  try { window.__dshSkillDelay = skillDelay; } catch (e) {} // 供控制台/探针查看
+  try { window.__dshSkillNext = skillNextAt; } catch (e) {} // 供控制台/探针查看
+  var zSkillSentAt = {};  // V2.16.7：技能包发出时间戳（估算服务器 RTT）
+  var zSkillRtt = {};     // V2.16.7：每技能滑动平均 RTT ms
+  var zSkillRttAvg = 0;   // V2.16.7：全局平均 RTT ms
+  // 被攻击检测：HP 下降窗口 → 触发「非选中怪攻击」处理（无视/瞬移/还击）
+  var zHpWatch = { hp: null, lastHitAt: 0 };
+  // ---------- V2.7.3 平A断续修复：NOCTRL 模式发包 ----------
+  // vbk 客户端铁证：Preferences/Controls 默认 noctrl:!0（夜RO 默认免ctrl自动攻击开），
+  //   点击怪 CZ.REQUEST_ACT 的 action = noctrl ? 7 : 0 → noctrl 开应发 7（脚本旧版硬编码 0 = 断续根因）。
+  //   且攻击循环由服务器驱动（发一次锁定后服务器自动连击，客户端发包为0仍持续攻击），
+  //   故同目标 1s 节流防重复点击打断服务器攻击循环；换目标/重进射程自然触发新包。
+  function npNoCtrlOn() {
+    try {
+      var PC = window.require && window.require("Preferences/Controls");
+      if (PC && PC.noctrl != null) return !!PC.noctrl;
+    } catch (e) {}
+    return true; // 读不到默认 noctrl 开（该服默认开启）
+  }
+  var zAtkLast = { gid: null, at: 0, outOfRange: false }; // V2.15.29 平A锁定状态：gid=已锁定目标；outOfRange=目标曾出射程（追怪回来需重新锁定）
+  // V2.16.2：平A断连检测 + 点选补锁定——noctrl 系统连击偶发中断（目标稍动/状态重置/服务器判定丢失），
+  //   脚本静默不补发就一直停。方案：锁定目标后追踪其 HP，怪还活着但 HP 超 2.5s 未下降 = 连击已断 →
+  //   用点选补一次锁定（官方点击路径 onMouseDown+onFocus 重新锁定+触发连击），3s 最小间隔防刷包。
+  var zAtkHpTrack = {};   // gid -> { hp, at } 追踪锁定目标 HP 下降情况
+  var zAtkRelockAt = 0;   // 上次点选补锁时间
+  function zAtkTrackHp(gid, ent) {
+    try {
+      if (!ent || !ent.life) return;
+      var hp = ent.life.hp;
+      if (hp == null) return;
+      var now = Date.now();
+      var t = zAtkHpTrack[gid];
+      if (!t) { zAtkHpTrack[gid] = { hp: hp, at: now }; return; }
+      if (hp < t.hp) { t.hp = hp; t.at = now; } // HP 下降 = 连击在打
+    } catch (e) {}
+  }
+  function zAtkNeedRelock(gid, ent) {
+    try {
+      if (!ent || !ent.life) return false;
+      var hp = ent.life.hp;
+      if (hp == null) return false;
+      var t = zAtkHpTrack[gid];
+      if (!t) return false;
+      if (hp < t.hp) { t.hp = hp; t.at = Date.now(); return false; }
+      // V2.16.3：判定窗口 2.5s→1.5s（更快发现断连），补锁间隔 3s→2s（防刷包但恢复更快）
+      return (Date.now() - t.at >= 1500) && (Date.now() - zAtkRelockAt >= 2000);
+    } catch (e) { return false; }
+  }
+  function zAtkRelockPoint(ent) {
+    try {
+      zAtkRelockAt = Date.now();
+      // V2.16.3：弃用 onFocus 官方点击路径（自带寻路→走近→转身→再攻击，就是「模拟点选迟钝」同款慢路径），
+      //   改直接重发 noctrl 锁定包（REQUEST_ACT action=7）——轻量直达服务器、无寻路无转身，1s 内恢复连击
+      var p = new CLIENT.PS.CZ.REQUEST_ACT();
+      p.targetGID = ent.GID;
+      p.action = npNoCtrlOn() ? 7 : 0;
+      CLIENT.NM.sendPacket(p);
+      zAtkLast.gid = ent.GID; zAtkLast.at = Date.now(); zAtkLast.outOfRange = false; // 重发锁定包后保持锁定状态，让服务器连击跑
+      zAtkHpTrack[ent.GID] = { hp: (ent.life && ent.life.hp) || 0, at: Date.now() };
+      tlog("atk-relock 重发锁定包 gid=" + ent.GID);
+      setStatus("平A断连，重发锁定…", "warn");
+      return true;
+    } catch (e) { return false; }
+  }
+  function sendNormalAtk(gid) {
+    try {
+      if (!clientReady() || !gid) return;
+      var now = Date.now();
+      // V2.16.2：断连检测——锁定怪还活着但 HP 超 2.5s 未下降 → 点选补锁定（官方点击路径重新锁定）
+      if (zAtkLast.gid === gid && now - zAtkLast.at >= 1500) {
+        var entT = null;
+        try {
+          var EM2 = window.require && window.require("Renderer/EntityManager");
+          if (EM2 && typeof EM2.forEach === "function") {
+            EM2.forEach(function (e) { if (e && e.GID === gid) entT = e; });
+          }
+        } catch (e) {}
+        if (entT && zAtkNeedRelock(gid, entT)) { if (zAtkRelockPoint(entT)) return; }
+      }
+      if (zAtkLast.gid === gid && !zAtkLast.outOfRange) {
+        // 正常连击中：只追踪 HP（不进点选路径），不重发包
+        try {
+          var EM3 = window.require && window.require("Renderer/EntityManager");
+          if (EM3 && typeof EM3.forEach === "function") {
+            EM3.forEach(function (e) { if (e && e.GID === gid) zAtkTrackHp(gid, e); });
+          }
+        } catch (e) {}
+        if (btDiagOn) btLog('atk-skip', '同目标noctrl连击中不重发 gid=' + gid);
+        return;
+      }
+      var p = new CLIENT.PS.CZ.REQUEST_ACT();
+      p.targetGID = gid;
+      p.action = npNoCtrlOn() ? 7 : 0; // noctrl 开=7（免ctrl锁定攻击），关=0
+      CLIENT.NM.sendPacket(p);
+      zAtkLast.gid = gid;
+      zAtkLast.at = now;
+      zAtkLast.outOfRange = false;
+      zAtkHpTrack[gid] = { hp: 1e18, at: now }; // 重置追踪：新锁定从满血起点算（避免沿用旧怪血量）
+      if (btDiagOn) btLog('atk-send', 'noctrl 锁定 gid=' + gid + ' action=' + p.action);
+    } catch (e) {}
+  }
+  // V2.15.25：注入内挂——换目标时发一次锁定（REQUEST_ACT），客户端箭头/内挂跟随助手目标（挂机双轨一致，与走路机制无关）
+  function sendLockInject(gid) {
+    try {
+      if (!clientReady() || !gid) return;
+      // V2.15.30：纯技能流（穿插平A关）完全不发平A锁定包——sendLockInject 也是平A包，受同一开关控制
+      var mixEl = $id("dsh-z-attmix");
+      if (mixEl && !mixEl.checked) return;
+      var p = new CLIENT.PS.CZ.REQUEST_ACT();
+      p.targetGID = gid;
+      p.action = npNoCtrlOn() ? 7 : 0;
+      CLIENT.NM.sendPacket(p);
+      if (btDiagOn) btLog('lock-inject', 'gid=' + gid + ' action=' + p.action + '（内挂目标跟随）');
+    } catch (e) {}
+  }
+  // 客户端 A* 避障寻路：从玩家到目标点，返回沿路径约 5 格处的移动目标点（含路径点数）
+  function pathFindTo(tx, ty) {
+    try {
+      var PF = window.require("Utils/PathFinding");
+      var ent = CLIENT.SS.Entity;
+      if (!PF || typeof PF.search !== "function" || !ent || !ent.position) return null;
+      var out = new Int16Array(256);
+      var n = PF.search(Math.floor(ent.position[0]), Math.floor(ent.position[1]), Math.floor(tx), Math.floor(ty), 0, out);
+      if (!n || n < 2) return null;
+      // 沿路径累计约 5 格（避免一格一格走太慢，也不一次跳太远）
+      var px = out[0], py = out[1], dist = 0, pick = 1, maxI = Math.min(n - 1, 12);
+      for (var i = 1; i <= maxI; i++) {
+        var nx = out[i * 2], ny = out[i * 2 + 1];
+        dist += Math.abs(nx - px) + Math.abs(ny - py);
+        px = nx; py = ny; pick = i;
+        if (dist >= 5) break;
+      }
+      return { x: out[pick * 2], y: out[pick * 2 + 1], n: n };
+    } catch (e) { return null; }
+  }
+  function zWalk() {
+    try {
+      if (!clientReady()) return;
+      if (moveXY.busy) return; // 手动坐标走路中 → 自动寻怪走位让位
+      if (zEscape.until > Date.now()) return; // V2.15.23：逃脱中（移动避开怪）→ 不寻怪不打怪
+      if (pendingPick) { try { zMon.action = "拾取物品中"; } catch (e) {} return; } // V2.15.16：有拾取任务在身 → 寻怪让位（防拾取移动包被寻怪覆盖）
+      var ent = CLIENT.SS.Entity;
+      if (!ent || !ent.position) return;
+      // V2.16.8 换图检测 + 反向走回（走路跨图）；反向走 8s 没回图 → GPT 传送回启动图
+      try {
+        var curKeyB = getMapName();
+        if (zWalkState.startMap && curKeyB && normMapKey(curKeyB) !== normMapKey(zWalkState.startMap)) {
+          // V2.32.2 换图加固：换图瞬间地图名/坐标未稳会误触反向走；要求新图名连续稳定 1.2s 且坐标有效才认定
+          if (zWalkState.mapChgKey !== curKeyB) { zWalkState.mapChgKey = curKeyB; zWalkState.mapChgAt = Date.now(); return; }
+          if (Date.now() - zWalkState.mapChgAt < 1200) return;
+          if (!ent.position || !isFinite(ent.position[0]) || !isFinite(ent.position[1])) return;
+          var nowB = Date.now();
+          if (!zWalkState.backMapAt) {
+            zWalkState.backMapAt = nowB;
+            zWalkState.backDir = (zWalkState.lastMoveDir + 4) % 8;
+            tlog("walk-mapchange " + zWalkState.startMap + " -> " + curKeyB + "，反向走回");
+          }
+          var sinceTp = zWalkState.backTeleportAt ? nowB - zWalkState.backTeleportAt : 1e9;
+          if (nowB - zWalkState.backMapAt > 8000 && sinceTp > 20000) {
+            zWalkState.backTeleportAt = nowB;
+            setStatus("反向走未回图，传送回启动图…", "warn");
+            try { teleportToMap(zWalkState.startMap); } catch (e) {}
+            return;
+          }
+          var backDirs = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+          var bd = backDirs[zWalkState.backDir];
+          var btx = Math.round(ent.position[0] + bd[0] * 10);
+          var bty = Math.round(ent.position[1] + bd[1] * 10);
+          var bDest = mvSnapWalkable(btx, bty);
+          var pB = new CLIENT.PS.CZ.REQUEST_MOVE();
+          pB.dest = [bDest[0], bDest[1]];
+          CLIENT.NM.sendPacket(pB);
+          zWalkState.lastMoveDir = zWalkState.backDir;
+          setStatus("已换图，反向走回原图…", "warn");
+          return;
+        }
+        if (zWalkState.backMapAt && normMapKey(curKeyB) === normMapKey(zWalkState.startMap)) {
+          zWalkState.backMapAt = 0; zWalkState.backTeleportAt = 0;
+          zWalkState.mapChgKey = ""; zWalkState.mapChgAt = 0;
+          tlog("walk-mapchange 回到原图，恢复寻怪");
+        }
+        if (!zWalkState.startMap || (curKeyB && normMapKey(curKeyB) === normMapKey(zWalkState.startMap))) { zWalkState.mapChgKey = ""; zWalkState.mapChgAt = 0; }
+      } catch (e) {}
+      doSitCycle(scanMobs || []); // V2.15.22：坐下周期（无目标时间；安全才坐，坐下被打自动站起）
+      var now = Date.now();
+      // 坐下时不启动自动寻怪（内挂发包 + 自研直走都不做）——回血/回蓝期间保持静止
+      // 客户端实证：Entity.ACTION.SIT=2，实体字段 ent.action === ent.ACTION.SIT
+      var isSitting = false;
+      try {
+        var ACT = ent.ACTION || {};
+        isSitting = ent.action === ACT.SIT || ent.action === 2;
+      } catch (e) {}
+      if (isSitting) return;
+      // np 模式（内挂机制寻怪）不设 2s 走路门槛：发包时机由状态机控制（可攻击→停、无怪/超出→发）
+      // 否则每次巡怪都要等满 2s 才发内挂指令（用户反馈的「巡怪延迟」）
+      var npMode = npHuntMode() === "np" || isHybrid();
+      // V2.7.3：2s 判定门槛下移到「无怪直走」段；追怪用独立 1s 节流（缩短锁定→出手周期）
+      // 优先：找最近的锁定怪（任意距离）→ 避障寻路走过去
+      var EM = window.require("Renderer/EntityManager");
+      var anyLock = Object.keys(lockList).length > 0;
+      var beingHit = (now - zHpWatch.lastHitAt) < 3000; // 被攻击中
+      var onaMode = $id("dsh-z-ona") ? $id("dsh-z-ona").value : "还击";
+      var allowHitTarget = beingHit && onaMode === "还击"; // 被攻击且设置为还击 → 无锁定怪时非锁定怪也追
+      // V2.16.3：追怪候选分两池——锁定怪候选（lockNear）永远优先；还击候选（hitNear）仅当没有任何锁定怪候选时才兜底。
+      //   旧实现把还击怪混入同一候选并按「血少优先」排序，快死的非锁定怪会抢走锁定怪目标（来回转向/追怪中断）。
+      var near = null, nearD = 1e9, nearHp = 1e18; // V2.15.25：nearHp=最近候选绝对剩余HP（血少优先抢尾刀）
+      var lockNear = null, lockNearD = 1e9, lockNearHp = 1e18; // 锁定怪候选（优先）
+      var hitNear = null, hitNearD = 1e9, hitNearHp = 1e18;    // 还击候选（兜底）
+      if (EM && EM.forEach) {
+        EM.forEach(function (e) {
+          try {
+            if (e.objecttype !== 5) return;
+            if (e.isDeath) return;
+            if (e.ACTION && e.action != null && e.action === e.ACTION.DIE) return;
+            if (e.remove_tick) return;
+            var mid = e._job != null ? String(e._job) : (e.job != null ? String(e.job) : null);
+            var inLockN = !anyLock || (mid && lockList[mid]);
+            if (!inLockN && !allowHitTarget) return;
+            if (!ent.position || !e.position) return;
+            var d = Math.abs(e.position[0] - ent.position[0]) + Math.abs(e.position[1] - ent.position[1]);
+            // V2.15.25：血少优先（绝对剩余HP）→ 血量相同按距离近优先；读不到血量按极大排最后
+            var hpNow = (e.life && e.life.hp != null) ? e.life.hp : 1e18;
+            if (inLockN) {
+              if (!lockNear || hpNow < lockNearHp || (hpNow === lockNearHp && d < lockNearD)) { lockNear = e; lockNearD = d; lockNearHp = hpNow; }
+            } else {
+              if (!hitNear || hpNow < hitNearHp || (hpNow === hitNearHp && d < hitNearD)) { hitNear = e; hitNearD = d; hitNearHp = hpNow; }
+            }
+          } catch (e2) {}
+        });
+        // 锁定怪候选优先；确无锁定怪才用还击候选
+        if (lockNear) { near = lockNear; nearD = lockNearD; nearHp = lockNearHp; }
+        else if (hitNear) { near = hitNear; nearD = hitNearD; nearHp = hitNearHp; }
+      }
+      // V2.9.0 方向记忆：记下最近一次锁定怪相对方位（10s 有效），无怪直走时优先朝该方向
+      try {
+        if (near && ent && ent.position && near.position) {
+          var rdx = near.position[0] - ent.position[0];
+          var rdy = near.position[1] - ent.position[1];
+          zWalkState.lastSeenDir = ((Math.round(Math.atan2(rdy, rdx) / (Math.PI / 4))) % 8 + 8) % 8;
+          zWalkState.lastSeenAt = now;
+        }
+      } catch (e4) {}
+
+      if (near) {
+        // V2.9.0 内挂模式主动追怪：锁定怪超射程 → 关内挂一次（防拉锯），助手直发移动靠近（服务器寻路）
+        // 完全无锁定怪时才由下方 np 分支重新开内挂兜底
+        if (npMode || isHybrid()) {
+          var atkR0 = calcAtkRange();
+          if (isHybrid()) {
+            // V2.33.0 混合寻怪：锁定怪还在接管距离外 → 交内挂长距离寻怪走路，助手不接管移动
+            var takeD0 = takeoverDist();
+            if (nearD > takeD0) {
+              npEnsureHunt();
+              setStatus("锁定怪距" + nearD + "格 > 接管距离" + takeD0 + "，内挂寻怪走路中…", "st");
+              return;
+            }
+            if (npHuntOn) npHuntStop();
+          } else if (nearD > atkR0) {
+            if (npHuntOn) npHuntStop(); // 超射程：关内挂一次（助手接管移动），防每轮 toggle 拉锯
+            setStatus("锁定怪超出攻击范围(" + nearD + ">" + atkR0 + ")，助手主动追怪靠近中…", "ok");
+          } else {
+            if (npHuntOn) npHuntStop();
+          }
+        }
+        // V2.16.7：追怪不再直发怪坐标（会走到脸上）——目标改为「距怪 射程-1 格」可走点，停在射程边缘即可攻击（玩家手动点怪同款：射程内直接打）
+        // V2.16.7 追怪卡住检测（与无目标瞬移合并）：追怪目标连续 4s 距离未缩短 → 瞬移（覆盖围殴走不动/障碍物不可达发呆）
+        var cgid7 = near.GID;
+        var cdist7 = Math.abs(near.position[0] - ent.position[0]) + Math.abs(near.position[1] - ent.position[1]);
+        if (zWalkState.chaseGid === cgid7 && cdist7 >= zWalkState.chaseDist) {
+          if (!zWalkState.chaseSince) zWalkState.chaseSince = now;
+        } else if (zWalkState.chaseGid !== cgid7) {
+          zWalkState.chaseGid = cgid7; zWalkState.chaseSince = 0;
+        } else {
+          zWalkState.chaseSince = 0;
+        }
+        zWalkState.chaseDist = cdist7;
+        if (zWalkState.chaseSince && now - zWalkState.chaseSince >= 4000) {
+          var chaseFlyOn = $id("dsh-z-idlefly") && $id("dsh-z-idlefly").checked && !($id("dsh-z-flykill") && !$id("dsh-z-flykill").checked);
+          if (chaseFlyOn && now - zWalkState.lastIdleFly >= 15000) {
+            zWalkState.lastIdleFly = now;
+            zWalkState.chaseSince = 0; zWalkState.chaseGid = null;
+            var fok7 = doFly();
+            if (fok7) markFlyOk(); else markFlyFail();
+            tlog("walk-chase-stuck 追怪卡住4s → 瞬移");
+            setStatus("追怪卡住，自动瞬移换点…", "warn");
+            return;
+          }
+        }
+        var chaseInt = (parseFloat($id("dsh-z-chaseint").value) || 0.5) * 1000;
+        if (now - zWalkState.lastChase < chaseInt) return;
+        zWalkState.lastChase = now;
+        var atkR7 = calcAtkRange();
+        var stopD = Math.max(1, atkR7 - 1);
+        var rdx7 = near.position[0] - ent.position[0];
+        var rdy7 = near.position[1] - ent.position[1];
+        var rdl7 = Math.abs(rdx7) + Math.abs(rdy7);
+        var ttx = Math.round(near.position[0] - (rdl7 > 0 ? (rdx7 / rdl7) * stopD : 0));
+        var tty = Math.round(near.position[1] - (rdl7 > 0 ? (rdy7 / rdl7) * stopD : 0));
+        var cDest = mvSnapWalkable(ttx, tty);
+        zWalkState.noTargetSince = 0; // 有目标，重置无目标计时
+        var pm = new CLIENT.PS.CZ.REQUEST_MOVE();
+        pm.dest = [cDest[0], cDest[1]];
+        CLIENT.NM.sendPacket(pm);
+        tlog("walk-追怪 " + (near._job != null ? near._job : near.GID) + " 停射程边缘 -> " + cDest[0] + "," + cDest[1] + " (atkRange=" + atkR7 + ")");
+        setStatus("发现目标，追至射程边缘…", "ok");
+        return;
+      }
+      // 无锁定怪持续 N 秒 → 自动瞬移换位置（苍蝇/瞬移术）
+      // V2.16.0：防御瞬移总开关关 → 无目标持续自动瞬移停用
+      // V2.15.22：需要坐下时（HP/SP 低于坐下阈值）→ 无目标持续自动瞬移让位，先坐不飞
+      var idleFly = $id("dsh-z-idlefly") && $id("dsh-z-idlefly").checked && !($id("dsh-z-flykill") && !$id("dsh-z-flykill").checked) && !needSitNow();
+      if (idleFly) {
+        if (!zWalkState.noTargetSince) zWalkState.noTargetSince = now;
+        var idleSec = (parseInt($id("dsh-z-idleflysec").value, 10) || 10) * 1000;
+        if (now - zWalkState.noTargetSince >= idleSec && now - zWalkState.lastIdleFly >= 15000) {
+          zWalkState.lastIdleFly = now;
+          zWalkState.noTargetSince = 0;
+          doFly();
+          setStatus("无目标" + Math.round(idleSec / 1000) + "s，自动瞬移换点…", "warn");
+          return;
+        }
+      } else { zWalkState.noTargetSince = 0; }
+      // 内挂机制寻怪（用户需求状态机）：
+      //   - 侦查扫到「可攻击到的锁定怪」（dist ≤ atkRange，非超出）→ 停内挂，助手接管战斗
+      //   - 侦查没扫到怪 / 附近只有「超出」的锁定怪 → 持续发包让服务器自动寻怪（内挂移动靠近）
+      if (npHuntMode() === "np" || isHybrid()) {
+        var npThD = isHybrid() ? takeoverDist() : calcAtkRange();
+        if (btDiagOn) { try { var aR0 = calcAtkRange(); btLog('zWalk-np', 'mode=' + (isHybrid() ? "hybrid" : "np") + ' scanMobs=' + scanMobs.length + ' hasAttackable=' + scanHasAttackableLockedMob(npThD) + ' hasOutOfRange=' + scanHasOutOfRangeLockedMob(npThD) + ' thD=' + npThD + ' scanSt=' + ($id('dsh-scanst') ? $id('dsh-scanst').textContent : '?')); } catch (e) {} }
+        if (!scanHasAttackableLockedMob(npThD)) {
+          npEnsureHunt();
+          if (scanHasOutOfRangeLockedMob(npThD)) {
+            setStatus(isHybrid() ? "锁定怪超出接管距离，内挂移动靠近中…" : "锁定怪超出攻击范围，内挂移动靠近中…", "st");
+          } else {
+            setStatus("侦查未扫到可攻击锁定怪，内挂自动寻怪中…", "st");
+          }
+        } else {
+          if (npHuntOn) npHuntStop();
+          tlog((isHybrid() ? "hybrid" : "np") + "-hunt-stop 侦查扫到可攻击锁定怪");
+          setStatus("侦查扫到可攻击锁定怪，内挂寻怪已停（助手接管）…", "ok");
+        }
+        return;
+      }
+      // 无怪 / 不可达 → 定向直走寻怪：持续朝一个方向走（A* 避障），遇障/卡住才转向
+      // V2.7.3：直走 2s 节流（追怪已独立 1s，不占用此门槛）
+      // V2.9.0：直走节流读设置（默认 0.5s，可调 0.3~2s）；追怪已独立节流，不占用此门槛
+      var walkInt = Math.max(0.3, Math.min(2, parseFloat($id("dsh-z-walkint").value) || 0.5)) * 1000;
+      if (!npMode && now - zWalkState.lastMove < walkInt) return;
+      if (!npMode) zWalkState.lastMove = now;
+      // 8 方向（0=右,1=右下,2=下,3=左下,4=左,5=左上,6=上,7=右上）
+      var dirs = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+      // V2.9.0 方向记忆：10s 内侦查扫到过锁定怪 → 优先朝该方向走（不再纯 8 方向盲转）
+      if (now - zWalkState.lastSeenAt < 10000 && zWalkState.lastSeenDir != null) {
+        zWalkState.dir = zWalkState.lastSeenDir;
+        zWalkState.stuckCnt = 0;
+      }
+      var WALK_RANGE = 12; // 每次向目标方向走 12 格
+      var px0 = Math.round(ent.position[0]), py0 = Math.round(ent.position[1]);
+      // ===== V2.16.12 停用：区域寻怪半径（软边界）+ 地图物理边缘（硬边界）=====
+      // 用户要求暂时移除「区域寻怪半径」，地图边缘机制意义小一并停用；代码保留供后续恢复（zWalkState.center 保留）。
+      // 注意：两段共享 bndOn 变量，必须一起停用（A* 段的 bndOn2 同步停用）。
+      /*
+      // V2.16.4 地图边界：以启动点为中心，半径内寻怪；已走出半径 → 强制往回走（不发外圈目标）
+      var bndOn = $id("dsh-z-mapbound") ? $id("dsh-z-mapbound").checked : true;
+      var bndR = parseInt($id("dsh-z-mapbound-r") ? $id("dsh-z-mapbound-r").value : "25", 10) || 25;
+      if (bndOn && bndR > 0 && zWalkState.center) {
+        var bd0 = Math.abs(px0 - zWalkState.center[0]) + Math.abs(py0 - zWalkState.center[1]);
+        if (bd0 > bndR) {
+          var bDest = mvSnapWalkable(zWalkState.center[0], zWalkState.center[1]);
+          var pB = new CLIENT.PS.CZ.REQUEST_MOVE();
+          pB.dest = [bDest[0], bDest[1]];
+          CLIENT.NM.sendPacket(pB);
+          zWalkState.tried = 0;
+          tlog("walk-bound 超出边界(" + bd0 + ">" + bndR + ")，往回走");
+          setStatus("超出地图边界，往回走…", "warn");
+          return;
+        }
+        // 接近边界（距锚点 > 半径-8 格）→ 转向朝锚点方向，防止越界
+        if (bd0 > bndR - 8) {
+          var bdx = zWalkState.center[0] - px0, bdy = zWalkState.center[1] - py0;
+          if (bdx !== 0 || bdy !== 0) {
+            var bd2 = Math.round(Math.atan2(bdy, bdx) / (Math.PI / 4));
+            var newDir = ((bd2 % 8) + 8) % 8;
+            if (newDir !== zWalkState.dir) {
+              zWalkState.dir = newDir;
+              zWalkState.tried = 0;
+              tlog("walk-bound 接近边界(" + bd0 + ">" + (bndR - 8) + ")，转向圆心");
+            }
+          }
+        }
+      }
+      // V2.16.6 地图物理边界：读当前地图尺寸（ALT.width/height），距地图边缘 < 安全距离 → 强制朝图中心走
+      //   （用户需求：防止自研寻怪一路直走走进别的图；以启动点为圆心的半径是软约束，这里是地图硬边界）
+      try {
+        var ALTb = window.require && window.require("Renderer/Map/Altitude");
+        var bndEdge = parseInt($id("dsh-z-mapbound-edge") ? $id("dsh-z-mapbound-edge").value : "15", 10) || 15;
+        if (bndOn && bndEdge > 0 && ALTb && ALTb.width && ALTb.height) {
+          var mw = ALTb.width, mh = ALTb.height;
+          var nearEdgeX = (px0 < bndEdge) || (px0 > mw - bndEdge);
+          var nearEdgeY = (py0 < bndEdge) || (py0 > mh - bndEdge);
+          if (nearEdgeX || nearEdgeY) {
+            // 距地图边缘过近 → 目标钳到图中心方向（离边缘远的一侧），防走到别的图
+            var cx2 = Math.round(mw / 2), cy2 = Math.round(mh / 2);
+            var eDest = mvSnapWalkable(cx2, cy2);
+            var pE = new CLIENT.PS.CZ.REQUEST_MOVE();
+            pE.dest = [eDest[0], eDest[1]];
+            CLIENT.NM.sendPacket(pE);
+            zWalkState.tried = 0;
+            tlog("walk-mapedge 接近地图边缘(" + px0 + "," + py0 + " 图" + mw + "x" + mh + "，边缘安全" + bndEdge + ")，朝图中心走");
+            setStatus("接近地图边缘，朝图内走…", "warn");
+            return;
+          }
+        }
+      } catch (e) {}
+      */
+      // V2.16.4 卡住检测修正：旧版「0.5s 内走<3格即累计」误报（正常走速1-2格/0.5s+网络延迟起步慢）
+      //   现改为时间窗口：连续 2s 坐标几乎没动（<2 格）才算真卡住；只要在动就不累计
+      if (zWalkState.lastPos) {
+        var moved = Math.abs(px0 - zWalkState.lastPos[0]) + Math.abs(py0 - zWalkState.lastPos[1]);
+        if (moved < 2) {
+          if (!zWalkState.stuckAt) zWalkState.stuckAt = now;
+          if (now - zWalkState.stuckAt >= 2000) {
+            zWalkState.dir = (zWalkState.dir + 1) % dirs.length; // 卡住 → 顺时针转一个方向
+            zWalkState.stuckAt = 0;
+            zWalkState.tried = 0;
+            tlog("walk-stuck turn dir=" + zWalkState.dir);
+            setStatus("前方卡住，转向 " + zWalkState.dir, "warn");
+          }
+        } else {
+          zWalkState.stuckAt = 0;
+        }
+      } else {
+        zWalkState.stuckAt = 0;
+      }
+      zWalkState.lastPos = [px0, py0];
+      // V2.10.0 A* 绕障寻路（dsh-z-astar 开关）：方向预检只是直线 12 格，环绕结构图（回字形/迷宫）会原地打转。
+      //   A* 基于本图全量地形（ALT.getGat().cells）找真实可达路径 → 只直发路径终点（服务器寻路一次走通，不逐格发包）。
+      //   进入「A* 行走中」：发目标后 3~5s 不重发（防重置服务器寻路）；坐标推进即续走；2s 无位移重新 A*。
+      var aStarOn = true;
+      try { var aEl = document.getElementById("dsh-z-astar"); aStarOn = aEl ? aEl.checked : true; } catch (e) { aStarOn = true; }
+      if (aStarOn && dshAStarData()) {
+        var done = false;
+        // A* 行走中状态管理
+        if (zAStarState.active) {
+          var movedA = Math.abs(px0 - zAStarState.lastPos[0]) + Math.abs(py0 - zAStarState.lastPos[1]);
+          var nearA = Math.abs(px0 - zAStarState.tx) + Math.abs(py0 - zAStarState.ty) <= 2;
+          if (nearA) { zAStarState.active = false; }
+          else if (movedA < 3) {
+            if (!zAStarState.stuckSince) zAStarState.stuckSince = now;
+            if (now - zAStarState.stuckSince >= 2000) { zAStarState.active = false; tlog("walk-astar stuck re-path"); }
+          } else { zAStarState.stuckSince = 0; }
+          zAStarState.lastPos = [px0, py0];
+          // 行走中：距上次发包 <3.5s 不重发（防重置服务器寻路）
+          if (zAStarState.active) {
+            if (now - zAStarState.lastTry < 3500) return;
+            // 超时仍在走且未卡：重发同目标（幂等续走）
+            if (!zAStarState.stuckSince) { var pmA = new CLIENT.PS.CZ.REQUEST_MOVE(); pmA.dest = [zAStarState.tx, zAStarState.ty]; CLIENT.NM.sendPacket(pmA); zAStarState.lastTry = now; tlog("walk-astar keep -> " + zAStarState.tx + "," + zAStarState.ty); return; }
+          }
+        }
+        // 选目标：方向记忆（10s 内）→ 朝该方向 50 格外；无记忆 → 当前方向延伸
+        if (!zAStarState.active) {
+          var aimD = dirs[zWalkState.dir];
+          if (now - zWalkState.lastSeenAt < 10000 && zWalkState.lastSeenDir != null) aimD = dirs[zWalkState.lastSeenDir];
+          // V2.16.12 停用：区域寻怪半径 + 地图物理边缘钳制（与直走段一并停用，保留 farT=50 兜底）
+          var farT = 50;
+          /*
+          var bndOn2 = $id("dsh-z-mapbound") ? $id("dsh-z-mapbound").checked : true;
+          var bndR2 = parseInt($id("dsh-z-mapbound-r") ? $id("dsh-z-mapbound-r").value : "25", 10) || 25;
+          if (bndOn2 && bndR2 > 0 && zWalkState.center) {
+            var maxFar = Math.max(6, bndR2 - Math.abs(px0 - zWalkState.center[0]) - Math.abs(py0 - zWalkState.center[1]) - 2);
+            farT = Math.min(farT, maxFar);
+          }
+          // V2.16.6 A* 目标再按地图物理边界钳制（防 50 格目标越过图边缘走进别的图）
+          try {
+            var ALT2 = window.require && window.require("Renderer/Map/Altitude");
+            var bndEdge2 = parseInt($id("dsh-z-mapbound-edge") ? $id("dsh-z-mapbound-edge").value : "15", 10) || 15;
+            if (ALT2 && ALT2.width && ALT2.height) {
+              var atx2 = Math.round(px0 + aimD[0] * farT), aty2 = Math.round(py0 + aimD[1] * farT);
+              atx2 = Math.max(bndEdge2, Math.min(ALT2.width - bndEdge2, atx2));
+              aty2 = Math.max(bndEdge2, Math.min(ALT2.height - bndEdge2, aty2));
+              farT = Math.max(6, Math.abs(atx2 - px0) + Math.abs(aty2 - py0)); // 距离按钳制后目标重算（防 farT 虚大）
+            }
+          } catch (e) {}
+          */
+          var atx = Math.round(px0 + aimD[0] * farT), aty = Math.round(py0 + aimD[1] * farT);
+          var pathA = dshFindPath(px0, py0, atx, aty);
+          if (pathA && pathA.length) {
+            var lastP = pathA[pathA.length - 1];
+            var snapA = mvSnapWalkable(lastP[0], lastP[1]);
+            var pmA2 = new CLIENT.PS.CZ.REQUEST_MOVE();
+            pmA2.dest = [snapA[0], snapA[1]];
+            CLIENT.NM.sendPacket(pmA2);
+            zWalkState.lastMoveDir = zWalkState.dir; // V2.16.8：记录末次移动方向（换图反向走用）
+            zAStarState = { active: true, tx: snapA[0], ty: snapA[1], since: now, lastTry: now, stuckSince: 0, lastPos: [px0, py0], aim: [aimD[0], aimD[1]] };
+            zWalkState.stuckCnt = 0;
+            tlog("walk-astar path " + pathA.length + " -> " + snapA[0] + "," + snapA[1]);
+            setStatus("无目标，A*绕障寻怪（方向" + zWalkState.dir + "）…", "st");
+            return;
+          }
+          // A* 无路径 → 落到下方直线预检 + 12 格直发（原逻辑兜底）
+        }
+      }
+
+      // V2.9.1 方向可走预检：用客户端地形（Altitude GAT，同本图大地图数据）先验证方向再发包
+      //   当前方向 12 格内任意一格不可走 → 顺时针找第一个可走方向；全不通 → 瞬移兜底/不发撞墙包
+      function dirWalkable(dd, steps) {
+        try {
+          var ALT = window.require && window.require("Renderer/Map/Altitude");
+          var WALK = ALT && ALT.TYPE && ALT.TYPE.WALKABLE;
+          if (!ALT || !ALT.getCellType || !WALK || !ALT.width) return true; // 地形未就绪 → 放行（旧逻辑兜底）
+          for (var s = 1; s <= steps; s++) {
+            var cx2 = Math.floor(px0 + dd[0] * s), cy2 = Math.floor(py0 + dd[1] * s);
+            // V2.15.17：显式边界检查——客户端 getCellType 越界会环形索引到地图另一侧误判可走，导致寻怪走出地图/贴边
+            if (cx2 < 0 || cy2 < 0 || cx2 >= ALT.width || (ALT.height > 0 && cy2 >= ALT.height)) return false;
+            if (!(ALT.getCellType(cx2, cy2) & WALK)) return false;
+          }
+          return true;
+        } catch (e) { return true; }
+      }
+      if (!dirWalkable(dirs[zWalkState.dir], WALK_RANGE)) {
+        var foundD = -1;
+        for (var ti2 = 1; ti2 <= 8; ti2++) {
+          var cand = (zWalkState.dir + ti2) % dirs.length;
+          if (dirWalkable(dirs[cand], WALK_RANGE)) { foundD = cand; break; }
+        }
+        if (foundD >= 0) {
+          zWalkState.dir = foundD;
+          zWalkState.stuckCnt = 0;
+          tlog("walk-precheck turn dir=" + zWalkState.dir);
+          setStatus("前方有墙，转到可走方向 " + zWalkState.dir + "…", "st");
+        } else {
+          zWalkState.tried++;
+          if (idleFly && now - zWalkState.lastIdleFly >= 15000) {
+            zWalkState.lastIdleFly = now;
+            doFly();
+            setStatus("四周不可走，瞬移脱困…", "warn");
+            return;
+          }
+          setStatus("四周不可走，等待下一步…", "st");
+          return; // 不发撞墙包
+        }
+      }
+
+      // 当前方向目标点（V2.7.3：直发方向终点 12 格，服务器寻路，不再 pathFindTo 取 5 格小步）
+      var dd = dirs[zWalkState.dir];
+      var tx = px0 + dd[0] * WALK_RANGE;
+      var ty = py0 + dd[1] * WALK_RANGE;
+      var dDest = mvSnapWalkable(tx, ty);
+      var pmm = new CLIENT.PS.CZ.REQUEST_MOVE();
+      pmm.dest = [dDest[0], dDest[1]];
+      CLIENT.NM.sendPacket(pmm);
+      zWalkState.tried = 0;
+      zWalkState.lastMoveDir = zWalkState.dir; // V2.16.8：记录末次移动方向（换图反向走用）
+      tlog("walk-dir " + zWalkState.dir + " -> " + dDest[0] + "," + dDest[1]);
+      setStatus("无目标，直走寻怪（方向" + zWalkState.dir + "）…", "st");
+      return;
+      // 当前方向不可达（撞墙/边界）→ 转向再试
+      zWalkState.tried++;
+      if (zWalkState.tried >= 8) {
+        // 8 个方向都不通 → 原地瞬移兜底（若有启用），否则重置从头再试
+        zWalkState.tried = 0;
+        if (idleFly && now - zWalkState.lastIdleFly >= 15000) {
+          zWalkState.lastIdleFly = now;
+          doFly();
+          setStatus("四周不通，瞬移脱困…", "warn");
+          return;
+        }
+      }
+      zWalkState.dir = (zWalkState.dir + 1) % dirs.length;
+      tlog("walk-block turn dir=" + zWalkState.dir);
+      setStatus("前方障碍，转向 " + zWalkState.dir + "…", "st");
+      // 转向后立刻走新方向（V2.7.3：直发新方向终点，服务器寻路）
+      var dd2 = dirs[zWalkState.dir];
+      var tx2 = px0 + dd2[0] * WALK_RANGE;
+      var ty2 = py0 + dd2[1] * WALK_RANGE;
+      var dDest2 = mvSnapWalkable(tx2, ty2);
+      var pm2 = new CLIENT.PS.CZ.REQUEST_MOVE();
+      pm2.dest = [dDest2[0], dDest2[1]];
+      CLIENT.NM.sendPacket(pm2);
+      tlog("walk-turn-go " + zWalkState.dir + " -> " + dDest2[0] + "," + dDest2[1]);
+      setStatus("转向后前进（方向" + zWalkState.dir + "）…", "st");
+    } catch (e) {}
+  }
+  // 换怪延迟控制：打完一只 → 等待设定秒数 → 再找下一只攻击
+  var zLastTargetGID = null, zTargetSwitchAt = 0;
+  // 锁定模式（内挂式锁定）：固定一个目标持续攻击，防目标漂移（每轮不再选「最近的」导致打一下换一只）
+  //   gid=锁定目标GID；name=显示名；dist=距离；done=「打死换下一个=关」时击杀后停手标志
+  var zLock = { gid: null, name: "", dist: null, done: false, reactive: false };
+  // 战斗监控：zAttack 各分支写入当前动作，主循环渲染到游戏正上方浮层 #dsh-ro-z-hud（锁定/动作/HP·SP）
+  var zMon = { action: "未启动" };
+  // 被攻击检测（轮询）：HP 比上次记录下降 ≥1 → 认为被攻击（记录命中时间）
+  function updateHpWatch(ent) {
+    try {
+      if (!ent || !ent.life) return;
+      var hp = ent.life.hp;
+      if (hp == null) return;
+      if (zHpWatch.hp != null && hp < zHpWatch.hp - 1) zHpWatch.lastHitAt = Date.now();
+      zHpWatch.hp = hp;
+    } catch (e) {}
+  }
+  function zAttack() {
+    try {
+      if (!clientReady()) return;
+      var ent = CLIENT.SS.Entity;
+      if (!ent || !ent.life) return;
+      var now = Date.now();
+      if (escapePending()) { requestEmergencyEscape(escapeState.reason); zMon.action = "紧急脱战（等待位移确认）"; return; }
+      // V2.7.2 锁定怪站桩修复：np 模式（内挂机制寻怪）→ 目标判定强制 ld<=atkRange（射程外锁定怪不当目标、
+      //   不解锁、交内挂移动靠近），杜绝「npHuntStop 关内挂⇄zWalk npEnsureHunt 开内挂」每轮拉锯站桩
+      var npMode = npHuntMode() === "np" || isHybrid();
+      updateHpWatch(ent);
+      sitMaintain(); // V2.15.22：坐下期间被打自动站起逃生（战斗循环每 tick，不依赖侦查扫描）
+      // V2.32.2 坐下优先：sitMaintain 未站起（没被打/没回满/没过看门狗）→ 保持坐下，本拍不锁怪不攻击不追怪
+      if (isSitting()) { zMon.action = "坐下回血中"; return; }
+      var EM = window.require("Renderer/EntityManager");
+      var range = parseInt($id("dsh-z-range").value, 10) || 12; // 寻怪范围（触发目标考虑）
+      // 攻击距离：物理/魔法按技能射程自动选择（普攻=物理距离；技能=技能射程与对应距离取大）
+      var pmRange = parseInt($id("dsh-z-pmrange").value, 10) || 2;
+      var mgRange = parseInt($id("dsh-z-mgrange").value, 10) || 9;
+      var atkRange = calcAtkRange(); // 技能顺序中最大射程+1 或 普攻物理距离
+      var npThD = isHybrid() ? takeoverDist() : atkRange; // V2.33.0 混合寻怪接管距离
+      var anyLock = Object.keys(lockList).length > 0;
+      // 非选中怪攻击选项：无视/瞬移/还击
+      var onaMode = $id("dsh-z-ona") ? $id("dsh-z-ona").value : "还击";
+      // 被攻击中？最近 3s 内 HP 下降过
+      var beingHit = (now - zHpWatch.lastHitAt) < 3000;
+      // 「打死换下一个=关」：锁定目标已击杀 → 完全停手（等待用户重新开自动战斗）
+      if (zLock.done) {
+        zMon.action = "已停手（等指令）";
+        setStatus("锁定目标已击杀（打死换下一个=关），等待重新开启…", "st");
+        return;
+      }
+      var zFollow = !$id("dsh-z-follow") || $id("dsh-z-follow").checked; // 锁定目标跟随追击
+      var zNext = !$id("dsh-z-next") || $id("dsh-z-next").checked;       // 打死换下一个
+      var zAllMobs = !$id("dsh-z-allmobs") || $id("dsh-z-allmobs").checked; // V2.22.0 打全部怪（默认开）
+      var target = null, best = 1e9, bestHp = 1e18; // V2.15.25：bestHp=当前选中怪的绝对剩余HP（血少优先抢尾刀）
+      var hitTarget = null, hitBest = 1e9;
+      // 锁定模式：已锁定目标 → 只认锁定目标（固定 GID 持续攻击，防目标漂移），不重新扫描选最近
+      var lockAliveOutside = false; // V2.7.2：锁定怪仍在但超攻击距离（np 模式下不解锁）
+      if (zLock.gid) {
+        EM.forEach(function (e) {
+          try {
+            if (e.GID !== zLock.gid || e.objecttype !== 5) return;
+            if (e.isDeath || (e.ACTION && e.action === e.ACTION.DIE) || e.remove_tick) return;
+            if (!ent.position || !e.position) return;
+            var ld = Math.abs(e.position[0] - ent.position[0]) + Math.abs(e.position[1] - ent.position[1]);
+            // follow 开：寻怪范围内持续打/追；follow 关：仅攻击距离内，超出即解锁
+            // V2.7.2：np 模式下无论 follow 一律仅攻击距离内才当战斗目标（射程外交内挂靠近）
+            if (npMode ? ld <= npThD : (zFollow ? ld <= range : ld <= atkRange)) { target = e; zLock.dist = ld; }
+            else if (npMode && ld > npThD) lockAliveOutside = true;
+          } catch (e2) {}
+        });
+        if (target) {
+          zLock.name = (target.display && target.display.name) || String(target._job != null ? target._job : target.GID);
+        } else if (npMode && lockAliveOutside) {
+          // V2.7.2 站桩修复：np 模式下锁定怪仍存活但超出攻击距离 → 不解锁（交内挂移动靠近，由 zWalk np 分支 ensureHunt）
+          zMon.action = "锁定怪超出射程（内挂靠近）";
+        } else {
+          // 目标死亡/丢失 → 解锁；next=关 时击杀后停手（done），否则重新扫描换下一个
+          // V2.15.22：还击锁定的怪（reactive）打死必继续寻怪，不套用「打死换下一个=关」
+          zLock.done = !zNext && !zLock.reactive;
+          zLock.reactive = false;
+          zLock.gid = null;
+          zAtkLast.gid = null; zAtkLast.outOfRange = false; // V2.16.9：目标死亡解锁同步清平A标记，防残留导致追怪不上马
+          zLockCounts = {}; // V1.7.5 解锁 → 锁定次数清零（重新锁定重计）
+          tlog("lock-release done=" + zLock.done);
+        }
+      }
+      // 无锁定目标 → 扫描选目标：锁定怪里最近的（攻击距离内）；非锁定怪仅作「还击」候选
+      if (!target) {
+        EM.forEach(function (e) {
+          try {
+            if (e.objecttype !== 5) return;
+            // 跳过死亡实体：isDeath / ACTION.DIE / 已在移除队列
+            if (e.isDeath) return;
+            if (e.ACTION && e.action != null && e.action === e.ACTION.DIE) return;
+            if (e.remove_tick) return;
+            var mid = e._job != null ? String(e._job) : (e.job != null ? String(e.job) : (e.mobId != null ? String(e.mobId) : null));
+            var inLock = !anyLock || zAllMobs || (mid && lockList[mid]); // V2.22.0：打全部怪开 → 不看锁定名单
+            if (!ent.position || !e.position) return;
+            var d = Math.abs(e.position[0] - ent.position[0]) + Math.abs(e.position[1] - ent.position[1]);
+            if (inLock) {
+              // 锁定怪：攻击距离内直接打（atkRange）；超出但寻怪范围内 → 由 zWalk 追击
+              // V2.15.25：血少优先（绝对剩余HP，抢尾刀）→ 血量相同按距离近优先；读不到血量按极大排最后
+              if (d <= (npMode ? npThD : atkRange)) {
+                var hpNow = (e.life && e.life.hp != null) ? e.life.hp : 1e18;
+                if (!target || hpNow < bestHp || (hpNow === bestHp && d < best)) { target = e; best = d; bestHp = hpNow; }
+              }
+            } else {
+              // 非锁定怪：仅用于「还击」候选（攻击距离内最近的）
+              if (d <= atkRange && d < hitBest) { hitBest = d; hitTarget = e; }
+            }
+          } catch (e2) {}
+        });
+        // 扫到新目标 → 锁定（固定 GID，直到打死/丢失才换）
+        if (target) {
+          zLock.gid = target.GID;
+          zLock.name = (target.display && target.display.name) || String(target._job != null ? target._job : target.GID);
+          zLock.dist = best;
+          zLock.reactive = false;
+          if (btDiagOn) { try { var pH = (target.life && target.life.hp != null) ? target.life.hp : -1; btLog('pick', '锁定 ' + zLock.name + ' gid=' + target.GID + ' hp=' + pH + ' d=' + best); } catch (e3) {} }
+        }
+      }
+      // V2.15.23：坐下被攻击应对（dsh-z-sitxw：无视/还击/瞬移/逃脱）——需要坐下且被打（锁定+非锁定怪都算）→ 优先于非选中怪/锁定判断
+      if (needSitNow() && beingHit) {
+        var sitxwMode = ($id("dsh-z-sitxw") && $id("dsh-z-sitxw").value) || "无视";
+        if (sitxwMode === "瞬移" && !($id("dsh-z-flykill") && !$id("dsh-z-flykill").checked)) {
+          requestEmergencyEscape("坐下受击"); zMon.action = "坐下被打，瞬移脱离"; setStatus("坐下被打，瞬移脱离…", "warn"); return;
+        }
+        else if (sitxwMode === "逃脱") {
+          walkEscape(hitTarget || target);
+          zMon.action = "坐下被打，移动逃脱";
+          setStatus("坐下被打，移动避开…", "warn");
+          return;
+        }
+        else if (sitxwMode === "还击") {
+          if (!target && hitTarget) {
+            target = hitTarget;
+            zLock.gid = hitTarget.GID;
+            zLock.name = (hitTarget.display && hitTarget.display.name) || String(hitTarget._job != null ? hitTarget._job : hitTarget.GID);
+            zLock.dist = hitBest;
+            zLock.reactive = true;
+          }
+          // 有锁定攻击者(target) → 直接打；无视 → 不理会继续循环（zWalk 会尝试再坐）
+        }
+      }
+      // 被攻击处理（非选中怪攻击）：有锁定目标 → 正常打锁定；无锁定目标但被攻击 → 按设置处理
+      // V2.16.3：还击加保护——zLock.gid 还挂着（正在追/打锁定怪，即使锁定怪当前超射程）→ 被非锁定怪打不还击，
+      //   防止还击把 zLock 目标换成非锁定怪导致追怪中断/来回转向（还击只在确无锁定目标时才触发）
+      if (!target && !zLock.gid && beingHit && hitTarget) {
+        if (onaMode === "无视" || (onaMode === "瞬移" && $id("dsh-z-flykill") && !$id("dsh-z-flykill").checked)) { /* 不反击，继续寻怪（总开关关：瞬移按无视处理） */ }
+        else if (onaMode === "瞬移") {
+          requestEmergencyEscape("最近受击");
+          zMon.action = "瞬移脱离";
+          setStatus("被非目标怪攻击，瞬移脱离…", "warn");
+          return;
+        }
+        else {
+          target = hitTarget;
+          // V2.15.22：还击锁定攻击者——持续打到死再继续寻怪（不再只打一下；还击怪打死必继续，不套「打死换下一个=关」）
+          zLock.gid = hitTarget.GID;
+          zLock.name = (hitTarget.display && hitTarget.display.name) || String(hitTarget._job != null ? hitTarget._job : hitTarget.GID);
+          zLock.dist = hitBest;
+          zLock.reactive = true;
+          setStatus("被攻击，还击 " + (hitTarget.display && hitTarget.display.name || ""), "ok");
+        }
+      }
+      // 换怪延迟：目标变化时记录延迟点；延迟窗口内不攻击（等设定秒数再出手）
+      var switchDelay = (parseFloat($id("dsh-z-switchdelay").value) || 0.25) * 1000;
+      if (target) {
+        if (zLastTargetGID !== target.GID) {
+          zLastTargetGID = target.GID;
+          zTargetSwitchAt = now + switchDelay;
+          zLockCounts = {}; // V1.7.5 换目标 → 锁定次数清零重计
+          zCastIdx = 0;     // V1.7.5 换目标 → 轮换游标从头开始
+          // V2.15.25：注入内挂——换目标时发一次锁定让客户端/内挂跟随助手目标；注入即锁定，普攻节流让位防双包
+          sendLockInject(target.GID);
+          zAtkLast.gid = target.GID; zAtkLast.at = now; zAtkLast.outOfRange = false; // V2.15.29：新目标复位射程标记
+        }
+        if (now < zTargetSwitchAt) { zMon.action = "换怪延迟"; return; } // 延迟窗口内等待（换怪延迟）
+      } else {
+        zLastTargetGID = null; // 无目标，重置以便下次直接出手
+      }
+      if (!target) { zMon.action = "寻怪（走路）"; zWalk(); return; } // 无目标 → 自动走路寻怪
+      // V2.16.4 最短攻击距离区间：目标过近（<最短距离）→ 后撤拉开再打（技能和普攻共用同一区间判定）
+      var minR = parseInt($id("dsh-z-minrange").value, 10) || 0;
+      if (minR > 0 && target && target.position && ent.position) {
+        var dNear = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]);
+        if (dNear < minR) {
+          var bdx = ent.position[0] - target.position[0], bdy = ent.position[1] - target.position[1];
+          var bl = Math.abs(bdx) + Math.abs(bdy);
+          if (bl > 0) {
+            var btx = Math.round(ent.position[0] + (bdx / bl) * 3), bty = Math.round(ent.position[1] + (bdy / bl) * 3);
+            var bDest = mvSnapWalkable(btx, bty);
+            var pB = new CLIENT.PS.CZ.REQUEST_MOVE();
+            pB.dest = [bDest[0], bDest[1]];
+            CLIENT.NM.sendPacket(pB);
+            zMon.action = "后撤拉开距离";
+            setStatus("目标过近(" + dNear + "<" + minR + ")，后撤拉开…", "st");
+            tlog("min-range 后撤 d=" + dNear + " min=" + minR);
+            return;
+          }
+        }
+      }
+      // 开始战斗（有目标）→ 结束内挂自动寻怪（避免服务器驱动移动与助手抢控制）
+      if (npHuntOn) npHuntStop();
+      zAtkTrackHp(target.GID, target); // V2.16.15：技能/平A统一追踪锁定目标 HP 下降（卡死判定用）
+      zWalkState.lastMove = 0; // 打到目标，重置走路计时
+      zWalkState.noTargetSince = 0; // 有目标，重置无目标瞬移计时
+      // ============ 两层并行决策（内挂锁定模式动作） ============
+      // 第二层【并行判断层】：castOrderSkill 每轮并行扫描全部技能——前置+射程满足 → 已发技能包
+      //   （return true）；前置满足但超射程 → "walk" 走近再放；技能冷却窗口 → "wait-cd"；
+      //   全部不满足 → "wait"。
+      // 第一层【默认锁定层】：技能层不动作时 → 对锁定目标持续普攻（「技能空档补普攻」开关控制）：
+      //   REQUEST_ACT 固定 target.GID（内挂锁定模式动作），目标死亡/丢失才由 zLock 解锁换目标。
+      //   锁定普攻只作兜底，从不阻塞技能层判断；每轮只发一个动作包（技能优先）。
+      // V2.22.0 技能优先让位：补普攻前先看「技能最快还有多久冷却好」——剩余小于「让位余量」
+      //   （默认 300ms，可在技能设置页调）就不发普攻，把这一轮让给技能；完全没配技能时直接普攻。
+      var attMix = $id("dsh-z-attmix") ? $id("dsh-z-attmix").checked : true; // V2.22.0 默认开=技能空档补普攻
+      var attMixGap = $id("dsh-z-attmixmargin") ? (parseInt($id("dsh-z-attmixmargin").value, 10) || 0) : 300;
+      var order = parseSkillOrder($id("dsh-skillorder").value);
+      var cast = castOrderSkill(order, target);
+      var attNextGap = attMix ? skillNextGap(order) : Infinity; // Infinity=没有可用技能 → 直接普攻
+      // V2.33.0 自回传施法轨迹（经 8899 KV 中继，助手直接提取，无需复制粘贴）
+      try { var tD2 = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]); dshCastLog("cast=" + cast + " gap=" + (attNextGap === Infinity ? "Inf" : Math.round(attNextGap)) + " d=" + tD2 + " lastSk=" + (zLastCastSkid || 0)); } catch (e) {}
+      if (btDiagOn) { try { var tD = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]); btLog('zAtk', 'cast=' + cast + ' targetDist=' + tD + ' atkRange=' + atkRange + ' pmRange=' + pmRange + ' npMode=' + npMode); } catch (e) {} }
+      if (cast === "walk") {
+        zWaitSince = 0; // 走位后穿插普攻立即出手（上次普攻时间重置）
+        zAtkLast.outOfRange = true; // V2.15.29：走位追怪会打断系统连击 → 回来后需重新锁定
+        zMon.action = "追怪（走近施放）";
+        // 技能前置满足但超射程 → 走位靠近后再打（客户端同款：先 REQUEST_MOVE 走近）
+        zWalk();
+        return;
+      }
+      if (cast === "wait-cd") {
+        // 技能释放冷却窗口（技能层内部冷却）→ 开=冷却间隙补普攻；关=干等技能
+        // V2.22.0 技能优先：技能马上就要冷却好（剩余 < 让位余量）→ 这轮不发普攻，把攻击循环让给技能
+        if (attNextGap <= attMixGap) {
+          zMon.action = "等技能（还差" + Math.ceil(attNextGap) + "ms）";
+          setStatus("技能即将就绪，让位不补普攻…", "st");
+          return;
+        }
+        if (!attMix) {
+          zMon.action = "技能冷却中";
+          setStatus("技能释放冷却中…", "st");
+          return;
+        }
+        var distCd = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]);
+        if (distCd <= pmRange) {
+          sendNormalAtk(target.GID); // V2.15.29 NOCTRL 平A（同目标锁定不重发，仅换目标/重进射程补发）
+          zMon.action = "技能空档补普攻";
+          setStatus("技能冷却空档，补普攻…", "st");
+          return;
+        }
+        zAtkLast.outOfRange = true; // V2.15.29：目标出射程追怪 → 回来需重新锁定（系统连击在移动中已断）
+        zMon.action = "追怪（普攻射程外）";
+        zWalk();
+        return;
+      }
+      if (cast === "wait") {
+        // 技能层全部不满足（前置缺/补状态节流中）→ 落到第一层：默认锁定普攻
+        if (!attMix) {
+          zMon.action = "等状态前置";
+          setStatus("等状态前置（技能空档补普攻已关，纯技能流）…", "st");
+          return;
+        }
+        // 默认锁定普攻：对锁定目标 REQUEST_ACT（间隔=攻击循环本身，每轮一击，无需额外判断）
+        var distToT2 = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]);
+        if (distToT2 <= pmRange) {
+          sendNormalAtk(target.GID); // V2.15.29 NOCTRL 平A
+          zMon.action = "技能空档补普攻";
+          setStatus("前置未就绪，补普攻…", "st");
+          return;
+        }
+        zAtkLast.outOfRange = true; // V2.15.29：目标出射程追怪 → 回来需重新锁定
+        zMon.action = "追怪（普攻射程外）";
+        zWalk();
+        return;
+      }
+      zWaitSince = 0; // 释放成功 → 下次技能层不动作时锁定普攻立即出手
+      if (cast === "none" || !cast) {
+        // V2.22.0：完全没配技能 → 直接普攻，不受「技能空档补普攻」开关限制
+        var distToT = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]);
+        if (distToT > pmRange) { zAtkLast.outOfRange = true; zMon.action = "追怪（普攻射程外）"; zWalk(); return; } // V2.15.29：出射程追怪 → 回来重新锁定
+        sendNormalAtk(target.GID); // V2.15.29 NOCTRL 平A
+        zMon.action = "普攻(锁定)";
+      } else {
+        zMon.action = "施放技能";
+      }
+    } catch (e) {}
+  }
+  // 技能行统一序列化（对象 → textarea 行）：统一 6 段 skid:lv:cond:prob:uses:lock，行尾两空格+技能名做注释
+  // prob：0-100（0=从不释放）；uses：本轮上限；lock：每次锁定上限；空段 cond 保留，与 parse 双向兼容
+  function skillLine(o) {
+    var nm = getSkillNameById(o.skid);
+    var v = parseInt(o.prob, 10);
+    var prob = isNaN(v) ? 100 : Math.max(0, Math.min(100, v));
+    var cond = String(o.cond || "").trim();
+    var u = parseInt(o.uses, 10); if (isNaN(u) || u < 0) u = 0;
+    var lk = parseInt(o.lock, 10); if (isNaN(lk) || lk < 0) lk = 0;
+    var cd = parseInt(o.cd, 10); if (isNaN(cd) || cd < 0) cd = 0; // V2.15.28：第7段 冷却秒数（0=服务器2842动态后摇/默认250ms）
+    return o.skid + ":" + (o.lv || 5) + ":" + cond + ":" + prob + ":" + u + ":" + lk + ":" + cd + (nm ? "  " + nm : "");
+  }
+  function parseSkillOrder(txt) {
+    var out = [];
+    var lines = String(txt || "").split(/\r?\n/);
+    for (var li = 0; li < lines.length; li++) {
+      var l = lines[li].replace(/#.*$/, "").trim();
+      if (!l || !/^\d+/.test(l)) continue;
+      var parts = l.split(":");
+      var skid = parseInt(parts[0], 10);
+      if (isNaN(skid)) continue;
+      // 每段取「空格前」有效值（空格后为技能名注释垃圾，如 "100  螺旋击刺" 取 "100"）
+      var seg = function (s) { return String(s || "").split(/\s+/)[0] || ""; };
+      var lv = 5, cond = "", prob = 100, uses = 0, lock = 0, cd = 0; // V2.15.28：第7段 冷却秒数
+      // 段1：等级（纯数字）；非数字则视为无等级（skid:cond[:prob] 老格式）
+      if (parts.length >= 2) { var s1 = seg(parts[1]); if (/^\d+$/.test(s1)) lv = parseInt(s1, 10); }
+      // 段2：cond（可为空）；纯数字 = prob 误放 cond 位（旧 3 段 skid:lv:prob 或污染行）
+      if (parts.length >= 3) {
+        var s2 = seg(parts[2]);
+        if (/^\d+$/.test(s2)) { prob = parts.length >= 4 ? 100 : parseInt(s2, 10); }
+        else { cond = s2; }
+      }
+      // 段3：prob
+      if (parts.length >= 4) { var s3 = seg(parts[3]); if (/^\d+$/.test(s3)) prob = parseInt(s3, 10); }
+      // 段4：uses 本轮释放次数上限（V1.7.0 · OpenKore maxUses 语义；0/省略=不限）
+      if (parts.length >= 5) { var s4 = seg(parts[4]); if (/^\d+$/.test(s4)) uses = parseInt(s4, 10); }
+      // 段5：lock 每次锁定释放次数（V1.7.5 · 锁定一个目标期间最多放N次，换目标清零；0/省略=不限）
+      if (parts.length >= 6) { var s5 = seg(parts[5]); if (/^\d+$/.test(s5)) lock = parseInt(s5, 10); }
+      // 段6：cd 该技能冷却秒数（V2.15.28 · 兜底用；0/省略=服务器2842动态后摇或默认250ms）
+      if (parts.length >= 7) { var s6 = seg(parts[6]); if (/^\d+$/.test(s6)) cd = parseInt(s6, 10); }
+      if (isNaN(prob)) prob = 100;
+      if (prob < 0) prob = 0;
+      if (prob > 100) prob = 100;
+      if (uses < 0) uses = 0;
+      if (lock < 0) lock = 0;
+      out.push({ skid: skid, lv: lv, cond: cond, prob: prob, uses: uses, lock: lock, cd: cd });
+    }
+    return out;
+  }
+  // 已学技能等级：读客户端 SkillList（服务器 ZC.SKILLINFO_LIST）；未学返回 0
+  function learnedSkillLvReal(skid) {
+    return learnedSkillLv(skid);
+  }
+  // 释放等级校正：手动选等级 > 已学 → 降为已学最高级；未学 → 返回 0（调用方跳过）
+  function clampSkillLv(skid, wantLv) {
+    var have = learnedSkillLv(skid);
+    if (have <= 0) return 0;
+    return Math.min(wantLv || 5, have);
+  }
+  // 角色自身状态读取（客户端 Entity 字段，服务器 STATUS_CHANGE 实时写入）
+  // 气球=Summon1~5 非0个数；爆气=explosion 字段；另有 berserk(狂暴)/soullink(灵魂)/riding/falcon 等
+  function entStatus() {
+    var ent = CLIENT.SS && CLIENT.SS.Entity;
+    if (!ent) return null;
+    var aid = gidInt((CLIENT.SS && CLIENT.SS.AID) || ent.GID || 0), map = normMapKey(getMapName());
+    var spheres = (selfSpirits.aid === aid && selfSpirits.map === map) ? selfSpirits.num : 0;
+    if (selfSpirits.aid !== aid || selfSpirits.map !== map) for (var i = 1; i <= 5; i++) if (ent["Summon" + i]) spheres++;
+    // V2.32.2 自采集诊断：节流快照气弹候选字段（确定本客户端正确气弹来源用）
+    if (!entStatus.__snapAt || Date.now() - entStatus.__snapAt > 2000) {
+      entStatus.__snapAt = Date.now();
+      var cand = {};
+      for (var ci = 1; ci <= 5; ci++) { var f = ent["Summon" + ci]; if (f !== undefined) cand["Summon" + ci] = f; }
+      var candKeys = ["sphere", "spheres", "spiritBall", "spiritball", "spirit", "spirit_ball", "ball", "soulBall", "soulball"];
+      for (var ck = 0; ck < candKeys.length; ck++) { var cf = ent[candKeys[ck]]; if (cf !== undefined) cand[candKeys[ck]] = cf; }
+      dshSphereLog("snap spheres=" + spheres + " cache=" + JSON.stringify(selfSpirits) + " cand=" + JSON.stringify(cand));
+    }
+    return {
+      ent: ent,
+      spheres: spheres,            // 气球/气弹数 0~5
+      explosion: ((ent.getOpt3 && ent.getOpt3(86)) || buffStateOn(86) || ent.explosion) ? 1 : 0, // EFST86：实体位优先，服务器状态缓存补充
+      berserk: (ent.getOpt3 && ent.getOpt3(107)) ? 1 : (ent.berserk ? 1 : 0),       // V2.15.30 狂暴：读 virtue 位
+      soullink: (ent.getOpt3 && ent.getOpt3(149)) ? 1 : (ent.soullink ? 1 : 0),     // V2.15.30 灵魂：读 virtue 位
+      riding: ent.riding || ent.riding_ ? 1 : 0,
+      falcon: ent.falcon ? 1 : 0,
+      cart: ent.cart ? 1 : 0,
+      hp: ent.life && ent.life.hp != null ? ent.life.hp : null,
+      hpMax: ent.life && ent.life.hp_max != null ? ent.life.hp_max : null,
+      sp: ent.life && ent.life.sp != null ? ent.life.sp : null,
+      spMax: ent.life && ent.life.sp_max != null ? ent.life.sp_max : null
+    };
+  }
+  // 状态前置判断：cond 形如 "球5,爆气,hp>40,sp>30"（逗号分隔，全部满足才 true）
+  // 语法：球N=气球≥N；爆气=爆气中；狂暴；灵魂；hp>P/hp<P；sp>P/sp<P；!xxx=无某状态
+  function checkSkillCond(cond) {
+    if (!cond) return { ok: true, miss: "" };
+    var st = entStatus();
+    if (!st) return { ok: false, miss: "状态未知" };
+    var parts = cond.split(/[,，]/);
+    for (var i = 0; i < parts.length; i++) {
+      var c = (parts[i] || "").trim();
+      if (!c) continue;
+      var neg = c.charAt(0) === "!";
+      var cc = neg ? c.substr(1) : c;
+      var hit = false;
+      var ms = cc.match(/^球(\d+)$/);
+      if (ms) hit = st.spheres >= parseInt(ms[1], 10);
+      else {
+        var mh = cc.match(/^hp([><=])(\d+)$/);
+        if (mh) {
+          var pct = (st.hp != null && st.hpMax) ? Math.round(st.hp * 100 / st.hpMax) : -1;
+          var hv = parseInt(mh[2], 10);
+          hit = mh[1] === ">" ? pct > hv : mh[1] === "<" ? pct < hv : pct === hv;
+        } else {
+          var msp = cc.match(/^sp([><=])(\d+)$/);
+          if (msp) {
+            var pct2 = (st.sp != null && st.spMax) ? Math.round(st.sp * 100 / st.spMax) : -1;
+            var sv = parseInt(msp[2], 10);
+            hit = msp[1] === ">" ? pct2 > sv : msp[1] === "<" ? pct2 < sv : pct2 === sv;
+          }
+        }
+      }
+      if (cc === "爆气") hit = st.explosion === 1;
+      if (cc === "狂暴") hit = st.berserk === 1;
+      if (cc === "灵魂") hit = st.soullink === 1;
+      if (cc === "骑乘") hit = st.riding === 1;
+      if (cc === "猎鹰") hit = st.falcon === 1;
+      // V1.7.6 状态名判定通用化：英文（rAthena SC 名）与中文（含 debuff 别名）→ statusActive（实体字段 + 判活环兜底）
+      if (!ms && !mh && !msp && cc !== "爆气" && cc !== "狂暴" && cc !== "灵魂" && cc !== "骑乘" && cc !== "猎鹰") hit = statusActive(cc);
+      if (neg) hit = !hit;
+      if (!hit) return { ok: false, miss: c };
+    }
+    return { ok: true, miss: "" };
+  }
+  // 技能类型位（客户端 SkillTargetSelection TYPE）：ENEMY=1 PLACE=2 SELF=4 FRIEND=16 TRAP=32 TARGET=51
+  function skillTypeBits(skid) {
+    try {
+      var SL = window.require && window.require("UI/Components/SkillList/SkillList");
+      if (SL && typeof SL.getSkillById === "function") {
+        var s = SL.getSkillById(skid);
+        if (s && s.type != null) return s.type;
+      }
+    } catch (e) {}
+    try {
+      var DB = CLIENT.DB || requireDB("DB/DBManager");
+      var si = DB && typeof DB.getSkillInfo === "function" && DB.getSkillInfo(skid);
+      if (si && si.type != null) return si.type;
+    } catch (e) {}
+    return null;
+  }
+
+  // ---------------- 技能释放需求表（rAthena skill_db.yml 提取，pre-re 二转 + re 三转 合并）----------------
+  // [技能ID, 技能名, 需气弹数, 需状态] —— 仅收录有释放前置的技能；null=无此要求
+  // 数据来源：rathena/rathena db/{pre-re,re}/skill_db.yml Requires.SpiritSphereCost / Requires.Status（官方服务器真实校验）
+  // 合并规则：pre-re 优先（二转主服），re 覆盖同 ID（三转数值可能不同）；共 94 技能
+  var SKILL_REQ = [
+    [81, "WZ_SIGHTRASHER", null, "Sight"],
+    [137, "AS_GRIMTOOTH", null, "Hiding"],
+    [214, "RG_RAID", null, "Hiding"],
+    [264, "MO_BODYRELOCATION", 1, null],
+    [266, "MO_INVESTIGATE", 1, null],
+    [267, "MO_FINGEROFFENSIVE", 1, null],
+    [268, "MO_STEELBODY", 5, null],
+    [269, "MO_BLADESTOP", 1, null],
+    [270, "MO_EXPLOSIONSPIRITS", 5, null],
+    [271, "MO_EXTREMITYFIST", 5, "Explosionspirits"],
+    [273, "MO_COMBOFINISH", 1, null],
+    [370, "CH_PALMSTRIKE", null, "Explosionspirits"],
+    [371, "CH_TIGERFIST", 1, null],
+    [372, "CH_CHAINCRUSH", 1, null],
+    [485, "WS_CARTTERMINATION", null, "Cartboost"],
+    [501, "GS_FLING", 5, null],
+    [502, "GS_TRIPLEACTION", 1, null],
+    [503, "GS_BULLSEYE", 1, null],
+    [504, "GS_MADNESSCANCEL", 1, null],
+    [505, "GS_ADJUSTMENT", 2, null],
+    [506, "GS_INCREASING", 4, null],
+    [507, "GS_MAGICALBULLET", 1, null],
+    [508, "GS_CRACKER", 1, null],
+    [529, "NJ_SHADOWJUMP", null, "Hiding"],
+    [530, "NJ_KIRIKAGE", null, "Hiding"],
+    [1015, "MO_KITRANSLATION", 1, null],
+    [2029, "GC_COUNTERSLASH", null, "Weaponblock_On"],
+    [2030, "GC_WEAPONCRUSH", null, "Weaponblock_On"],
+    [2031, "GC_VENOMPRESSURE", null, "Poisoningweapon"],
+    [2032, "GC_POISONSMOKE", null, "Poisoningweapon"],
+    [2037, "GC_CROSSRIPPERSLASHER", null, "Rollingcutter"],
+    [2329, "SR_FALLENEMPIRE", 2, null],
+    [2330, "SR_TIGERCANNON", 2, "Explosionspirits"],
+    [2331, "SR_HELLGATE", 5, null],
+    [2332, "SR_RAMPAGEBLASTER", 3, "Explosionspirits"],
+    [2333, "SR_CRESCENTELBOW", 2, null],
+    [2336, "SR_KNUCKLEARROW", 1, null],
+    [2341, "SR_POWERVELOCITY", 5, null],
+    [2343, "SR_GATEOFHELL", 2, null],
+    [2345, "SR_GENTLETOUCH_CURE", 1, null],
+    [2347, "SR_GENTLETOUCH_CHANGE", 1, null],
+    [2348, "SR_GENTLETOUCH_REVITALIZE", 1, null],
+    [2517, "SR_HOWLINGOFLION", 3, null],
+    [2518, "SR_RIDEINLIGHTNING", 2, null],
+    [2555, "RL_B_TRAP", 1, null],
+    [2556, "RL_FLICKER", 1, null],
+    [2558, "RL_E_CHAIN", 1, null],
+    [2559, "RL_QD_SHOT", null, "Qd_Shot_Ready"],
+    [2560, "RL_C_MARKER", 1, null],
+    [2563, "RL_P_ALTER", -1, null],
+    [2564, "RL_FALLEN_ANGEL", 1, null],
+    [2568, "RL_HEAT_BARREL", -1, null],
+    [2571, "RL_HAMMER_OF_GOD", -1, null],
+    [2596, "SP_SOULGOLEM", 1, null],
+    [2597, "SP_SOULSHADOW", 1, null],
+    [2598, "SP_SOULFALCON", 1, null],
+    [2599, "SP_SOULFAIRY", 1, null],
+    [2601, "SP_SOULCURSE", 3, null],
+    [2602, "SP_SPA", 1, null],
+    [2603, "SP_SHA", 1, null],
+    [2604, "SP_SWHOO", 2, null],
+    [2605, "SP_SOULUNITY", 10, null],
+    [2606, "SP_SOULDIVISION", 1, null],
+    [2607, "SP_SOULREAPER", 2, null],
+    [2610, "SP_SOULEXPLOSION", 10, null],
+    [2612, "SP_KAUTE", 5, null],
+    [5009, "SR_FLASHCOMBO", 5, null],
+    [5203, "DK_SERVANT_W_SIGN", 1, null],
+    [5204, "DK_SERVANT_W_PHANTOM", 5, null],
+    [5205, "DK_SERVANT_W_DEMOL", 5, null],
+    [5247, "IQ_JUDGE", null, "First_Faith_Power"],
+    [5254, "IQ_THIRD_EXOR_FLAME", null, "Second_Judge"],
+    [5256, "IG_GUARDIAN_SHIELD", null, "Guard_Stance"],
+    [5257, "IG_REBOUND_SHIELD", null, "Guard_Stance"],
+    [5261, "IG_ULTIMATE_SACRIFICE", null, "Guard_Stance"],
+    [5263, "IG_GRAND_JUDGEMENT", null, "Attack_Stance"],
+    [5266, "IG_OVERSLASH", null, "Attack_Stance"],
+    [5289, "SHC_ETERNAL_SLASH", null, "Weaponblock_On"],
+    [5290, "SHC_POTENT_VENOM", null, "Edp"],
+    [5425, "SOA_EXORCISM_OF_MALICIOUS_SOUL", 1, null],
+    [5502, "SKE_SKY_SUN", null, "Sky_Enchant"],
+    [5503, "SKE_SKY_MOON", null, "Sky_Enchant"],
+    [5504, "SKE_STAR_LIGHT_KICK", null, "Sky_Enchant"],
+    [6503, "IG_RADIANT_SPEAR", null, "Attack_Stance"],
+    [6504, "IG_IMPERIAL_CROSS", null, "Attack_Stance"],
+    [6510, "BO_DUST_EXPLOSION", null, "Mystery_Powder"],
+    [6519, "IQ_BLAZING_FLAME_BLAST", null, "Explosionspirits"],
+    [8028, "MH_SONIC_CRAW", 1, null],
+    [8029, "MH_SILVERVEIN_RUSH", 1, null],
+    [8030, "MH_MIDNIGHT_FRENZY", 1, null],
+    [8036, "MH_TINDER_BREAKER", 1, null],
+    [8037, "MH_CBC", 1, null],
+    [8038, "MH_EQC", 2, null],
+    [8050, "MH_BLAZING_AND_FURIOUS", 1, null]
+  ];
+  // 补状态技能映射：目标状态 → 达成该状态的技能ID列表（skill_db 施放后 Status 字段反向推导，re 版实证）
+  // 键支持英文（rAthena 状态名）与中文（cond 语法）两种写法
+  var SKILL_STATUS_SRC = {
+    "Blessing": [34], "赐福": [34], "天使之赐福": [34],
+    "Explosionspirits": [270], "爆气": [270], "Fury": [270], "fury": [270],
+    "Hiding": [51, 165, 528, 3001], "隐匿": [51, 165], "Cloaking": [51, 165], "cloaking": [51, 165],
+    "Cartboost": [486], "手推车加速": [486], "Boost": [486], "boost": [486], "CartBoost": [486],
+    "Weaponblock_On": [2028], "武器格挡": [2028], "Weaponblock": [2028], "weaponblock": [2028], "WeaponBlocking": [2028],
+    "Poisoningweapon": [2033], "涂毒": [2033], "EnchantPoison": [2033], "enchantpoison": [2033],
+    "Rollingcutter": [2036], "回旋刀刃": [2036], "RollCounter": [2036],
+    "Sight": [10, 1424, 669], "侦测": [10, 1424], "Sightrasher": [1424], "sightrasher": [1424],
+    "Qd_Shot_Ready": [2559], "速射待发": [2559],
+    "Edp": [378], "涂毒强化": [378], "EDP": [378],
+    "Guard_Stance": [5255], "守卫姿态": [5255], "GuardStance": [5255],
+    "Attack_Stance": [5260], "攻击姿态": [5260], "AttackStance": [5260],
+    "Sky_Enchant": [5475], "天空附魔": [5475], "SkyEnchant": [5475],
+    "First_Faith_Power": [5246], "初信之力": [5246],
+    "Second_Judge": [5247], "二阶审判": [5247],
+    "Mystery_Powder": [6509], "Assumptio": [361], "ASSUMPTIO": [361], "神秘之粉": [6509]
+  };
+  var SKILL_SPHERE_SRC = [261, 262];    // 蓄气 / 吸魂（补气弹）
+  // 解析状态前置条件 → 需要补的资源 { spheres: 需要的球数, statuses: [缺失才补的状态名…] }
+  function condNeeds(condStr) {
+    var need = { spheres: 0, statuses: [] };
+    if (!condStr) return need;
+    var parts = String(condStr).split(/[,，]/);
+    for (var i = 0; i < parts.length; i++) {
+      var c = (parts[i] || "").trim();
+      if (!c) continue;
+      var neg = c.charAt(0) === "!";
+      var cc = neg ? c.substr(1) : c;
+      if (neg) continue; // !xxx 是「不需要某状态」，不参与自动补
+      var ms = cc.match(/^球(?:([<>]=?|=)\s*)?(\d+)$/);
+      if (ms) {
+        var op = ms[1] || ">=";
+        var n = parseInt(ms[2], 10);
+        // 球N/球>=N：该技能至少需要N个气弹；球< N/球<=N：低于阈值时补到N个。
+        if (op === "<" || op === "<=") {
+          if (n > need.spheres) need.spheres = n;
+        } else if (n > need.spheres) need.spheres = n;
+        continue;
+      }
+      // hp>/sp> 等阈值条件不参与自动补（由战斗逻辑等待）
+      if (/^(hp|sp)[><=]/.test(cc)) continue;
+      need.statuses.push(cc);
+    }
+    return need;
+  }
+  // 查询技能释放需求
+  function skillReq(skid) {
+    for (var i = 0; i < SKILL_REQ.length; i++) {
+      if (SKILL_REQ[i][0] === skid) return SKILL_REQ[i];
+    }
+    return null;
+  }
+  // 查已学技能等级（SkillList 组件），用于补状态技能等级
+  function learnedSkillLv(skid) {
+    try {
+      var SL = window.require && window.require("UI/Components/SkillList/SkillList");
+      if (SL && typeof SL.getSkillById === "function") {
+        var s = SL.getSkillById(skid);
+        if (s && s.level) return s.level;
+      }
+    } catch (e) {}
+    return 0;
+  }
+  // 把英文状态名映射为实体字段判定（与 checkSkillCond 中文语法对齐）
+  function statusNameToCond(name) {
+    name = String(name || "").toLowerCase();
+    if (name === "explosionspirits" || name === "explosionspirit" || name === "fury") return "爆气";
+    if (name === "hiding" || name === "cloaking") return "隐匿";
+    if (name === "cartboost" || name === "boost") return "手推车加速";
+    if (name === "weaponblock_on" || name === "weaponblock") return "武器格挡";
+    if (name === "poisoningweapon") return "涂毒";
+    if (name === "rollingcutter") return "回旋刀刃";
+    if (name === "sight" || name === "sightrasher") return "侦测";
+    if (name === "qd_shot_ready") return "速射待发";
+    if (name === "steelbody") return "钢体";
+    if (name === "bladestop" || name === "bladestop_wait") return "金刚";
+    if (name === "edp") return "涂毒强化";
+    if (name === "guard_stance" || name === "guardstance") return "守卫姿态";
+    if (name === "attack_stance" || name === "attackstance") return "攻击姿态";
+    if (name === "sky_enchant" || name === "skyenchant") return "天空附魔";
+    if (name === "first_faith_power") return "初信之力";
+    if (name === "second_judge") return "二阶审判";
+    if (name === "mystery_powder") return "神秘之粉";
+    return name;
+  }
+  // 状态是否生效（中英文名都支持；V1.7.6 中文实体字段别名 + 判活环兜底）
+  function statusActive(name) {
+    try {
+      var st = entStatus();
+      if (!st) return false;
+      var n = String(name || "").toLowerCase();
+      // V1.7.6 中文实体字段别名（与 checkSkillCond 硬编码中文对齐，实体字段优先）
+      if (n === "爆气") return st.explosion === 1;
+      if (n === "狂暴") return st.berserk === 1;
+      if (n === "灵魂") return st.soullink === 1;
+      if (n === "骑乘") return st.riding === 1;
+      if (n === "猎鹰") return st.falcon === 1;
+      if (n === "隐匿" || n === "伪装") return st.ent.isHide === true || st.ent.hiding === 1;
+      if (n === "手推车加速") return st.cart === 1;
+      if (n === "钢体") return st.ent.SteelBody === 1 || st.ent.steelbody === 1;
+      if (n === "涂毒") return st.ent.EnchantPoison === 1 || st.ent.enchantpoison === 1;
+      if (n === "武器格挡") return st.ent.WeaponBlock === 1 || st.ent.weaponblock === 1;
+      if (n === "回旋刀刃") return st.ent.RollCounter > 0;
+      if (n === "侦测") return st.ent.intravision === 1;
+      if (n === "速射待发") return st.ent.QDShotReady === 1;
+      if (n === "金刚") return st.ent.BladeStop === 1 || st.ent.BladeStop_Wait === 1 || st.ent.BladeStop_Wait2 === 1;
+      if (n === "涂毒强化") return st.ent.EDP === 1 || st.ent.Edp === 1 || st.ent.edp === 1;
+      if (n === "守卫姿态") return st.ent.GuardStance === 1 || st.ent.guardStance === 1;
+      if (n === "攻击姿态") return st.ent.AttackStance === 1 || st.ent.attackStance === 1;
+      if (n === "天空附魔") return st.ent.SkyEnchant === 1 || st.ent.skyEnchant === 1;
+      if (n === "初信之力") return st.ent.FirstFaithPower === 1 || st.ent.firstFaithPower === 1;
+      if (n === "二阶审判") return st.ent.SecondJudge === 1 || st.ent.secondJudge === 1;
+      if (n === "神秘之粉") return st.ent.MysteryPowder === 1 || st.ent.mysteryPowder === 1;
+      if (n === "explosionspirits" || n === "explosionspirit" || n === "fury") return st.explosion === 1;
+      if (n === "hiding" || n === "cloaking") return st.ent.isHide === true || st.ent.hiding === 1;
+      if (n === "cartboost" || n === "boost" || n === "cartboost") return st.cart === 1;
+      if (n === "weaponblock_on" || n === "weaponblock" || n === "weaponblocking") return st.ent.WeaponBlock === 1 || st.ent.weaponblock === 1;
+      if (n === "poisoningweapon") return st.ent.EnchantPoison === 1 || st.ent.enchantpoison === 1;
+      if (n === "rollingcutter") return st.ent.RollCounter > 0;
+      if (n === "sight" || n === "sightrasher") return st.ent.intravision === 1;
+      if (n === "qd_shot_ready") return st.ent.QDShotReady === 1;
+      if (n === "steelbody") return st.ent.SteelBody === 1 || st.ent.steelbody === 1;
+      if (n === "bladestop" || n === "bladestop_wait") return st.ent.BladeStop === 1 || st.ent.BladeStop_Wait === 1 || st.ent.BladeStop_Wait2 === 1;
+      if (n === "edp") return st.ent.EDP === 1 || st.ent.Edp === 1 || st.ent.edp === 1;
+      if (n === "guard_stance" || n === "guardstance") return st.ent.GuardStance === 1 || st.ent.guardStance === 1;
+      if (n === "attack_stance" || n === "attackstance") return st.ent.AttackStance === 1 || st.ent.attackStance === 1;
+      if (n === "sky_enchant" || n === "skyenchant") return st.ent.SkyEnchant === 1 || st.ent.skyEnchant === 1;
+      if (n === "first_faith_power") return st.ent.FirstFaithPower === 1 || st.ent.firstFaithPower === 1;
+      if (n === "second_judge") return st.ent.SecondJudge === 1 || st.ent.secondJudge === 1;
+      if (n === "mystery_powder") return st.ent.MysteryPowder === 1 || st.ent.mysteryPowder === 1;
+      // V1.7.6 兜底：实体字段没有该状态 → 回落 StatusIcons 判活环（buff/debuff 服务器通知，中英文均可）
+      var fId = buffStId(name);
+      if (fId >= 0 && buffStateOn(fId)) return true;
+      return false;
+    } catch (e) { return false; }
+  }
+  // 自动补状态：技能前置条件不满足时，解析缺失需求 → 施放能达成前置的技能（如阿修罗→补爆气/蓄气）
+  // 基于 condStr（手写或自动推导皆可）通用判断：任何技能只要前置被挡住，就补对应状态技能
+  // 返回 true=已施放补状态技能（本周期不再放主技能）
+  // V2.15.28：单个技能释放间隔（ms）——服务器 2842 真实后摇优先（skillDelay[SKID]，动态），
+  // 其次技能行第7段配置 cd 秒数，兜底 250ms（最低保底防霸占轮次）
+  function skillCdMs(o) {
+    try {
+      if (!o) return 150;
+      var base;
+      var srv = skillDelay[o.skid] || 0;
+      // V2.33.0 压死CD：服务器 2842 delayTime 是后摇/施法延迟，玩家手动按 amotion 续放比它快得多，
+      //   故取半（贴近手动手感）并封顶 1.2s；地板降到 150ms。系数存 window.__dshCdScale（默认0.5，控制台可调）。
+      if (srv > 0) base = Math.min(Math.max(Math.round(srv * (window.__dshCdScale || 0.5)), 150), 1200);
+      else {
+        var cfg = parseInt(o.cd, 10);
+        if (!isNaN(cfg) && cfg > 0) base = Math.min(cfg * 1000, 1200);
+        else base = 150; // 从未收到该技能服务器回执 → 150ms 兜底（原250）
+      }
+      // V2.16.7 服务器延迟补偿：提前约 0.7 RTT 发包，抵消网络往返滞后（至少保留 60ms，防过度提前打断动作）
+      var rtt = zSkillRtt[o.skid] || zSkillRttAvg || 0;
+      var comp = Math.min(Math.round(rtt * 0.7), 300);
+      if (base > comp + 60) base -= comp;
+      return Math.max(base, 80);
+    } catch (e) { return 150; }
+  }
+  function castStatusPrep(condStr, order) {
+    try {
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      if (!ent) return false;
+      var st = entStatus();
+      if (!st) return false;
+      if (st.spheres > 0) zPrepSpam = 0; // 看到球 → 补球计数清零
+      // 补状态节流：距上次补状态 <1s 不重复补 → 让 wait 分支穿插普攻（蓄气×5 链不再霸占每轮）
+      if (Date.now() - zPrepAt < 1000) return false;
+      var need = condNeeds(condStr);
+      // 1) 气弹不足 → 补气弹（蓄气/吸魂）
+      if (need.spheres > 0 && st.spheres < need.spheres) {
+        if (st.spheres <= 0 && zPrepSpam >= 6) return false; // 连续6次补球仍无球 → 停，防无限狂蓄气
+        for (var si = 0; si < SKILL_SPHERE_SRC.length; si++) {
+          var sid = SKILL_SPHERE_SRC[si];
+          var lv = learnedSkillLv(sid);
+          if (lv <= 0) continue; // 未学跳过
+          // 蓄气需 气弹 < 技能等级（skill.cpp MO_CALLSPIRITS 判断）；吸魂无条件
+          if (sid === 261 && st.spheres >= lv) continue;
+          try {
+            var ps = new CLIENT.PS.CZ.USE_SKILL();
+            ps.SKID = sid;
+            ps.selectedLevel = lv;
+            ps.targetID = ent.GID || 0;
+            CLIENT.NM.sendPacket(ps);
+            zPrepAt = Date.now(); // 补状态节流：1s 内不再补，间隙穿插普攻
+            zPrepSpam = (st.spheres <= 0) ? zPrepSpam + 1 : 0; // V2.32.2 补球计数
+            skillNextAt[sid] = Date.now() + skillCdMs({ skid: sid, cd: 0 }); // V2.15.28：补球技能独立 CD
+            tlog("cast-prep sphere " + sid + " lv" + lv + " (now " + st.spheres + "/" + need.spheres + ")");
+            setStatus("气弹不足(" + st.spheres + "/" + need.spheres + ")，自动蓄气补球…", "st");
+            return true;
+          } catch (e) { continue; }
+        }
+      }
+      // 2) 状态前置不满足 → 补状态技能（遍历条件里的每个状态）
+      for (var si2 = 0; si2 < need.statuses.length; si2++) {
+        var stName = need.statuses[si2];
+        if (statusActive(stName)) continue; // 该状态已生效
+        var srcs = SKILL_STATUS_SRC[stName] || [];
+        for (var k = 0; k < srcs.length; k++) {
+          var sid2 = srcs[k];
+          if (skillNextAt[sid2] && Date.now() < skillNextAt[sid2]) continue;
+          var lv2 = learnedSkillLv(sid2);
+          if (lv2 <= 0) continue;
+          try {
+            // 补状态技能自身也可能需要气弹（如爆气需5球）；改用明确球数，避免原条件未写球数时无限自调用。
+            var subReq = skillReq(sid2);
+            if (subReq && subReq[2] > 0 && st.spheres < subReq[2]) {
+              return castStatusPrep("球" + subReq[2], order);
+            }
+            var ps2 = new CLIENT.PS.CZ.USE_SKILL();
+            ps2.SKID = sid2;
+            ps2.selectedLevel = lv2;
+            ps2.targetID = ent.GID || 0;
+            CLIENT.NM.sendPacket(ps2);
+            zPrepAt = Date.now(); // 补状态节流：1s 内不再补，间隙穿插普攻
+            skillNextAt[sid2] = Date.now() + Math.max(skillCdMs({ skid: sid2, cd: 0 }), sid2 === 270 ? 1500 : 0); // 爆气等待状态回执，避免重复刷包
+            tlog("cast-prep status " + sid2 + " lv" + lv2 + " -> " + stName);
+            setStatus("缺" + statusNameToCond(stName) + "，自动补状态技能(" + (getSkillNameById(sid2) || sid2) + ")…", "st");
+            return true;
+          } catch (e) { continue; }
+        }
+      }
+      return false;
+    } catch (e) { return false; }
+  }
+  // V2.22.0：技能最快还要多少毫秒才能放（Infinity = 当前没有任何可释放技能）。
+  // 供「技能空档补普攻」做让位余量判断——剩余冷却小于余量时不补普攻，优先等技能。
+  function skillNextGap(order) {
+    try {
+      if (!order || !order.length) return Infinity;
+      var now = Date.now(), min = Infinity;
+      for (var i = 0; i < order.length; i++) {
+        var o = order[i];
+        if (clampSkillLv(o.skid, o.lv) <= 0) continue;                    // 未学
+        if (o.uses > 0 && (zUseCounts[o.skid] || 0) >= o.uses) continue;  // 本轮次数已满
+        if (o.lock > 0 && (zLockCounts[o.skid] || 0) >= o.lock) continue; // 每怪次数已满
+        var nx = skillNextAt[o.skid] || 0;
+        if (nx <= now) continue; // 已就绪/无冷却不属于“还差多久”，避免前置被挡的就绪技能把余量误算成0
+        var gap = nx - now;
+        if (gap < min) min = gap;
+      }
+      return min;
+    } catch (e) { return Infinity; }
+  }
+  function castOrderSkill(order, target) {
+    if (ordinaryCastBlocked()) return "escape";
+    // 并行判断链条（技能链 + 普攻链 各自独立评估，按优先级合流）：
+    //  评估阶段：每轮把所有技能的前置/射程并行扫一遍——前置不满足的技能只记录，不立即停下补状态，
+    //            后面的技能照常评估（避免顺序里放一个需前置的技能就把整条链堵住）。
+    //  动作阶段（技能链优先级）：① 射程内且前置满足 → 直接放；② 前置满足但超射程 → walk 走近再放；
+    //            ③ 全部被前置挡住 → 补第一个被挡技能的前置（补状态节流 1s）；④ 都做不了 → wait
+    //  普攻链：独立计时在 zAttack 的 wait 分支（间隔跟随攻击循环，默认 0.5s）——技能冷却窗口/
+    //          前置无解期间普攻照打，两条链互不阻塞。
+    // 客户端真实机制（onUseSkill 逆向）：先寻路检查目标是否在技能射程内（attackRange+1），
+    // 超射程→先发 REQUEST_MOVE 走近，到位后才发 USE_SKILL。直接对超射程目标发 USE_SKILL 会被服务器忽略。
+    // 状态前置：技能释放需求表(SKILL_REQ)自动判断——玩家只需把想用的技能加入顺序，
+    // 助手自动补状态（蓄气/爆气等）→ 状态满足后再释放指定技能。顺序里也可手写 cond 覆盖。
+    // 自身 buff（type & SELF）：对自身施放（targetID=自己 GID），不受怪物距离限制
+    // 返回：true=已施放 / "walk"=条件满足但超射程需走近 / "wait-cd"=技能冷却窗口 / "wait"=全被前置挡住 / "none"=无技能配置
+    if (!order.length) return "none";
+    if (!target || !target.position) return "wait";
+    var ent = CLIENT.SS.Entity;
+    if (!ent || !ent.position) return "wait";
+    // V2.15.28 每技能独立 CD：每个技能记录自己的 skillNextAt[SKID]（上次释放 + 该技能真实间隔），到点才发。
+    //   间隔来源：服务器 2842(0xb1a USESKILL_ACK3) 动态下发的真实后摇 skillDelay[SKID]（随等级/装备/状态变动）
+    //   > 技能行第7段配置 cd 秒数 > 默认 250ms。不再用攻击轮次全局窗口（轮次驱动会重复发包 → 服务器点击限制弹窗）。
+    var d = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]);
+    var prereqEn = $id("dsh-prereq") ? $id("dsh-prereq").checked : true;
+    var blocked = null; // 第一个前置不满足的技能（{o, condStr}，合流阶段才补它的前置）
+    var walkSk = null;  // 第一个前置满足但超射程的技能（无射程内可放时才走近）
+    var cooling = false; // 至少一个仍可用的技能处于独立冷却；最终返回 wait-cd 供300ms让位判断
+    // V1.7.5 轮换游标：上一轮从 0 扫、第一个满足条件的技能恒占位 → 拖拽顺序无效、后面的技能永远轮不到。
+    //   改为从 zCastIdx（上次命中技能的下一格，循环）开始扫：顺序列表决定轮换次序，每个技能都能轮到。
+    var orderLen = order.length;
+    if (zCastIdx < 0 || zCastIdx >= orderLen) zCastIdx = 0;
+    for (var k = 0; k < orderLen; k++) {
+      var i = (zCastIdx + k) % orderLen;
+      var o = order[i];
+      // 等级自动校正：手动等级 > 已学 → 降为已学最高级；未学 → 跳过该技能
+      var realLv = clampSkillLv(o.skid, o.lv);
+      if (realLv <= 0) {
+        dshCastSkip(o.skid, "未学");
+        tlog("cast-sk " + o.skid + " 未学，跳过");
+        continue;
+      }
+      // 释放次数上限（V1.7.0 · OpenKore maxUses）：uses>0 且本轮已释放≥上限 → 本轮跳过
+      if (o.uses > 0 && (zUseCounts[o.skid] || 0) >= o.uses) {
+        dshCastSkip(o.skid, "次数上限" + o.uses);
+        tlog("cast-sk " + o.skid + " 已达次数上限" + o.uses + "，本轮跳过");
+        continue;
+      }
+      // 每次锁定次数上限（V1.7.5 · 锁定一个目标期间最多放N次，换目标/重新锁定时清零重计）
+      if (o.lock > 0 && (zLockCounts[o.skid] || 0) >= o.lock) {
+        dshCastSkip(o.skid, "锁定次数" + o.lock);
+        tlog("cast-sk " + o.skid + " 已达锁定次数" + o.lock + "，跳过");
+        continue;
+      }
+      // 自动前置：技能无手写 cond 时，从释放需求表推导（如阿修罗→"球5,Explosionspirits"）
+      var autoCond = "";
+      var req = skillReq(o.skid);
+      if (req) {
+        var parts2 = [];
+        var sphereNeed = o.skid === 267 ? realLv : req[2]; // 弹指按实际技能等级耗球，且绝不隐含爆气
+        if (sphereNeed > 0) parts2.push("球" + sphereNeed);
+        if (req[3]) parts2.push(req[3]);
+        autoCond = parts2.join(",");
+      }
+      var condStr = o.cond || autoCond;
+      // 前置并行评估：不满足只记录（合流阶段补），后面的技能照常评估——输出不断
+      if (prereqEn && condStr) {
+        var ck = checkSkillCond(condStr);
+        if (!ck.ok) {
+          if (!blocked) blocked = { o: o, condStr: condStr };
+          continue;
+        }
+      }
+      // 只有次数/锁定/前置都仍可用的技能才算“冷却中”，避免不可释放技能误触发300ms让位。
+      if (skillNextAt[o.skid] && Date.now() < skillNextAt[o.skid]) {
+        cooling = true;
+        dshCastSkip(o.skid, "冷却" + Math.ceil((skillNextAt[o.skid] - Date.now()) / 1000) + "s");
+        tlog("cast-sk " + o.skid + " 独立冷却中，跳过");
+        continue;
+      }
+      // 释放百分比只在技能已就绪后判定；冷却中的技能必须稳定报告 wait-cd。
+      if (o.prob < 100 && Math.random() * 100 >= o.prob) {
+        dshCastSkip(o.skid, "概率" + o.prob);
+        tlog("cast-sk " + o.skid + " 概率" + o.prob + "%未命中，跳过");
+        continue;
+      }
+      var bits = skillTypeBits(o.skid);
+      var isSelf = bits != null ? ((bits & 4) === 4) : false; // SELF=4；无类型信息按非自身处理
+      if (isSelf) {
+        try {
+          var ps = new CLIENT.PS.CZ.USE_SKILL();
+          ps.SKID = o.skid;
+          ps.selectedLevel = realLv;
+          ps.targetID = ent.GID || 0;
+          dshCastMark(o.skid, realLv, ent.GID || 0, "zhu");
+          CLIENT.NM.sendPacket(ps);
+          zSkillSentAt[o.skid] = Date.now(); // V2.16.7：记录发包时刻算 RTT
+          zLastCastAt = Date.now(); // 记录技能释放时间（兼容旧引用）
+          zLastCastSkid = o.skid; // V2.15.24：记本次技能（兼容旧引用）
+          skillNextAt[o.skid] = Date.now() + skillCdMs(o); // V2.15.28：本技能独立 CD（服务器2842真实后摇>配置cd>250ms）
+          zUseCounts[o.skid] = (zUseCounts[o.skid] || 0) + 1; // V1.7.0 maxUses 计数
+          zLockCounts[o.skid] = (zLockCounts[o.skid] || 0) + 1; // V1.7.5 锁定次数计数
+          zCastIdx = (i + 1) % orderLen; // V1.7.5 轮换游标：下轮从本技能之后开始扫
+          dshDiag("cast", { skid: o.skid, lv: realLv, self: 1 });
+          tlog("cast-sk " + o.skid + " lv" + realLv + (realLv !== o.lv ? "(降自" + o.lv + ")" : "") + " [self]" + (condStr ? " cond=" + condStr : "") + " p" + o.prob + "%");
+          return true;
+        } catch (e) { continue; }
+      }
+      // 对怪技能：前置已满足，再看射程——射程内直接放；超射程只记录（继续评估后面的技能，找射程内可放的）
+      var need = getSkillRange(o.skid, realLv) + 1; // 客户端 onUseSkill：attackRange+1
+      if (btDiagOn) btLog('range', 'skid=' + o.skid + ' lv=' + realLv + ' need=' + need + ' d=' + d + ' ' + (d > need ? '超射程→走' : '射程内'));
+      if (d > need) {
+        if (!walkSk) walkSk = o;
+        continue;
+      }
+      try {
+        var p = new CLIENT.PS.CZ.USE_SKILL();
+        p.SKID = o.skid;
+        p.selectedLevel = realLv;
+        p.targetID = target.GID;
+        dshCastMark(o.skid, realLv, target.GID, "zhu");
+        CLIENT.NM.sendPacket(p);
+        zSkillSentAt[o.skid] = Date.now(); // V2.16.7：记录发包时刻算 RTT
+        zLastCastAt = Date.now(); // 记录技能释放时间（兼容旧引用）
+        zLastCastSkid = o.skid; // V2.15.24：记本次技能（兼容旧引用）
+        skillNextAt[o.skid] = Date.now() + skillCdMs(o); // V2.15.28：本技能独立 CD（服务器2842真实后摇>配置cd>250ms）
+        zUseCounts[o.skid] = (zUseCounts[o.skid] || 0) + 1; // V1.7.0 maxUses 计数
+        zLockCounts[o.skid] = (zLockCounts[o.skid] || 0) + 1; // V1.7.5 锁定次数计数
+        zCastIdx = (i + 1) % orderLen; // V1.7.5 轮换游标：下轮从本技能之后开始扫
+        dshDiag("cast", { skid: o.skid, lv: realLv, target: target.GID });
+        tlog("cast-sk " + o.skid + " lv" + realLv + (realLv !== o.lv ? "(降自" + o.lv + ")" : "") + (condStr ? " cond=" + condStr : "") + " p" + o.prob + "%");
+        return true;
+      } catch (e) { continue; }
+    }
+    // 合流：无射程内可放技能 → 超射程的走近再放 > 补第一个被挡技能的前置 > 等（外层普攻穿插）
+    if (walkSk) return "walk";
+    if (blocked) {
+      if (castStatusPrep(blocked.condStr, order)) { zLastCastAt = Date.now(); zLastCastSkid = 0; return true; } // V2.15.28：补状态技能已在内部记 skillNextAt 独立 CD（zLastCast* 仅兼容旧引用）
+    }
+    // 有候选技能仍在独立冷却 → 明确返回 wait-cd，让外层按300ms余量决定等技能还是补普攻。
+    if (cooling) return "wait-cd";
+    // 全部技能被状态前置挡住且补状态节流/不可用 → 等（外层 wait 分支穿插普攻）
+    return "wait";
+  }
+  $id("dsh-z-on").addEventListener("click", startZhu);
+  $id("dsh-z-off").addEventListener("click", stopZhu);
+  // 技能前置/穿插平A 开关持久化
+  try {
+    var prereqEl = $id("dsh-prereq");
+    if (prereqEl) {
+      if (saved.prereq != null) prereqEl.checked = !!saved.prereq;
+      prereqEl.addEventListener("change", function () { saved.prereq = this.checked; saveSaved(saved); });
+    }
+    var attMixEl = $id("dsh-z-attmix");
+    if (attMixEl) {
+      if (saved.attMix != null) attMixEl.checked = !!saved.attMix;
+      attMixEl.addEventListener("change", function () { saved.attMix = this.checked; saveSaved(saved); });
+    }
+    // V2.22.0：让位余量（毫秒）——技能剩余冷却小于它时不补普攻，优先等技能
+    var attMixMargEl = $id("dsh-z-attmixmargin");
+    if (attMixMargEl) {
+      if (saved.attMixGap != null) attMixMargEl.value = saved.attMixGap;
+      attMixMargEl.addEventListener("change", function () { saved.attMixGap = parseInt(this.value, 10) || 0; saveSaved(saved); });
+    }
+    // V2.22.0：助手自动战斗默认打全部怪
+    var allMobsEl = $id("dsh-z-allmobs");
+    if (allMobsEl) {
+      if (saved.allMobs != null) allMobsEl.checked = !!saved.allMobs;
+      allMobsEl.addEventListener("change", function () { saved.allMobs = this.checked; saveSaved(saved); });
+    }
+  } catch (e) {}
+  $id("dsh-scanen").addEventListener("change", function () {
+    if (this.checked) startScan(); else stopScan();
+  });
+  // 点选技能释放：已学主动技能勾选 → 生成/更新技能顺序
+  function learnedActiveSkills() {
+    var out = [];
+    // 1) 优先：客户端 SkillList 组件（真实已学技能，含等级/类型/射程，来源服务器 ZC.SKILLINFO_LIST）
+    //    之前读 DB.getAllSkillInfo()（静态技能库无 level 字段）导致列表永远为空
+    try {
+      var SL = window.require && window.require("UI/Components/SkillList/SkillList");
+      var list = SL && typeof SL.getList === "function" ? SL.getList() : null;
+      if (list && list.length) {
+        for (var i = 0; i < list.length; i++) {
+          var s = list[i];
+          if (!s || !s.level) continue;          // 未学(等级0)跳过
+          if (!s.type) continue;                 // 被动(type=0)不参与技能顺序
+          var skid = s.SKID;
+          if (skid == null) continue;
+          var nm = getSkillNameById(skid) || s.skillName || String(skid);
+          out.push({ skid: skid, lv: s.level, name: nm, range: s.attackRange });
+        }
+        if (out.length) return out;
+      }
+    } catch (e) {}
+    // 2) 回退：DB 技能库（静态数据一般无 level，仅作兜底）
+    try {
+      var DB = CLIENT.DB || requireDB("DB/DBManager");
+      if (!DB || typeof DB.getAllSkillInfo !== "function") return out;
+      var info = DB.getAllSkillInfo();
+      Object.keys(info).forEach(function (k) {
+        var s = info[k];
+        var lv = s && (s.level || s._level);
+        if (s && lv > 0 && !isPassiveSkill(s.SKID != null ? s.SKID : k)) {
+          var skid = s.SKID != null ? s.SKID : parseInt(k, 10);
+          var nm = getSkillNameById(skid) || s.name || s.SkillName || String(skid);
+          out.push({ skid: skid, lv: lv, name: nm });
+        }
+      });
+    } catch (e) {}
+    return out;
+  }
+  // 技能顺序可视化列表：textarea ↔ 拖拽列表双向同步
+  function renderSkillOrderList() {
+    var el = $id("dsh-skillorderlist");
+    if (!el) return;
+    var order = parseSkillOrder($id("dsh-skillorder").value);
+    if (!order.length) { el.innerHTML = '<span class="st">空（点选上方技能加入，拖拽调整顺序）</span>'; return; }
+    var html = "";
+    for (var i = 0; i < order.length; i++) {
+      var o = order[i];
+      var nm = getSkillNameById(o.skid) || ("技能" + o.skid);
+      // 显示条件：手写优先，否则显示释放需求表自动推导
+      var dispCond = o.cond;
+      if (!dispCond) {
+        var rr = skillReq(o.skid);
+        if (rr) {
+          var parts2 = [];
+          if (rr[2] > 0) parts2.push("球" + rr[2]);
+          if (rr[3]) parts2.push(statusNameToCond(rr[3]));
+          if (parts2.length) dispCond = "自动:" + parts2.join(",");
+        }
+      }
+      html += '<div class="prow drag-item" data-drag-i="' + i + '" draggable="true" title="拖动调整顺序"><span class="dh">⠿</span><span class="pidx">' + (i + 1) + '</span>' +
+        '<span class="pnm">' + nm + ' <span class="st">Lv' + o.lv + ' · ID' + o.skid + (dispCond ? ' · 需' + dispCond : '') + '</span></span>' +
+        '<input type="number" min="0" max="100" value="' + (o.prob != null ? o.prob : 100) + '" data-prob="' + o.skid + '" title="释放百分比" style="flex:0 0 48px;text-align:center">' +
+        '<span class="st">%</span>' +
+        '<button class="ghost" data-rm-sk="' + o.skid + '" style="flex:0 0 auto;padding:0 7px">删除</button></div>';
+    }
+    el.innerHTML = html;
+    // 释放百分比实时修改 → 写回 textarea（对象序列化，保留 cond、不吞技能名）
+    el.querySelectorAll("[data-prob]").forEach(function (inp) {
+      inp.addEventListener("change", function () {
+        var skid = parseInt(this.getAttribute("data-prob"), 10);
+        var pvRaw = parseInt(this.value, 10);
+        // 空值/非法 → 100；输入 0 → 保留 0（0=不释放）
+        var pv = (isNaN(pvRaw) ? 100 : Math.max(0, Math.min(100, pvRaw)));
+        var order = parseSkillOrder($id("dsh-skillorder").value);
+        var hit = false;
+        for (var i2 = 0; i2 < order.length; i2++) {
+          if (order[i2].skid === skid) { order[i2].prob = pv; hit = true; }
+        }
+        $id("dsh-skillorder").value = order.map(skillLine).join("\n");
+        if (hit) setStatus("技能 " + skid + " 释放概率 → " + pv + "%", "ok");
+        renderSkillOrderList();
+      });
+    });
+    el.querySelectorAll("[data-rm-sk]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var skid = parseInt(this.getAttribute("data-rm-sk"), 10);
+        var lines = String($id("dsh-skillorder").value || "").split(/\r?\n/).filter(function (l) {
+          var m = l.match(/^(\d+)(?::(\d+))?/);
+          return !(m && parseInt(m[1], 10) === skid);
+        });
+        $id("dsh-skillorder").value = lines.join("\n");
+        renderSkillOrderList();
+        renderSkillPick();
+      });
+    });
+    enableDragSort(el, function (from, to) {
+      var order2 = parseSkillOrder($id("dsh-skillorder").value);
+      var moved = order2.splice(from, 1)[0];
+      order2.splice(to, 0, moved);
+      $id("dsh-skillorder").value = order2.map(skillLine).join("\n");
+      renderSkillOrderList();
+      setStatus("技能顺序已调整（第" + (from + 1) + "→第" + (to + 1) + "）", "ok");
+    });
+  }
+  function renderSkillPick() {
+    var el = $id("dsh-skillpick");
+    if (!el) return;
+    var list = learnedActiveSkills();
+    if (!list.length) { el.innerHTML = '<span class="st">未读取到已学技能（登录后展开）</span>'; return; }
+    // 当前技能顺序里已有的 skid
+    var orderSkids = {};
+    parseSkillOrder($id("dsh-skillorder").value).forEach(function (o) { orderSkids[o.skid] = true; });
+    var html = "";
+    list.forEach(function (s) {
+      html += '<div class="list-item"><label class="switch" title="' + s.name + ' Lv' + s.lv + '"><input type="checkbox" data-sk="' + s.skid + '" data-lv="' + s.lv + '" data-nm="' + s.name + '"' + (orderSkids[s.skid] ? " checked" : "") + '>' +
+        s.name + ' Lv' + s.lv + '</label></div>';
+    });
+    el.innerHTML = html;
+    el.querySelectorAll('input[data-sk]').forEach(function (c) {
+      c.addEventListener("change", function () {
+        var skid = parseInt(this.getAttribute("data-sk"), 10);
+        var lv = parseInt(this.getAttribute("data-lv"), 10) || 5;
+        var nm = this.getAttribute("data-nm") || String(skid);
+        var ta = $id("dsh-skillorder");
+        var lines = String(ta.value || "").split(/\r?\n/).filter(function (l) { return l.trim(); });
+        // 若该技能已有行（可能带状态前置），勾选/取消时都保留原行（含条件），避免重复
+        var hasLine = false;
+        for (var li = 0; li < lines.length; li++) {
+          var mm = lines[li].match(/^(\d+)/);
+          if (mm && parseInt(mm[1], 10) === skid) { hasLine = true; break; }
+        }
+        if (!hasLine && this.checked) lines.push(skillLine({ skid: skid, lv: lv, cond: "", prob: 100 }));
+        if (hasLine && !this.checked) {
+          lines = lines.filter(function (l) {
+            var m = l.match(/^(\d+)(?::(\d+))?/);
+            return !(m && parseInt(m[1], 10) === skid);
+          });
+        }
+        ta.value = lines.join("\n");
+        renderSkillOrderList();
+        setStatus(this.checked ? "已加入技能顺序: " + nm : "已移除: " + nm, this.checked ? "ok" : "st");
+      });
+    });
+  }
+  $id("dsh-skillorder").addEventListener("input", function () { try { renderSkillPick(); renderSkillOrderList(); } catch (e) {} });
+  $id("dsh-skillclear").addEventListener("click", function () {
+    $id("dsh-skillorder").value = "";
+    renderSkillPick();
+    renderSkillOrderList();
+    setStatus("技能顺序已清空", "st");
+  });
+  $id("dsh-skillimp").addEventListener("click", function () {
+    try {
+      var learned = learnedActiveSkills();
+      if (!learned.length) { setStatus("角色还没有已学主动技能（登录后重试）", "err"); return; }
+      var lines = [];
+      learned.forEach(function (s) {
+        lines.push(skillLine({ skid: s.skid, lv: s.lv, cond: "", prob: 100 }));
+      });
+      $id("dsh-skillorder").value = lines.join("\n");
+      $id("dsh-prereqcnt").textContent = "已学 " + lines.length + " 技能";
+      renderSkillPick();
+      renderSkillOrderList();
+      setStatus("已导入角色已学技能 " + lines.length + " 个", "ok");
+    } catch (e) { setStatus("导入异常: " + e.message, "err"); }
+  });
+
+  // ---------------- V2.15.1 背包整理（自 v4.47 bagClean 移植 · 剥离挑战依赖，独立自动触发）----------------
+  var bagClean = {enabled:false,pending:false,busy:false,rules:{},generation:0,status:null,detail:null,hold:null,error:""};
+  function bagCleanInventory() {
+    var paths = ['UI/Components/Inventory/Inventory','UI/Components/BasicInventory/BasicInventory'];
+    for (var i = 0;i<paths.length;i++){var m = requireDB(paths[i]);if (m&&Array.isArray(m.list))return m.list;}
+    return null;
+  }
+  function bagCleanWeight() {
+    var a = document.querySelector('.weight_value'), b = document.querySelector('.weight_total');
+    function number(el) {return el?Number(el.textContent.replace(/[,，\s]/g,'')):NaN;}
+    var w = number(a), max = number(b), ent = CLIENT.SS&&CLIENT.SS.Entity;
+    if (!(Number.isFinite(w)&&max>0)&&ent){w=Number(ent.weight);max=Number(ent.maxWeight||ent.maxweight);}
+    return Number.isFinite(w)&&w>=0&&Number.isFinite(max)&&max>0?w/max*100:null;
+  }
+  function bagCleanUnitWeight(id) {
+    try{
+      var db = CLIENT.DB||requireDB('DB/DBManager'), info = db&&db.getItemInfo&&db.getItemInfo(id);
+      if (!info)return null;
+      var desc = info.identifiedDescriptionName;
+      var text = (Array.isArray(desc)?desc.join('\n'):String(desc||'')).replace(/\^[0-9a-f]{6}/gi,'').replace(/<[^>]*>/g,' ');
+      var m = text.match(/(?:重量|Weight)\s*[:：]\s*([0-9]+(?:\.[0-9]+)?)/i);
+      return m&&Number.isFinite(Number(m[1]))?Number(m[1]):null;
+    }catch(ignore){return null;}
+  }
+  function bagCleanWeightOrder(a, b) {
+    var aw = a.unitWeight, bw = b.unitWeight;
+    if (aw==null&&bw!=null)return 1;if (bw==null&&aw!=null)return -1;
+    return (bw||0)-(aw||0)||Math.max(0,b.total-(bagClean.rules[b.key]||0))-Math.max(0,a.total-(bagClean.rules[a.key]||0))||a.id-b.id||String(a.key).localeCompare(String(b.key));
+  }
+  function bagCleanRows(inv) {
+    var groups = {};
+    (inv||[]).forEach(function(it){
+      if (!it||[0,2,3,4,5,8,10,11,12,18].indexOf(it.type)<0||it.IsEquipped||it.WearState||it.wearState||it.equipped)return;
+      var equipment = [4,5,8,12].indexOf(it.type)>=0;
+      var unidentified = equipment&&(it.IsIdentified===0||it.IsIdentified===false);
+      if (equipment&&(!(it.IsIdentified===1||it.IsIdentified===true||unidentified)||it.RefiningLevel!==0||!it.slot||
+        ['card1','card2','card3','card4'].some(function(k){return it.slot[k]!==0;})||
+        it.refiningLevel||it.nRandomOptionCnt||it.IsDamaged))return;
+      var id = Number(it.ITID), index = Number(it.index), amount = Number(it.count!=null?it.count:(it.amount!=null?it.amount:(equipment?1:NaN)));
+      if (!Number.isInteger(id)||id<=0||!Number.isInteger(index)||index<=0||index>65535||!Number.isInteger(amount)||amount<=0)return;
+      var key = String(id)+(unidentified?':u':'');
+      if (!groups[key])groups[key]={id:id,key:key,unidentified:unidentified,unitWeight:bagCleanUnitWeight(id),total:0,stacks:[]};
+      groups[key].total+=amount;groups[key].stacks.push({index:index,amount:amount});
+    });return Object.keys(groups).map(function(k){return groups[k];});
+  }
+  function bagCleanFreeSlots() {
+    var used = document.querySelector('#Inventory .titlebar .curamount'), max = document.querySelector('#Inventory .titlebar .maxamount');
+    if (!used||!max||!used.textContent.trim()||!max.textContent.trim())return null;
+    var a = Number(used.textContent.trim()), b = Number(max.textContent.trim());
+    return isFinite(a)&&Math.floor(a)===a&&isFinite(b)&&Math.floor(b)===b&&a>=0&&b>0?Math.max(0,b-a):null;
+  }
+  function bagCleanNeeded(weight, free) {return weight!==null&&weight>70||free!==null&&free<20;}
+  function bagCleanPlan(inv) {
+    return bagCleanRows(inv).filter(function(row){return Object.prototype.hasOwnProperty.call(bagClean.rules,row.key);}).map(function(row){
+      var keep = bagClean.rules[row.key];row.drop = Math.max(0, row.total - keep);return row;
+    }).filter(function(row){return row.drop>0;}).sort(bagCleanWeightOrder);
+  }
+  function bagCleanSay(text) {if (bagClean.status)bagClean.status.textContent=String(text).split('\n')[0];if (bagClean.detail)bagClean.detail.textContent=text;}
+  function bagCleanShortage(inv, weight, free, reduceWeight, requireSlots) {
+    var lines = ['当前负重：'+(weight===null?'未知':weight.toFixed(1)+'%')+'；剩余：'+(free===null?'未知':free+'格')];
+    if (reduceWeight)lines.push('负重目标≤55%'+(weight===null?'（当前无法读取）':weight>55?'，还需降低 '+(weight-55).toFixed(1)+' 个百分点':'，已达到'));
+    if (requireSlots)lines.push('空格目标≥20格'+(free===null?'（当前无法读取）':free<20?'，还差 '+(20-free)+' 格':'，已达到'));
+    var keys = Object.keys(bagClean.rules), rows = bagCleanRows(inv), details = [];
+    if (!keys.length)lines.push('丢弃名单为空：请先勾选要清理的物品。');
+    else{
+      lines.push('名单内已无符合条件的可丢物品：');
+      keys.forEach(function(key){
+        var id = Number(key.split(':')[0]), unidentified = key.slice(-2)===':u', name = '物品';
+        try{name=getItemName(id)||name;}catch(ignore){}
+        var label = (unidentified?'[未鉴定] ':'')+name+' #'+id;
+        var matches = (inv||[]).filter(function(it){
+          if (!it||Number(it.ITID)!==id)return false;
+          var u = [4,5,8,12].indexOf(it.type)>=0&&(it.IsIdentified===0||it.IsIdentified===false);
+          return u===unidentified;
+        });
+        if (!matches.length){details.push(label+'：已清完或当前未持有');return;}
+        var eligible = null;for (var ri = 0; ri < rows.length; ri++) { if (rows[ri].key === key) { eligible = rows[ri]; break; } }var keep = bagClean.rules[key], reasons = [];
+        if (eligible)reasons.push('可处理数量 '+eligible.total+'，保留 '+keep+(eligible.total<=keep?'（无多余数量）':''));
+        matches.forEach(function(it){
+          if (eligible&&eligible.stacks.some(function(st){return st.index===Number(it.index);}))return;
+          var reason;
+          if (it.IsEquipped||it.WearState||it.wearState||it.equipped)reason='穿戴中，已保护';
+          else if (it.RefiningLevel>0||it.refiningLevel>0)reason='精炼装备，已保护';
+          else if (it.slot&&function(){for (var sk in it.slot){if (Number(it.slot[sk])>0)return true;}return false;}()||it.nRandomOptionCnt>0)reason='插卡/附魔或随机属性，已保护';
+          else if (it.IsDamaged)reason='损坏装备，已保护';
+          else reason='类型不支持或数据不完整，已保护';
+          if (reasons.indexOf(reason)<0)reasons.push(reason);
+        });
+        details.push(label+'：'+reasons.join('；'));
+      });
+      lines=lines.concat(details.slice(0,12));
+      if (details.length>12)lines.push('另有 '+(details.length-12)+' 项；可在名单中逐项检查。');
+    }
+    lines.push('补充名单或调整保留数量后点“重试清理”；不继续丢则点“跳过本次并继续”。');
+    return lines.join('\n');
+  }
+  function bagCleanHold(message, done, player, map) {
+    bagClean.error=message;bagCleanSay(message);
+    if (player!==CLIENT.SS.Entity||map!==getMapName())return;
+    var weight=bagCleanWeight(),free=bagCleanFreeSlots();
+    if (weight!==null&&weight<=90){
+      bagClean.hold=null;bagClean.pending=false;bagClean.busy=false;
+      bagCleanSay(message+'；负重≤90%，已自动跳过本次清理并继续（可能仍缺空格）');if (done)done();return;
+    }
+    bagClean.hold={done:done,player:player,map:map};
+    bagCleanSay(message+'；等待重试清理或跳过本次');
+  }
+  function bagCleanResume(retry) {
+    if (bagClean.busy)return;
+    var hold = bagClean.hold;
+    if (!hold)return bagCleanSay('当前没有等待恢复的清理任务');
+    if (hold.player!==CLIENT.SS.Entity||hold.map!==getMapName()){
+      bagClean.hold=null;bagCleanSay('角色或地图已变化，放弃原暂停的清理');return;
+    }
+    bagClean.hold=null;bagClean.error='';
+    if (retry){bagClean.enabled=true;var checkbox = document.querySelector('#dsh-bag-clean [data-enable]');if (checkbox)checkbox.checked=true;bagCleanExecute(function(){},null);}
+    else{bagClean.pending=false;bagCleanSay('已跳过本次清理，继续');if (hold.done)hold.done();}
+  }
+  async function bagCleanExecute(done, manual) {
+    if (bagClean.busy)return;
+    bagClean.busy=true;bagClean.error='';var handled = false, generation = bagClean.generation, player = CLIENT.SS.Entity, map = getMapName();
+    function valid() {return (manual||bagClean.enabled)&&generation===bagClean.generation&&player===CLIENT.SS.Entity&&map===getMapName();}
+    function wait() {return new Promise(function(resolve){setTimeout(resolve,800);});}
+    try{
+      if (!valid())return;
+      var weight = bagCleanWeight();
+      var free = bagCleanFreeSlots(), reduceWeight = weight!==null&&weight>70, requireSlots = free!==null&&free<20;
+      if (!manual&&weight===null&&!requireSlots)throw Error('无法读取负重');
+      var attempts = 0;
+      while(manual?Object.keys(manual).some(function(k){return manual[k]>0;}):(reduceWeight&&weight>55)||(requireSlots&&free!==null&&free<20)){
+        if (!valid())return;
+        if (++attempts>100)throw Error('清理次数达到上限，可能被自动拾取重新捡回');
+        var controls = requireDB('Preferences/Controls');
+        if (controls&&controls.talk)throw Error('NPC 对话尚未结束');
+        var inventory = bagCleanInventory();if (!inventory)throw Error('背包数据未就绪，请先打开背包');
+        var plan = bagCleanPlan(inventory);
+        if (manual)plan=plan.filter(function(r){return manual[r.key]>0;});
+        if (!plan.length){if (manual)break;throw Error(bagCleanShortage(inventory,weight,free,reduceWeight,requireSlots));}
+        var row = plan[0], stack = row.stacks[0], count = Math.min(row.drop,stack.amount,32767);
+        if (manual)count=Math.min(count,manual[row.key]);
+        if (!CLIENT.PS.CZ.ITEM_THROW)throw Error('此客户端不支持已核对的丢弃接口');
+        var packet = new CLIENT.PS.CZ.ITEM_THROW();packet.Index=stack.index;packet.count=count;
+        bagCleanSay('清理中：ID '+row.id+' × '+count);CLIENT.NM.sendPacket(packet);
+        var acknowledged = false;
+        for (var retry = 0;retry<8;retry++){
+          await wait();if (!valid())return;
+          var fresh = bagCleanInventory();if (!fresh)continue;
+          var after = null;var freshRows = bagCleanRows(fresh);for (var fi = 0; fi < freshRows.length; fi++) { if (freshRows[fi].key === row.key) { after = freshRows[fi]; break; } }
+          if ((after?after.total:0)<=row.total-count){acknowledged=true;break;}
+        }
+        if (!acknowledged)throw Error('丢弃未确认或被重新拾取，已停止重发');
+        if (manual)manual[row.key]-=count;
+        weight=bagCleanWeight();if (!manual&&reduceWeight&&weight===null)throw Error('负重数据不可用');
+        free=bagCleanFreeSlots();if (!manual&&requireSlots&&free===null)throw Error('背包格数数据不可用');
+      }
+      bagClean.pending=false;bagCleanSay('清理完成'+(weight===null?'':'，负重 '+weight.toFixed(1)+'%')+(free===null?'':'，剩余 '+free+' 格'));
+      handled=true;bagClean.busy=false;if (valid()&&done)done();
+    }catch(e){
+      handled=true;
+      var message = '背包清理暂停：'+e.message;bagCleanSay(message);
+      if (!manual)bagCleanHold(message,done,player,map);
+    }finally{
+      bagClean.busy=false;
+      if (!handled&&!manual)bagCleanHold('清理被取消或条件变化',done,player,map);
+    }
+  }
+  function bagCleanInit() {
+    try{var saved = JSON.parse(localStorage.getItem('dsh-bag-clean-rules-v1')||'{}');Object.keys(saved).forEach(function(id){if (/^[1-9]\d*(?::u)?$/.test(id)&&isFinite(saved[id])&&Math.floor(saved[id])===saved[id]&&saved[id]>=0)bagClean.rules[id]=saved[id];});}catch(ignore){}
+    var box = document.getElementById('dsh-bag-clean');
+    if (!box)return;
+    box.innerHTML='<div class="st" style="margin:2px 0 4px">勾选只保存名单，不会立即丢弃。自动：负重超过70%或剩余不足20格触发；手动：预览确认后清理。支持材料/消耗品/普通装备；保护穿戴、精炼、插卡及属性不明装备。未鉴定装备单独勾选。</div>'+
+      '<label class="switch" style="margin:2px 0"><input data-enable type="checkbox">启用自动丢弃</label>'+
+      '<div class="row" style="flex-wrap:wrap;gap:5px;margin:4px 0"><button data-scan style="flex:0 0 auto">扫描 / 预览</button>'+
+      '<button data-now style="flex:0 0 auto">立即清理…</button>'+
+      '<button class="ghost" data-stop style="flex:0 0 auto">停止清理</button>'+
+      '<button class="ghost" data-export style="flex:0 0 auto">导出名单</button>'+
+      '<button class="ghost" data-import style="flex:0 0 auto">导入名单</button></div>'+
+      '<div data-state style="font-size:10px;white-space:pre-line;overflow-wrap:anywhere;margin:2px 0"></div>'+
+      '<details style="margin:2px 0"><summary>丢弃白名单（单重从高到低）</summary>'+
+      '<label style="display:inline-flex;align-items:center;gap:4px;margin:2px 6px 2px 0"><input data-all type="checkbox">显示全部物品</label>'+
+      '<label style="display:inline-flex;align-items:center;gap:4px"><input data-unchecked type="checkbox">只显示未勾选物品</label>'+
+      '<div data-list style="max-height:240px;overflow:auto;border:1px solid #c7d3e6;border-radius:6px;padding:4px;margin-top:2px"></div></details>'+
+      '<details style="margin:2px 0"><summary>清理详情 / 未处理原因</summary><div data-detail style="white-space:pre-line;overflow-wrap:anywhere"></div></details>'+
+      '<div class="row" style="flex-wrap:wrap;gap:5px;margin:4px 0"><button class="ghost" data-retry style="flex:0 0 auto">重试清理</button>'+
+      '<button class="ghost" data-skip style="flex:0 0 auto">跳过本次并继续</button></div>'+
+      '<textarea data-json aria-label="名单导入导出JSON" placeholder="名单 JSON（导入会合并，如 {\"507\":50}）" style="width:100%;box-sizing:border-box;height:34px"></textarea>';
+    bagClean.status=box.querySelector('[data-state]');
+    var reason = box.querySelector('[data-detail]');bagClean.detail=reason;
+    function save() {localStorage.setItem('dsh-bag-clean-rules-v1',JSON.stringify(bagClean.rules));}
+    function render() {
+      var inv = bagCleanInventory(), rows = bagCleanRows(inv), list = box.querySelector('[data-list]');list.textContent='';
+      Object.keys(bagClean.rules).forEach(function(id){if (!rows.some(function(r){return r.key===id;}))rows.push({id:Number(id.split(':')[0]),key:id,unidentified:id.slice(-2)===':u',total:0});});
+      rows.forEach(function(row){if (row.unitWeight==null)row.unitWeight=bagCleanUnitWeight(row.id);});
+      rows.sort(bagCleanWeightOrder);
+      rows.forEach(function(row){
+        var selected = Object.prototype.hasOwnProperty.call(bagClean.rules,row.key);
+        if (box.querySelector('[data-unchecked]').checked ? selected : (!box.querySelector('[data-all]').checked&&!selected))return;
+        var line = document.createElement('div'), check = document.createElement('input'), keep = document.createElement('input'), label = document.createElement('span');
+        line.style.cssText='display:grid;grid-template-columns:20px 1fr 55px;gap:4px;align-items:center;padding:4px 0;border-bottom:1px solid #dbe2ea';
+        check.type='checkbox';check.checked=selected;keep.type='number';keep.min='0';keep.step='1';keep.value=selected?bagClean.rules[row.key]:0;keep.style.width='55px';
+        var name;try{name=getItemName(row.id);}catch(ignore){}
+        label.textContent=(row.unidentified?'[未鉴定] ':'')+(name||'物品')+' #'+row.id+' ×'+row.total+' · 单重 '+(row.unitWeight==null?'未知':row.unitWeight)+' · 保留 ';
+        function change() {var n = Number(keep.value);if (!isFinite(n)||Math.floor(n)!==n||n<0){keep.value=bagClean.rules[row.key]||0;return;}if (check.checked)bagClean.rules[row.key]=n;else delete bagClean.rules[row.key];save();if (box.querySelector('[data-unchecked]').checked&&check.checked){line.remove();if (!list.children.length)list.textContent='当前没有未勾选的可清理物品';}bagCleanSay('名单已保存；该物品当前计划丢弃 '+(check.checked?Math.max(0,row.total-n):0));}
+        check.onchange=keep.onchange=change;line.append(check,label,keep);list.appendChild(line);
+      });
+      if (!list.children.length)list.textContent=box.querySelector('[data-unchecked]').checked?'当前没有未勾选的可清理物品':'当前筛选下没有物品';
+      bagCleanSay(inv?'扫描完成：仅显示符合保护规则的物品。勾选后可点“立即清理…”':'请先打开背包；当前仅显示已保存名单');
+    }
+    box.querySelector('[data-enable]').onchange=function(){bagClean.enabled=this.checked;bagClean.generation++;bagClean.pending=false;bagCleanSay(this.checked?'自动丢弃已开启：负重超过70%或剩余不足20格触发':'已关闭；已发出的丢弃无法撤回');};
+    box.querySelector('[data-all]').onchange=function(){if (this.checked)box.querySelector('[data-unchecked]').checked=false;render();};
+    box.querySelector('[data-unchecked]').onchange=function(){if (this.checked)box.querySelector('[data-all]').checked=false;render();};
+    box.querySelector('[data-scan]').onclick=function(){box.querySelector('[data-all]').checked=true;box.querySelector('[data-unchecked]').checked=false;render();};
+    render();
+    box.querySelector('[data-stop]').onclick=function(){bagClean.generation++;bagClean.enabled=false;box.querySelector('[data-enable]').checked=false;bagCleanSay('已停止；已发出的丢弃无法撤回');};
+    box.querySelector('[data-now]').onclick=function(){
+      if (bagClean.busy)return;
+      if (!clientReady())return bagCleanSay('客户端未就绪');
+      var plan = bagCleanPlan(bagCleanInventory());if (!plan.length)return bagCleanSay('没有可丢弃物品：请勾选物品并检查保留数量');
+      var preview = plan.map(function(r){return (r.unidentified?'[未鉴定] ':'')+(getItemName(r.id)||'物品')+' #'+r.id+'：丢弃 '+r.drop+'，保留 '+(r.total-r.drop);}).join('\n');
+      if (!window.confirm('将丢弃以下物品到地面，请核对：\n\n'+preview+'\n\n确认立即执行？'))return;
+      var limits = {};plan.forEach(function(r){limits[r.key]=r.drop;});
+      bagCleanExecute(function(){},limits);
+    };
+    box.querySelector('[data-export]').onclick=function(){box.querySelector('[data-json]').value=JSON.stringify(bagClean.rules,null,2);};
+    box.querySelector('[data-import]').onclick=function(){try{var obj = JSON.parse(box.querySelector('[data-json]').value);if (!obj||Array.isArray(obj)||typeof obj!=='object')throw Error();var keys = Object.keys(obj);if (keys.length>2000||keys.some(function(id){return !/^[1-9]\d*(?::u)?$/.test(id)||!isFinite(obj[id])||Math.floor(obj[id])!==obj[id]||obj[id]<0;}))throw Error();for (var mk in obj) { if (Object.prototype.hasOwnProperty.call(obj, mk)) { bagClean.rules[mk] = obj[mk]; } }save();render();}catch(e){bagCleanSay('导入失败：需要 {"物品ID":保留数量} 格式');}};
+    box.querySelector('[data-retry]').onclick=function(){bagCleanResume(true);};
+    box.querySelector('[data-skip]').onclick=function(){bagCleanResume(false);};
+    setInterval(function(){
+      if (!bagClean.enabled||bagClean.busy||bagClean.hold)return;
+      var w = bagCleanWeight(), free = bagCleanFreeSlots();
+      if (bagCleanNeeded(w,free)){bagClean.pending=true;bagCleanExecute(function(){},null);}
+      bagCleanSay((bagClean.error?bagClean.error+'；':'')+(w===null?'负重未知':'负重 '+w.toFixed(1)+'%')+' · '+(free===null?'格数未知（请打开背包）':'剩余 '+free+' 格')+(bagClean.pending?' · 待清理':''));},2000);
+  }
+  // ---------------- 拾取页：内挂百分比联动 ----------------
+  $id("dsh-lootread").addEventListener("click", function () {
+    try {
+      var lp = document.querySelector("#lootProbability, .lootProbability");
+      var op = document.querySelector(".openpick");
+      if (lp) { $id("dsh-lootprob").value = lp.value; $id("dsh-lootstate").textContent = "内挂已读取"; $id("dsh-lootstate").className = "tag green"; }
+      if (op) { $id("dsh-openpick").checked = !!op.checked; }
+      setStatus("已读取内挂拾取设置", "ok");
+    } catch (e) { setStatus("读取异常（需打开内挂窗口）: " + e.message, "err"); }
+  });
+  $id("dsh-lootwrite").addEventListener("click", function () {
+    try {
+      var lp = document.querySelector("#lootProbability, .lootProbability");
+      var op = document.querySelector(".openpick");
+      var v = parseInt($id("dsh-lootprob").value, 10) || 10;
+      if (lp) { lp.value = Math.max(0, Math.min(100, v)); try { lp.dispatchEvent(new Event("change", { bubbles: true })); } catch (e) {} }
+      if (op && $id("dsh-openpick").checked && !op.checked) { try { op.click(); } catch (e) {} }
+      setStatus("已写回内挂（拾取机率 " + v + "%）", "ok");
+    } catch (e) { setStatus("写回异常（需打开内挂窗口）: " + e.message, "err"); }
+  });
+
+  // ---------------- 指定ID拾取：怪物掉落树 ----------------
+  var wl = (function () { try { return JSON.parse(localStorage.getItem("dsh_ro_whitelist")) || {}; } catch (e) { return {}; } })();
+  function renderWl() {
+    var el = $id("dsh-wllist");
+    if (!el) return;
+    var ids = Object.keys(wl);
+    $id("dsh-wlcount").textContent = ids.length + " 个物品ID";
+    var psEl = $id("dsh-pickstate");
+    if (psEl) psEl.textContent = ids.length ? ("拾取名单 " + ids.length + " 个 ID · 落地即自动拾取") : ("白名单为空：搜物品或直接「＋加入」指定 ID");
+    if (!ids.length) { el.innerHTML = '<span class="st">空</span>'; return; }
+    var html = "";
+    ids.forEach(function (id) {
+      html += '<div class="list-item"><span>' + id + (wl[id].name ? " " + wl[id].name : "") + '</span>' +
+        '<button class="ghost" data-wlrm="' + id + '" style="flex:0 0 auto;padding:0 7px;font-size:11px">移除</button></div>';
+    });
+    el.innerHTML = html;
+  }
+  function addWl(id, name) {
+    id = String(id);
+    if (!wl[id]) wl[id] = { name: name || "" };
+    try { localStorage.setItem("dsh_ro_whitelist", JSON.stringify(wl)); } catch (e) {}
+    renderWl();
+  }
+  function removeWl(id) {
+    delete wl[String(id)];
+    try { localStorage.setItem("dsh_ro_whitelist", JSON.stringify(wl)); } catch (e) {}
+    renderWl();
+  }
+  $id("dsh-wllist").addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest("[data-wlrm]");
+    if (b) removeWl(b.getAttribute("data-wlrm"));
+  });
+  function renderDropTree(list) {
+    var el = $id("dsh-drop-tree");
+    if (!el) return;
+    var mobDB = getMobDb();
+    if (!mobDB) { el.innerHTML = '<div class="st">怪物库未就绪（客户端加载后重试）</div>'; return; }
+    if (!list || !list.length) {
+      // 优先：当前地图怪物（同内挂检测目标地图表）；失败回退图鉴前8只
+      var mapList = getMapMobList();
+      if (mapList && mapList.length) list = mapList;
+      else {
+        var all = Object.keys(mobDB).slice(0, 8);
+        list = all.map(function (id) { return { id: id, m: mobDB[id] }; });
+      }
+    }
+    var html = "";
+    for (var i = 0; i < list.length; i++) {
+      var it = list[i];
+      var m = it.m;
+      if (!m) continue;
+      html += '<details><summary style="cursor:pointer;padding:2px 0">' + (m.kName || m.name || ("ID" + it.id)) + ' · ID' + it.id + ' · LV' + (m.LV || "?") + ' <span class="tag">掉落树</span> ' + mobRefLinksHtml(it.id) + '</summary><div style="padding-left:8px">'; // V2.29.0：任务目标怪外链（按怪物ID）
+      for (var d = 0; d < 9; d++) {
+        var did = m["Drop" + d + "id"];
+        if (did == null) continue;
+        var dper = m["Drop" + d + "per"];
+        var pct = dper != null ? (dper / 100).toFixed(2) + "%" : "?";
+        var nm = getItemName(did) || ("ID" + did);
+        var checked = wl[String(did)] ? " checked" : "";
+        html += '<div class="list-item"><label class="switch"><input type="checkbox"' + checked + ' data-wladd="' + did + '" data-nm="' + nm + '">' + nm + ' (' + did + ')</label><span class="tag' + (dper != null && dper >= 500 ? " green" : "") + '">' + pct + '</span></div>';
+      }
+      html += '</div></details>';
+    }
+    el.innerHTML = html;
+    el.querySelectorAll('input[data-wladd]').forEach(function (c) {
+      c.addEventListener("change", function () {
+        if (this.checked) addWl(this.getAttribute("data-wladd"), this.getAttribute("data-nm"));
+        else removeWl(this.getAttribute("data-wladd"));
+      });
+    });
+  }
+  $id("dsh-mobsearchbtn").addEventListener("click", function () {
+    var kw = ($id("dsh-mobsearch").value || "").trim();
+    var mobDB = getMobDb();
+    if (!mobDB) { setStatus("怪物库未就绪", "err"); return; }
+    if (/^\d+$/.test(kw)) {
+      var m = mobDB[parseInt(kw, 10)];
+      if (m) { renderDropTree([{ id: kw, m: m }]); setStatus("已显示 " + m.kName, "ok"); return; }
+    }
+    var hits = [];
+    Object.keys(mobDB).forEach(function (id) {
+      var mob = mobDB[id];
+      if (mob && mob.kName && mob.kName.indexOf(kw) !== -1) hits.push({ id: id, m: mob });
+    });
+    if (hits.length) { renderDropTree(hits.slice(0, 10)); setStatus("找到 " + hits.length + " 只怪，显示前10", "ok"); }
+    else setStatus("未找到怪物", "err");
+  });
+  // 拾取页清空搜索：清输入框 + 恢复初始掉落树（当前地图怪物掉落）
+  $id("dsh-mobsearchclr").addEventListener("click", function () {
+    $id("dsh-mobsearch").value = "";
+    renderDropTree(null); // null → 内部自动回退当前地图怪物/图鉴前8
+    setStatus("搜索已清空，恢复当前地图掉落", "st");
+  });
+  // ---------------- 拾取页物品搜索（V1.9.4）：搜物品名/ID → 一键加白名单（丢物测试等）----------------
+  // 反向索引：扫描 mob_db 全部怪的 Drop0~8id → itid → {name, mobs:[{id,kName,per}]}（懒构建缓存）
+  var itemXIndex = null;
+  var itemIdxBuiltAt = 0;
+  function buildItemXIndex() {
+    try {
+      var mobDB = getMobDb();
+      if (!mobDB) return null;
+      var idx = {};
+      Object.keys(mobDB).forEach(function (mid) {
+        var m = mobDB[mid];
+        if (!m) return;
+        for (var d = 0; d < 9; d++) {
+          var did = m["Drop" + d + "id"];
+          if (did == null) continue;
+          if (!idx[did]) idx[did] = { mobs: [] };
+          idx[did].mobs.push({ id: mid, kName: m.kName || m.name || ("ID" + mid), per: m["Drop" + d + "per"] });
+        }
+      });
+      itemXIndex = idx;
+      return idx;
+    } catch (e) { return null; }
+  }
+  function getItemNameS(id) {
+    try { return getItemName(id) || ("ID" + id); } catch (e) { return "ID" + id; }
+  }
+  function renderItemSearch(list, kw) {
+    var res = $id("dsh-itemsearch-res");
+    if (!res) return;
+    if (!list || !list.length) { res.innerHTML = '<span class="st">未找到物品' + (kw ? "：「" + kw + "」" : "") + '</span>'; return; }
+    var html = '';
+    for (var i = 0; i < list.length; i++) {
+      var itid = list[i].itid;
+      var nm = list[i].name;
+      var mobs = list[i].mobs || [];
+      var inWl = wl[String(itid)] ? true : false;
+      // V1.9.4：加入按钮 HTML 先生成（掉落信息异常也不吞按钮）
+      var btnHtml = '<button class="ghost" data-wlswitch="' + itid + '" data-nm="' + nm.replace(/"/g, "&quot;") + '" style="flex:0 0 auto;margin-left:auto">' + (inWl ? "已加" : "加入白名单") + '</button>';
+      html += '<div class="list-item" style="border-bottom:1px dashed #334"><span class="dh">◆</span>' + nm + ' <span class="st">(' + itid + ')</span>';
+      try {
+        if (mobs.length) {
+          html += '<span class="st"> · ' + mobs.length + ' 只怪掉：</span>';
+          for (var mi = 0; mi < mobs.length; mi++) {
+            var mob = mobs[mi];
+            var pv = Number(mob.per);
+            var pct = (mob.per != null && isFinite(pv)) ? (pv / 100).toFixed(2) + "%" : "?";
+            html += '<button class="ghost moblk" data-mid="' + mob.id + '" style="flex:0 0 auto;margin-left:3px;font-size:10px;padding:0 4px">' + mob.kName + ' ' + pct + '</button>';
+          }
+        }
+      } catch (e2) {}
+      html += btnHtml + '</div>';
+    }
+    res.innerHTML = html;
+    res.querySelectorAll('[data-mid]').forEach(function (b) {
+      b.addEventListener("click", function () {
+        var mid = this.getAttribute("data-mid");
+        var mobDB = getMobDb();
+        if (mobDB && mobDB[mid]) { renderDropTree([{ id: mid, m: mobDB[mid] }]); setStatus("已展开 " + (mobDB[mid].kName || mid) + " 掉落树", "ok"); }
+      });
+    });
+    res.querySelectorAll('[data-wlswitch]').forEach(function (b) {
+      b.addEventListener("click", function () {
+        var id = this.getAttribute("data-wlswitch");
+        var nm2 = this.getAttribute("data-nm");
+        if (wl[String(id)]) { removeWl(id); }
+        else { addWl(id, nm2); }
+        renderItemSearch(list, kw); // 刷新按钮态
+      });
+    });
+  }
+  $id("dsh-itemsearchbtn").addEventListener("click", function () {
+    var kw = ($id("dsh-itemsearch").value || "").trim();
+    if (!kw) { setStatus("先输入物品ID或名称", "st"); return; }
+    var out = [];
+    if (/^\d+$/.test(kw)) {
+      // V1.9.4：数字 ID 直查走物品库（CLIENT.DB），不依赖怪物掉落索引——任何 ID 都能出结果并加入拾取名单
+      var id2 = parseInt(kw, 10);
+      var rIdx = itemXIndex || buildItemXIndex();
+      var got = rIdx ? rIdx[id2] : null;
+      out.push({ itid: id2, name: getItemNameS(id2), mobs: (got && got.mobs) || [] });
+    } else {
+      var idx = itemXIndex || buildItemXIndex();
+      if (!idx) { setStatus("物品索引未就绪（怪物库加载后重试）", "err"); return; }
+      var seen = {};
+      Object.keys(idx).forEach(function (itid) {
+        if (out.length >= 15 || seen[itid]) return;
+        var nm = getItemNameS(itid);
+        if (nm && nm.indexOf(kw) !== -1) { seen[itid] = true; out.push({ itid: parseInt(itid, 10), name: nm, mobs: idx[itid].mobs }); }
+      });
+    }
+    renderItemSearch(out, kw);
+    setStatus(out.length ? ("找到 " + out.length + " 个物品") : ("未找到物品「" + kw + "」"), out.length ? "ok" : "err");
+  });
+  $id("dsh-itemsearchclr").addEventListener("click", function () {
+    $id("dsh-itemsearch").value = "";
+    $id("dsh-itemsearch-res").innerHTML = "";
+    setStatus("物品搜索已清空", "st");
+  });
+  // V1.9.4：「＋加入」直达——输入数字 ID 直接写入拾取名单，不依赖搜索/物品库/掉落索引
+  $id("dsh-itemsearchadd").addEventListener("click", function () {
+    var kw = ($id("dsh-itemsearch").value || "").trim();
+    if (!/^\d+$/.test(kw)) { setStatus("先输入数字物品ID，再点「＋加入」", "st"); return; }
+    var id = parseInt(kw, 10);
+    if (wl[String(id)]) { setStatus("ID " + id + " 已在拾取名单", "ok"); return; }
+    var nm = getItemNameS(id);
+    addWl(String(id), nm);
+    renderItemSearch([{ itid: id, name: nm, mobs: [] }], kw); // 结果区显示该行并刷新为 已加
+    setStatus("已加入拾取名单：ID " + id + (nm !== ("ID" + id) ? "（" + nm + "）" : ""), "ok");
+  });
+  // V1.9.4：开启「指定ID自动拾取」时确认白名单状态（空名单 = 提示先加 ID，避免开关无效感）
+  if ($id("dsh-picken")) $id("dsh-picken").addEventListener("change", function () {
+    var ids = Object.keys(wl);
+    if (this.checked && !ids.length) setStatus("白名单为空：搜物品或直接「＋加入」指定 ID，否则不会拾取任何物品", "st");
+    else if (this.checked) setStatus("拾取名单 " + ids.length + " 个 ID，落地即自动拾取", "ok");
+    else setStatus("指定ID自动拾取已关闭", "st");
+  });
+  // 本图怪物掉落：直接读当前地图表（同内挂检测目标）
+  function refreshPickMap() {
+    var el = $id("dsh-pickmap");
+    if (!el) return;
+    var info = getCurrentMapInfo();
+    if (!info) { el.textContent = "—（未进图）"; return; }
+    el.textContent = info.name + " (" + info.key + ")";
+  }
+  // 本图可锁定怪物目录：读本图怪物表 → 勾选=加入锁定目录（不折叠，换图自动刷新）
+  // 拾取页(#dsh-maplock) 与 助手页(#dsh-z-maplock) 共用
+  function renderMapLock(el) {
+    el = el || $id("dsh-z-maplock");
+    if (!el) return;
+    var info = getCurrentMapInfo();
+    if (!info || !info.mobIds || !info.mobIds.length) { el.innerHTML = '<span class="st">本图怪物表无数据（未进图/表缺失）</span>'; return; }
+    var mobDB = getMobDb();
+    if (!mobDB) { el.innerHTML = '<span class="st">怪物库未就绪</span>'; return; }
+    var html = '<div class="b-hd">' + info.name + ' · ' + info.mobIds.length + ' 只怪（勾选=锁定）</div>';
+    var seen = {};
+    for (var i = 0; i < info.mobIds.length; i++) {
+      var id = info.mobIds[i];
+      if (id == null || seen[id]) continue;
+      seen[id] = true;
+      var m = mobDB[id];
+      if (!m) continue;
+      var nm = m.kName || m.name || ("ID" + id);
+      var locked = lockList[String(id)] ? true : false;
+      html += '<div class="list-item"><label class="switch"><input type="checkbox"' + (locked ? " checked" : "") + ' data-maplock="' + id + '" data-nm="' + nm + '">' + nm + ' <span class="st">ID' + id + ' · Lv' + (m.LV || "?") + '</span></label>' + mobRefLinksHtml(id) + '</div>'; // V2.29.0：任务目标怪外链（按怪物ID）
+    }
+    el.innerHTML = html || '<span class="st">该图怪物库无匹配数据</span>';
+    el.querySelectorAll('input[data-maplock]').forEach(function (c) {
+      c.addEventListener("change", function () {
+        var id = this.getAttribute("data-maplock");
+        if (!id) return;
+        if (this.checked) addLock(id, this.getAttribute("data-nm"));
+        else removeLock(id);
+      });
+    });
+  }
+  var maplockBtnEl = $id("dsh-maplockbtn");
+  if (maplockBtnEl) maplockBtnEl.addEventListener("click", function () {
+    renderMapLock();
+    setStatus("已读取本图锁定目录", "ok");
+  });
+  $id("dsh-pickmapbtn").addEventListener("click", function () {
+    var mobDB = getMobDb();
+    if (!mobDB) { setStatus("怪物库未就绪", "err"); return; }
+    var info = getCurrentMapInfo();
+    if (!info || !info.mobIds || !info.mobIds.length) { setStatus("当前地图怪物表无数据（" + (info ? info.key : "未进图") + "）", "err"); return; }
+    var list = [];
+    var seen = {};
+    for (var i = 0; i < info.mobIds.length; i++) {
+      var id = info.mobIds[i];
+      if (id == null || seen[id]) continue;
+      seen[id] = true;
+      var m = mobDB[id];
+      if (m) list.push({ id: id, m: m });
+    }
+    if (!list.length) { setStatus("该图怪物库无匹配数据", "err"); return; }
+    renderDropTree(list);
+    setStatus("已显示「" + info.name + "」的 " + list.length + " 只怪掉落", "ok");
+  });
+  // 指定ID拾取轮询
+  function parseIds(txt) {
+    var out = {};
+    String(txt || "").split(/[\r\n,，;；\s]+/).forEach(function (s) { if (/^\d+$/.test(s)) out[s] = true; });
+    return out;
+  }
+  // 物品实体没有 ITID 字段（ItemObject.add 只设 GID=ITAID）→ wrap add 记录 ITAID→ITID 映射
+  var ita2itid = {}, itemHookDone = false;
+  function hookItemObjects() {
+    try {
+      if (itemHookDone || !window.require) return;
+      var IO = window.require("Renderer/ItemObject");
+      if (!IO || typeof IO.add !== "function") return;
+      itemHookDone = true;
+      var origAdd = IO.add;
+      IO.add = function (itaid, itid, isId, count, x, y, z, fx) {
+        try {
+          ita2itid[String(itaid)] = itid;
+          // V1.9.4：开关统一——「启用指定ID自动拾取」关 = 只记录映射不拾取（修复白名单加入即自动拾取、开关无效）
+          if (wl[String(itid)] && $id("dsh-picken") && $id("dsh-picken").checked) tryPickupIta(itaid, x, y);
+        } catch (e) {}
+        return origAdd.apply(this, arguments);
+      };
+    } catch (e) {}
+  }
+  // V1.8.5：拾取走过去——距离 >15 格的掉落物品，安全（无Boss/血蓝足/未坐下）时逐跳走过去捡；途中变危险/超时/不可达自动放弃
+  var pendingPick = null;
+  function pickSafeToWalk() {
+    try {
+      // V1.9.4：「危险时不走过去捡」开关关 = 无视危险判定（危险也走过去捡）
+      if ($id("dsh-picksafe") && !$id("dsh-picksafe").checked) return true;
+      if (!CLIENT || !CLIENT.SS || !CLIENT.SS.Entity) return false;
+      var ent = CLIENT.SS.Entity;
+      var life = ent.life;
+      if (life) {
+        var hpPct = life.maxhp > 0 ? life.hp / life.maxhp * 100 : 100;
+        var spPct = life.maxsp > 0 ? life.sp / life.maxsp * 100 : 100;
+        if (hpPct < 40 || spPct < 15) return false;
+      }
+      // 20 格内 Boss（mob_db.MvpDropsNum>0，与防御瞬移同判定）
+      for (var i = 0; i < lastMobs.length; i++) {
+        var mb = lastMobs[i];
+        if (mb && mb.isBoss && mb.dist >= 0 && mb.dist <= DS_BOSS_DIST) return false;
+      }
+      return true;
+    } catch (e) { return false; }
+  }
+  function walkForPickTick() {
+    try {
+      if (moveXY && moveXY.busy) { pendingPick = null; return; } // 手动坐标走路中 → 取消拾取接近
+      if (!pendingPick) return;
+      if (!clientReady()) { pendingPick = null; return; }
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      if (!ent || !ent.position) { pendingPick = null; return; }
+      var now = Date.now();
+      if (now - pendingPick.at > 12000) { pendingPick = null; var lgT = $id("dsh-picklog"); if (lgT) lgT.textContent = "拾取走过去超时放弃"; return; }
+      var d = Math.abs(pendingPick.x - ent.position[0]) + Math.abs(pendingPick.y - ent.position[1]);
+      if (d <= 15) { tryPickupIta(pendingPick.itaid, pendingPick.x, pendingPick.y); pendingPick = null; return; }
+      // V1.9.4：去掉 walk 被 sit 锁反向拦截（坐着的锁会卡死「走过去捡」）——互斥改单向：走路时坐下让位，走路不被坐拦
+      if (!pickSafeToWalk()) { pendingPick = null; return; } // 途中变危险 → 放弃
+      var r = pathFindTo(pendingPick.x, pendingPick.y);
+      if (!r) { pendingPick = null; return; } // 不可达 → 放弃
+      var pm = new CLIENT.PS.CZ.REQUEST_MOVE();
+      pm.dest = [r.x, r.y];
+      CLIENT.NM.sendPacket(pm);
+      try { if (zWalkState) zWalkState.lastMove = now; } catch (e) {} // 占用 zWalk 的 2s 门槛，避免移动互相打架
+      var lg = $id("dsh-picklog");
+      if (lg) lg.textContent = "拾取目标较远(" + d + "格)，避障接近中…";
+    } catch (e) { pendingPick = null; }
+  }
+  function tryPickupIta(itaid, x, y) {
+    try {
+      if (!clientReady()) return;
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      // 距离限制：15 格内直接捡（曼哈顿）；超出 = V1.8.5 走过去捡（开关开 + 安全才走，否则维持放弃）
+      if (ent && ent.position && x != null && y != null) {
+        var d = Math.abs(x - ent.position[0]) + Math.abs(y - ent.position[1]);
+        if (d > 15) {
+          if ($id("dsh-pickwalk") && $id("dsh-pickwalk").checked && pickSafeToWalk()) {
+            pendingPick = { itaid: itaid, x: x, y: y, at: Date.now() };
+          }
+          return;
+        }
+      }
+      var p = new CLIENT.PS.CZ.ITEM_PICKUP();
+      p.ITAID = itaid;
+      CLIENT.NM.sendPacket(p);
+      var lg = $id("dsh-picklog");
+      if (lg) lg.textContent = "检测到掉落并拾取（" + new Date().toTimeString().slice(0, 8) + "）";
+    } catch (e) {}
+  }
+  setInterval(function () {
+    try {
+      var en = $id("dsh-picken") && $id("dsh-picken").checked;
+      if (!en) return;
+      if (!clientReady()) return;
+      hookItemObjects();
+      var wlKeys = Object.keys(wl);
+      if (!wlKeys.length) return;
+      var EM = window.require("Renderer/EntityManager");
+      var picked = 0;
+      EM.forEach(function (e) {
+        try {
+          if (e.objecttype !== 11) return;
+          var itid = ita2itid[String(e.GID)];
+          if (itid == null) return;
+          if (!wl[String(itid)]) return;
+          tryPickupIta(e.GID, e.position && e.position[0], e.position && e.position[1]);
+          picked++;
+        } catch (e2) {}
+      });
+      if (picked) $id("dsh-picklog").textContent = "已拾取 " + picked + " 件（" + new Date().toTimeString().slice(0, 8) + "）";
+      // V1.8.5：拾取走过去（>15 格目标逐跳接近，安全判定后）
+      try { walkForPickTick(); } catch (e) {}
+    } catch (e) {}
+  }, 1500);
+
+  // ---------------- 掉落实测积累（喂图鉴）----------------
+  var drops = {};
+  function recordDrop(itid, name) {
+    var map = getMapName() || "?";
+    drops[map] = drops[map] || {};
+    var k = String(itid);
+    if (!drops[map][k]) drops[map][k] = { name: name || ("ID" + itid), count: 0 };
+    drops[map][k].count++;
+  }
+
+
+  // ---------------- 传送页：内挂书本 ----------------
+  function renderBook() {
+    var el = $id("dsh-book");
+    if (!el) return;
+    var logs = requireDB("DB/logsTable");
+    if (!logs) { el.innerHTML = '<div class="st">书本数据未就绪（客户端加载后重试）</div>'; return; }
+    var cv = DEFAULTS.ClientVer;
+    var tbl = logs[cv] || logs[5] || {};
+    var catMap = { "bk-npc": "guide", "bk-train": "train", "bk-money": "makeMonzy", "bk-chg": "challenge", "bk-dun": "dungeons", "bk-mvp": "mvp" };
+    var active = "";
+    var subs = el.closest(".page").querySelectorAll(".sub-tab");
+    for (var i = 0; i < subs.length; i++) if (subs[i].classList.contains("active")) active = subs[i].getAttribute("data-sub");
+    var cat = catMap[active] || "guide";
+    var list = tbl[cat] || {};
+    var keys = Object.keys(list);
+    if (!keys.length) { el.innerHTML = '<div class="st">该分类暂无数据</div>'; return; }
+    var html = '<div class="b-hd">' + cat + '（' + keys.length + ' 条 · 线路 ' + (SERVER_NAMES[cv] || cv) + '）</div>';
+    for (var k = 0; k < keys.length; k++) {
+      var it = list[keys[k]];
+      if (!it) continue;
+      html += '<div class="list-item"><span>' + (it.npc || it.name || ("条目" + keys[k])) + '</span>' +
+        '<span style="color:#5a6b7f;font-size:10px">' + (it.desc || "") + '</span>' +
+        '<button class="ghost" data-goto="' + keys[k] + '" style="flex:0 0 auto;padding:0 8px;font-size:11px">前往</button></div>';
+    }
+    el.innerHTML = html;
+    el.querySelectorAll("[data-goto]").forEach(function (b) {
+      b.addEventListener("click", function () { gotoBook(this.getAttribute("data-goto")); });
+    });
+  }
+  function gotoBook(key) {
+    try {
+      var logs = requireDB("DB/logsTable");
+      var cv = DEFAULTS.ClientVer;
+      var tbl = logs[cv] || logs[5] || {};
+      var catMap = { "bk-npc": "guide", "bk-train": "train", "bk-money": "makeMonzy", "bk-chg": "challenge", "bk-dun": "dungeons", "bk-mvp": "mvp" };
+      var subs = $id("dsh-book").closest(".page").querySelectorAll(".sub-tab");
+      var active = "bk-npc";
+      for (var i = 0; i < subs.length; i++) if (subs[i].classList.contains("active")) active = subs[i].getAttribute("data-sub");
+      var it = tbl[catMap[active]] && tbl[catMap[active]][key];
+      if (!it) { setStatus("书本条目不存在", "err"); return; }
+      // 书本坐标统一交给 GPT 传送；不再发送私人飞艇包。
+      if (it.outset && it.outset.length >= 3 && clientReady()) {
+        if (gptTeleport(it.outset[0], it.outset[1], it.outset[2])) {
+          setStatus("书本前往: " + (it.npc || "") + "（GPT 指定坐标）", "ok");
+          tlog("book-goto-gpt " + (it.npc || ""));
+        }
+        return;
+      }
+      if (it.path && it.path.length && clientReady()) {
+        var dest = it.path[it.path.length - 1];
+        var mv = new CLIENT.PS.CZ.REQUEST_MOVE();
+        mv.dest = [dest[1], dest[2]];
+        CLIENT.NM.sendPacket(mv);
+        setStatus("书本前往: " + (it.npc || "") + "（步行寻路）", "ok");
+        return;
+      }
+      setStatus("客户端未就绪，无法前往", "err");
+    } catch (e) { setStatus("前往异常: " + e.message, "err"); }
+  }
+
+  // ---------------- GPT 地图传送（保留 v1.7.5 地图输入联想）----------------
+  var mapCache = []; // {map:"prontera", cn:"普隆德拉"} 已读取地图缓存（持久化 saved.mapCache）
+  try { if (Array.isArray(saved.mapCache) && saved.mapCache.length) mapCache = saved.mapCache.map(function (x) { return { map: String(x.map || ""), cn: String(x.cn || "") }; }); } catch (e) {}
+  function mapCn(map) {
+    try {
+      var db = CLIENT.DB || (window.require ? window.require("DB/DBManager") : null);
+      var nm = db && typeof db.getMapName === "function" ? db.getMapName(map) : "";
+      if (nm && nm !== map) return String(nm).trim();
+    } catch (e) {}
+    return "";
+  }
+  function renderMapList() {
+    var box = $id("dsh-maplist");
+    if (!box) return;
+    box.innerHTML = "";
+    if (!mapCache.length) { box.innerHTML = '<div style="padding:4px 6px;color:#8a97a6;font-size:11px">暂无已读地图 — 先点「读地图」（需游戏内已打开世界地图）</div>'; return; }
+    var kw = ($id("dsh-map").value || "").trim().toLowerCase();
+    var hits = [];
+    for (var i = 0; i < mapCache.length && hits.length < 100; i++) {
+      var it = mapCache[i];
+      if (!kw) { hits.push(it); continue; }
+      if (it.map.toLowerCase().indexOf(kw) >= 0 || (it.cn || "").toLowerCase().indexOf(kw) >= 0) hits.push(it);
+    }
+    if (!hits.length) { box.innerHTML = '<div style="padding:4px 6px;color:#8a97a6;font-size:11px">没有匹配的地图</div>'; return; }
+    hits.forEach(function (it) {
+      var row = document.createElement("div");
+      row.textContent = (it.cn ? it.cn + " " : "") + it.map;
+      row.className = "prow"; row.style.cursor = "pointer";
+      row.addEventListener("mousedown", function (ev) { ev.preventDefault(); }); // 防 input 失焦先关
+      row.addEventListener("click", function () {
+        $id("dsh-map").value = it.map;
+        closeMapList();
+        planRoute(it.map);
+        $id("dsh-tpmsg2").textContent = "已选 " + (it.cn || it.map) + (it.cn ? " (" + it.map + ")" : "");
+      });
+      box.appendChild(row);
+    });
+  }
+  function openMapList() { var box = $id("dsh-maplist"); if (box) { renderMapList(); box.style.display = "block"; } }
+  // 触屏滚动：地图联想下拉框内 touch 不外泄到游戏层，保留默认滚动（passive）
+  try {
+    var _ml = $id("dsh-maplist");
+    if (_ml) ["touchstart", "touchmove", "touchend"].forEach(function (t) {
+      _ml.addEventListener(t, function (ev) { ev.stopPropagation(); }, { passive: true });
+    });
+  } catch (e) {}
+  function closeMapList() { var box = $id("dsh-maplist"); if (box) box.style.display = "none"; }
+  function saveMapCache() { try { saved.mapCache = mapCache; saveSaved(saved); } catch (e) {} }
+  $id("dsh-map").addEventListener("input", function () { if ($id("dsh-maplist").style.display === "block") renderMapList(); });
+  $id("dsh-map").addEventListener("focus", function () { openMapList(); });
+  $id("dsh-map").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") { e.preventDefault(); closeMapList(); }
+    if (e.key === "Escape") { e.preventDefault(); closeMapList(); }
+  });
+  $id("dsh-maptog").addEventListener("click", function (e) {
+    e.stopPropagation();
+    var box = $id("dsh-maplist");
+    if (box.style.display === "block") closeMapList(); else openMapList();
+  });
+  document.addEventListener("mousedown", function (e) {
+    var inp = $id("dsh-map"), tog = $id("dsh-maptog"), box = $id("dsh-maplist");
+    if (!inp || !box) return;
+    if (box.style.display === "block" && e.target !== inp && e.target !== tog && !box.contains(e.target)) closeMapList();
+  });
+  $id("dsh-tp").addEventListener("click", function () {
+    try {
+      var world = ($id("dsh-world").value || "").trim();
+      var ok = gptTeleport(world);
+      $id("dsh-tpmsg").textContent = ok ? "GPT 传送请求已提交 → " + world : "GPT 传送提交失败";
+    } catch (e) { $id("dsh-tpmsg").textContent = "传送异常: " + e.message; }
+  });
+  // 从元素提取地图名（data-map / id / 背景图 map/*.png·bmp）——PC .bigworld td 与手机嗅探共用
+  var MAPBG_RE = new RegExp("map/[a-z]+/([a-zA-Z0-9_]+)[.](png|bmp)", "i");
+  function extractMapFromEl(el) {
+    try {
+      var m = el.getAttribute("data-map");
+      if (!m || m === "Mhtmltip") m = (el.id || "").replace(/^map_/, "");
+      if (!m) {
+        var raw = (el.getAttribute("data-background") || "") + " " + ((el.style && el.style.backgroundImage) || "");
+        var mm = MAPBG_RE.exec(raw);
+        if (mm) m = mm[1];
+      }
+      return m || "";
+    } catch (e) { return ""; }
+  }
+  function hasCls(cls, w) { return (" " + cls + " ").indexOf(" " + w + " ") >= 0; }
+  // 手机版世界地图嗅探：深度遍历 document（含 open shadow root），收集地图格子与传送前往按钮
+  function sniffWorldMap() {
+    var out = { maps: [], buttons: [], idMapLike: [], shadowHosts: 0 };
+    var seen = {}, seenId = {};
+    function visit(root) {
+      if (!root || !root.querySelectorAll) return;
+      var els = root.querySelectorAll("*");
+      for (var i = 0; i < els.length; i++) {
+        var el = els[i];
+        try {
+          var ta = el.tagName || "";
+          var idv = el.id || "";
+          var cls = (typeof el.className === "string" ? el.className : ((el.getAttribute && el.getAttribute("class")) || "") || "");
+          var hasDM = !!(el.getAttribute && el.getAttribute("data-map"));
+          var dn = (el.getAttribute && el.getAttribute("data-displayname")) || "";
+          var bg = ((el.getAttribute && el.getAttribute("data-background")) || "") + " " + ((el.style && el.style.backgroundImage) || "");
+          var isMapBg = MAPBG_RE.test(bg);
+          var isMapId = /^[a-z][a-z0-9_]{2,39}$/.test(idv);
+          var isSection = hasCls(cls, "section") || hasCls(cls, "map") || hasCls(cls, "world") || hasCls(cls, "town");
+          var m = extractMapFromEl(el) || (isMapId ? idv : "");
+          if ((hasDM || isMapBg || (isMapId && isSection)) && m && /^[a-zA-Z0-9_]{2,40}$/.test(m) && !seen[m]) {
+            seen[m] = true;
+            out.maps.push({ map: m, cn: dn || (el.textContent || "").trim().slice(0, 40), tag: ta, id: idv, cls: cls.slice(0, 60) });
+          } else if (isMapId && !seenId[idv]) {
+            seenId[idv] = true;
+            out.idMapLike.push({ id: idv, tag: ta, cls: cls.slice(0, 40) });
+          }
+          var isBtn = ta === "BUTTON" || (el.getAttribute && el.getAttribute("type") === "button") || hasCls(cls, "btn") || hasCls(cls, "button");
+          if (isBtn) {
+            var txt = (((el.textContent || "") + " " + (el.getAttribute && el.getAttribute("value") || "")).trim());
+            if (/传送|前往|移动|走去|确定|回去|teleport|gogo|go|move|ok/i.test(txt + " " + cls)) out.buttons.push({ tag: ta, text: txt.slice(0, 30), cls: cls.slice(0, 60), id: idv });
+          }
+          if (el.shadowRoot) { out.shadowHosts++; visit(el.shadowRoot); }
+        } catch (e2) {}
+      }
+    }
+    visit(document);
+    return out;
+  }
+  $id("dsh-mapload").addEventListener("click", function () {
+    try {
+      var seen = {};
+      var n = 0;
+      var list = [];
+      var cells = document.querySelectorAll('.bigworld td');
+      for (var i = 0; i < cells.length; i++) {
+        var m = extractMapFromEl(cells[i]);
+        if (m) list.push({ map: m, cn: mapCn(m) || (cells[i].textContent || "").trim() });
+      }
+      var snif = null;
+      if (!list.length) {
+        snif = sniffWorldMap();
+        for (var k = 0; k < snif.maps.length; k++) list.push({ map: snif.maps[k].map, cn: mapCn(snif.maps[k].map) || snif.maps[k].cn || "" });
+      }
+      for (var j = 0; j < list.length; j++) {
+        var it = list[j];
+        if (!it.map || seen[it.map]) continue;
+        seen[it.map] = true;
+        var ex = false;
+        for (var q = 0; q < mapCache.length; q++) { if (mapCache[q].map === it.map) { ex = true; if (!mapCache[q].cn && it.cn) mapCache[q].cn = it.cn; break; } }
+        if (!ex) mapCache.push({ map: it.map, cn: it.cn });
+        n++;
+      }
+      saveMapCache();
+      var box = $id("dsh-maplist");
+      if (box) renderMapList();
+      if (snif && (snif.maps.length || snif.buttons.length || snif.shadowHosts)) {
+        var brief = { shadowHosts: snif.shadowHosts, totalMaps: snif.maps.length, maps: snif.maps.slice(0, 30), buttons: snif.buttons, idLike: snif.idMapLike.slice(0, 30) };
+        var dbg = "";
+        try { dbg = JSON.stringify(brief); console.log("[RO助手] 世界地图嗅探:", JSON.stringify(snif)); } catch (e) {}
+        $id("dsh-tpmsg2").textContent = "手机嗅探命中（复制回传）｜ " + dbg;
+      } else if (n) {
+        $id("dsh-tpmsg2").textContent = "已读取 " + n + " 张地图（联想列表可输入过滤）";
+      } else {
+        $id("dsh-tpmsg2").textContent = "未读到地图：请先在游戏内打开世界地图";
+        console.log("[RO助手] 地图读取失败: .bigworld=" + !!document.querySelector(".bigworld") + " td数=" + cells.length);
+      }
+    } catch (e) { $id("dsh-tpmsg2").textContent = "读地图异常: " + e.message; }
+  });
+  $id("dsh-world").addEventListener("change", function () {
+    try { $id("dsh-mapload").click(); } catch (e) {}
+  });
+  function findMapCell(m) {
+    var all = document.querySelectorAll('.bigworld td');
+    for (var i = 0; i < all.length; i++) {
+      var td = all[i];
+      var cm = td.getAttribute("data-map");
+      if (!cm || cm === "Mhtmltip") cm = (td.id || "").replace(/^map_/, "");
+      if (!cm) {
+        var bg = td.getAttribute("data-background") || "";
+        var mm = bg.match(/map\/[a-z]+\/([a-zA-Z0-9_]+)\.png/);
+        if (mm) cm = mm[1];
+      }
+      if (normMapKey(cm) === normMapKey(m)) return td;
+    }
+    return null;
+  }
+  $id("dsh-tp-map").addEventListener("click", function () {
+    try {
+      var m = ($id("dsh-map").value || "").trim();
+      if (!m) { $id("dsh-tpmsg2").textContent = "先选择或输入目标地图"; return; }
+      var ok = gptTeleport(m);
+      $id("dsh-tpmsg2").textContent = ok ? "GPT 传送请求已提交 → " + m : "GPT 传送提交失败";
+    } catch (e) { $id("dsh-tpmsg2").textContent = "前往异常: " + e.message; }
+  });
+  $id("dsh-tp-walk").addEventListener("click", function () {
+    try {
+      var m = $id("dsh-map").value;
+      if (!m) { $id("dsh-tpmsg2").textContent = "先「读地图」选目标地图"; return; }
+      var cell = findMapCell(m);
+      var clicked = false;
+      if (cell) { try { cell.click(); clicked = true; } catch (e) {} }
+      var mv = document.querySelector(".move");
+      if (mv) { try { mv.click(); clicked = true; } catch (e) {} }
+      $id("dsh-tpmsg2").textContent = clicked ? "已点「前往」——客户端自动寻路" : "未找到世界地图窗口";
+      planRoute(m);
+    } catch (e) { $id("dsh-tpmsg2").textContent = "走去异常: " + e.message; }
+  });
+  function planRoute(target) {
+    try {
+      var cur = getMapName();
+      if (!cur) { $id("dsh-route").textContent = "路线：无法获取当前地图"; return; }
+      var ND = requireDB("DB/navigateData");
+      if (!ND) { $id("dsh-route").textContent = "路线：导航数据未就绪"; return; }
+      var adj = {};
+      var src = ND.targets || ND.sources || ND;
+      if (src && typeof src === "object") {
+        Object.keys(src).forEach(function (map) {
+          adj[map] = adj[map] || [];
+          var t = src[map];
+          if (Array.isArray(t)) t.forEach(function (e) { if (e && e.map) adj[map].push(e.map); });
+        });
+      }
+      if (!Object.keys(adj).length) { $id("dsh-route").textContent = "路线：邻接表未识别"; return; }
+      var prev = {}, q = [cur], seen = {}; seen[cur] = true; var found = false;
+      while (q.length && !found) {
+        var m2 = q.shift();
+        (adj[m2] || []).forEach(function (n2) {
+          if (!seen[n2]) { seen[n2] = true; prev[n2] = m2; if (n2 === target) found = true; else q.push(n2); }
+        });
+      }
+      if (!found) { $id("dsh-route").textContent = "路线：走不到 " + target; return; }
+      var path = [target], p2 = target;
+      while (p2 !== cur) { p2 = prev[p2]; if (!p2) break; path.unshift(p2); }
+      $id("dsh-route").textContent = "路线: " + path.join(" → ");
+    } catch (e) { $id("dsh-route").textContent = "路线异常: " + e.message; }
+  }
+  // ---------------- 坐标走路 / 跨图传送串接（walkToXY 原语定义见上游移动原语）----------------
+  function mvCurMap() {
+    try {
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      var mm = getMapName();
+      if (mm) $id("dsh-mvmap").value = mm;
+      if (ent && ent.position) {
+        $id("dsh-mvx").value = Math.floor(ent.position[0]);
+        $id("dsh-mvy").value = Math.floor(ent.position[1]);
+      }
+      var cpos = (ent && ent.position) ? (Math.floor(ent.position[0]) + "," + Math.floor(ent.position[1])) : "?";
+      mvLog("已填入当前图 " + (mm || "?") + " 坐标 (" + cpos + ")");
+    } catch (e) { mvLog("填入失败: " + e.message); }
+  }
+  // GPT 频道是 lastRO 自带能力：沿用聊天组件切换频道与 submit 流程，不自行构造传送包。
+  function gptSubmit(text) {
+    try {
+      var req = window.requirejs || window.require;
+      if (!req || !req.defined || !req.defined("UI/Components/ChatBox/ChatBox")) return false;
+      var chat = req("UI/Components/ChatBox/ChatBox");
+      if (!chat || !chat.ui || !chat.TYPE || !chat.TYPE.GPTA || typeof chat.submit !== "function") return false;
+      chat.ui.find(".input .filter").trigger("click");
+      var menu = document.querySelectorAll("#ContextMenu .menu div"), gpt = null;
+      for (var i = 0; i < menu.length; i++) if ((menu[i].textContent || "").trim() === "GPT") { gpt = menu[i]; break; }
+      if (!gpt) return false;
+      gpt.click();
+      chat.ui.find(".input .username").val("");
+      chat.ui.find(".input .message").val(text);
+      chat.submit();
+      return true;
+    } catch (e) { return false; }
+  }
+  function gptTeleport(map, x, y, onArrive) {
+    map = String(map || "").trim();
+    var hasXY = x != null && y != null && isFinite(Number(x)) && isFinite(Number(y));
+    if (!map) { mvLog("GPT 传送失败：地图名为空"); return false; }
+    var text = "请带我去 " + map + (hasXY ? " " + Math.floor(Number(x)) + " " + Math.floor(Number(y)) + " 这个坐标" : "");
+    if (!gptSubmit(text)) { mvLog("GPT 传送失败：聊天组件或 GPT 频道未就绪"); return false; }
+    mvLog("GPT 传送请求已提交 → " + map + (hasXY ? " (" + Math.floor(Number(x)) + "," + Math.floor(Number(y)) + ")" : "（随机落点）"));
+    if (typeof onArrive === "function") waitTeleportMap(map, onArrive);
+    return true;
+  }
+  function teleportToMap(map, onArrive) { return gptTeleport(map, null, null, onArrive); }
+  function waitTeleportMap(map, onArrive) {
+    var t0 = Date.now();
+    var iv = setInterval(function () {
+      try {
+        var cur = getMapName();
+        if (cur && map && normMapKey(cur) === normMapKey(map)) {
+          clearInterval(iv);
+          mvLog("已到 " + map);
+          if (typeof onArrive === "function") onArrive();
+        } else if (Date.now() - t0 > 20000) {
+          clearInterval(iv);
+          mvLog("传送超时（20s 不在 " + map + "，当前 " + (cur || "?") + "）");
+        }
+      } catch (e) { clearInterval(iv); }
+    }, 800);
+  }
+  // V2.29.0：快捷传送点改全局共享（跨账号/跨标签页），localStorage 键 dsh_ro_tp_global_v1；
+  // 首次读取时把各角色档（PROF_KEY 按 角色名_GID 隔离）里的旧点合并迁移过来，旧档数据保留不删。
+  var TP_GLOBAL_KEY = "dsh_ro_tp_global_v1";
+  var tpPointEdit = -1, tpPointProfile = "";
+  var tpGlobalCache = null;
+  function tpSamePoint(a, b) { return !!(a && b) && String(a.map) === String(b.map) && Number(a.x) === Number(b.x) && Number(a.y) === Number(b.y); }
+  function tpPoints() {
+    try {
+      if (tpGlobalCache) return tpGlobalCache;
+      var g = JSON.parse(localStorage.getItem(TP_GLOBAL_KEY) || "null");
+      if (!Array.isArray(g)) {
+        g = [];
+        try {
+          for (var pk in profiles) {
+            var old = profiles[pk] && profiles[pk].saved && profiles[pk].saved.teleportPoints;
+            if (!Array.isArray(old)) continue;
+            for (var oi = 0; oi < old.length && g.length < 20; oi++) {
+              var op = old[oi];
+              if (!op || !op.map) continue;
+              var dup = false;
+              for (var gi = 0; gi < g.length; gi++) { if (tpSamePoint(g[gi], op)) { dup = true; break; } }
+              if (!dup) g.push(op);
+            }
+          }
+        } catch (e0) {}
+        try { localStorage.setItem(TP_GLOBAL_KEY, JSON.stringify(g)); } catch (e1) {}
+      }
+      tpGlobalCache = g;
+      return tpGlobalCache;
+    } catch (e) { return []; }
+  }
+  function tpPointSaveList() {
+    try { tpGlobalCache = tpPoints().slice(0, 20); localStorage.setItem(TP_GLOBAL_KEY, JSON.stringify(tpGlobalCache)); } catch (e) {}
+  }
+  // 跨标签页实时刷新：别的标签页改了全局传送点，本页列表立刻重绘
+  try {
+    window.addEventListener("storage", function (ev) {
+      if (!ev || ev.key !== TP_GLOBAL_KEY) return;
+      tpGlobalCache = null; tpPoints();
+      try { tpPointRender(); } catch (e) {}
+      try { renderTppFloat(); } catch (e) {}
+    });
+  } catch (e) {}
+  function tpPointMsg(text) { var el = $id("dsh-tpp-msg"); if (el) el.textContent = text || ""; }
+  function tpPointRender() {
+    var box = $id("dsh-tpp-list"); if (!box) return;
+    var list = tpPoints();
+    if (!list.length) { box.innerHTML = '<span class="st">暂无快捷传送点</span>'; return; }
+    var html = "";
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i];
+      html += '<div class="prow"><span class="pidx">' + (i + 1) + '</span><span class="pnm">' + roEscTxt(p.name) + '</span>' +
+        '<span class="st" style="flex:0 0 auto">' + roEscTxt(p.map) + ' (' + p.x + ',' + p.y + ')</span>' +
+        '<button class="ghost" data-tpp-go="' + i + '">前往</button><button class="ghost" data-tpp-edit="' + i + '">修改</button><button class="ghost" data-tpp-del="' + i + '">删除</button></div>';
+    }
+    box.innerHTML = html;
+    try { renderTppFloat(); } catch (e) {} // V2.29.0：悬浮条同步刷新
+  }
+  // V2.29.0：传送点悬浮条（fwReg "tpp" 拖出的小浮窗）：列出传送点，点击直传（与面板一致，无确认）
+  function renderTppFloat() {
+    var box = $id("dsh-tpp-float-list");
+    if (!box) return;
+    var list = tpPoints();
+    if (!list.length) { box.innerHTML = '<span class="st">暂无快捷传送点</span>'; return; }
+    var html = "";
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i];
+      html += '<div class="prow"><button class="ghost" data-tppf-go="' + i + '" style="flex:1 1 auto;text-align:left">' + (i + 1) + '. ' + roEscTxt(p.name) + ' · ' + roEscTxt(p.map) + ' (' + p.x + ',' + p.y + ')</button></div>';
+    }
+    box.innerHTML = html;
+  }
+  var tppFloatBox = $id("dsh-tpp-float-list");
+  if (tppFloatBox) tppFloatBox.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest("[data-tppf-go]");
+    if (!b) return;
+    var p = tpPoints()[Number(b.getAttribute("data-tppf-go"))];
+    if (p) tpPointGo(p);
+  });
+  function tpPointGo(p) {
+    if (!p) return;
+    var cur = getMapName();
+    if (cur && normMapKey(cur) === normMapKey(p.map)) walkToXY(p.x, p.y, null, "dsh-mvlog");
+    else gptTeleport(p.map, p.x, p.y);
+    tpPointMsg("前往 " + p.name + "：" + p.map + " (" + p.x + "," + p.y + ")");
+  }
+  $id("dsh-tpp-current").addEventListener("click", function () {
+    mvCurMap();
+    var nm = $id("dsh-tpp-name");
+    if (nm && !nm.value.trim()) nm.value = getMapNameCn() || getMapName() || "当前位置";
+    tpPointMsg("已填入当前位置，确认名称后点保存");
+  });
+  $id("dsh-tpp-save").addEventListener("click", function () {
+    var name = ($id("dsh-tpp-name").value || "").trim();
+    var map = ($id("dsh-mvmap").value || getMapName() || "").trim();
+    var x = parseInt($id("dsh-mvx").value, 10), y = parseInt($id("dsh-mvy").value, 10);
+    if (!name || !map || isNaN(x) || isNaN(y)) { tpPointMsg("请填写名称、地图和 X/Y"); return; }
+    var list = tpPoints();
+    if (tpPointEdit < 0 && list.length >= 20) { tpPointMsg("当前角色最多保存 20 个点"); return; }
+    var rec = { name: name.slice(0, 24), map: map, x: x, y: y };
+    if (tpPointEdit >= 0 && tpPointEdit < list.length) list[tpPointEdit] = rec; else list.push(rec);
+    tpPointEdit = -1; $id("dsh-tpp-save").textContent = "保存"; $id("dsh-tpp-name").value = "";
+    tpPointSaveList(); tpPointRender(); tpPointMsg("已保存快捷传送点");
+  });
+  $id("dsh-tpp-list").addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest("button"); if (!b) return;
+    var list = tpPoints(), i;
+    if (b.hasAttribute("data-tpp-go")) { i = parseInt(b.getAttribute("data-tpp-go"), 10); tpPointGo(list[i]); return; }
+    if (b.hasAttribute("data-tpp-edit")) {
+      i = parseInt(b.getAttribute("data-tpp-edit"), 10); var p = list[i]; if (!p) return;
+      tpPointEdit = i; $id("dsh-tpp-name").value = p.name; $id("dsh-mvmap").value = p.map; $id("dsh-mvx").value = p.x; $id("dsh-mvy").value = p.y;
+      $id("dsh-tpp-save").textContent = "保存修改"; tpPointMsg("正在修改：" + p.name); return;
+    }
+    if (b.hasAttribute("data-tpp-del")) {
+      i = parseInt(b.getAttribute("data-tpp-del"), 10); if (i < 0 || i >= list.length) return;
+      var old = list.splice(i, 1)[0]; tpPointEdit = -1; $id("dsh-tpp-save").textContent = "保存";
+      tpPointSaveList(); tpPointRender(); tpPointMsg("已删除：" + old.name);
+    }
+  });
+  tpPointRender();
+  masterTickReg(function () {
+    var k = activeProfileKey();
+    if (k !== tpPointProfile) { tpPointProfile = k; tpPointEdit = -1; tpPointRender(); }
+  });
+  $id("dsh-mvcur").addEventListener("click", mvCurMap);
+  $id("dsh-mvstop").addEventListener("click", stopWalkXY);
+  $id("dsh-mvgo").addEventListener("click", function () {
+    try {
+      var x = parseInt($id("dsh-mvx").value, 10);
+      var y = parseInt($id("dsh-mvy").value, 10);
+      if (isNaN(x) || isNaN(y)) { mvLog("先填 X/Y（可点「填入当前位置」）"); return; }
+      var want = ($id("dsh-mvmap").value || "").trim();
+      var cur = getMapName();
+      var sameMap = !want || !cur || normMapKey(want) === normMapKey(cur);
+      if (sameMap) {
+        walkToXY(x, y, null, "dsh-mvlog");
+      } else {
+        gptTeleport(want, x, y);
+      }
+    } catch (e) { mvLog("走路异常: " + e.message); }
+  });
+  // 输入框非空时按 Enter/点选条目驱动寻路（联想点选已触发 planRoute；原 select change 已移除）
+
+  // ---------------- 回城 / NPC / 卖装备 ----------------
+  var npcList = [];
+  var selNpc = null; // 当前选中的 NPC {GID,name,pos}
+  $id("dsh-tp-town").addEventListener("click", function () {
+    try {
+      var ok = gptTeleport("prontera");
+      $id("dsh-tpmsg2").textContent = ok ? "GPT 回城请求已提交" : "GPT 回城提交失败";
+    } catch (e) { $id("dsh-tpmsg2").textContent = "回城异常: " + e.message; }
+  });
+  $id("dsh-scan-npc").addEventListener("click", function () {
+    npcList = [];
+    selNpc = null;
+    try {
+      if (!window.require) throw new Error("客户端未就绪");
+      var EM = window.require("Renderer/EntityManager");
+      EM.forEach(function (e) {
+        try {
+          if (e.objecttype === 6 || e.objecttype === 12) {
+            npcList.push({ GID: e.GID, name: e.displayName || e.name || (e.display && e.display.name) || String(e.GID), pos: e.position ? [e.position[0], e.position[1]] : null });
+          }
+        } catch (e2) {}
+      });
+    } catch (e) { $id("dsh-cleanlog").textContent = "扫描异常: " + e.message; return; }
+    var box = $id("dsh-npclist");
+    if (!box) return;
+    box.innerHTML = "";
+    if (!npcList.length) { box.textContent = "未发现NPC（需在城镇内）"; }
+    else {
+      npcList.forEach(function (n, i) {
+        var row = document.createElement("div");
+        row.textContent = (i + 1) + ". " + n.name + (n.pos ? " (" + Math.floor(n.pos[0]) + "," + Math.floor(n.pos[1]) + ")" : "");
+        row.className = "prow"; row.style.cursor = "pointer";
+        row.addEventListener("click", function () {
+          selNpc = n;
+          var all = box.querySelectorAll("div");
+          for (var k = 0; k < all.length; k++) all[k].style.background = "";
+          row.style.background = "#eaf2fb";
+          $id("dsh-cleanlog").textContent = "已选中 " + n.name + " (GID " + n.GID + ")";
+        });
+        box.appendChild(row);
+      });
+      selNpc = npcList[0];
+      if (box.firstChild) box.firstChild.style.background = "#eaf2fb";
+    }
+    $id("dsh-cleanlog").textContent = "扫描到 " + npcList.length + " 个NPC" + (npcList.length ? "（默认选中第 1 个，点条目切换）" : "");
+  });
+  $id("dsh-go-npc").addEventListener("click", function () {
+    try {
+      if (!selNpc) { $id("dsh-cleanlog").textContent = "先点「扫描NPC」并选中一个 NPC"; return; }
+      if (!selNpc.pos) { $id("dsh-cleanlog").textContent = "NPC 无坐标（需在城镇内扫描）"; return; }
+      var ok = walkToXY(selNpc.pos[0], selNpc.pos[1], function () {
+        $id("dsh-cleanlog").textContent = "已到达 " + selNpc.name + " 旁，可点「点NPC对话」";
+      }, "dsh-cleanlog");
+      if (ok) $id("dsh-cleanlog").textContent = "走向 NPC「" + selNpc.name + "」…";
+    } catch (e) { $id("dsh-cleanlog").textContent = "走到NPC异常: " + e.message; }
+  });
+  $id("dsh-talk-npc").addEventListener("click", function () {
+    try {
+      if (!clientReady()) throw new Error("客户端未就绪");
+      var target = null;
+      // 优先：对话选中的 NPC（需在 2 格内，否则回退最近 NPC）
+      if (selNpc && selNpc.GID != null && selNpc.pos) {
+        var ent0 = CLIENT.SS.Entity;
+        if (ent0 && ent0.position) {
+          var dd0 = Math.abs(selNpc.pos[0] - ent0.position[0]) + Math.abs(selNpc.pos[1] - ent0.position[1]);
+          if (dd0 <= 2) target = { GID: selNpc.GID, displayName: selNpc.name };
+        }
+      }
+      if (!target) {
+        // 选中不在身边（或无选中）→ 回退最近 NPC
+        var EM = window.require("Renderer/EntityManager");
+        var ent = CLIENT.SS.Entity;
+        var best = 1e9;
+        EM.forEach(function (e) {
+          try {
+            if ((e.objecttype === 6 || e.objecttype === 12) && ent && e.position) {
+              var d = Math.abs(e.position[0] - ent.position[0]) + Math.abs(e.position[1] - ent.position[1]);
+              if (d < best) { best = d; target = e; }
+            }
+          } catch (e2) {}
+        });
+        if (!target) throw new Error("附近没有NPC（先扫描并「走到选中」）");
+      }
+      lastTalkNpc = {
+        GID: target.GID,
+        name: target.displayName || target.name || (target.display && target.display.name) || "",
+        pos: (target.position && target.position.length >= 2) ? [target.position[0], target.position[1]] : (selNpc && selNpc.pos ? [selNpc.pos[0], selNpc.pos[1]] : null)
+      };
+      var p = new CLIENT.PS.CZ.CONTACTNPC();
+      p.NAID = target.GID; p.type = 1;
+      CLIENT.NM.sendPacket(p);
+      $id("dsh-cleanlog").textContent = "已点击 NPC「" + (target.displayName || target.name || target.GID) + "」";
+    } catch (e) { $id("dsh-cleanlog").textContent = "对话异常: " + e.message; }
+  });
+  $id("dsh-sell").addEventListener("click", function () {
+    try {
+      if (!clientReady()) throw new Error("客户端未就绪");
+      var inv = findInventory();
+      if (!inv) { $id("dsh-cleanlog").textContent = "未定位到背包（自动探测中…）。请先在游戏内打开背包"; return; }
+      var sellList = [];
+      for (var j = 0; j < inv.length; j++) {
+        var it = inv[j] || {};
+        if (it.ITID != null && (it.type === 4 || it.type === 5 || it.itemType === 4 || it.itemType === 5)) {
+          var equipped = !!(it.IsEquipped || it.WearState || it.wearState || it.equipped);
+          var refined = Number(it.RefiningLevel || it.refiningLevel || it.refine || 0) > 0;
+          var slotted = false; try { if (it.slot) for (var sk in it.slot) { if (Number(it.slot[sk]) > 0) { slotted = true; break; } } } catch (e2) {}
+          var special = slotted || Number(it.nRandomOptionCnt || 0) > 0 || Number(it.enchantgrade || 0) > 0;
+          if (!equipped && !refined && !special) sellList.push({ index: it.index != null ? it.index : j, amount: it.amount || it.count || 1, ITID: it.ITID });
+        }
+      }
+      if (!sellList.length) { $id("dsh-cleanlog").textContent = "背包里没有可卖的装备类物品"; return; }
+      var sp = new CLIENT.PS.CZ.PC_SELL_ITEMLIST();
+      sp.itemList = sellList;
+      CLIENT.NM.sendPacket(sp);
+      $id("dsh-cleanlog").textContent = "已发送卖单 " + sellList.length + " 件装备";
+    } catch (e) { $id("dsh-cleanlog").textContent = "卖装备异常: " + e.message; }
+  });
+
+  // ---------------- 菜单侦察（对话采集 · 阶段1） ----------------
+  var menuRecon = { NAID: 0, msg: "", items: [], map: "", npcName: "", pos: null, time: 0 };
+  var lastTalkNpc = null; // 点「点NPC对话」时记录的目标实体（真实 GID/name/pos，用于菜单反查）
+  function decodeMenuMsg(bytes) {
+    var end = bytes.length;
+    for (var i = 0; i < bytes.length; i++) { if (bytes[i] === 0) { end = i; break; } }
+    var sub = bytes.subarray(0, end);
+    var s;
+    try { s = new TextDecoder("gbk").decode(sub); }
+    catch (e) { s = new TextDecoder("utf-8").decode(sub); }
+    return s.replace(/[\u0000-\u001f\u007f\ufffd]/g, "");
+  }
+  // 2.15.2：完整多段解码。op=180 对话包=提示段+00+空段+00+算式段…，decodeMenuMsg 只取首段会丢算式。
+  // 这里按 00 逐段解码后拼接，供验证识别（capTrigger）与诊断（capDiag）使用；菜单侦察仍用 decodeMenuMsg。
+  function decodeMenuMsgFull(bytes) {
+    var u = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    var parts = [], cur = [];
+    for (var i = 0; i <= u.length; i++) {
+      var b = (i < u.length) ? u[i] : 0;
+      if (b === 0 || i === u.length) {
+        if (cur.length) {
+          var s;
+          try { s = new TextDecoder("gbk").decode(new Uint8Array(cur)); }
+          catch (e) { s = new TextDecoder("utf-8").decode(new Uint8Array(cur)); }
+          parts.push(s.replace(/[\u0000-\u001f\u007f\ufffd]/g, ""));
+        }
+        cur = [];
+      } else { cur.push(b); }
+    }
+    return parts.join("");
+  }
+  function splitMenu(msg) {
+    return String(msg).replace(/[\u0000-\u001f\u007f\ufffd]/g, "").split(":").map(function (s) { return s.replace(/^\s+|\s+$/g, ""); }).filter(function (s) { return s.length > 0; });
+  }
+  // ---- V2.8.7 任务树采集 + 自动上报（Tailscale → 电脑接收服务）----
+  var reconSteps = [];
+  var ingestOk = 0, ingestFail = 0;
+  var INGEST_URL = "http://127.0.0.1:8974/"; // V2.15.27：PC 网页版直连本机接收服务（ro-collect.cjs 空闲自退随脚本生命周期；旧手机端曾用 Tailscale 域名）
+  var collectOnline = null;
+  function probeCollect() {
+    try {
+      if (typeof fetch !== "function") return;
+      fetch(INGEST_URL).then(function (r) { collectOnline = !!(r && r.ok); renderIngest(); }).catch(function () { collectOnline = false; renderIngest(); });
+    } catch (e) {}
+  }
+  function renderIngest() {
+    var el = $id("dsh-menu-status");
+    if (!el) return;
+    var st = collectOnline === true ? "服务在线" : (collectOnline === false ? "采集服务未运行" : "检测中");
+    el.textContent = "采集" + st + " · 上报成功 " + ingestOk + " 条" + (ingestFail ? "，失败 " + ingestFail + " 条" : "");
+  }
+  function ingest(payload) {
+    try {
+      if (typeof fetch !== "function") { ingestFail++; renderIngest(); return; }
+      fetch(INGEST_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      }).then(function (r) { if (r && r.ok) ingestOk++; else ingestFail++; renderIngest(); })
+        .catch(function () { ingestFail++; renderIngest(); });
+    } catch (e) { ingestFail++; }
+  }
+  // V2.15.27：采集服务心跳（20s 探测，维持服务活跃并显示在线状态）
+  setInterval(function () { try { probeCollect(); } catch (e) {} }, 20000);
+  try { probeCollect(); } catch (e) {}
+  function pushStep(kind, text, menu, map, npcName, gid, pos) {
+    var g = (gid != null) ? gid : ((lastTalkNpc && lastTalkNpc.GID != null) ? lastTalkNpc.GID : 0);
+    var step = { kind: kind, text: text || "", menu: menu || null, map: map || getMapName(), npcName: npcName || "", gid: g, pos: pos || null, ts: Date.now() };
+    reconSteps.push(step);
+    ingest({ type: kind, map: step.map, npcGID: step.gid, npcName: step.npcName, pos: step.pos, text: step.text, menu: step.menu, stepIdx: reconSteps.length - 1, ts: new Date().toISOString() });
+  }
+  function renderMenuRecon() {
+    var el = $id("dsh-menu-recon");
+    if (!el) return;
+    if (!menuRecon.items.length) { el.textContent = "菜单未拆出选项（原始：" + menuRecon.msg + "）"; return; }
+    var lines = [];
+    for (var i = 0; i < menuRecon.items.length; i++) lines.push(i + ") " + menuRecon.items[i]);
+    var head = "NPC " + (menuRecon.npcName || ("GID " + menuRecon.NAID)) + " · " + (menuRecon.map || "?");
+    if (menuRecon.pos) head += " (" + menuRecon.pos[0] + "," + menuRecon.pos[1] + ")";
+    el.textContent = head + "\n" + lines.join("\n");
+  }
+  function onMenuList(bytes) {
+    try {
+      if (!bytes || bytes.byteLength < 6) return;
+      var dv = new DataView(bytes);
+      if (dv.getUint16(0, true) !== 183) return; // ZC.MENU_LIST（菜单）
+      var NAID = dv.getUint32(2, true);
+      var NAIDs = NAID > 2147483647 ? NAID - 4294967296 : NAID;
+      var msg = decodeMenuMsg(new Uint8Array(bytes, 6, bytes.byteLength - 6));
+      var npcName = "", pos = null;
+      try {
+        if (lastTalkNpc && lastTalkNpc.GID != null) {
+          npcName = lastTalkNpc.name || "";
+          pos = lastTalkNpc.pos;
+          var gid = lastTalkNpc.GID;
+          var gidU = gid < 0 ? gid + 4294967296 : gid;
+          var gidS = gid > 2147483647 ? gid - 4294967296 : gid;
+          var EM = CLIENT.EM || (window.require && window.require("Renderer/EntityManager"));
+          if (EM && EM.forEach) EM.forEach(function (e) {
+            if (e && (e.GID === gid || e.GID === gidU || e.GID === gidS)) {
+              npcName = e.displayName || e.name || (e.display && e.display.name) || npcName;
+              if (e.position) pos = [e.position[0], e.position[1]];
+            }
+          });
+        } else {
+          var EM2 = CLIENT.EM || (window.require && window.require("Renderer/EntityManager"));
+          if (EM2 && EM2.forEach) EM2.forEach(function (e) {
+            if (e && (e.GID == NAID || e.GID == NAIDs)) { npcName = e.displayName || e.name || (e.display && e.display.name) || ""; if (e.position) pos = [e.position[0], e.position[1]]; }
+          });
+        }
+      } catch (e2) {}
+      var items = splitMenu(msg);
+      menuRecon = { NAID: NAID, msg: msg, items: items, map: getMapName(), npcName: npcName, pos: pos, time: Date.now() };
+      renderMenuRecon();
+      pushStep("menu", msg, items, menuRecon.map, npcName, (lastTalkNpc && lastTalkNpc.GID != null) ? lastTalkNpc.GID : NAID, pos);
+    } catch (e) {}
+
+  }
+  function onSayDialog(bytes) {
+    try {
+      if (!bytes || bytes.byteLength < 6) return;
+      var dv = new DataView(bytes);
+      if (dv.getUint16(0, true) !== 180) return; // ZC.SAY_DIALOG（对话正文，任务名/要求在这里）
+      var NAID = dv.getUint32(2, true);
+      var msg = decodeMenuMsg(new Uint8Array(bytes, 6, bytes.byteLength - 6));
+      if (!msg) return;
+      var gid = (lastTalkNpc && lastTalkNpc.GID != null) ? lastTalkNpc.GID : NAID;
+      var nm = (lastTalkNpc && lastTalkNpc.name) || "";
+      var ps = (lastTalkNpc && lastTalkNpc.pos) || null;
+      // MVP 计时：对话正文含 MVP 日志时自动校准
+      console.log('[MVP-DEBUG] onSayDialog called, msg length:', msg ? msg.length : 0);
+      if (msg && /MVP.*日志/i.test(msg)) {
+        console.log('[MVP-DEBUG] Found MVP log keyword, msg preview:', msg.substring(0, 200));
+      }
+      mvpReceive(msg);
+      var msgFull = decodeMenuMsgFull(new Uint8Array(bytes, 6, bytes.byteLength - 6)); // 2.15.2 完整多段（含算式段）
+      try { capDiag(bytes, msgFull); } catch (e) {} // 2.15.1-diag 分段诊断
+      try { capTrigger(msgFull); } catch (e) {} // V2.14.0 登录验证自动过
+      pushStep("dialog", msg, null, getMapName(), nm, gid, ps);
+    } catch (e) {}
+  }
+  // ---------------- V2.14.0 登录验证自动过（中文数字算式 → 填输入框 → 等N秒 → 点下面）----------------
+  var CAP_DIG = { "零":0, "一":1, "二":2, "两":2, "三":3, "四":4, "五":5, "六":6, "七":7, "八":8, "九":9 };
+  var CAP_UNIT = { "十":10, "百":100, "千":1000, "万":10000 };
+  function capCnvNum(s) {
+    s = String(s || "").trim(); if (!s) return NaN;
+    var total = 0, seg = 0, cur = 0;
+    for (var i = 0; i < s.length; i++) {
+      var ch = s.charAt(i);
+      if (CAP_DIG[ch] !== undefined) cur = CAP_DIG[ch];
+      else if (CAP_UNIT[ch] !== undefined) {
+        var u = CAP_UNIT[ch];
+        if (u === 10000) { total = (total + (seg + (cur || 1))) * u; seg = 0; cur = 0; }
+        else { seg += (cur || 1) * u; cur = 0; }
+      } else return NaN;
+    }
+    return total + seg + cur;
+  }
+  function capEval(txt) {
+    try {
+      var t = String(txt || "").replace(/[（(]/g, "").replace(/[）)]/g, "").replace(/\s+/g, "");
+      var toks = t.match(/[零一二两三四五六七八九十百千万]+|[加减乘除]+/g);
+      if (!toks || toks.length < 3) return NaN;
+      var nums = [], ops = [];
+      for (var i = 0; i < toks.length; i++) {
+        if (/^[加减乘除]+$/.test(toks[i])) { for (var j = 0; j < toks[i].length; j++) ops.push(toks[i].charAt(j)); }
+        else { var v = capCnvNum(toks[i]); if (isNaN(v)) return NaN; nums.push(v); }
+      }
+      if (nums.length !== ops.length + 1) return NaN;
+      var n2 = [nums[0]], o2 = [];
+      for (var k = 0; k < ops.length; k++) {
+        var o = ops[k], v = nums[k + 1];
+        if (o === "乘") n2[n2.length - 1] = n2[n2.length - 1] * v;
+        else if (o === "除") n2[n2.length - 1] = n2[n2.length - 1] / v;
+        else { n2.push(v); o2.push(o); }
+      }
+      var r = n2[0];
+      for (var m = 0; m < o2.length; m++) r += (o2[m] === "加" ? 1 : -1) * n2[m + 1];
+      return Math.round(r * 1000) / 1000;
+    } catch (e) { return NaN; }
+  }
+  function capEnabled() { try { return !!($id("dsh-capauto") && $id("dsh-capauto").checked); } catch (e) { return false; } }
+  function capWaitSec() { return parseInt(($id("dsh-capwait") && $id("dsh-capwait").value) || "10", 10) || 0; }
+  function capSetState(t) { try { var el = $id("dsh-capstate"); if (el) el.textContent = t; } catch (e) {} }
+  function capTryParse(msg) {
+    // 真实弹窗文本形如 " ( 三 （乘） 一百 （加） 二十 四"：先去空格与全角/半角括号再匹配
+    var t = String(msg || "").replace(/[（(]/g, "").replace(/[）)]/g, "").replace(/\s+/g, "");
+    var m = t.match(/([零一二两三四五六七八九十百千万]+(?:[加减乘除][零一二两三四五六七八九十百千万]+)+)/);
+    if (!m) { console.log("[验证-diag] 未匹配到算式，原文=" + JSON.stringify(String(msg || ""))); return null; }
+    var result = capEval(m[1]);
+    if (isNaN(result)) { console.log("[验证-diag] 算式无法计算 expr=" + m[1]); return null; }
+    return { expr: m[1], result: result };
+  }
+  function capFindConfirm() {
+    // 查找「确认/确定/OK/好」按钮（可见、文字短、无子元素的叶子节点优先）
+    var all = document.querySelectorAll("button, div, span, li, a, input[type=button], input[type=submit]");
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      var r = el.getBoundingClientRect();
+      if (r.width === 0 && r.height === 0) continue;
+      var txt = ((el.textContent || "") + (el.value || "")).replace(/\s+/g, "");
+      if (!txt) continue;
+      if (txt === "确认" || txt === "确定" || txt === "OK" || txt === "好" || txt === "确定!") return el;
+      if ((txt.indexOf("确认") === 0 || txt.indexOf("确定") === 0) && el.children.length === 0 && txt.length <= 8) return el;
+    }
+    return null;
+  }
+  function capConfirm() {
+    try {
+      var el = capFindConfirm();
+      if (el) { el.click(); return true; }
+      return false;
+    } catch (e) { return false; }
+  }
+  function capEnter() {
+    try {
+      var el = document.activeElement || document.body;
+      var opts = { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true };
+      el.dispatchEvent(new KeyboardEvent("keydown", opts));
+      el.dispatchEvent(new KeyboardEvent("keypress", opts));
+      el.dispatchEvent(new KeyboardEvent("keyup", opts));
+      return true;
+    } catch (e) { return false; }
+  }
+  function capFindInput() {
+    var ins = document.querySelectorAll("input");
+    for (var i = 0; i < ins.length; i++) {
+      var el = ins[i], r = el.getBoundingClientRect();
+      if (r.width === 0 && r.height === 0) continue;
+      var t = (el.type || "").toLowerCase();
+      if (t === "text" || t === "number" || t === "tel" || t === "") return el;
+    }
+    return null;
+  }
+  function capFillInput(val) {
+    try {
+      var el = capFindInput();
+      if (!el) { capSetState("已算出 " + val + "，但未找到输入框"); return false; }
+      el.focus();
+      try { var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value"); if (setter && setter.set) setter.set.call(el, val); else el.value = val; } catch (e2) { el.value = val; }
+      try { el.dispatchEvent(new Event("input", { bubbles: true })); } catch (e3) {}
+      try { el.dispatchEvent(new Event("change", { bubbles: true })); } catch (e4) {}
+      capSetState("已填入 " + val + "，等 " + capWaitSec() + "s 后提交");
+      return true;
+    } catch (e) { capSetState("填写异常: " + e.message); return false; }
+  }
+  function capClickSubmit() {
+    try {
+      // 1) 优先点「下面」
+      var all = document.querySelectorAll("button, div, span, li, a");
+      for (var i = 0; i < all.length; i++) {
+        var el = all[i];
+        var r = el.getBoundingClientRect();
+        if (r.width === 0 && r.height === 0) continue;
+        var txt = (el.textContent || "").replace(/\s+/g, "");
+        if (txt === "下面" || (txt.indexOf("下面") >= 0 && el.children.length === 0 && txt.length <= 8)) {
+          el.click(); capSetState("已点击「下面」"); return true;
+        }
+      }
+      // 2) 其次点「确认/确定」
+      if (capConfirm()) { capSetState("已点击「确认」"); return true; }
+      // 3) 最后按回车
+      if (capEnter()) { capSetState("已按回车提交"); return true; }
+      capSetState("未找到提交按钮（结果已填入）"); return false;
+    } catch (e) { capSetState("提交异常: " + e.message); return false; }
+  }
+  function capDiag(bytes, msg) {
+    // 2.15.1-diag：打印 op=180 数据包分段结构，定位验证算式所在段（2.15.2：bytes 为 ArrayBuffer 时先转 Uint8Array，修下标索引异常）
+    try {
+      var b8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+      var hex = "";
+      for (var i = 0; i < b8.byteLength && i < 200; i++) hex += (b8[i] < 16 ? "0" : "") + b8[i].toString(16);
+      console.log("[验证-diag] op=180 包 len=" + b8.byteLength + " hex=" + hex + " decodeMenuMsgFull=" + JSON.stringify(msg));
+      // 按 00 分隔逐段解码（验证弹窗=提示段+空段+算式段）
+      var u = new Uint8Array(b8, 6, b8.byteLength - 6);
+      var segs = [], cur = [], start = 6;
+      for (var j = 0; j <= u.length; j++) {
+        var b = (j < u.length) ? u[j] : 0;
+        if (b === 0 || j === u.length) {
+          if (cur.length) {
+            var sub = new Uint8Array(cur);
+            var s = "";
+            try { s = new TextDecoder("gbk").decode(sub); } catch (e) { s = new TextDecoder("utf-8").decode(sub); }
+            segs.push({ off: start, len: cur.length, text: s });
+          }
+          cur = []; start = 6 + j + 1;
+        } else { cur.push(b); }
+      }
+      console.log("[验证-diag] 分段数=" + segs.length);
+      for (var k = 0; k < segs.length; k++) console.log("[验证-diag] 段" + k + " 偏移=" + segs[k].off + " 长度=" + segs[k].len + " 文本=" + JSON.stringify(segs[k].text));
+    } catch (e) { console.log("[验证-diag] 分段解析异常: " + e.message); }
+  }
+  var capBusy = false;
+  function capTrigger(msg) {
+    try {
+      console.log("[验证-diag] capTrigger 收到 msg=" + JSON.stringify(String(msg || "").slice(0, 120)) + " 开关=" + capEnabled() + " busy=" + capBusy);
+      if (!capEnabled() || capBusy) return;
+      var p = capTryParse(msg);
+      if (!p) return;
+      capBusy = true;
+      capSetState("识别算式 " + p.expr + " = " + p.result);
+      console.log("[验证自动过] 识别算式 " + p.expr + " = " + p.result);
+      var wait = capWaitSec() * 1000;
+      setTimeout(function () {
+        // 第一步：输入框若已就绪直接填；否则先点确认/回车（弹窗第一步确认）
+        try {
+          var inp = capFindInput();
+          if (inp) {
+            console.log("[验证自动过] 输入框已就绪，跳过第一步确认");
+          } else {
+            var ok = capConfirm();
+            if (ok) console.log("[验证自动过] 第一步：已点确认按钮");
+            else { capEnter(); console.log("[验证自动过] 第一步：已按回车"); }
+          }
+        } catch (e) {}
+        setTimeout(function () {
+          try { capFillInput(String(p.result)); } catch (e) {}
+          console.log("[验证自动过] 第二步：填入结果 " + p.result);
+          setTimeout(function () {
+            try { capClickSubmit(); } catch (e) {}
+            setTimeout(function () { capBusy = false; }, 2000);
+          }, wait);
+        }, 600);
+      }, 400);
+    } catch (e) {}
+  }
+  //（onSayDialog 内调用 capTrigger）
+  function onCloseDialog() {
+    try { pushStep("close", "", null, getMapName(), (lastTalkNpc && lastTalkNpc.name) || "", (lastTalkNpc && lastTalkNpc.GID != null) ? lastTalkNpc.GID : 0, null); } catch (e) {}
+    reconSteps = [];
+  }
+  // V2.9.0 任务正文取证：未知 opcode 里含中文的包 → 上报（定位 lastro 自研任务正文包）
+  var rawOpLog = {}, rawOpTotal = 0;
+  function onRawOpcode(bytes, op) {
+    try {
+      if (rawOpTotal >= 200) return; // 总量限流
+      var nw = Date.now();
+      if (rawOpLog[op] && nw - rawOpLog[op] < 10000) return; // 同 opcode 10s 限 1 条
+      if (bytes.byteLength < 8) return;
+      var msg = decodeMenuMsg(new Uint8Array(bytes, 6, bytes.byteLength - 6));
+      if (!msg || !/[一-鿿]/.test(msg)) return; // 只报含中文的（任务正文候选）
+      rawOpLog[op] = nw; rawOpTotal++;
+      var hex = "";
+      try { var arr = new Uint8Array(bytes, 0, Math.min(16, bytes.byteLength)); for (var i = 0; i < arr.length; i++) hex += (arr[i] < 16 ? "0" : "") + arr[i].toString(16); } catch (e3) {}
+      ingest({ type: "raw", opcode: op, hex: hex, map: getMapName(), npcGID: (lastTalkNpc && lastTalkNpc.GID != null) ? lastTalkNpc.GID : 0, npcName: (lastTalkNpc && lastTalkNpc.name) || "", pos: (lastTalkNpc && lastTalkNpc.pos) || null, text: msg.slice(0, 200), stepIdx: reconSteps.length, ts: new Date().toISOString() });
+    } catch (e2) {}
+  }
+  // V2.16.13 战斗收包采集：统计收包 opcode 分布 + 采集短包样本（定位「被攻击掉血」包字段用）
+  //   掉血/状态/伤害类多为短包（4~32B）；已知 opcode（菜单/对话/技能后摇）跳过。样本限流：每 opcode 2 条、总量 400。
+  var opStat = {}, opStatSamples = 0;
+  function collectOpStat(bytes, op) {
+    try {
+      var len = bytes.byteLength;
+      opStat[op] = (opStat[op] || 0) + 1;
+      if (op === 183 || op === 180 || op === 182 || op === 0x43d || op === 0x43e || op === 0xb1a) return;
+      if (len < 4 || len > 32) return;
+      if (opStatSamples >= 400 || opStat[op] > 2) return;
+      opStatSamples++;
+      var hex = "";
+      var arr = new Uint8Array(bytes, 0, Math.min(32, len));
+      for (var i = 0; i < arr.length; i++) hex += (arr[i] < 16 ? "0" : "") + arr[i].toString(16);
+      var hpNow = null;
+      try { var ent0 = CLIENT.SS && CLIENT.SS.Entity; if (ent0 && ent0.life) hpNow = ent0.life.hp; } catch (e2) {}
+      ingest({ type: "opstat", opcode: op, len: len, hex: hex, hp: hpNow, map: getMapName(), ts: new Date().toISOString() });
+    } catch (e) {}
+  }
+  function dispatchInbound(bytes) {
+    try {
+      var dv = new DataView(bytes);
+      var op = dv.getUint16(0, true);
+      collectOpStat(bytes, op);
+      itipPktProbe(bytes, op); // V2.16.21 自动探查：首次出现的 opcode 记录十六进制
+      // V2.16.16：入站也进抓包环（方向 D），导出时与出站合成一条双向时间线
+      if (typeof txCap !== "undefined" && txCap && txCap.on) {
+        try {
+          var u8d = new Uint8Array(bytes);
+          var hxD = "", mD = Math.min(u8d.length, 64);
+          for (var iD = 0; iD < mD; iD++) hxD += (u8d[iD] < 16 ? "0" : "") + u8d[iD].toString(16);
+          txCap.ring.push({ t: Date.now(), d: "D", op: op, len: u8d.length, hex: hxD });
+          if (txCap.ring.length > 3000) txCap.ring.shift();
+          txCap.n++;
+        } catch (eD) {}
+      }
+      if (DPS_PKTS.indexOf(op) >= 0 && !dpsParsedSeen) dpsOnRawDamage(bytes, op);
+      if (op === 0x80) scrOnRawVanish(bytes);
+      if (op === 183) onMenuList(bytes);
+      else if (op === 180) onSayDialog(bytes);
+      else if (op === 182) onCloseDialog();
+      else if (op === 0x43d || op === 0x43e) onSkillPostDelay(bytes, op);
+      else if (op === 0xb1a) onSkillAck3(bytes); // V2.15.28：2842 USESKILL_ACK3 动态技能延迟
+      else if (op === 0x1d0 || op === 0x1e1) onSelfSpirits(bytes);
+      else if (op === 0xc6 || op === 0xc7) itipShopPkt(bytes, op); // V2.16.21 商店买卖列表：取单价（买价/卖价）
+      else onRawOpcode(bytes, op);
+    } catch (e) {}
+  }
+  function onSelfSpirits(bytes) {
+    try {
+      if (!bytes || bytes.byteLength < 8) return;
+      var dv = new DataView(bytes), aid = dv.getUint32(2, true), num = Math.max(0, Math.min(5, dv.getUint16(6, true)));
+      // V2.32.2 气弹缓存 aid 统一取整对齐（此前包 AID 为整数、实体 GID 为浮点，恒不等 → 缓存永判失效 → 气弹恒0）
+      var ent = CLIENT.SS && CLIENT.SS.Entity, selfAid = gidInt((CLIENT.SS && CLIENT.SS.AID) || (ent && ent.GID) || 0);
+      if (selfAid && aid === selfAid) selfSpirits = { aid: aid, num: num, map: normMapKey(getMapName()) };
+      // V2.32.2 自采集诊断：记录气弹包解析值
+      dshSphereLog("pkt aid=" + aid + " num=" + num + " selfAid=" + selfAid + " match=" + (aid === selfAid));
+    } catch (e) {}
+  }
+  // V2.15.24：拦截服务器下发的技能真实后摇（ZC.SKILL_POSTDELAY 0x43d 单技能 / 0x43e 批量列表）
+  // 存 skillDelay[SKID]=延迟ms → 攻击循环按真实后摇一次一发（消除无效补发点击 → 缓解服务器点击限制）
+  function onSkillPostDelay(bytes, op) {
+    try {
+      var dv = new DataView(bytes);
+      var msg;
+      if (op === 0x43d) {
+        var skid = dv.getUint16(2, true);
+        var dly = dv.getUint32(4, true);
+        skillDelay[skid] = dly;
+        msg = 'skid=' + skid + ' delay=' + dly + 'ms';
+      } else {
+        // 0x43e：无长度字段，按 (包长-2)/6 逐条解析（每条 SKID ushort + DelayTM ulong）
+        var cnt = Math.floor((bytes.byteLength - 2) / 6);
+        for (var i = 0; i < cnt; i++) {
+          var o = 2 + i * 6;
+          skillDelay[dv.getUint16(o, true)] = dv.getUint32(o + 2, true);
+        }
+        msg = 'list=' + cnt + ' 条（累计 ' + Object.keys(skillDelay).length + ' 个技能）';
+      }
+      console.log('[POSTDELAY] ' + msg);
+      if (btDiagOn) btLog('post-delay', msg);
+    } catch (e) {}
+  }
+  // V2.15.28：拦截 2842 (0xb1a) ZC.USESKILL_ACK3——服务器每次施法后下发真实技能延迟（动态，随等级/装备/状态变动）
+  // 结构（29B 定长，Ragna PacketStructure L15523 + cap6 实测）：op2 + AID4@2 + targetID4@6 + x2@10 + y2@12 + SKID2@14 + property4@16 + delayTime4@20 + disposable1@24 + attackMT4@25
+  // 动态覆盖 skillDelay[SKID] → 每技能按服务器真实后摇到点释放（v2.15.24 的 0x43d/0x43e 服务器不下发，实际数据源是 2842）
+  function onSkillAck3(bytes) {
+    try {
+      if (bytes.byteLength < 26) return;
+      var dv = new DataView(bytes);
+      var skid = dv.getUint16(14, true);
+      var dly = dv.getUint32(20, true);
+      if (skid > 0) skillDelay[skid] = dly;
+      var aid = dv.getUint32(2, true), selfAid = (CLIENT.SS && (CLIENT.SS.AID || (CLIENT.SS.Entity && CLIENT.SS.Entity.GID))) || 0;
+      if (skid === 26 && escapeState.pending && escapeState.lastCast > 0 && (!selfAid || aid === selfAid)) escapeState.ackAt = Date.now();
+      if (skid > 0) { try { dpsOnSkill(skid); } catch (e5) {} } // V2.24.0：伤害统计的技能归属兜底
+      // V2.16.7：RTT 估算（发包→收2842回执时间差，滑动平均，供 skillCdMs 延迟补偿）
+      if (skid > 0 && zSkillSentAt[skid]) {
+        var rtt = Date.now() - zSkillSentAt[skid];
+        if (rtt > 0 && rtt < 2000) {
+          zSkillRtt[skid] = zSkillRtt[skid] ? (zSkillRtt[skid] * 0.7 + rtt * 0.3) : rtt;
+          zSkillRttAvg = zSkillRttAvg ? (zSkillRttAvg * 0.7 + rtt * 0.3) : rtt;
+        }
+        delete zSkillSentAt[skid];
+      }
+      console.log('[ACK3-DELAY] skid=' + skid + ' delay=' + dly + 'ms');
+      if (btDiagOn) btLog('post-delay', 'ACK3 skid=' + skid + ' delay=' + dly + 'ms');
+    } catch (e) {}
+  }
+  function onReconInbound(data) {
+    try {
+      if (data instanceof ArrayBuffer) { dispatchInbound(data); return; }
+      if (data && data.buffer instanceof ArrayBuffer) { dispatchInbound(data.buffer); return; }
+      if (typeof Blob !== "undefined" && data instanceof Blob && data.arrayBuffer) { data.arrayBuffer().then(dispatchInbound); }
+    } catch (e) {}
+  }
+  function hookMenuRecon() {
+    if (window.__dshMenuReconHooked) return;
+    try {
+      var N = window.WebSocket;
+      if (!N) return;
+      function PW(url, protocols) {
+        var inst = protocols !== undefined ? new N(url, protocols) : new N(url);
+        try { inst.addEventListener("message", function (ev) { onReconInbound(ev.data); }); } catch (e) {}
+        return inst;
+      }
+      PW.prototype = N.prototype; PW.CONNECTING = N.CONNECTING; PW.OPEN = N.OPEN; PW.CLOSING = N.CLOSING; PW.CLOSED = N.CLOSED;
+      window.WebSocket = PW;
+      window.__dshMenuReconHooked = true;
+    } catch (e) {}
+  }
+  function buildMenuJson() {
+    return JSON.stringify({
+      type: "npc_menu",
+      map: menuRecon.map || "",
+      npcName: menuRecon.npcName || "",
+      npcGID: (lastTalkNpc && lastTalkNpc.GID != null) ? lastTalkNpc.GID : menuRecon.NAID,
+      pos: menuRecon.pos,
+      menu: menuRecon.items.map(function (t, i) { return { idx: i, text: t }; }),
+      capturedAt: new Date().toISOString()
+    }, null, 2);
+  }
+  $id("dsh-menu-export").addEventListener("click", function () {
+    if (!menuRecon.items.length) { $id("dsh-cleanlog").textContent = "先捕获菜单（点NPC对话）"; return; }
+    var j = buildMenuJson();
+    try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(j); } catch (e) {}
+    $id("dsh-menu-recon").textContent = "已生成JSON（已尝试复制到剪贴板）:\n" + j;
+  });
+  // V2.32.2 气弹自采集诊断导出（复制 JSON 到剪贴板，粘贴给助手分析气弹来源）
+  $id("dsh-spheredump").addEventListener("click", function () {
+    try {
+      var _sl = window.__dshSphereLog || [];
+      var txt = JSON.stringify(_sl, null, 1);
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt);
+      try { console.log("[SPHERE-DIAG]", txt); } catch (e) {}
+      setStatus("气弹诊断已复制到剪贴板（" + _sl.length + " 条），粘贴发给助手", "ok");
+    } catch (e) { try { setStatus("导出异常: " + e.message, "err"); } catch (e2) {} }
+  });
+  // V2.32.2 配置导出/导入（本地化方案 B：跨入口/跨机器备份）
+  function collectDshConfig() {
+    var out = {};
+    try {
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf("dsh_ro_") === 0) { try { out[k] = localStorage.getItem(k); } catch (e) {} }
+      }
+    } catch (e) {}
+    return out;
+  }
+  $id("dsh-cfg-exp").addEventListener("click", function () {
+    try {
+      var data = collectDshConfig();
+      var json = JSON.stringify({ v: 2, exportedAt: new Date().toISOString(), keys: data }, null, 1);
+      var blob = new Blob([json], { type: "application/json" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "ro-assist-config-" + new Date().toISOString().slice(0, 10) + ".json";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { try { URL.revokeObjectURL(a.href); } catch (e) {} }, 1000);
+      setStatus("已导出配置（" + Object.keys(data).length + " 键）", "ok");
+    } catch (e) { try { setStatus("导出失败: " + e.message, "err"); } catch (e2) {} }
+  });
+  $id("dsh-cfg-imp").addEventListener("click", function () {
+    try {
+      var fi = document.createElement("input");
+      fi.type = "file"; fi.accept = ".json,application/json";
+      fi.onchange = function () {
+        var f = fi.files && fi.files[0];
+        if (!f) return;
+        var rd = new FileReader();
+        rd.onload = function () {
+          try {
+            var j = JSON.parse(rd.result);
+            var keys = j.keys || j;
+            var n = 0;
+            for (var k in keys) { try { localStorage.setItem(k, keys[k]); n++; } catch (e) {} }
+            profiles = loadProfiles(); saved = loadSaved();
+            var ak = localStorage.getItem("dsh_ro_last_active");
+            if (ak && profiles[ak]) activeCharKey = ak;
+            try { applyProfileUI(); } catch (e) {}
+            setStatus("已导入配置（" + n + " 键），刷新页面后完整生效", "ok");
+          } catch (e) { try { setStatus("导入解析失败: " + e.message, "err"); } catch (e2) {} }
+        };
+        rd.readAsText(f);
+      };
+      fi.click();
+    } catch (e) { try { setStatus("导入失败: " + e.message, "err"); } catch (e2) {} }
+  });
+  $id("dsh-menu-copy").addEventListener("click", function () {
+    if (!menuRecon.items.length) { $id("dsh-cleanlog").textContent = "先捕获菜单（点NPC对话）"; return; }
+    var j = buildMenuJson();
+    try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(j); } catch (e) {}
+    $id("dsh-cleanlog").textContent = navigator.clipboard ? "已复制JSON到剪贴板" : "剪贴板不可用";
+  });
+  $id("dsh-menu-choose").addEventListener("click", function () {
+    try {
+      if (!clientReady()) throw new Error("客户端未就绪");
+      if (!menuRecon.NAID) { $id("dsh-cleanlog").textContent = "先捕获菜单（点NPC对话）"; return; }
+      var n = parseInt($id("dsh-menu-num").value, 10);
+      if (isNaN(n) || n < 0) { $id("dsh-cleanlog").textContent = "菜单序号无效"; return; }
+      var c = new CLIENT.PS.CZ.CHOOSE_MENU();
+      c.NAID = menuRecon.NAID; c.num = n + 1; // 协议 1 起(官方 _index+1),界面序号 0 起
+      CLIENT.NM.sendPacket(c);
+      $id("dsh-cleanlog").textContent = "已发 CHOOSE_MENU：第 " + (n + 1) + " 项" + (menuRecon.items[n] ? "（" + menuRecon.items[n] + "）" : "");
+    } catch (e) { $id("dsh-cleanlog").textContent = "选菜单异常: " + e.message; }
+  });
+  $id("dsh-menu-next").addEventListener("click", function () {
+    try {
+      if (!clientReady()) throw new Error("客户端未就绪");
+      if (!menuRecon.NAID) { $id("dsh-cleanlog").textContent = "先捕获菜单（点NPC对话）"; return; }
+      var p = new CLIENT.PS.CZ.REQ_NEXT_SCRIPT();
+      p.NAID = menuRecon.NAID;
+      CLIENT.NM.sendPacket(p);
+      $id("dsh-cleanlog").textContent = "已发 REQ_NEXT_SCRIPT（下一段对话）";
+    } catch (e) { $id("dsh-cleanlog").textContent = "下一段异常: " + e.message; }
+  });
+  // ---------------- V2.16.14 出站抓包（真机 vs 无头端逐字节对比 · 只读不改游戏行为）----------------
+  //   为什么包 NM.sendPacket 而不是 WebSocket.prototype.send：
+  //     map 服的出站包在 socket.send 之前已经被 PacketCrypt 混淆，opcode 读出来是乱的；
+  //     NM.sendPacket 拿到的是"未混淆的包对象"，getPacketVersion()[1] 直接就是真实 opcode。
+  //   注意：这里只是读，不拦截、不修改、不额外发任何包，原来的发包路径原样透传。
+  var txCap = { on: false, ring: [], hooked: false, n: 0, lastLog: 0 }; // ring 元素 {t, d('U'出/'D'入), op, len, hex}
+  function txBuild(p) {
+    try {
+      var v = (p && p.getPacketVersion) ? p.getPacketVersion() : null;
+      var op = (v && v[1] != null) ? v[1] : -1;
+      // V2.16.17 修 bug：BinaryWriter 只有 .buffer 没有 byteLength/length，旧写法长度算成 0 → 全部 0B
+      var ab = null, off = 0;
+      if (p && typeof p.build === "function") {
+        var buf = p.build();
+        if (buf) { ab = buf.buffer || buf; off = buf.byteOffset || 0; }
+      }
+      if (!ab && p && p.buffer && p.buffer.byteLength !== undefined) { ab = p.buffer; off = 0; }
+      if (!ab && p && p.view && p.view.buffer) { ab = p.view.buffer; off = 0; }
+      var hex = "", len = 0;
+      if (ab) {
+        var total = ab.byteLength || 0;
+        var u8 = new Uint8Array(ab, off, Math.max(0, total - off));
+        len = u8.length;
+        var m = Math.min(len, 64);
+        for (var i = 0; i < m; i++) hex += (u8[i] < 16 ? "0" : "") + u8[i].toString(16);
+      }
+      // 没有 getPacketVersion 的对象（非 roBrowser 包）→ 直接从字节里读小端 opcode
+      if (op < 0 && hex.length >= 4) { var o2 = parseInt(hex.substr(2, 2) + hex.substr(0, 2), 16); if (o2 > 0) op = o2; }
+      return { op: op, len: len, hex: hex };
+    } catch (e) { return { op: -1, len: 0, hex: "" }; }
+  }
+  function hookSendPacket() {
+    if (txCap.hooked) return true;
+    try {
+      if (!CLIENT.NM) { try { clientReady(); } catch (e0) {} }
+      if (!CLIENT.NM || typeof CLIENT.NM.sendPacket !== "function") return false;
+      var orig = CLIENT.NM.sendPacket;
+      CLIENT.NM.sendPacket = function (p) {
+        if (txCap.on) {
+          try {
+            var b = txBuild(p);
+            txCap.ring.push({ t: Date.now(), d: "U", op: b.op, len: b.len, hex: b.hex });
+            if (txCap.ring.length > 3000) txCap.ring.shift();
+            txCap.n++;
+            var el = $id("dsh-txlog");
+            if (el && Date.now() - txCap.lastLog > 400) { txCap.lastLog = Date.now(); el.textContent = "出站抓包：进行中，已抓 " + txCap.n + " 个包（缓冲 " + txCap.ring.length + "）"; }
+          } catch (e) {}
+        }
+        return orig.apply(this, arguments);
+      };
+      txCap.hooked = true;
+      return true;
+    } catch (e) { return false; }
+  }
+  function txExport() {
+    try {
+      var t0 = txCap.ring.length ? txCap.ring[0].t : 0;
+      var lines = ["# ro-assist 双向抓包 共 " + txCap.ring.length + " 条",
+                   "# 列: 相对毫秒 方向(U=客户端发出 / D=服务器下发) opcode(十进制/hex) 长度 十六进制(前64B)",
+                   "# 地图=" + getMapName() + " 脚本版本=" + VER];
+      for (var i = 0; i < txCap.ring.length; i++) {
+        var r = txCap.ring[i];
+        lines.push((r.t - t0) + " " + (r.d || "U") + " " + r.op + "(0x" + (r.op < 0 ? "?" : r.op.toString(16)) + ") " + r.len + "B " + r.hex);
+      }
+      var txt = lines.join("\n");
+      txCap.lastText = txt;
+      var ta = $id("dsh-txout"); if (ta) ta.value = txt;
+      try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt); } catch (e) {}
+      $id("dsh-txlog").textContent = "已导出 " + txCap.ring.length + " 条（已尝试复制到剪贴板；下方文本框可手动全选复制）";
+    } catch (e) { try { $id("dsh-txlog").textContent = "导出异常: " + e.message; } catch (e2) {} }
+  }
+  $id("dsh-txcap").addEventListener("click", function () {
+    if (!hookSendPacket()) { $id("dsh-txlog").textContent = "客户端未就绪：请先进游戏，再点「开始抓包」"; return; }
+    txCap.on = true; txCap.ring = []; txCap.n = 0;
+    $id("dsh-txlog").textContent = "出站抓包：已开始（先进图站稳 20 秒，再点停止）";
+  });
+  $id("dsh-txstop").addEventListener("click", function () {
+    txCap.on = false;
+    $id("dsh-txlog").textContent = "出站抓包：已停止，共 " + txCap.n + " 个包；点「导出出站序列」复制";
+  });
+  $id("dsh-txexp").addEventListener("click", txExport);
+  // V2.16.16：下载成文件（避免几千行粘进聊天框）——存到浏览器默认下载目录
+  $id("dsh-txdl").addEventListener("click", function () {
+    try {
+      if (!txCap.lastText) { $id("dsh-txlog").textContent = "还没有内容：先点「停止」再点「导出出站序列」"; return; }
+      var blob = new Blob([txCap.lastText], { type: "text/plain;charset=utf-8" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "ro-txcap-" + Date.now() + ".txt";
+      document.body.appendChild(a); a.click();
+      setTimeout(function () { try { document.body.removeChild(a); URL.revokeObjectURL(a.href); } catch (e) {} }, 1000);
+      $id("dsh-txlog").textContent = "已下载到浏览器下载目录（文件名 ro-txcap-*.txt），把文件名告诉我即可";
+    } catch (e) { $id("dsh-txlog").textContent = "下载异常: " + e.message; }
+  });
+  setInterval(function () { try { hookSendPacket(); } catch (e) {} }, 2000);
+  hookMenuRecon();
+  // V2.15.1 背包整理初始化（物品子页内）
+  try { if (typeof bagCleanInit === "function") { bagCleanInit(); } } catch (e) {}
+  // ---------------- V2.14.0 扩展脚本注册表（独立功能包 register 后系统页自动列出并可开关）----------------
+  var ROExtList = {};
+  function renderExtList() {
+    try {
+      var el = $id("dsh-extlist");
+      if (!el) return;
+      var keys = []; for (var k in ROExtList) keys.push(k);
+      if (!keys.length) { el.innerHTML = '<span class="st">未检测到扩展脚本（安装独立功能包后自动显示）</span>'; return; }
+      var html = '';
+      for (var i = 0; i < keys.length; i++) {
+        var e = ROExtList[keys[i]];
+        html += '<div class="row" style="margin:2px 0"><label class="switch"><input type="checkbox" data-roext="' + keys[i] + '"' + (e.enabled ? ' checked' : '') + '>' + (e.name || keys[i]) + '</label>' + (e.ver ? '<span class="tag blue" style="margin-left:4px">' + e.ver + '</span>' : '') + '</div>';
+        if (e.desc) html += '<div class="log" style="margin:0 0 3px">' + e.desc + '</div>';
+      }
+      el.innerHTML = html;
+      var cbs = el.querySelectorAll("input[data-roext]");
+      for (var j = 0; j < cbs.length; j++) {
+        (function (cb) {
+          cb.addEventListener("change", function () {
+            var e = ROExtList[cb.getAttribute("data-roext")];
+            if (!e) return;
+            e.enabled = cb.checked;
+            try { if (cb.checked) { if (e.onEnable) e.onEnable(); } else { if (e.onDisable) e.onDisable(); } } catch (err) {}
+          });
+        })(cbs[j]);
+      }
+    } catch (e) {}
+  }
+  window.__ROExt = {
+    register: function (ext) { try { if (!ext || !ext.id) return false; ROExtList[ext.id] = ext; renderExtList(); return true; } catch (e) { return false; } },
+    unregister: function (id) { try { delete ROExtList[id]; renderExtList(); } catch (e) {} },
+    list: function () { var a = []; for (var k in ROExtList) a.push(ROExtList[k]); return a; },
+    get: function (id) { return ROExtList[id] || null; }
+  };
+  setInterval(function () { try { renderExtList(); } catch (e) {} }, 2000);
+
+
+  // V2.10.8：初始化 MVP 计时器
+  if (typeof mvpInit === 'function') {
+    try {
+      mvpInit();
+      console.log('[RO助手] MVP 计时器已初始化');
+    } catch (e) {
+      console.error('[RO助手] MVP 初始化失败:', e);
+    }
+  }
+
+  // ---------------- V2.11.0 仓库+背包读取：事件绑定 ----------------
+  (function () {
+    try {
+      // 账号名称配置
+      var accInput = $id("dsh-inv-account");
+      if (accInput) {
+        try { accInput.value = localStorage.getItem("dsh_ro_inventory_account") || ""; } catch (e) {}
+        accInput.addEventListener("change", function () {
+          try { localStorage.setItem("dsh_ro_inventory_account", accInput.value.trim()); } catch (e) {}
+          setStatus("账号名称已保存", "ok");
+        });
+      }
+      // 自动读取开关
+      var autoCheck = $id("dsh-inv-auto");
+      if (autoCheck) {
+        try { autoCheck.checked = localStorage.getItem("dsh_ro_inventory_auto") !== "false"; } catch (e) {}
+        autoCheck.addEventListener("change", function () {
+          try { localStorage.setItem("dsh_ro_inventory_auto", String(autoCheck.checked)); } catch (e) {}
+        });
+      }
+      // 搜索框实时搜索
+      var searchInput = $id("dsh-inv-search");
+      var resultsEl = $id("dsh-inv-results");
+      if (searchInput && resultsEl) {
+        searchInput.addEventListener("input", function () {
+          var kw = searchInput.value.trim();
+          if (!kw) { resultsEl.innerHTML = '<span class="st">输入关键词搜索，或先打开仓库记录数据。</span>'; return; }
+          var res = searchInventory(kw);
+          resultsEl.innerHTML = renderInventoryResults(res, kw);
+        });
+      }
+      // 立即读取按钮
+      var readBtn = $id("dsh-inv-read");
+      if (readBtn) {
+        readBtn.addEventListener("click", function () {
+          inventoryReadChar = null;
+          readStorageAndInventory();
+          invSyncPull(getInventoryAccount(), function () { // V2.16.2：读完顺手拉一次远端合并
+            try {
+              var kw = searchInput ? searchInput.value.trim() : "";
+              if (kw) { var res = searchInventory(kw); resultsEl.innerHTML = renderInventoryResults(res, kw); }
+            } catch (e) {}
+          });
+        });
+      }
+      // V2.16.2：页面加载时拉取一次该账号的远端仓库数据（跨端口互通）
+      invSyncPull(getInventoryAccount(), null);
+      // 清空按钮
+      var clearBtn = $id("dsh-inv-clear");
+      if (clearBtn) {
+        clearBtn.addEventListener("click", function () {
+          if (!confirm("确定清空所有仓库和背包数据？")) return;
+          try { localStorage.removeItem("dsh_ro_inventory_v1"); } catch (e) {}
+          try { // V2.16.2：远端 8899 一并清空，防拉取回旧数据
+            if (typeof fetch === "function") {
+              var accC = getInventoryAccount();
+              if (accC) fetch(INV_SYNC_URL + "/clear", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ account: accC }) }).catch(function () {});
+            }
+          } catch (e2) {}
+          if (resultsEl) resultsEl.innerHTML = '<span class="st">已清空。</span>';
+          setStatus("仓库/背包数据已清空", "ok");
+        });
+      }
+      // 导出按钮
+      var exportBtn = $id("dsh-inv-export");
+      if (exportBtn) {
+        exportBtn.addEventListener("click", function () {
+          var raw = null;
+          try { raw = localStorage.getItem("dsh_ro_inventory_v1"); } catch (e) {}
+          if (!raw) { setStatus("暂无数据可导出", "err"); return; }
+          try {
+            var blob = new Blob([raw], { type: "application/json" });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement("a");
+            a.href = url;
+            a.download = "ro-inventory-" + Date.now() + ".json";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+            setStatus("已导出 JSON", "ok");
+          } catch (e) { setStatus("导出失败：" + e.message, "err"); }
+        });
+      }
+      // 监听仓库窗口打开（MutationObserver + 防抖）
+      var storageWinWasOpen = false;
+      var storageObs = new MutationObserver(function () {
+        try {
+          var win = findStorageWindow();
+          if (win) storageDecorateDom(); // 切换仓库分类页会重建物品 DOM，需重新附加标色用的物品 ID。
+          if (localStorage.getItem("dsh_ro_inventory_auto") === "false") return;
+          var isOpen = !!win;
+          if (isOpen && !storageWinWasOpen) {
+            console.log("[INV] MutationObserver 检测到仓库窗口打开");
+            onStorageWindowOpen();
+          }
+          storageWinWasOpen = isOpen;
+        } catch (e) {}
+      });
+      storageObs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-index"] });
+      document.addEventListener("scroll", function () { try { if (findStorageWindow()) storageDecorateDom(); } catch (e) {} }, true);
+    } catch (e) {
+      console.error("[INV] 事件绑定失败:", e);
+    }
+  })();
+
+  // ---------------- 快速侦查 ----------------
+  var reconSeen = {};
+  function renderRecon() {
+    var el = $id("dsh-recon");
+    if (!el) return;
+    try {
+      if (!window.require) { el.textContent = "客户端未就绪"; return; }
+      var EM = window.require("Renderer/EntityManager");
+      if (!EM || !EM.forEach) { el.textContent = "实体管理器不可用"; return; }
+      var mobs = 0, items = 0, parts = [];
+      EM.forEach(function (e) {
+        try {
+          if (e.objecttype === 5) { mobs++; parts.push("怪 " + (getMobName(e._job != null ? e._job : e.job) || e.displayName || ("ID" + e.GID))); }
+          else if (e.objecttype === 11) {
+            items++;
+            var itid = (e.ITID != null ? e.ITID : (e.itemid != null ? e.itemid : "?"));
+            if (!reconSeen[String(itid)]) {
+              reconSeen[String(itid)] = true;
+              try { console.log("[RO助手] 地面物品实体字段: " + Object.keys(e).join(",")); } catch (e2) {}
+            }
+            recordDrop(itid, e.displayName || e.name);
+          }
+        } catch (e3) {}
+      });
+      el.textContent = "怪物 " + mobs + " 只 | 物品 " + items + " 个" + (parts.length ? "\n" + parts.slice(0, 15).join("\n") : "");
+    } catch (e) { el.textContent = "侦查异常: " + e.message; }
+  }
+
+  // ---------------- 战斗监控浮层（游戏画面正上方，独立于助手面板） ----------------
+  // 固定在视口顶部居中，半透明深色底保证在游戏画面上可读；pointer-events:none 不挡游戏操作
+  var zHudEl = null;
+  function ensureZHud() {
+    if (zHudEl && zHudEl.parentNode) return;
+    try {
+      zHudEl = document.createElement("div");
+      zHudEl.id = "dsh-ro-z-hud";
+      zHudEl.style.cssText =
+        "position:fixed;top:4px;left:50%;transform:translateX(-50%);" +
+        "background:rgba(0,0,0,0.66);color:#fff;padding:2px 12px;border-radius:12px;" +
+        "font-size:11px;line-height:1.5;white-space:nowrap;font-family:inherit;" +
+        "z-index:2147483647;user-select:none;cursor:move;" +
+        "border:1px solid rgba(255,255,255,0.28);box-shadow:0 1px 8px rgba(0,0,0,0.55);" +
+        "text-shadow:0 1px 2px rgba(0,0,0,0.6);";
+      document.documentElement.appendChild(zHudEl);
+      // V1.7.6 横条可拖动：拖到哪停哪，位置持久化；恢复保存的位置
+      try {
+        var zp = JSON.parse(localStorage.getItem("dsh_zhud_pos") || "null");
+        if (zp && zp.length === 2) {
+          zHudEl.style.left = zp[0] + "px"; zHudEl.style.top = zp[1] + "px";
+          zHudEl.style.transform = "none";
+        }
+      } catch (e) {}
+      // V2.17.0 公共层 D：横条此前没有事件隔离 —— 拖它时 pointer 事件会冒泡到游戏监听，
+      // 被当成「点了地板」导致角色走动。补上隔离（阶段二会用「当前目标」窗口取代它）。
+      try { isolateEl(zHudEl); } catch (e) {}
+      dragEl(zHudEl, function (x, y) {
+        var nx = Math.max(-zHudEl.offsetWidth + 60, Math.min(roVw() - 60, x));
+        var ny = Math.max(0, Math.min(roVh() - 24, y));
+        zHudEl.style.left = nx + "px"; zHudEl.style.top = ny + "px";
+        zHudEl.style.transform = "none";
+        try { localStorage.setItem("dsh_zhud_pos", JSON.stringify([nx, ny])); } catch (err) {}
+      });
+    } catch (e) {}
+  }
+  function renderZMonitor() {
+    // V2.17.1 功能菜单总开关：关掉「战斗监控横条」后不再渲染（也不创建）
+    if (!roModOn("zhud")) { try { if (zHudEl) zHudEl.style.display = "none"; } catch (e) {} return; }
+    ensureZHud();
+    if (!zHudEl) return;
+    try {
+      var hpPct = "—", spPct = "—";
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      if (ent && ent.life) {
+        var l = ent.life;
+        if (l.hp_max > 0) hpPct = Math.round(l.hp / l.hp_max * 100) + "%";
+        if (l.sp_max > 0) spPct = Math.round(l.sp / l.sp_max * 100) + "%";
+      }
+      var lockTxt = zLock.gid
+        ? ("锁定 " + (zLock.name || zLock.gid) + (zLock.dist != null ? " [" + zLock.dist + "格]" : ""))
+        : (zLock.done ? "已击杀待命" : "未锁定");
+      zHudEl.textContent = "锁定: " + lockTxt + " | 动作: " + zMon.action + " | HP " + hpPct + " SP " + spPct;
+    } catch (e) {}
+  }
+
+  // ================= V2.23.0 战斗功能移植：当前目标 + 队伍血条 =================
+  function roEscTxt(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  // ---- 目标状态：游戏画面焦点、助手攻击目标、攻击名单互不混用 ----
+  function mobRefUrl(site, mid) {
+    var s = String(mid == null ? "" : mid);
+    if (!/^[1-9]\d{0,9}$/.test(s)) return "";
+    if (site === "dvg") return "https://ro.dvg.cn/monsterinfo.php?id=" + encodeURIComponent(s);
+    if (site === "ro321") return "https://ro.ro321.com/index.php?page=re_mob_db&mob_id=" + encodeURIComponent(s);
+    return "";
+  }
+  function gameFocusMob() {
+    try {
+      var EM = window.require && window.require("Renderer/EntityManager");
+      var e = EM && EM.getFocusEntity && EM.getFocusEntity();
+      if (!e || e.objecttype !== 5 || !e.GID || !EM.get || EM.get(Number(e.GID)) !== e) return null;
+      if (e.isDeath || e.remove_tick || (e.ACTION && e.action === e.ACTION.DIE)) return null;
+      return e;
+    } catch (e0) { return null; }
+  }
+  function mobSpeciesId(e) {
+    var n = e && (e._job != null ? e._job : (e.job != null ? e.job : e.mobId));
+    n = Math.floor(Number(n));
+    return isFinite(n) && n > 0 ? n : 0;
+  }
+  function targetName(e, fallback) { return (e && e.display && e.display.name) || fallback || "未知怪物"; }
+  // ---- V2.29.0 目标锁定条 / 队伍面板：demo 悬浮层（容器全透明零边框零背景 · 可拖拽 · clamp/vw 自适应 · 白字四向黑描边）----
+  var TGT_SPRITE_BASE = "http://127.0.0.1:8898/monster-sprites/by-id/";
+  var dshFloatCssDone = false;
+  function dshFloatCss() {
+    if (dshFloatCssDone) return;
+    dshFloatCssDone = true;
+    var st = document.createElement("style");
+    st.id = "dsh-float-css";
+    st.textContent =
+      "#dsh-tgt-bar,#dsh-party-float{position:fixed;background:transparent;border:none;box-shadow:none;cursor:grab;z-index:2147481500;user-select:none;-webkit-user-select:none;font-family:'Microsoft YaHei','Segoe UI',sans-serif;box-sizing:border-box}" +
+      "#dsh-tgt-bar:active,#dsh-party-float:active{cursor:grabbing}" +
+      "#dsh-tgt-bar{display:flex;align-items:center;gap:clamp(6px,0.8vw,12px);width:clamp(240px,26vw,380px)}" +
+      ".dsh-mob-portrait{width:clamp(40px,4vw,48px);height:clamp(40px,4vw,48px);flex:0 0 auto;position:relative;background:transparent}" +
+      ".dsh-mob-portrait img{width:100%;height:100%;object-fit:contain;display:block;filter:drop-shadow(0 1px 3px rgba(0,0,0,.8))}" +
+      ".dsh-mob-portrait .dsh-mob-fallback{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:clamp(16px,1.8vw,22px);font-weight:bold;color:#fff;text-shadow:0 1px 2px #000,0 0 6px #000}" +
+      ".dsh-tgt-right{flex:1 1 auto;min-width:0}" +
+      ".dsh-mob-name-row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px}" +
+      ".dsh-mob-name{color:#fff;font-size:clamp(13px,1.2vw,16px);font-weight:bold;text-shadow:0 1px 2px #000,0 0 6px rgba(0,0,0,.9)}" +
+      ".dsh-mob-hp{color:#fff;font-size:clamp(10px,0.95vw,13px);font-variant-numeric:tabular-nums;text-shadow:0 1px 2px #000,0 0 5px rgba(0,0,0,.9)}" +
+      ".dsh-hp-bar{position:relative;height:clamp(12px,1.3vw,18px);border-radius:3px;overflow:hidden;background:rgba(0,0,0,.55);box-shadow:0 1px 3px rgba(0,0,0,.6)}" +
+      ".dsh-hp-fill{height:100%;width:0%;background:linear-gradient(180deg,#8be05a 0%,#4caf2e 45%,#2e7d1a 100%);transition:width .3s}" +
+      ".dsh-hp-fill::after{content:'';position:absolute;left:0;right:0;top:0;height:45%;background:linear-gradient(180deg,rgba(255,255,255,.35),rgba(255,255,255,0));pointer-events:none}" +
+      ".dsh-mob-info{margin-top:4px;color:#e8e8e8;font-size:clamp(10px,0.9vw,12px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 2px #000,0 0 5px rgba(0,0,0,.9)}" +
+      ".dsh-mob-info b{color:#ffd75e;font-weight:bold}" +
+      ".dsh-mob-info a{color:#9ecbff;font-weight:bold;text-decoration:none;text-shadow:0 1px 2px #000,0 0 5px rgba(0,0,0,.9)}" +
+      "#dsh-party-float{display:grid;grid-template-columns:1fr 1fr;gap:3px;width:clamp(220px,18vw,300px)}" +
+      "#dsh-party-float .dsh-pcells{display:contents}" +
+      ".dsh-pcell{position:relative;border-radius:2px;overflow:hidden;padding:clamp(5px,0.6vw,8px) clamp(7px,0.8vw,10px);padding-top:clamp(8px,1vw,13px);cursor:pointer;transition:transform .12s}" +
+      ".dsh-pcell .dsh-hp-edge{position:absolute;top:0;left:0;height:clamp(3px,0.35vw,5px);background:rgba(255,255,255,.85);box-shadow:0 0 3px rgba(0,0,0,.4)}" +
+      ".dsh-pcell:hover{transform:scale(1.03)}" +
+      ".dsh-pcell.selected{transform:scale(1.08);box-shadow:0 0 14px rgba(255,255,255,.75),0 2px 6px rgba(0,0,0,.6);z-index:2}" +
+      ".dsh-pcell .dsh-pname{color:#fff;font-weight:bold;font-size:clamp(11px,1.05vw,14px);line-height:1.25;text-shadow:-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000,0 2px 3px rgba(0,0,0,.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+      ".dsh-pcell .dsh-php{color:#fff;font-variant-numeric:tabular-nums;font-size:clamp(10px,0.95vw,12px);text-shadow:-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000,0 2px 3px rgba(0,0,0,.9)}" +
+      ".dsh-pcell.selected .dsh-pname{color:#ffe27a}" +
+      ".dsh-pfoot{grid-column:1 / -1;display:flex;align-items:center;gap:8px;color:#fff;font-size:clamp(10px,0.9vw,12px);text-shadow:0 1px 2px #000,0 0 6px #000}" +
+      ".dsh-pfoot label{display:flex;align-items:center;gap:3px;cursor:pointer}" +
+      ".dsh-lock-tip{grid-column:1 / -1;text-align:center;color:#ffe27a;font-size:clamp(10px,0.9vw,12px);font-weight:bold;text-shadow:0 1px 2px #000,0 0 6px #000;display:none}" +
+      ".dsh-lock-tip.show{display:block}";
+    document.documentElement.appendChild(st);
+  }
+  // 指针拖拽（按住任一可见元素拖动整个悬浮层；位移 >3px 视为拖拽不触发点击选中），位置存 saved
+  function dshFloatDrag(el, posKey) {
+    var sx = 0, sy = 0, ox = 0, oy = 0, pid = null;
+    el.addEventListener("pointerdown", function (e) {
+      if (e.button !== 0) return;
+      if (e.target && e.target.closest && e.target.closest("a,input,label,button,select")) return; // 控件交互不抢拖
+      pid = e.pointerId; el._dshMoved = false;
+      try { el.setPointerCapture(pid); } catch (e0) {}
+      var r = el.getBoundingClientRect();
+      el.style.left = r.left + "px"; el.style.top = r.top + "px"; el.style.right = "auto";
+      sx = e.clientX; sy = e.clientY; ox = r.left; oy = r.top;
+      e.preventDefault();
+    });
+    el.addEventListener("pointermove", function (e) {
+      if (pid === null || e.pointerId !== pid) return;
+      var dx = e.clientX - sx, dy = e.clientY - sy;
+      if (Math.abs(dx) + Math.abs(dy) > 3) el._dshMoved = true;
+      var r = el.getBoundingClientRect();
+      el.style.left = Math.max(0, Math.min(ox + dx, Math.max(0, window.innerWidth - r.width))) + "px";
+      el.style.top = Math.max(0, Math.min(oy + dy, Math.max(0, window.innerHeight - r.height))) + "px";
+    });
+    function end(e) {
+      if (pid === null || (e && e.pointerId !== pid)) return;
+      pid = null;
+      if (el._dshMoved) {
+        var r = el.getBoundingClientRect();
+        try { saved[posKey] = { x: Math.round(r.left), y: Math.round(r.top) }; saveSaved(saved); } catch (e2) {}
+      }
+    }
+    el.addEventListener("pointerup", end);
+    el.addEventListener("pointercancel", end);
+  }
+  function dshFloatPlace(el, posKey, dx, dy) {
+    var pos = saved && saved[posKey];
+    el.style.left = (pos && isFinite(Number(pos.x)) ? Number(pos.x) : dx) + "px";
+    el.style.top = (pos && isFinite(Number(pos.y)) ? Number(pos.y) : dy) + "px";
+  }
+  function fmtK(n) { n = Math.floor(Number(n) || 0); return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
+  // 按怪物ID的外链：「数量」→RO321 re_mob_db、「资料」→DVG monsterinfo（不依赖中文名）
+  function mobRefLinksHtml(mid) {
+    var ru = mobRefUrl("ro321", mid), du = mobRefUrl("dvg", mid);
+    if (!ru && !du) return "";
+    return '<span style="flex:0 0 auto;font-size:10px;white-space:nowrap">' +
+      (ru ? '<a href="' + ru + '" target="_blank" rel="noopener noreferrer">数量</a>' : "") +
+      (du ? ' <a href="' + du + '" target="_blank" rel="noopener noreferrer">资料</a>' : "") + '</span>';
+  }
+  // ---- 目标锁定条 ----
+  var dshTgtBar = null;
+  function ensureTgtBar() {
+    if (dshTgtBar && dshTgtBar.parentNode) return dshTgtBar;
+    dshFloatCss();
+    var el = document.createElement("div");
+    el.id = "dsh-tgt-bar";
+    el.innerHTML =
+      '<div class="dsh-mob-portrait"><img id="dsh-tgt-img" alt="" style="display:none"><div class="dsh-mob-fallback" id="dsh-tgt-fb">?</div></div>' +
+      '<div class="dsh-tgt-right">' +
+      '<div class="dsh-mob-name-row"><span class="dsh-mob-name" id="dsh-tgt-nm2">未锁定</span><span class="dsh-mob-hp" id="dsh-tgt-hp2"></span></div>' +
+      '<div class="dsh-hp-bar"><div class="dsh-hp-fill" id="dsh-tgt-fill"></div></div>' +
+      '<div class="dsh-mob-info" id="dsh-tgt-info">--</div></div>';
+    document.documentElement.appendChild(el);
+    dshFloatPlace(el, "tgtBarPos", Math.round(window.innerWidth * 0.08), Math.round(window.innerHeight * 0.14));
+    dshFloatDrag(el, "tgtBarPos");
+    var img = el.querySelector("#dsh-tgt-img"), fb = el.querySelector("#dsh-tgt-fb");
+    img.addEventListener("load", function () { img.style.display = "block"; fb.style.display = "none"; });
+    img.addEventListener("error", function () { img.style.display = "none"; fb.style.display = "flex"; });
+    dshTgtBar = el;
+    return el;
+  }
+  function renderTgt() {
+    try {
+      if (!roModOn("tgt")) { if (dshTgtBar) dshTgtBar.style.display = "none"; return; }
+      var bar = ensureTgtBar();
+      if (!bar) return;
+      bar.style.display = "flex";
+      var EM = null; try { EM = window.require && window.require("Renderer/EntityManager"); } catch (e0) {}
+      var game = gameFocusMob(), gid = zLock && zLock.gid ? zLock.gid : null, assist = null;
+      try { if (gid && EM && EM.get) assist = EM.get(Number(gid)); } catch (e1) {}
+      var ent = assist || game; // 优先助手锁定，其次游戏画面焦点
+      var mid = mobSpeciesId(ent) || mobSpeciesId(assist) || mobSpeciesId(game);
+      var nm = ent ? targetName(ent, zLock && zLock.name) : ((zLock && zLock.done) ? "已击杀待命" : "未锁定");
+      var nmEl = $id("dsh-tgt-nm2"), hpEl = $id("dsh-tgt-hp2"), fill = $id("dsh-tgt-fill"), info = $id("dsh-tgt-info");
+      var img = $id("dsh-tgt-img"), fb = $id("dsh-tgt-fb");
+      if (nmEl) nmEl.textContent = nm;
+      // 头像：8898 静态映射 /monster-sprites/by-id/<mobId>.png；加载失败退化名字首字占位块
+      if (img && fb) {
+        var key = String(mid || "");
+        if (img.getAttribute("data-mid") !== key) {
+          img.setAttribute("data-mid", key);
+          img.style.display = "none"; fb.style.display = "flex";
+          if (mid) img.src = TGT_SPRITE_BASE + mid + ".png";
+          else img.removeAttribute("src");
+        }
+        fb.textContent = ent ? String(nm).charAt(0) : "?";
+      }
+      // 血条：life.hp / hp_max
+      var h = 0, hm = 0;
+      if (ent && ent.life) { h = Number(ent.life.hp) || 0; hm = Number(ent.life.hp_max) || 0; }
+      var pct = hm > 0 ? Math.max(0, Math.min(100, Math.round(h / hm * 100))) : 0;
+      if (fill) fill.style.width = pct + "%";
+      if (hpEl) hpEl.textContent = ent ? (hm > 0 ? ("HP " + fmtK(h) + " / " + fmtK(hm)) : "血量未知") : "";
+      // 信息行：Lv / 种族 / 属性 / 形体 / 距离（暂无数据 → --）+ 按怪物ID的外链
+      if (info) {
+        var mobDB = null; try { mobDB = getMobDb(); } catch (e2) {}
+        var m = mobDB && mid ? mobDB[mid] : null;
+        var fv = function (v) { return (v != null && String(v) !== "") ? roEscTxt(v) : "--"; };
+        var lv = m && m.LV != null ? m.LV : (ent && ent.level != null ? ent.level : null);
+        var race = m ? (m.Race != null ? m.Race : m.race) : null;
+        var elem = m ? (m.Element != null ? m.Element : m.element) : null;
+        var scale = m ? (m.Scale != null ? m.Scale : m.scale) : null;
+        var dist = null;
+        try {
+          var selfE = CLIENT.SS && CLIENT.SS.Entity;
+          if (ent && ent.position && selfE && selfE.position) dist = Math.round(Math.sqrt(Math.pow(ent.position[0] - selfE.position[0], 2) + Math.pow(ent.position[1] - selfE.position[1], 2)) * 10) / 10;
+          else if (gid && zLock.dist != null) dist = zLock.dist;
+        } catch (e3) {}
+        var du = mobRefUrl("dvg", mid), ru = mobRefUrl("ro321", mid);
+        info.innerHTML = "Lv <b>" + fv(lv) + "</b> · 种族 <b>" + fv(race) + "</b> · 属性 <b>" + fv(elem) + "</b> · 形体 <b>" + fv(scale) + "</b> · 距离 <b>" + (dist != null ? dist + "m" : "--") + "</b>" +
+          (ru ? ' · <a href="' + ru + '" target="_blank" rel="noopener noreferrer">数量</a>' : "") +
+          (du ? ' <a href="' + du + '" target="_blank" rel="noopener noreferrer">资料</a>' : "");
+      }
+    } catch (e) { try { dshDiag("target-render-error", { message: e.message || String(e) }); } catch (e2) {} }
+  }
+  // ---- 队伍血条：hook 客户端队伍组件，拿队员名单与血量（不额外发包）----
+  var partyMembers = {};
+  var partyHookedMod = null;
+  var partySig = "";
+  function partyUpsert(m) {
+    try {
+      if (!m || m.AID == null) return;
+      var k = String(Math.floor(Number(m.AID) || 0));
+      if (!k || k === "0") return;
+      var o = partyMembers[k] || (partyMembers[k] = { AID: k, name: "", job: 0, hp: 0, maxhp: 0, online: true, map: "", dead: false });
+      if (m.characterName) o.name = String(m.characterName);
+      else if (m.name) o.name = String(m.name);
+      // 「ON 」前缀 = 在线标识（NEO 客户端可能在名字前拼 ON）；剥掉存干净名并记在线
+      if (/^ON[ \t]+/.test(o.name)) { o.name = o.name.replace(/^ON[ \t]+/, ""); o.online = true; }
+      if (m.job != null) o.job = Number(m.job) || 0;
+      if (m.hp != null) o.hp = Number(m.hp) || 0;
+      if (m.maxhp != null) o.maxhp = Number(m.maxhp) || 0;
+      if (m.life) { if (m.life.hp != null) o.hp = Number(m.life.hp) || 0; if (m.life.hp_max != null) o.maxhp = Number(m.life.hp_max) || 0; }
+      // state：0=在线 / 非0=离线（roBrowser PartyFriends 用 state===0 判在线），不是死亡标志
+      if (m.state != null) o.online = (Number(m.state) === 0);
+      // 成员所在地图：用于「异图」判定
+      if (m.mapName != null) o.map = String(m.mapName);
+      else if (m.map != null) o.map = String(m.map);
+      // 死亡单独由 updateMemberDead 维护
+      if (m.dead != null) o.dead = !!m.dead;
+    } catch (e) {}
+  }
+  function partyHook() {
+    try {
+      var PF = requireDB("UI/Components/PartyFriends/PartyFriends");
+      if (!PF || partyHookedMod === PF || typeof PF.setParty !== "function") return;
+      partyHookedMod = PF;
+      var oSet = PF.setParty, oAdd = PF.addPartyMember, oDel = PF.removePartyMember, oLife = PF.updateMemberLife, oDead = PF.updateMemberDead;
+      PF.setParty = function (g, list) { try { partyMembers = {}; if (list && list.length) for (var i = 0; i < list.length; i++) partyUpsert(list[i]); } catch (e) {} return oSet.apply(this, arguments); };
+      if (typeof oAdd === "function") PF.addPartyMember = function (m) { try { partyUpsert(m); } catch (e) {} return oAdd.apply(this, arguments); };
+      if (typeof oDel === "function") PF.removePartyMember = function (aid) { try { delete partyMembers[String(Math.floor(Number(aid) || 0))]; } catch (e) {} return oDel.apply(this, arguments); };
+      if (typeof oLife === "function") PF.updateMemberLife = function (aid, cv, hp, mx) { try { partyUpsert({ AID: aid, hp: hp, maxhp: mx }); } catch (e) {} return oLife.apply(this, arguments); };
+      if (typeof oDead === "function") PF.updateMemberDead = function (aid, dead) { try { partyUpsert({ AID: aid, dead: !!dead }); } catch (e) {} return oDead.apply(this, arguments); };
+    } catch (e) {}
+  }
+  // ---- V2.29.0 队伍面板：团本式职业色块矩阵（2 列 grid · 名字+HP 压块上 · 点击锁定队友）----
+  // RO job → 职业色（demo 配色语言：纯色实心块 = 信息本体）；转生/三转 job 归一到基础职业段
+  var PARTY_JOB_COLORS = {
+    0: "#ABD473", 1: "#C79C6E", 2: "#69CCF0", 3: "#ABD473", 4: "#E8E8E8", 5: "#F58CBA", 6: "#FFF569",
+    7: "#C79C6E", 8: "#E8E8E8", 9: "#69CCF0", 10: "#F58CBA", 11: "#ABD473", 12: "#FFF569",
+    13: "#C79C6E", 14: "#E8E8E8", 15: "#69CCF0", 16: "#F58CBA", 17: "#F58CBA", 18: "#ABD473", 19: "#FFF569",
+    20: "#C41F3B", 21: "#C79C6E", 22: "#69CCF0", 23: "#C79C6E", 24: "#9482C9", 25: "#C41F3B"
+  };
+  function partyJobColor(job) {
+    job = Math.floor(Number(job) || 0);
+    var j = job;
+    if (job >= 4001 && job <= 4049) j = job - 4001;      // 转生职业段归一
+    else if (job >= 4050 && job <= 4099) j = job - 4050; // 三转段粗归一
+    if (PARTY_JOB_COLORS[j]) return PARTY_JOB_COLORS[j];
+    return "hsl(" + ((job * 47) % 360) + ",45%,55%)";  // 未收录职业：稳定散列色
+  }
+  var dshPartyFloat = null;
+  function ensurePartyFloat() {
+    if (dshPartyFloat && dshPartyFloat.parentNode) return dshPartyFloat;
+    dshFloatCss();
+    var el = document.createElement("div");
+    el.id = "dsh-party-float";
+    el.innerHTML =
+      '<div id="dsh-party-list" class="dsh-pcells"></div>' +
+      '<div class="dsh-pfoot"><label><input id="dsh-party-self" type="checkbox" checked>含自己</label><span id="dsh-party-count" style="margin-left:auto">0 人</span></div>' +
+      '<div class="dsh-lock-tip" id="dsh-party-locktip"></div>';
+    document.documentElement.appendChild(el);
+    dshFloatPlace(el, "partyPos", Math.round(window.innerWidth * 0.76), Math.round(window.innerHeight * 0.30));
+    dshFloatDrag(el, "partyPos");
+    // 点击色块 = 锁定该队友为目标（拖拽位移 >3px 不触发选中）
+    el.addEventListener("click", function (e) {
+      if (el._dshMoved) return;
+      var c = e.target && e.target.closest ? e.target.closest(".dsh-pcell") : null;
+      if (!c) return;
+      partyLockMember(c.getAttribute("data-aid"), c.getAttribute("data-nm"));
+    });
+    dshPartyFloat = el;
+    return el;
+  }
+  // 锁定队友：写 zLock（同助手锁定范式）+ 发一次 REQUEST_ACT action=7
+  function partyLockMember(aid, name) {
+    try {
+      if (!aid) return;
+      var gid = Number(aid);
+      if (!isFinite(gid) || !gid) return;
+      var ss = CLIENT.SS || {};
+      var myAid = (ss.AID != null) ? String(Math.floor(Number(ss.AID) || 0)) : "";
+      if (myAid && String(aid) === myAid) return; // 自己不作为锁定目标
+      if (!clientReady()) return;
+      zLock.gid = gid;
+      zLock.name = name || ("AID " + aid);
+      zLock.dist = null;
+      zLock.reactive = false;
+      zLock.done = false;
+      var p = new CLIENT.PS.CZ.REQUEST_ACT();
+      p.targetGID = gid;
+      p.action = 7;
+      CLIENT.NM.sendPacket(p);
+      var tip = $id("dsh-party-locktip");
+      if (tip) { tip.textContent = "已锁定：" + zLock.name; tip.classList.add("show"); }
+      renderParty();
+    } catch (e) {}
+  }
+  function renderParty() {
+    try {
+      if (!roModOn("party")) { if (dshPartyFloat) dshPartyFloat.style.display = "none"; return; }
+      var fl = ensurePartyFloat();
+      if (!fl) return;
+      fl.style.display = "grid";
+      var box = $id("dsh-party-list");
+      if (!box) return;
+      var selfEl = $id("dsh-party-self");
+      var withSelf = selfEl ? !!selfEl.checked : true;
+      var ss = CLIENT.SS || {};
+      var myAid = (ss.AID != null) ? String(Math.floor(Number(ss.AID) || 0)) : "";
+      var rows = [], cnt = 0;
+      var selfEnt = ss.Entity;
+      if (withSelf && selfEnt && selfEnt.life) {
+        cnt++;
+        rows.push(partyCellHtml({ AID: myAid, name: "（自己）" + ((selfEnt.display && selfEnt.display.name) || ""), job: selfEnt._job || 0, hp: Number(selfEnt.life.hp) || 0, maxhp: Number(selfEnt.life.hp_max) || 0, dead: false }, true));
+      }
+      for (var k in partyMembers) {
+        var o = partyMembers[k];
+        if (!o) continue;
+        if (!withSelf && myAid && o.AID === myAid) continue;
+        if (myAid && o.AID === myAid) continue; // 自己已单独渲染（客户端不推送自己的血条更新）
+        cnt++;
+        rows.push(partyCellHtml(o, false));
+      }
+      var ct = $id("dsh-party-count");
+      if (ct) ct.textContent = cnt + " 人";
+      var sig = cnt + "|" + (zLock && zLock.gid) + "|" + rows.join("");
+      if (sig === partySig) return; // 没变化不重绘（1 秒一次也不制造垃圾）
+      partySig = sig;
+      box.innerHTML = rows.length ? rows.join("") : '<span style="grid-column:1 / -1;color:#fff;font-size:12px;text-shadow:0 1px 2px #000,0 0 6px #000">暂无队伍成员</span>';
+    } catch (e) {}
+  }
+  function partyCellHtml(o, isSelf) {
+    var hm = Math.max(0, Number(o.maxhp) || 0), hp = Math.max(0, Number(o.hp) || 0);
+    var hh = Math.min(hp, hm > 0 ? hm : hp);
+    var pct = hm > 0 ? Math.round(hh / hm * 100) : 0;
+    var sel = !isSelf && zLock && zLock.gid != null && String(zLock.gid) === String(o.AID);
+    var myMap = normMapKey(getMapName()), memMap = normMapKey(o.map || "");
+    var offline = !isSelf && !o.online;
+    var diffMap = !isSelf && !offline && !!memMap && !!myMap && memMap !== myMap;
+    var dead = !isSelf && !offline && !diffMap && (o.dead || (hm > 0 && hp <= 0));
+    var mapLabel = memMap;
+    if (memMap) { try { if (!CLIENT.DB) CLIENT.DB = window.require && window.require("DB/DBManager"); if (CLIENT.DB && typeof CLIENT.DB.getMapName === "function") { var _mn = CLIENT.DB.getMapName(memMap); if (_mn && String(_mn) !== memMap) mapLabel = String(_mn); } } catch (e) {} }
+    var bg, label, edgeW;
+    if (dead) { bg = "#5a5a5a"; label = "死亡"; edgeW = 0; }
+    else if (offline) { bg = "#6b7280"; label = "离线"; edgeW = 0; }
+    else if (diffMap) { bg = "#2b6cb0"; label = "异图·" + roEscTxt(mapLabel || "?"); edgeW = 0; }
+    else { bg = partyJobColor(o.job); label = hm > 0 ? (fmtK(hh) + " / " + fmtK(hm)) : "--"; edgeW = pct; }
+    return '<div class="dsh-pcell' + (sel ? " selected" : "") + '" data-aid="' + roEscTxt(o.AID) + '" data-nm="' + roEscTxt(o.name) + '" style="background:' + bg + (isSelf ? ";cursor:default" : "") + '">' +
+      '<div class="dsh-hp-edge" style="width:' + edgeW + '%"></div>' +
+      '<div class="dsh-pname">' + roEscTxt(o.name || ("AID " + o.AID)) + '</div>' +
+      '<div class="dsh-php">' + label + '</div></div>';
+  }
+  // ================= V2.28.0 本次登录伤害统计 =================
+  // 优先旁听客户端已解析伤害回调；rAthena skill_db_re.yml 的 Type 字段用于技能物理/魔法/特殊分类。
+  // 普攻单独统计，不并入物理技能；所有数据只驻留内存，不写 localStorage。
+  var DPS_PKTS = [138, 139, 737, 2248, 276, 478];
+  var DPS_IDLE_MS = 10000, DPS_SKILL_LIMIT = 64;
+  var DPS_TYPE_RANGES = { physical: "2-3,5,7-8,22-23,42,45-50,52-53,55-65,94-114,121,126,132-141,145-150,153,155,158-160,170-172,174,176-191,199,206,210-212,214-219,226,229-230,234-237,249-253,257-260,262-263,265-274,284,315-316,323-324,337-338,344-348,355-360,365,368,370-372,376,378-380,382-384,387,390,394,397-399,406,412-421,424-426,428-430,459,476-477,479-480,485-486,490,495,499,502-506,508,511-525,527-528,530,654-658,660-662,673,679,714-715,717,726,728,731-733,740-741,749,764-765,768,1001-1005,1009,1012-1013,1015-1016,2002-2006,2008,2017,2020,2022-2023,2029-2031,2033-2034,2036-2037,2055,2233,2236,2242-2244,2246,2256-2261,2267,2278-2280,2284,2288,2304,2307-2308,2310,2312,2314,2317,2319-2320,2323-2324,2326-2330,2332,2336-2337,2342-2344,2426,2476-2477,2481-2484,2491,2497,2516-2520,2553-2554,2557,2559,2561-2562,2565-2567,2569-2572,2576,2579-2581,2587,2592-2595,3002-3007,3009-3010,3028,5001,5003-5004,5006,5019,5021,5032-5034,5036,5043,5046,5202,5204-5205,5208-5211,5213,5241,5243-5245,5248-5253,5263,5265-5266,5277,5283,5286-5287,5289,5291-5292,5294-5296,5298,5307-5310,5314-5316,5320,5322,5326,5329-5335,5340-5343,5353-5355,5382,5403-5415,5435-5437,5451-5454,5465-5474,5477,5480-5487,5493-5494,5500-5504,5506,6001-6006,6502-6504,6506-6514,6519-6520,8009,8012,8019-8020,8028-8031,8036-8039,8041,8044,8050-8051,8053-8054,8056,8201-8208,8212,8214-8220,8223,8225,8233,8241,8401,8427,8429,8432-8435,8437,8439-8440,8442,8601-8602,8605", magical: "10-21,24-35,54,66-81,83-93,156-157,161-169,192,196,198,200,202-204,207-209,254,275-283,285-303,317,339-341,361-364,366-367,373,375,400,403-405,427,431-434,445,447-458,460-472,482,484,494,507,532,534-542,653,669-671,675-676,689-691,693,697,706,708-709,711-712,718-720,723-724,727,729,736-737,739,742,744-745,769-770,1006,1008,1014,1017-1019,2038-2048,2050-2053,2056-2057,2201-2207,2209-2230,2275,2299-2302,2321,2413-2414,2424,2443-2444,2446-2450,2452-2455,2465-2468,2485,2515,2543,2596-2609,2612,3019-3020,5026,5028,5042,5045,5047,5050-5051,5053,5072,5214-5227,5229-5237,5264,5267,5273-5274,5279,5284,5306,5319,5321,5356-5357,5369-5373,5380,5383,5389-5393,5422,5424-5432,5439-5442,5444-5448,5455-5462,5475-5476,5478-5479,5488-5492,5495,5499,5505,5507,6505,6515-6518,6521-6522,8001,8013-8014,8024-8026,8034,8047-8048,8057,8222,8224,8226-8231,8234,8236-8240,8403,8425-8426,8428,8430-8431,8436,8438,8441,8445,8448,8451,8454,8457", special: "115-120,122-125,127-131,152,173,175,195,306-313,318-322,325-330,354,369,381,395,411,444,488-489,500-501,526,544,722,734,780,783,1010-1011,2238-2239,2249-2254,2479-2480,2489,2555,2582,2610,3008,5015,5030,8011,8016,8209-8211,8213" };
+  var dpsTypeCache = {};
+  var dpsSource = "waiting", dpsTapInstalled = false, dpsParsedSeen = false;
+  function dpsEmptyCur() { return { gid: 0, name: "", total: 0, hits: 0, startAt: 0, lastAt: 0 }; }
+  function dpsEmptyTotals() { return { physical: 0, magical: 0, melee: 0, special: 0, unknown: 0 }; }
+  var dps = {
+    total: 0, hits: 0, multi: 0, max: 0, taken: 0, raw: 0, mine: 0, aid: 0,
+    sessionAt: 0, startAt: 0, lastAt: 0, activeMs: 0, segmentAt: 0, segmentLastAt: 0,
+    cur: dpsEmptyCur(), types: dpsEmptyTotals(), skills: {}, lastSkill: 0, lastSkillAt: 0,
+    lastSig: "", lastSigAt: 0
+  };
+  function dpsSelfAid() { try { return (CLIENT.SS && CLIENT.SS.AID) || 0; } catch (e) { return 0; } }
+  function dpsEntName(gid) {
+    try {
+      var EM = window.require && window.require("Renderer/EntityManager");
+      var e = (EM && EM.get) ? EM.get(gid) : null;
+      if (!e) return "";
+      return (e.display && e.display.name) || e.displayName || e.name || "";
+    } catch (e2) { return ""; }
+  }
+  function dpsRangeHas(spec, skid) {
+    var parts = String(spec || "").split(",");
+    for (var i = 0; i < parts.length; i++) {
+      var ab = parts[i].split("-"), a = parseInt(ab[0], 10), b = ab.length > 1 ? parseInt(ab[1], 10) : a;
+      if (skid >= a && skid <= b) return true;
+    }
+    return false;
+  }
+  function dpsSkillType(skid) {
+    skid = Number(skid) || 0;
+    if (!skid) return "melee";
+    if (dpsTypeCache[skid]) return dpsTypeCache[skid];
+    try {
+      var DB = CLIENT.DB || requireDB("DB/DBManager");
+      var si = DB && typeof DB.getSkillInfo === "function" ? DB.getSkillInfo(skid) : null;
+      if (!si && !_skillInfoCache) _skillInfoCache = requireDB("DB/Skills/SkillInfo");
+      if (!si && _skillInfoCache) si = _skillInfoCache[skid];
+      var raw = si && (si.Type || si.DamageType || si.damageType || si.AttackType || si.attackType || si.SkillType || si.skillType);
+      raw = raw == null ? "" : String(raw).toLowerCase();
+      if (/weapon|physical/.test(raw)) return (dpsTypeCache[skid] = "physical");
+      if (/magic/.test(raw)) return (dpsTypeCache[skid] = "magical");
+      if (/misc|special/.test(raw)) return (dpsTypeCache[skid] = "special");
+    } catch (e) {}
+    var keys = ["physical", "magical", "special"];
+    for (var i = 0; i < keys.length; i++) if (dpsRangeHas(DPS_TYPE_RANGES[keys[i]], skid)) return (dpsTypeCache[skid] = keys[i]);
+    return (dpsTypeCache[skid] = "unknown");
+  }
+  // 施法回执（2842 USESKILL_ACK3）仅给不带 SKID 的 ACT 包做 1.5 秒归属兜底。
+  function dpsOnSkill(skid) { try { if (skid > 0) { dps.lastSkill = skid; dps.lastSkillAt = Date.now(); } } catch (e) {} }
+  function dpsResetCur() { dps.cur = dpsEmptyCur(); }
+  function dpsResetAll(now) {
+    now = now || Date.now();
+    dps.total = 0; dps.hits = 0; dps.multi = 0; dps.max = 0; dps.taken = 0; dps.raw = 0; dps.mine = 0;
+    dps.sessionAt = now; dps.startAt = 0; dps.lastAt = 0; dps.activeMs = 0; dps.segmentAt = 0; dps.segmentLastAt = 0;
+    dps.types = dpsEmptyTotals(); dps.skills = {}; dps.lastSkill = 0; dps.lastSkillAt = 0; dps.lastSig = ""; dps.lastSigAt = 0;
+    dpsResetCur(); dpsRenderSkills();
+  }
+  function dpsSessionSync(now) {
+    var aid = dpsSelfAid();
+    if (!aid) {
+      if (dps.aid) { dpsResetAll(now || Date.now()); dps.aid = 0; }
+      return 0;
+    }
+    if (aid !== dps.aid) { dpsResetAll(now || Date.now()); dps.aid = aid; }
+    return aid;
+  }
+  function dpsActiveMs(now) {
+    var ms = dps.activeMs;
+    if (dps.segmentAt) ms += Math.max(0, Math.min((dps.segmentLastAt || now) - dps.segmentAt, DPS_IDLE_MS));
+    return ms;
+  }
+  function dpsTouchSegment(now) {
+    if (dps.segmentAt && now - dps.segmentLastAt > DPS_IDLE_MS) {
+      dps.activeMs += Math.max(0, dps.segmentLastAt - dps.segmentAt);
+      dps.segmentAt = 0;
+    }
+    if (!dps.segmentAt) dps.segmentAt = now;
+    dps.segmentLastAt = now;
+  }
+  function dpsOnDamage(pkt) {
+    try {
+      if (!pkt) return;
+      dps.raw++;
+      var aid = dpsSessionSync(Date.now());
+      if (!aid) return;
+      var gid = Number((pkt.GID != null) ? pkt.GID : pkt.AID) || 0;
+      var tg = Number((pkt.targetGID != null) ? pkt.targetGID : pkt.targetID) || 0;
+      var dmg = Number(pkt.damage);
+      if (!isFinite(dmg) || !dmg) return;
+      var cnt = Number(pkt.count); if (!isFinite(cnt) || cnt < 1) cnt = 1;
+      var now = Date.now(), skid = Number(pkt.SKID) || 0;
+      var sig = [gid, tg, dmg, cnt, skid].join(":");
+      if (sig === dps.lastSig && now - dps.lastSigAt <= 2) return;
+      dps.lastSig = sig; dps.lastSigAt = now;
+      if (!dps.sessionAt) dps.sessionAt = now;
+      if (tg === aid && gid !== aid) { if (dmg > 0) dps.taken += dmg; return; }
+      if (gid !== aid || dmg < 0) return;
+      dps.mine++;
+      dps.total += dmg; dps.hits += cnt; dps.max = Math.max(dps.max, dmg / cnt);
+      if (cnt > 1) dps.multi++;
+      if (!dps.startAt) dps.startAt = now;
+      dps.lastAt = now; dpsTouchSegment(now);
+      if (tg && tg !== dps.cur.gid) dps.cur = { gid: tg, name: dpsEntName(tg), total: 0, hits: 0, startAt: now, lastAt: now };
+      if (!dps.cur.name && dps.cur.gid) dps.cur.name = dpsEntName(dps.cur.gid);
+      dps.cur.total += dmg; dps.cur.hits += cnt; dps.cur.lastAt = now;
+      var exact = skid > 0;
+      // 无 SKID 的 ACT 包按普攻统计，避免施法后紧接普攻被错误并入物理/魔法技能。
+      var key = skid ? ("s" + skid) : "melee";
+      if (!dps.skills[key] && Object.keys(dps.skills).length >= DPS_SKILL_LIMIT) key = "other";
+      var type = key === "melee" ? "melee" : (key === "other" ? "unknown" : dpsSkillType(skid));
+      var rec = dps.skills[key] || (dps.skills[key] = { dmg: 0, hits: 0, type: type, exact: 0, inferred: 0 });
+      rec.dmg += dmg; rec.hits += cnt; if (exact) rec.exact += dmg; else if (skid) rec.inferred += dmg;
+      dps.types[type] = (dps.types[type] || 0) + dmg;
+    } catch (e) {}
+  }
+  function dpsOnRawDamage(bytes, op) {
+    try {
+      var dv = new DataView(bytes), pkt;
+      if (op === 138 && bytes.byteLength >= 29) pkt = { GID: dv.getUint32(2, true), targetGID: dv.getUint32(6, true), damage: dv.getInt16(22, true), count: dv.getInt16(24, true) };
+      else if (op === 139 && bytes.byteLength >= 23) pkt = { GID: dv.getUint32(2, true), targetGID: dv.getUint32(6, true), damage: dv.getInt16(18, true), count: dv.getInt16(20, true) };
+      else if (op === 737 && bytes.byteLength >= 33) pkt = { GID: dv.getUint32(2, true), targetGID: dv.getUint32(6, true), damage: dv.getInt32(22, true), count: dv.getInt16(26, true) };
+      else if (op === 2248 && bytes.byteLength >= 34) pkt = { GID: dv.getUint32(2, true), targetGID: dv.getUint32(6, true), damage: dv.getInt32(22, true), count: dv.getInt16(27, true) };
+      else if (op === 276 && bytes.byteLength >= 31) pkt = { SKID: dv.getUint16(2, true), AID: dv.getUint32(4, true), targetID: dv.getUint32(8, true), damage: dv.getInt16(24, true), count: dv.getInt16(28, true) };
+      else if (op === 478 && bytes.byteLength >= 33) pkt = { SKID: dv.getUint16(2, true), AID: dv.getUint32(4, true), targetID: dv.getUint32(8, true), damage: dv.getInt32(24, true), count: dv.getInt16(30, true) };
+      if (pkt) { dpsSource = "raw"; dpsOnDamage(pkt); }
+    } catch (e) {}
+  }
+  function dpsInstallTap() {
+    try {
+      if (!clientReady() || !CLIENT.NM || dpsTapInstalled) return false;
+      var nm = CLIENT.NM, originalHook = nm.hookPacket;
+      if (typeof originalHook !== "function") return false;
+      if (originalHook.__dshDpsHook) { dpsTapInstalled = true; dpsSource = "parsed"; return true; }
+      nm.hookPacket = function (packet, callback) {
+        if (packet && DPS_PKTS.indexOf(Number(packet.id)) >= 0 && typeof callback === "function" && !callback.__dshDpsTap) {
+          var gameCallback = callback;
+          callback = function (pkt) {
+            try { dpsParsedSeen = true; dpsSource = "parsed"; dpsOnDamage(pkt); } catch (e0) {}
+            return gameCallback.apply(this, arguments);
+          };
+          callback.__dshDpsTap = true;
+        }
+        return originalHook.call(this, packet, callback);
+      };
+      nm.hookPacket.__dshDpsHook = true;
+      dpsTapInstalled = true;
+      // 当前地图回调已登记，重跑无副作用的登记函数，使现有六个伤害槽位进入旁路。
+      var entityEngine = window.require && window.require("Engine/MapEngine/Entity");
+      if (typeof entityEngine === "function") entityEngine();
+      dpsSource = dpsParsedSeen ? "parsed" : "ready";
+      return true;
+    } catch (e) { dpsTapInstalled = false; return false; }
+  }
+  function dpsNum(n) { try { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ","); } catch (e) { return String(n); } }
+  function dpsRate(total, ms) { return total > 0 ? Math.round(total / Math.max(1, ms / 1000)) : 0; }
+  function dpsDur(ms) { var s = Math.max(0, Math.round(ms / 1000)); return s >= 3600 ? (Math.floor(s / 3600) + "时" + Math.floor(s % 3600 / 60) + "分") : (s >= 60 ? (Math.floor(s / 60) + "分" + s % 60 + "秒") : (s + " 秒")); }
+  function dpsTypeLabel(type) { return { physical: "物理", magical: "魔法", melee: "普攻", special: "特殊", unknown: "未知" }[type] || "未知"; }
+  function dpsRenderSkills() {
+    try {
+      var el = $id("dsh-dps-skills"); if (!el) return;
+      var keys = Object.keys(dps.skills);
+      if (!keys.length) { el.innerHTML = '<span class="st">暂无数据</span>'; return; }
+      keys.sort(function (a, b) { return dps.skills[b].dmg - dps.skills[a].dmg; });
+      var max = dps.skills[keys[0]].dmg || 1, html = "", shown = keys.slice(0, 8), shownDmg = 0;
+      for (var i = 0; i < shown.length; i++) shownDmg += dps.skills[shown[i]].dmg;
+      for (var j = 0; j < shown.length; j++) {
+        var k = shown[j], rec = dps.skills[k];
+        var nm = k === "melee" ? "普攻" : (k === "other" ? "其他技能" : (getSkillNameById(parseInt(k.slice(1), 10)) || ("技能" + k.slice(1))));
+        var pct = dps.total > 0 ? Math.round(rec.dmg / dps.total * 100) : 0, w = Math.max(2, Math.round(rec.dmg / max * 100));
+        var confidence = rec.inferred > 0 ? (rec.exact > 0 ? "混合归属" : "推断归属") : "精确归属";
+        if (k === "melee" || k === "other") confidence = "";
+        html += '<div style="display:flex;align-items:center;gap:5px;margin:2px 0">' +
+          '<span title="' + dpsTypeLabel(rec.type) + (confidence ? (" · " + confidence) : "") + '" style="flex:0 0 112px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + roEscTxt(nm) + ' <i style="font-style:normal;color:#7a8797">[' + dpsTypeLabel(rec.type) + ']</i></span>' +
+          '<span style="flex:1;height:8px;border:1px solid #b8c6d4;background:#eef3fa;border-radius:2px;overflow:hidden"><i style="display:block;height:100%;width:' + w + '%;background:#6f9ad0"></i></span>' +
+          '<span style="flex:0 0 84px;text-align:right;color:#5a6b7f">' + dpsNum(rec.dmg) + " (" + pct + '%)</span></div>';
+      }
+      var rest = dps.total - shownDmg; if (rest > 0) html += '<div class="st">其余技能：' + dpsNum(rest) + '</div>';
+      el.innerHTML = html;
+    } catch (e) {}
+  }
+  function renderDps() {
+    try {
+      if (!roModOn("dps")) return;
+      var probe = $id("dsh-dps-total"); if (!probe || probe.offsetParent === null) return;
+      var now = Date.now(), cur = dps.cur, activeMs = dpsActiveMs(now), sessionMs = dps.sessionAt ? now - dps.sessionAt : 0;
+      var nmEl = $id("dsh-dps-curname"); if (nmEl) nmEl.textContent = cur.name || (cur.gid ? ("目标 " + cur.gid) : "未开打");
+      var cdEl = $id("dsh-dps-curdps"); if (cdEl) cdEl.textContent = cur.total ? (dpsNum(dpsRate(cur.total, (cur.lastAt || now) - cur.startAt)) + " /秒") : "—";
+      var ctEl = $id("dsh-dps-curtxt"); if (ctEl) ctEl.textContent = "目标伤害 " + dpsNum(cur.total) + " · 伤害段数 " + cur.hits;
+      $id("dsh-dps-total").textContent = dpsNum(dps.total);
+      $id("dsh-dps-dps").textContent = dpsNum(dpsRate(dps.total, activeMs));
+      $id("dsh-dps-physical").textContent = dpsNum(dps.types.physical) + " / " + dpsNum(dpsRate(dps.types.physical, activeMs)) + " DPS";
+      $id("dsh-dps-magical").textContent = dpsNum(dps.types.magical) + " / " + dpsNum(dpsRate(dps.types.magical, activeMs)) + " DPS";
+      $id("dsh-dps-melee").textContent = dpsNum(dps.types.melee) + " / " + dpsNum(dpsRate(dps.types.melee, activeMs)) + " DPS";
+      $id("dsh-dps-other").textContent = dpsNum(dps.types.special + dps.types.unknown) + " / " + dpsNum(dpsRate(dps.types.special + dps.types.unknown, activeMs)) + " DPS";
+      $id("dsh-dps-hits").textContent = String(dps.hits); $id("dsh-dps-multi").textContent = String(dps.multi);
+      $id("dsh-dps-max").textContent = dpsNum(dps.max); $id("dsh-dps-taken").textContent = dpsNum(dps.taken);
+      $id("dsh-dps-session").textContent = dpsNum(dpsRate(dps.total, sessionMs)) + " DPS";
+      $id("dsh-dps-dur").textContent = dpsDur(sessionMs); $id("dsh-dps-active").textContent = dpsDur(activeMs);
+      var stEl = $id("dsh-dps-state");
+      if (stEl) stEl.textContent = "监听：" + (dpsSource === "parsed" ? "客户端已解析回调" : (dpsSource === "raw" ? "原始收包兜底" : (dpsSource === "ready" ? "旁路已安装，等待伤害" : "等待客户端"))) + " · 收到 " + dps.raw + " 个（自己 " + dps.mine + " 个）";
+      dpsRenderSkills();
+    } catch (e) {}
+  }
+  (function dpsBind() {
+    try {
+      dpsInstallTap();
+      masterTickReg(function () { var now = Date.now(); if (!dpsTapInstalled) dpsInstallTap(); dpsSessionSync(now); if (dps.segmentAt && now - dps.segmentLastAt > DPS_IDLE_MS) { dps.activeMs += Math.max(0, dps.segmentLastAt - dps.segmentAt); dps.segmentAt = 0; } });
+      var a = $id("dsh-dps-reset-cur"), b = $id("dsh-dps-reset-all");
+      if (a) a.addEventListener("click", function () { dpsResetCur(); setStatus("伤害统计：当前目标已清零", "st"); });
+      if (b) b.addEventListener("click", function () { if (window.confirm("确定清零本次登录的全部伤害统计？")) { dpsResetAll(); setStatus("伤害统计：本次统计已清零", "st"); } });
+    } catch (e) {}
+  })();
+
+  // 首领警报挂在 masterTick（1 秒一次，后台标签也跑）——报警不能因为切走标签页就失效；
+  //   DOM 刷新在 bossRender 里自带可见性判断。
+  masterTickReg(function () { try { bossTick(); } catch (e) {} });
+
+  // ================= V2.24.0 首领警报 =================
+  // 判定与 BOSS 瞬移同一口径：mob_db.MvpDropsNum > 0（全服约 126 只），不做地图级兜底。
+  var bossLast = {};
+  var bossList = [];
+  var bossLogs = [];
+  var bossAlertTimer = 0;
+  function bossAlert(text) {
+    var el = document.getElementById("dsh-boss-alert");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "dsh-boss-alert";
+      el.setAttribute("data-dsh-ui", "1");
+      el.style.cssText = "position:fixed;z-index:2147483647;top:18px;left:50%;transform:translateX(-50%);max-width:min(760px,90vw);padding:6px 14px;border:1px solid #b66b12;border-radius:3px;background:rgba(35,22,8,.88);color:#ffd36a;font:700 16px/1.4 Microsoft YaHei,Arial,sans-serif;text-align:center;text-shadow:0 1px 2px #000;pointer-events:none;display:none";
+      document.body.appendChild(el);
+    }
+    el.textContent = text; el.style.display = "block";
+    clearTimeout(bossAlertTimer);
+    bossAlertTimer = setTimeout(function () { el.style.display = "none"; }, 4000);
+  }
+  function bossScan() {
+    var out = [];
+    try {
+      var EM = window.require && window.require("Renderer/EntityManager");
+      if (!EM || !EM.forEach) return out;
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      var dbx = null; try { dbx = getMobDb(); } catch (e0) {}
+      EM.forEach(function (e) {
+        try {
+          if (e.objecttype !== 5) return;
+          if (e.isDeath || e.remove_tick) return;
+          if (e.ACTION && e.action != null && e.action === e.ACTION.DIE) return;
+          var mid = e._job != null ? e._job : (e.job != null ? e.job : null);
+          if (mid == null) return;
+          var mb = dbx && dbx[mid];
+          if (!mb || !(mb.MvpDropsNum > 0)) return;
+          var d = -1;
+          if (ent && ent.position && e.position) d = Math.abs(e.position[0] - ent.position[0]) + Math.abs(e.position[1] - ent.position[1]);
+          out.push({ gid: e.GID, mid: mid, dist: d, name: getMobName(mid) || (e.display && e.display.name) || ("怪 " + mid) });
+        } catch (e2) {}
+      });
+    } catch (e3) {}
+    return out;
+  }
+  function bossTick() {
+    try {
+      if (!roModOn("boss")) return;
+      bossList = bossScan();
+      var rng = 30;
+      var rEl = $id("dsh-boss-range"); if (rEl) { var v = parseInt(rEl.value, 10); if (v > 0) rng = v; }
+      var toast = true;
+      var tEl = $id("dsh-boss-toast"); if (tEl) toast = !!tEl.checked;
+      var now = Date.now();
+      for (var i = 0; i < bossList.length; i++) {
+        var b = bossList[i];
+        if (b.dist < 0 || b.dist > rng) continue;
+        if (bossLast[b.mid] && now - bossLast[b.mid] < 60000) continue;  // 同一只 60 秒内只提醒一次
+        bossLast[b.mid] = now;
+        bossLogs.unshift(new Date().toLocaleTimeString() + "　" + b.name + "　" + b.dist + " 格");
+        if (bossLogs.length > 20) bossLogs.pop();
+        if (toast) { try { bossAlert("首领出现：" + b.name + " · " + b.dist + " 格"); } catch (e1) {} }
+        try { console.log("[BOSS] " + b.name + " mid=" + b.mid + " dist=" + b.dist); } catch (e2) {}
+      }
+      bossRender();
+    } catch (e) {}
+  }
+  function bossRender() {
+    try {
+      var el = $id("dsh-boss-list");
+      if (!el || el.offsetParent === null) return;
+      var cEl = $id("dsh-boss-count"); if (cEl) cEl.textContent = bossList.length + " 只";
+      if (!bossList.length) { el.innerHTML = '<span class="st">未检测到首领（换图或靠近后自动刷新）</span>'; }
+      else {
+        var html = "";
+        for (var i = 0; i < bossList.length; i++) {
+          var b = bossList[i];
+          html += '<div class="list-item"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + roEscTxt(b.name) +
+            '</span><span class="tag red" style="flex:0 0 auto">首领</span>' +
+            '<span style="flex:0 0 48px;text-align:right;color:#5a6b7f">' + (b.dist >= 0 ? b.dist + " 格" : "?") + '</span></div>';
+        }
+        el.innerHTML = html;
+      }
+      var lEl = $id("dsh-boss-log");
+      if (lEl) lEl.innerHTML = bossLogs.length ? bossLogs.map(function (t) { return '<div class="list-item">' + roEscTxt(t) + '</div>'; }).join("") : '<span class="st">暂无</span>';
+    } catch (e) {}
+  }
+
+  // V1.7.6 当前状态查看器：buffActive 判活环（服务器通知）+ 实体字段状态，2s 刷新
+  var _stNameRev = null;
+  var _stNameEnRev = null;
+  function statusNameById(id) { // 状态ID → 中文别名（buff/debuff 表反查，查不到回引擎 StatusConst 英文名，再回数字）
+    try {
+      if (id == null) return null;
+      if (!_stNameRev) {
+        _stNameRev = {};
+        var scan = function (tbl) {
+          for (var k in tbl) {
+            var sid = buffStId(k);
+            if (sid >= 0 && !_stNameRev[sid]) _stNameRev[sid] = k;
+          }
+        };
+        scan(BUFF_STATUS_CN);
+        scan(BUFF_DEBUFF_CN);
+      }
+      if (_stNameRev[id]) return _stNameRev[id];
+      // 英文名兜底：引擎 StatusConst（{NAME: value} 反向 → value: NAME），懒加载缓存
+      if (!_stNameEnRev) {
+        _stNameEnRev = {};
+        try {
+          var SC = window.require && window.require("DB/Status/StatusConst");
+          if (SC) for (var en in SC) { if (typeof SC[en] === "number" && !_stNameEnRev[SC[en]]) _stNameEnRev[SC[en]] = en; }
+        } catch (e2) {}
+      }
+      return _stNameEnRev[id] || null;
+    } catch (e) { return null; }
+  }
+  function renderStatusView() {
+    try {
+      var el = $id("dsh-statusview");
+      if (!el) return;
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      if (!ent) { el.textContent = "未进入游戏"; return; }
+      var now = Date.now(), parts = [];
+      // 1) 判活环（服务器状态通知）：在身且未过期
+      for (var sid in buffActive) {
+        var s = buffActive[sid];
+        if (!s || !s.on) continue;
+        if (s.endAt !== Infinity && s.endAt <= now) continue;
+        var nm = statusNameById(parseInt(sid, 10));
+        if (!nm) nm = "状态#" + sid;
+        var deb = BUFF_DEBUFF_CN[nm] ? true : false;
+        var left = s.endAt === Infinity ? "常驻" : Math.max(0, Math.round((s.endAt - now) / 1000)) + "s";
+        parts.push((deb ? "[debuff] " : "") + nm + "[ID:" + sid + "](" + left + ")");
+      }
+      // 2) 实体字段状态（无通知，判活靠字段位）
+      var st = entStatus();
+      var ef = [];
+      if (st) {
+        if (st.explosion) ef.push("爆气");
+        if (st.berserk) ef.push("狂暴");
+        if (st.soullink) ef.push("灵魂");
+        if (st.riding) ef.push("骑乘");
+        if (st.falcon) ef.push("猎鹰");
+      }
+      for (var i = 0; i < ef.length; i++) parts.push(ef[i] + "(实体)");
+      parts.push("【判活表 " + Object.keys(buffActive).length + " 条 · hook:" + (typeof dshSIState !== "undefined" ? dshSIState : "?") + "】");
+      el.textContent = parts.length ? parts.join(" · ") : "无在身状态";
+    } catch (e) {}
+  }
+
+  // ---------------- 主循环 ----------------
+  // V1.7.6 悬浮动作提示：#dsh-ztip 镜像 setStatus 文本 + zMon.action + 动作停顿秒数
+  //   助手/内挂运行时常显（不挡游戏，pointer-events:none），全停自动隐藏
+  var zTipEl = null, zTipLastAct = "", zTipActSince = Date.now();
+  function ensureZTip() {
+    if (zTipEl && zTipEl.parentNode) return;
+    try {
+      zTipEl = document.createElement("div");
+      zTipEl.id = "dsh-ztip";
+      zTipEl.style.cssText =
+        "position:fixed;left:12px;bottom:76px;max-width:min(520px,80vw);" +
+        "background:rgba(0,0,0,0.72);color:#fff;padding:6px 12px;border-radius:10px;" +
+        "font-size:12px;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" +
+        "z-index:2147483646;pointer-events:none;user-select:none;display:none;" +
+        "border:1px solid rgba(255,255,255,0.25);box-shadow:0 1px 8px rgba(0,0,0,0.5);" +
+        "text-shadow:0 1px 2px rgba(0,0,0,0.6);";
+      document.documentElement.appendChild(zTipEl);
+      try { isolateEl(zTipEl); } catch (e) {}  // V2.17.0 公共层 D：统一打助手 UI 标记
+    } catch (e) {}
+  }
+  function renderZTip() {
+    // V2.17.1 功能菜单总开关：关掉「动作提示条」后不再显示
+    if (!roModOn("ztip")) { try { if (zTipEl) zTipEl.style.display = "none"; } catch (e) {} return; }
+    ensureZTip();
+    if (!zTipEl) return;
+    try {
+      var running = !!zRunning || !!npHuntOn;
+      if (!running) { zTipEl.style.display = "none"; return; }
+      zTipEl.style.display = "block";
+      var stEl = $id("dsh-status");
+      var statusTxt = (stEl && stEl.textContent) || "";
+      var act = zMon.action || "—";
+      if (act !== zTipLastAct) { zTipLastAct = act; zTipActSince = Date.now(); }
+      var idleSec = Math.max(0, Math.round((Date.now() - zTipActSince) / 1000));
+      zTipEl.textContent = "动作: " + act + " | " + statusTxt + " | 停顿 " + idleSec + "s";
+    } catch (e) {}
+  }
+
+  // ---------------- V1.7.7 状态名速查弹层：全屏遮罩隔离下层点击/键盘，可选中复制 ----------------
+  var STATUS_QUICKREF_TXT = [
+    'RO 助手 · 状态名速查表（V1.7.8）',
+    '=================================',
+    '',
+    '使用场景：',
+    '- 多辅助技能行：技能ID:等级[:状态]，如 12:5:加速（状态没了才补）',
+    '  状态名前面加 ! = 状态在身才放，如 21:5:!中毒（debuff 净化/治疗用）',
+    '- 技能顺序条件段：如 球5,爆气 / !中毒（逗号分隔，全部满足才放）',
+    '- 面板「当前状态」里正在显示的名字 = 当前可写的名字（含剩余时间）',
+    '',
+    '=================================',
+    '一、中文别名（可直接写中文，约 21 组）',
+    '=================================',
+    '中文名（可写）          对应英文SC名        常见用途',
+    '加速 / 加速术           INC_AGI             AGI提升',
+    '赐福 / 天赐 / 天使赐福   BLESSING            STR/INT提升',
+    '霸体                    ENDURE              硬直免疫',
+    '加速武器 / 速度激发      ADRENALINE          攻速提升(铁匠)',
+    '武器值最大化 / 武器增加值 WEAPONPERFECT       武器效果强化',
+    '凶砍                    OVERTHRUST          武器破坏',
+    '神威                    IMPOSITIO           对魔增伤', // V2.16.3 修正：神威=IMPOSITIO
+    '牺牲祈福 / 牺牲          SUFFRAGIUM          咏唱加速',
+    '撒水祈福 / 撒水          ASPERSIO            圣属性附加',
+    '圣母颂歌 / 圣母          MAGNIFICAT          SP恢复',
+    '霸邪之阵 / 霸邪          KYRIE               吸收伤害护盾',
+    '天使之障壁 / 障壁        ANGELUS             DEF提升',
+    '能量外套                ENERGYCOAT          SP抵伤',
+    '灵魂                    SOULLINK            灵魂链接',
+    '爆气                    EXPLOSIONSPIRITS    武术家前置',
+    '钢体                    STEELBODY           DEF大幅提升',
+    '集中攻击 / 集中          LKCONCENTRATION     命中提升(骑士)',
+    '心神凝聚 / 心神          CONCENTRATION       命中暴击提升(弓手)',
+    '双手剑加速              TWOHANDQUICKEN      双手剑攻速',
+    '长矛加速                SPEARQUICKEN        长矛攻速',
+    '风之步                  WINDWALK            回避提升',
+    '凫魅超快感 / 追猎者疾走   CHASEWALK           移动速度增幅',
+    '',
+    '=================================',
+    '二、英文状态名（不写 SC_ 前缀；数字 ID 也可直写，约 40 个）',
+    '=================================',
+    '英文SC名            中文参考          英文SC名            中文参考',
+    'MAXIMIZE           武器值最大化      AUTOGUARD           自动防御',
+    'REFLECTSHIELD      反射盾            AURABLADE           光环剑',
+    'BERSERK            狂暴              ASSUMPTIO           圣母之祈福',
+    'EDP                涂毒强化          TRUESIGHT           真视',
+    'PARRYING           防御架势          CONCENTRATION       心神凝聚(弓手)',
+    'LKCONCENTRATION    集中攻击(骑士)    TWOHANDQUICKEN      双手剑加速',
+    'POWERUP            力量增幅          AGIUP               敏捷增幅',
+    'STRUP              力量提升          RIDING              骑乘',
+    'FALCON             猎鹰              GOSPEL              福音',
+    'INSPIRATION        灵感              ADORAMUS            赞美',
+    'RENOVATIO          再生术            ORATIO              祈愿',
+    'LAUDAAGNUS         羊羔赞歌          LAUDARAMUS          礼赞之歌',
+    'EPICLESIS          圣灵召唤          VENOMIMPRESS        毒印',
+    'WEAPONBLOCKING     武器格挡          ROLLINGCUTTER       回旋刀刃',
+    'POISONINGWEAPON    涂毒              CRESCENTELBOW       月牙刃',
+    'RAISINGDRAGON      升龙              CARTBOOST           手推车加速',
+    'GN_CARTBOOST       疾冲(基因)        UNLIMIT             无限',
+    'FRIGG_SONG         芙丽嘉之歌        KINGS_GRACE         王者恩典',
+    'MOONLIT_SERENADE   月光小夜曲        SUN_COMFORT         太阳抚慰',
+    'MOON_COMFORT       月亮抚慰          STAR_COMFORT        星星抚慰',
+    '',
+    '=================================',
+    '三、技能条件段额外可写的中文（实体字段直判）',
+    '=================================',
+    '球N（气弹数≥N）、爆气、狂暴、灵魂、骑乘、猎鹰、',
+    '隐匿、手推车加速、钢体、涂毒、武器格挡、回旋刀刃、侦测、',
+    '速射待发、金刚、涂毒强化、守卫姿态、攻击姿态、天空附魔、',
+    '初信之力、二阶审判、神秘之粉，',
+    '以及 hp>P / hp<P / sp>P / sp<P（百分比）和 !状态 取反。',
+    '',
+    '=================================',
+    '四、debuff（负面状态）中文别名（状态名加 ! 前缀使用）',
+    '=================================',
+    '中毒、剧毒、冰冻、石化、诅咒、沉默、晕眩、眩晕、流血、出血、',
+    '失明、黑暗、睡眠、恐惧、着火、点燃、混乱、发疯',
+    '',
+    '=================================',
+    '五、规则说明',
+    '=================================',
+    '1. 表一/表二没列到的状态名，助手会现场查客户端 StatusConst',
+    '   （自动补试 SC_ 前缀）；客户端认识就能用。',
+    '2. 实在查不到的名字，日志会提示「状态名未识别」，此时直接写',
+    '   数字 ID 最稳（游戏/助手状态查看器里可见对应数字）。',
+    '3. 面板「当前状态」查看器：无 [debuff] 前缀 = 正面状态，直接写',
+    '   名字；有 [debuff] 前缀 = 负面状态，写状态段时加 !。',
+    '4. 表中中文参考翻译是常见叫法，本服可能略有出入；以游戏内实际',
+    '   状态图标和助手「当前状态」显示为准。',
+    '5. 面板「当前状态」查看器每行带 [ID:N]：N=该状态的服务器真实状态ID，',
+    '   写不认识的英文/中文状态名时，可用这里显示的 ID 数字直写最稳。'
+  ].join("\n");
+  var statePopEl = null;
+  function ensureStatePop() {
+    try {
+      if (statePopEl && statePopEl.parentNode) return;
+      statePopEl = document.createElement("div");
+      statePopEl.id = "dsh-statepop";
+      statePopEl.style.cssText =
+        "position:fixed;left:0;top:0;right:0;bottom:0;z-index:2147483647;" +
+        "background:rgba(8,14,26,0.62);display:none;align-items:center;justify-content:center;" +
+        "padding:14px;font-family:inherit;";
+      var box = document.createElement("div");
+      box.id = "dsh-statepopbox";
+      box.style.cssText =
+        "width:min(560px,94vw);max-height:88vh;display:flex;flex-direction:column;" +
+        "background:#fbfcfe;border:1px solid #b9c8dd;border-radius:10px;overflow:hidden;" +
+        "box-shadow:0 10px 34px rgba(0,0,0,0.45);";
+      var hd = document.createElement("div");
+      hd.style.cssText =
+        "flex:none;display:flex;align-items:center;gap:8px;padding:8px 12px;" +
+        "background:#2f6fde;color:#fff;font-weight:700;font-size:13px;";
+      hd.appendChild(document.createTextNode("状态名速查（可选中复制）"));
+      var cp = document.createElement("button");
+      cp.id = "dsh-statepopcp";
+      cp.textContent = "复制全文";
+      cp.style.cssText =
+        "margin-left:auto;background:rgba(255,255,255,0.16);color:#fff;border:1px solid rgba(255,255,255,0.55);" +
+        "border-radius:5px;padding:2px 8px;font-size:12px;cursor:pointer;font-family:inherit;";
+      var x = document.createElement("button");
+      x.id = "dsh-statepopx";
+      x.textContent = "×";
+      x.style.cssText =
+        "flex:none;background:transparent;color:#fff;border:none;cursor:pointer;font-size:15px;padding:0 2px;font-family:inherit;";
+      hd.appendChild(cp);
+      hd.appendChild(document.createTextNode(" "));
+      hd.appendChild(x);
+      var body = document.createElement("pre");
+      body.id = "dsh-statepopbody";
+      body.style.cssText =
+        "flex:1 1 auto;overflow:auto;margin:0;padding:10px 12px;font-size:12px;line-height:1.55;" +
+        "color:#1b2534;white-space:pre-wrap;word-break:break-all;user-select:text;-webkit-user-select:text;" +
+        "font-family:Consolas,'Microsoft YaHei',monospace;";
+      body.textContent = STATUS_QUICKREF_TXT;
+      box.appendChild(hd);
+      box.appendChild(body);
+      statePopEl.appendChild(box);
+      document.documentElement.appendChild(statePopEl);
+      // 遮罩拦截：冒泡阶段截停（内部按钮/文本选择先正常处理，事件不再往外冒泡到游戏层）
+      ["pointerdown", "mousedown", "mouseup", "click", "dblclick", "touchstart", "touchend", "contextmenu"].forEach(function (ty) {
+        try { statePopEl.addEventListener(ty, function (e) { try { e.stopPropagation(); } catch (err) {} }, false); } catch (err) {}
+      });
+      document.addEventListener("keydown", function (e) { // 弹层打开时拦截键盘（Esc 关闭），隔离下层键鼠
+        if (!statePopEl || statePopEl.style.display === "none") return;
+        try {
+          if (e.key === "Escape" || e.keyCode === 27) { closeStatePop(); }
+          e.stopPropagation();
+        } catch (err) {}
+      }, true);
+      cp.addEventListener("click", function (e) { try { e.stopPropagation(); } catch (err) {} copyQuickRef(); });
+      x.addEventListener("click", function (e) { try { e.stopPropagation(); } catch (err) {} closeStatePop(); });
+      statePopEl.addEventListener("click", function (e) { // 点遮罩空白处关闭
+        try { if (e.target === statePopEl) closeStatePop(); } catch (err) {}
+      });
+    } catch (e) {}
+  }
+  function openStatePop() {
+    ensureStatePop();
+    if (!statePopEl) return;
+    statePopEl.style.display = "flex";
+  }
+  function closeStatePop() {
+    try { if (statePopEl) statePopEl.style.display = "none"; } catch (e) {}
+  }
+  function copyQuickRef() {
+    try {
+      var done = function () { try { setStatus("速查表已复制", "ok"); } catch (e) {} };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(STATUS_QUICKREF_TXT).then(done, function () { copyQuickRefFallback(); done(); });
+      } else { copyQuickRefFallback(); done(); }
+    } catch (e) {}
+  }
+  function copyQuickRefFallback() {
+    try {
+      var ta = document.createElement("textarea");
+      ta.value = STATUS_QUICKREF_TXT;
+      ta.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch (e) {}
+      document.body.removeChild(ta);
+    } catch (e) {}
+  }
+  var bookRendered = false, skillPickTicker = 0, _lastMapKey = "";
+  setInterval(function () {
+    try {
+      if (clientReady()) {
+        // V2.15.30：角色切档检测独立于 UI 渲染——后台标签（UI_BG）也执行，切换角色/重登必然切到该角色专属档
+        try {
+          var _pEnt = CLIENT.SS && CLIENT.SS.Entity;
+          if (_pEnt && _pEnt.GID != null && gidInt(_pEnt.GID) && (gidInt(_pEnt.GID) !== lastCharGid || charNameOf(_pEnt) !== lastCharName)) { try { onCharChanged(_pEnt); } catch (e2) {} }
+        } catch (e3) {}
+        // 登录角色后自动读取内挂配置（一次性，延迟等内挂窗口渲染，读不到重试）
+        if (!autoReadBotDone) {
+          autoReadBotDone = true;
+          autoReadBotTries = 0;
+          setTimeout(autoReadBotOnce, 2000);
+        }
+        hookDisconnect();
+        hookStatusIcons(); // V1.7.5 方案A：buff 状态判活 hook（登录后可重试，幂等）
+        try { partyHook(); } catch (e) {} // V2.23.0 队伍血条 hook（幂等，重复调用无副作用）
+        try { fwRestore(); } catch (e) {} // V2.23.0 上次开着的浮窗自动恢复
+        // V2.5.0：后台标签隐藏时跳过纯 UI 渲染（每秒全量重绘的 statbar/监控/状态表/提示/怪表），后台挂机只保功能逻辑，降 CPU/GC
+        if (!UI_BG) {
+          renderStatbar();
+          renderZMonitor();
+          renderTgt(); // V2.23.0 当前目标窗口
+          renderParty(); // V2.23.0 队伍血条
+          renderDps(); // V2.24.0 伤害统计
+          renderStatusView(); // V1.7.6 当前状态查看器（buff/debuff 判活环 + 实体字段）
+          renderZTip(); // V1.7.6 悬浮动作提示（镜像 setStatus + 动作 + 停顿秒数）
+          renderMapMobs();
+        }
+        // nei 内挂自动战斗实时状态（面板 .openattack 勾选 = 服务器内挂实际开关）——V2.5.0 后台隐藏跳过
+        if (!UI_BG) {
+          try {
+            var bsEl = $id("dsh-battlestate");
+            if (bsEl) {
+              var bsPanel = npReadPanelState();
+              bsEl.textContent = "内挂状态: " + (bsPanel === null ? "未读取（打开内挂窗口）" : (bsPanel ? "已开启" : "已停止"));
+            }
+          } catch (e6) {}
+          // 宠物状态自动刷新（客户端就绪后即读，2s 周期；含实体兜底）
+          try {
+            var npNow = Date.now();
+            if (npNow - petLastRender > 2000) { petLastRender = npNow; renderPetInfo(); }
+          } catch (e5) {}
+        }
+        // 地图变更检测（功能性，后台保留）：换图 → 自动刷新 拾取页当前地图 + 本图锁定目录 + 地图怪物表
+        try {
+          if (!CLIENT.MR) CLIENT.MR = window.require && window.require("Renderer/MapRenderer");
+          var curMap = CLIENT.MR && CLIENT.MR.currentMap ? String(CLIENT.MR.currentMap).split(".")[0] : "";
+          if (curMap && curMap !== _lastMapKey) {
+            _lastMapKey = curMap;
+            selfSpirits = { aid: 0, num: 0, map: "" };
+            dshDiag("map-change", { map: curMap, zRunning: zRunning, npHuntOn: npHuntOn });
+            tlog("map-changed " + curMap);
+            // 换图自动停止战斗（用户需求）：先对齐面板实际状态再决策，绝不误翻 toggle
+            try {
+              npCalibrate();                     // 对齐服务器实际状态（面板=服务器）
+              if (zRunning) { stopZhu(); }       // 助手运行中 → 完整停止（内含内挂关闭）
+              else if (npHuntOn) { npHuntStop(); } // 纯内挂模式 → 关服务器自动战斗
+              setStatus("换图：自动战斗已停止", "st");
+              tlog("map-changed: battle stopped");
+            } catch (e7) {}
+            try { refreshPickMap(); renderMapLock($id("dsh-z-maplock")); } catch (e3) {}
+          }
+        } catch (e4) {}
+        // 拾取页当前地图名/技能列表/锁定目录刷新 —— V2.5.0 后台隐藏跳过（纯 UI，换图事件内已补刷）
+        if (!UI_BG) {
+          refreshPickMap();
+          if (++skillPickTicker % 3 === 0) { renderSkillPick(); renderSkillOrderList(); }
+          // 助手页本图怪物锁定：details 展开时才刷新（避免频繁重建 DOM）
+          try {
+            var zmLock = $id("dsh-z-maplock");
+            if (zmLock && zmLock.closest && zmLock.closest("details") && zmLock.closest("details").open) renderMapLock(zmLock);
+          } catch (e5) {}
+          // 图鉴页已移除（wiki 已覆盖），fillMapSelect 相关刷新一并删除
+          if (!bookRendered) { bookRendered = true; try { renderBook(); } catch (e) {} }
+          var ent = CLIENT.SS.Entity;
+          var el = $id("dsh-chr");
+          if (el) {
+            if (ent && ent.life) {
+              var lf = ent.life;
+              var pos = ent.position || {};
+              el.textContent = "Lv" + (ent.clevel || "?") + " HP " + (lf.hp != null ? lf.hp : "?") + "/" + (lf.hp_max != null ? lf.hp_max : "?") +
+                " SP " + (lf.sp != null ? lf.sp : "?") + "/" + (lf.sp_max != null ? lf.sp_max : "?") + " (" + (pos.x != null ? pos.x + "," + pos.y : "?") + ")";
+            } else { el.textContent = "未登录"; }
+          }
+        }
+      }
+      var det = document.querySelector("#dsh-recon");
+      if (det && det.closest("details") && det.closest("details").open) renderRecon();
+    } catch (e) {}
+  }, 1000);
+  setInterval(function () {
+    try { renderRecon(); } catch (e) {}
+  }, 5000);
+
+  // V2.4.9 开机诊断：状态栏显示面板与内容区实际尺寸 3 秒（排查"没有滚动条"用：内容区 scroll>client 才出滚动条）
+  setTimeout(function () {
+    try {
+      var pg = panel.querySelector(".pages");
+      if (!pg) return;
+      var st = panel.querySelector("#dsh-status2");
+      var info = "面板" + panel.offsetWidth + "x" + panel.offsetHeight +
+        " · 内容区 " + pg.clientHeight + "/" + pg.scrollHeight +
+        (pg.scrollHeight > pg.clientHeight ? " 可滚" : " 无滚动");
+      if (st) {
+        st.textContent = info;
+        setTimeout(function () { try { st.textContent = "就绪"; } catch (e) {} }, 3000);
+      }
+    } catch (e) {}
+  }, 1500);
+
+  // 自愈：面板出屏幕回正（V1.7.5 守卫：收起状态/用户拖过位置 → 尊重摆放，绝不弹回）
+  setInterval(function () {
+    try {
+      // 收起成球：有悬浮球可找回，无需回正
+      if (panel.style.display === "none") return;
+      // 用户拖过面板 = 有意摆放（存了 dsh_panel_pos）→ 尊重当前位置，不再强制弹回屏幕中央
+      var dragged = false;
+      try { dragged = !!localStorage.getItem("dsh_panel_pos"); } catch (e) {}
+      if (dragged) return;
+      var r = panel.getBoundingClientRect();
+      var vw = window.innerWidth, vh = window.innerHeight;
+      if (r.right < 40 || r.left > vw - 40 || r.bottom < 40 || r.top > vh - 40) {
+        panel.style.cssText = PANEL_LAYOUT;
+        if (saved.collapsed) { panel.style.display = "none"; ball.style.display = "flex"; }
+        console.log("[RO助手] 面板已自动回正（未拖动时才回正）");
+      }
+    } catch (e) {}
+  }, 8000);
+  setInterval(function () {
+    try { if (!panel.parentNode) document.documentElement.appendChild(panel); } catch (e) {}
+  }, 5000);
+
+  // 加载提示
+  try { console.log("[RO助手] v" + VER + " 已加载（开始停止按钮顶部常驻 + 状态联想 Buff/Debuff 中文模糊 + 地图联想滚动 + 掉buff及时补 + debuff判定 + 状态查看含ID + 拾取页物品搜索 + 后台降帧 + 后台保活 + 侧边抽屉 + 角色档案 + 瞬移术优先 + 技能次数上限 + 锁定清空 + 诊断环 + 状态判活补buff）"); } catch (e) {}
+  var toast = $("div", "", '仙境传说 V' + VER + ' · 助手已加载<span style="opacity:.65">（点击关闭）</span>');
+  toast.style.cssText = "position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2147483647;" +
+    "background:#0f2a1a;border:1px solid #2e8b57;border-radius:10px;padding:10px 20px;color:#7ef0a8;" +
+    "font:13px/1.5 'Microsoft YaHei',system-ui,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.55);text-align:center;cursor:pointer";
+  toast.addEventListener("click", function () { try { toast.parentNode.removeChild(toast); } catch (e) {} });
+  document.documentElement.appendChild(toast);
+  setTimeout(function () { try { toast.parentNode.removeChild(toast); } catch (e) {} }, 7000);
+
+  // ---------------- 启动逻辑 ----------------
+  function detectWrapperBoot() {
+    try {
+      if (window.ROConfig && window.ROConfig.application) return true;
+    } catch (e) {}
+    var scripts = document.getElementsByTagName("script");
+    for (var i = 0; i < scripts.length; i++) {
+      if (/Online(_mn)?\.js/.test(scripts[i].src)) return true;
+    }
+    return false;
+  }
+  function waitForReady() {
+    window.addEventListener("message", function (ev) {
+      if (ev.data === "ready") {
+        state.ready = true;
+        setStatus("客户端已就绪", "ok");
+        try { perfApply(true); } catch (e) {} // V2.23.0：客户端就绪后应用画面优化（此刻渲染器可用）
+        try { fpsLockApply(); } catch (e) {} // V2.15.20：客户端就绪后应用多开帧率限制（此刻渲染器可用）
+        tlog("client-ready");
+      }
+    });
+    setInterval(function () {
+      try {
+        if (window.account && window.account !== state.account) {
+          state.account = window.account;
+          setStatus("已登录：" + window.account, "ok");
+          tlog("logged-in=" + window.account);
+          // 单账号：刷新本窗口账号信息
+          try { renderWinInfo(); } catch (e2) {}
+        }
+      } catch (e) {}
+    }, 2000);
+  }
+
+  // ---------------- V2.6.9 选服前白屏自愈（仅 IS_MN；PC 不干预） ----------------
+  // 根因1:页面 SW cache-first 且无网络校验,坏缓存被永久喂给客户端;
+  // 根因2:Online_mn.js 内置 requirejs waitSeconds=7,弱网下引擎模块 7s 加载不完即超时,客户端永不启动。
+  function bootHealSetup() {
+    if (!IS_MN) return;
+    var HEAL_KEY = 'lro_heal_v269';
+    var alive = true;
+    var healCancelled = false; // V2.15.13 用户点 × 关闭 → 取消排队刷新、本次不再自动弹
+    var healReloadTimer = null; // 排队中的自动刷新定时器（× 关闭时取消）
+    function log(m) { try { console.log('[RO助手]自愈 ' + m); } catch (e) {} }
+    function show(msg, sticky) {
+      try {
+        var old = document.getElementById('ro-heal-toast');
+        if (old && old.parentNode) old.parentNode.removeChild(old);
+        var d = document.createElement('div');
+        d.id = 'ro-heal-toast';
+        d.style.cssText = 'position:fixed;right:10px;bottom:14px;z-index:2147483646;max-width:84vw;' +
+          'background:#1e1f26;border:1px solid #e08a2a;border-radius:10px;padding:10px 12px;' +
+          'color:#ffd9a0;font:12px/1.5 "Microsoft YaHei",sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.5)';
+        var b = document.createElement('div');
+        b.textContent = msg;
+        d.appendChild(b);
+        var retry = document.createElement('div');
+        retry.style.cssText = 'margin-top:6px;color:#6cb7ff;text-decoration:underline;cursor:pointer';
+        retry.textContent = '点击重试(清缓存刷新)';
+        retry.onclick = function () { try { sessionStorage.removeItem(HEAL_KEY); } catch (e) {} runHeal(); };
+        d.appendChild(retry);
+        var close = document.createElement("div");
+        close.textContent = "×";
+        close.title = "关闭（不清理缓存）";
+        close.style.cssText = "position:absolute;top:2px;right:8px;font-size:18px;line-height:1;color:#8a93a6;cursor:pointer;padding:6px 10px";
+        close.onclick = function () {
+          try { if (d.parentNode) d.parentNode.removeChild(d); } catch (e) {}
+          healCancelled = true;
+          if (healReloadTimer) { clearTimeout(healReloadTimer); healReloadTimer = null; }
+          log("toast closed by user");
+        };
+        d.appendChild(close);
+        document.documentElement.appendChild(d);
+        if (!sticky) setTimeout(function () { try { d.parentNode.removeChild(d); } catch (e) {} }, 12000);
+      } catch (e) {}
+    }
+    function groupsExist() {
+      try { var l = document.querySelector('#ServerBox .list'); return !!(l && l.children && l.children.length > 0); } catch (e) { return false; }
+    }
+    // V2.15.13：游戏加载成功信号 = 服务器列表出现 或 客户端渲染画布出现（引擎已加载）
+    function bootOk() {
+      try { if (groupsExist()) return true; } catch (e) {}
+      try { var cv = document.querySelector("canvas"); if (cv && cv.width > 50 && cv.height > 50) return true; } catch (e) {}
+      return false;
+    }
+    function clearSWCache() {
+      var p = [];
+      try {
+        if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+          p.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
+            rs.forEach(function (r) { try { r.unregister().then(function () { log('SW 已注销'); }); } catch (e) {} });
+          }));
+        }
+      } catch (e) {}
+      try {
+        if (window.caches && caches.keys) {
+          p.push(caches.keys().then(function (ks) {
+            ks.forEach(function (k) {
+              try { if (/lro|lastro|post\.lastro/i.test(k)) caches.delete(k).then(function () { log('缓存已删 ' + k); }); } catch (e) {}
+            });
+          }));
+        }
+      } catch (e) {}
+      return Promise.all(p);
+    }
+    function runHeal() {
+      if (healCancelled) return; // V2.15.13 用户已关闭 → 不再清缓存刷新
+      var done = false;
+      try { done = sessionStorage.getItem(HEAL_KEY) === '1'; } catch (e) {}
+      if (!done) show('检测到加载卡住:正在清除旧缓存并刷新,请稍候(需重新下载约3MB客户端)', true);
+      clearSWCache().then(function () {
+        healReloadTimer = setTimeout(function () {
+          if (healCancelled) return; // V2.15.13 已关闭 → 不刷新
+          try { if (!done) sessionStorage.setItem(HEAL_KEY, '1'); } catch (e) {}
+          log('reload');
+          try { location.reload(); } catch (e) {}
+        }, 2500);
+      });
+    }
+    // 1) 提高 requirejs 模块加载超时:弱网 7s 太短,改为 120s(轮询到 window.require 出现即配置,竞态在超时判定前生效)
+    var cfgDone = false;
+    var cfgTimer = setInterval(function () {
+      try {
+        if (window.require && window.require.config && !cfgDone) {
+          cfgDone = true;
+          window.require.config({ waitSeconds: 120 });
+          log('waitSeconds→120');
+          clearInterval(cfgTimer);
+        }
+      } catch (e) {}
+    }, 150);
+    setTimeout(function () { clearInterval(cfgTimer); }, 15000);
+    // 2) 捕获 require 超时/脚本错误 = 确定性启动失败,直接清缓存自愈
+    window.addEventListener('error', function (ev) {
+      try {
+        if (bootOk()) return; // V2.15.13 游戏已进入画面 → 运行期脚本报错不再触发清缓存刷新
+        var s = String((ev && ev.message) || ev.error || '').toLowerCase();
+        if (/(load timeout|script error|scripterror|timeout for modules)/.test(s)) {
+          log('捕获启动错误: ' + String((ev && ev.message) || ev.error).slice(0, 140));
+          runHeal();
+        }
+      } catch (e) {}
+    }, true);
+    // 3) 兜底:2.5 分钟仍无服务器组 → 提示(不自动刷新,避免打断弱网下的正常慢加载)
+    var t0 = Date.now();
+    setInterval(function () {
+      try {
+        if (!alive) return;
+        if (bootOk()) { alive = false; return; } // V2.15.13 服务器列表或游戏画面出现即正常
+        if (Date.now() - t0 > 150000) {
+          alive = false;
+          var done = false;
+          try { done = sessionStorage.getItem(HEAL_KEY) === '1'; } catch (e) {}
+          log('boot-stuck 150s');
+          show(done ? '已清理缓存仍卡在加载面:可能网络过慢(需下载约3MB客户端)或客户端异常。点击重试;仍失败请把浏览器控制台 [RO助手] 日志发来。'
+                    : '加载异常:客户端 2.5 分钟未出现服务器列表。点击重试(清缓存刷新)。', true);
+        }
+      } catch (e) {}
+    }, 5000);
+  }
+
+  // ============ V2.11.0 仓库+背包读取与查询 ============
+  // 获取当前账号名（优先登录信息，其次用户配置，最后 default）
+  function getInventoryAccount() {
+    // V2.12.1：优先 saved.account（登录时真实写入）；dsh_ro_login 是废弃键已弃用
+    try {
+      if (saved && saved.account && String(saved.account).trim()) return String(saved.account).trim();
+    } catch (e) {}
+    try {
+      var acc = localStorage.getItem("dsh_ro_inventory_account");
+      if (acc && acc.trim()) return acc.trim();
+    } catch (e) {}
+    return "default";
+  }
+
+  // V2.12.1：获取当前角色名（优先实体，兜底当前档案名，避免显示占位「角色」）
+  function getCurrentCharName() {
+    try {
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      if (ent) {
+        // V2.12.3：真实角色名在 ent.display.name（displayName/name 是 undefined）
+        var nm = (ent.display && ent.display.name) || ent.displayName || ent.name || (ent.character && ent.character.name);
+        if (nm && String(nm).trim()) return String(nm).trim();
+      }
+    } catch (e) {}
+    try {
+      var pk = activeProfileKey();
+      var p = profiles[pk] || profiles["default"];
+      if (p && p.name && String(p.name).trim()) return String(p.name).trim();
+    } catch (e) {}
+    return "角色";
+  }
+
+  // 物品类型 → 分类
+  function categorizeItemType(type) {
+    var map = { 0: "回复", 2: "消耗", 3: "材料", 4: "装备", 5: "装备", 6: "卡片", 7: "其他", 8: "其他", 10: "弹药", 11: "消耗", 18: "其他" };
+    return map[type] || "其他";
+  }
+
+  // 物品列表分类统计
+  function categorizeItems(items) {
+    var stats = { total: 0, cats: {} };
+    var list = [];
+    try {
+      for (var i = 0; i < items.length; i++) {
+        var it = items[i] || {};
+        var itid = it.ITID != null ? it.ITID : (it.itemid != null ? it.itemid : null);
+        var cnt = it.count != null ? it.count : (it.amount != null ? it.amount : 0);
+        if (itid == null || Number(cnt) <= 0) continue;
+        var cat = categorizeItemType(it.type != null ? it.type : it.itemType);
+        stats.total++;
+        stats.cats[cat] = (stats.cats[cat] || 0) + 1;
+        list.push({ itid: Number(itid), name: getItemNameS(itid), count: Number(cnt), category: cat });
+      }
+    } catch (e) {}
+    return { stats: stats, items: list };
+  }
+
+  // 查找仓库数据源（类似 findInventory，尝试 Storage 组件 list）
+  function findStorage() {
+    // V2.12.0：优先读 hook 缓存（打开仓库时 setItems 已把全量数据深拷贝到 window.__dshStorageCache）
+    try {
+      if (Array.isArray(window.__dshStorageCache)) {
+        return window.__dshStorageCache;
+      }
+    } catch (e) {}
+    // 兜底：尝试组件（理论上不会走到，保留兼容）
+    try {
+      if (!CLIENT.UI) CLIENT.UI = window.require && window.require("UI/UIManager");
+      var UM = CLIENT.UI;
+      if (UM) {
+        var cands = ["BasicStorage", "Storage", "KafraStorage", "Warehouse", "StorageUI"];
+        for (var c = 0; c < cands.length; c++) {
+          var inst = null;
+          try { if (typeof UM.get === "function") inst = UM.get(cands[c]); } catch (e) {}
+          if (!inst && UM.components) inst = UM.components[cands[c]] || null;
+          if (!inst && UM.instance && UM.instance.components) inst = UM.instance.components[cands[c]] || null;
+          if (inst && Array.isArray(inst.list) && inst.list.length && inst.list[0] && typeof inst.list[0] === "object" && ("ITID" in inst.list[0] || "itemid" in inst.list[0])) {
+            return inst.list;
+          }
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+  // 读取仓库和背包并保存
+  // V2.16.2：仓库跨端口同步（本机 8899 中转——不同端口页面的 localStorage 相互隔离，经服务端中转互通）
+  var INV_SYNC_URL = "http://127.0.0.1:8899/api/inv";
+  function invSyncPush(account, accData) {
+    try {
+      if (typeof fetch !== "function" || !account || !accData) return;
+      fetch(INV_SYNC_URL + "/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account: account, storage: accData.storage || null, characters: accData.characters || {} })
+      }).catch(function () {});
+    } catch (e) {}
+  }
+  function invSyncPull(account, after) {
+    try {
+      if (typeof fetch !== "function" || !account) { if (after) after(); return; }
+      fetch(INV_SYNC_URL + "/get?account=" + encodeURIComponent(account))
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (!j || !j.ok || !j.data) { if (after) after(); return; }
+          var data = {};
+          try { data = JSON.parse(localStorage.getItem("dsh_ro_inventory_v1") || "{}"); } catch (e) {}
+          var loc = data[account] || { accountName: account, storage: null, characters: {} };
+          var rem = j.data;
+          if (rem.storage && rem.storage.lastUpdate) {
+            if (!loc.storage || rem.storage.lastUpdate >= loc.storage.lastUpdate) loc.storage = rem.storage;
+          }
+          if (rem.characters && typeof rem.characters === "object") {
+            loc.characters = loc.characters || {};
+            Object.keys(rem.characters).forEach(function (cn) {
+              var rc = rem.characters[cn];
+              if (rc && rc.lastUpdate) {
+                var lc = loc.characters[cn];
+                if (!lc || rc.lastUpdate >= lc.lastUpdate) loc.characters[cn] = rc;
+              }
+            });
+          }
+          data[account] = loc;
+          try { localStorage.setItem("dsh_ro_inventory_v1", JSON.stringify(data)); } catch (e) {}
+          if (after) after();
+        }).catch(function () { if (after) after(); });
+    } catch (e) { if (after) after(); }
+  }
+  function readStorageAndInventory() {
+    try {
+      var account = getInventoryAccount();
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      var charName = getCurrentCharName();
+
+      var inv = findInventory();
+      var invResult = inv ? categorizeItems(inv) : null;
+
+      var sto = findStorage();
+      var stoResult = sto ? categorizeItems(sto) : null;
+
+      if (!invResult && !stoResult) {
+        console.log("[INV] 未读取到背包和仓库数据");
+        setStatus("未读取到背包/仓库数据", "err");
+        return;
+      }
+
+      var data = {};
+      try { data = JSON.parse(localStorage.getItem("dsh_ro_inventory_v1") || "{}"); } catch (e) {}
+      if (!data[account] || typeof data[account] !== "object") data[account] = { accountName: account, storage: null, characters: {} };
+
+      if (stoResult) data[account].storage = { lastUpdate: Date.now(), stats: stoResult.stats, items: stoResult.items };
+      if (invResult) data[account].characters[charName] = { lastUpdate: Date.now(), bag: { stats: invResult.stats, items: invResult.items } };
+
+      try { localStorage.setItem("dsh_ro_inventory_v1", JSON.stringify(data)); } catch (e) {}
+      invSyncPush(account, data[account]); // V2.16.2：跨端口同步——上传到本机 8899 中转，其他端口的页面可拉取
+
+      var msg = "已记录 " + (stoResult ? ("仓库 " + stoResult.stats.total + " 件") : "仓库未读到") + " · [" + charName + "] 背包 " + (invResult ? invResult.stats.total : 0) + " 件";
+      setStatus(msg, "ok");
+      console.log("[INV] " + msg + "（账号=" + account + "）");
+    } catch (e) {
+      console.error("[INV] 读取失败:", e);
+    }
+  }
+
+  // 轮询检测并读取（返回是否已完成读取）
+  function tryReadStorageAndInventory() {
+    try {
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      var curChar = getCurrentCharName();
+      if (inventoryReadChar && curChar !== inventoryReadChar) {
+        console.log("[INV] 角色已切换（" + inventoryReadChar + "→" + curChar + "），取消读取");
+        return true; // 视为结束，避免继续轮询
+      }
+      var inv = findInventory();
+      if (!inv || !inv.length) return false; // 数据未就绪
+      readStorageAndInventory();
+      return true;
+    } catch (e) { return false; }
+  }
+
+  // 仓库窗口打开事件（200ms 延迟 + 轮询检测 + 5 秒超时）
+  function onStorageWindowOpen() {
+    try {
+      if (inventoryReadTimer) { clearTimeout(inventoryReadTimer); inventoryReadTimer = null; }
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      inventoryReadChar = getCurrentCharName();
+      console.log("[INV] 检测到仓库窗口打开，角色=" + inventoryReadChar);
+
+      inventoryReadTimer = setTimeout(function () {
+        var attempts = 0, maxAttempts = 50; // 5 秒
+        var iv = setInterval(function () {
+          attempts++;
+          var done = false;
+          try { done = tryReadStorageAndInventory(); } catch (e) {}
+          if (done || attempts >= maxAttempts) {
+            clearInterval(iv);
+            inventoryReadTimer = null;
+            if (!done) console.log("[INV] 读取超时或数据未就绪");
+          }
+        }, 100);
+      }, 200);
+    } catch (e) { console.error("[INV] 打开处理失败:", e); }
+  }
+
+  // 查找仓库窗口 DOM（候选 selector）
+  function findStorageWindow() {
+    var sels = [".storage", ".warehouse", ".kafra", "#storage", ".Storage", ".storage-window", ".warehouse-window", ".inventory-storage"];
+    for (var i = 0; i < sels.length; i++) {
+      try {
+        var el = document.querySelector(sels[i]);
+        if (el && el.offsetParent) return el;
+      } catch (e) {}
+    }
+    return null;
+  }
+
+  // 搜索物品（ID 精确 / 名称模糊）
+  function searchInventory(keyword) {
+    var results = {};
+    var data = {};
+    try { data = JSON.parse(localStorage.getItem("dsh_ro_inventory_v1") || "{}"); } catch (e) {}
+    var isId = keyword !== "" && String(parseInt(keyword, 10)) === keyword;
+    var searchId = isId ? parseInt(keyword, 10) : null;
+
+    var accountNames = Object.keys(data);
+    for (var a = 0; a < accountNames.length; a++) {
+      var accountName = accountNames[a];
+      var account = data[accountName] || {};
+      var accountResults = { storage: [], characters: {} };
+
+      if (account.storage && account.storage.items) {
+        for (var s = 0; s < account.storage.items.length; s++) {
+          var sitem = account.storage.items[s];
+          var smatch = isId ? (sitem.itid === searchId) : (sitem.name && sitem.name.indexOf(keyword) >= 0);
+          if (smatch) accountResults.storage.push(sitem);
+        }
+      }
+
+      if (account.characters) {
+        var charNames = Object.keys(account.characters);
+        for (var c = 0; c < charNames.length; c++) {
+          var charName = charNames[c];
+          var charData = account.characters[charName] || {};
+          if (charData.bag && charData.bag.items) {
+            for (var i = 0; i < charData.bag.items.length; i++) {
+              var item = charData.bag.items[i];
+              var match = isId ? (item.itid === searchId) : (item.name && item.name.indexOf(keyword) >= 0);
+              if (match) {
+                if (!accountResults.characters[charName]) accountResults.characters[charName] = [];
+                accountResults.characters[charName].push(item);
+              }
+            }
+          }
+        }
+      }
+
+      if (accountResults.storage.length > 0 || Object.keys(accountResults.characters).length > 0) {
+        results[accountName] = accountResults;
+      }
+    }
+
+    return results;
+  }
+
+  // 高亮关键词（避免正则转义，用 indexOf 循环）
+  function highlightKeyword(text, keyword) {
+    if (!keyword || !text) return text;
+    var low = String(text).toLowerCase(), lowkw = String(keyword).toLowerCase();
+    var parts = [], pos = 0, found;
+    while ((found = low.indexOf(lowkw, pos)) >= 0) {
+      parts.push(String(text).slice(pos, found));
+      parts.push("<mark>" + String(text).slice(found, found + keyword.length) + "</mark>");
+      pos = found + keyword.length;
+    }
+    parts.push(String(text).slice(pos));
+    return parts.join("");
+  }
+
+  // 渲染搜索结果
+  function renderInventoryResults(results, keyword) {
+    var html = "";
+    var totalCount = 0;
+    var accountNames = Object.keys(results);
+
+    if (accountNames.length === 0) {
+      return '<div class="st">未找到匹配物品</div>';
+    }
+
+    for (var a = 0; a < accountNames.length; a++) {
+      var accountName = accountNames[a];
+      var accountData = results[accountName];
+      html += '<div style="margin:4px 0 8px;border-top:1px solid #e5eaf0;padding-top:4px">';
+      html += '<div style="font-weight:bold;color:#1259b3">【' + accountName + '】</div>';
+
+      if (accountData.storage.length > 0) {
+        for (var s = 0; s < accountData.storage.length; s++) {
+          var sitem = accountData.storage[s];
+          html += '<div style="padding:1px 0">仓库：' + highlightKeyword(sitem.name, keyword) + ' x' + sitem.count + '</div>';
+          totalCount += sitem.count;
+        }
+      }
+
+      var charNames = Object.keys(accountData.characters);
+      for (var c = 0; c < charNames.length; c++) {
+        var charName = charNames[c];
+        var items = accountData.characters[charName];
+        for (var i = 0; i < items.length; i++) {
+          html += '<div style="padding:1px 0">' + charName + '：' + highlightKeyword(items[i].name, keyword) + ' x' + items[i].count + '</div>';
+          totalCount += items[i].count;
+        }
+      }
+
+      html += '</div>';
+    }
+
+    return '<div style="font-weight:bold;margin-bottom:4px">共找到 ' + totalCount + ' 件</div>' + html;
+  }
+
+  function init() {
+    bootHealSetup();
+    document.head.appendChild(style);
+    tlog("script-loaded url=" + location.href.slice(0, 60));
+    waitForReady();
+    startAcctReport(); // P1：每 15s 上报状态到本机中心 8899（多账号平台）
+    // 默认页签为战斗（登录页已移除；statbar 默认显示）
+    switchPage(tabDefs[0][0]);
+    renderWinInfo();
+    renderWl();
+    renderLockList();
+    renderDropTree();
+    renderSkillPick();
+    renderSkillOrderList();
+    // 图鉴页已移除，无 fillMapSelect
+    // 侦查扫描：勾选即启动（等客户端就绪后自动开始）
+    try {
+      if ($id("dsh-scanen") && $id("dsh-scanen").checked) {
+        var scanWait = setInterval(function () {
+          if (clientReady()) { clearInterval(scanWait); startScan(); }
+        }, 2000);
+        setTimeout(function () { clearInterval(scanWait); }, 120000); // 2分钟兜底
+      }
+    } catch (e) {}
+    // 面板内嵌样式被客户端清除时重挂（5s 检查）
+    setInterval(function () {
+      try {
+        if (panel && !panel.querySelector("style")) {
+          var is2 = $("style");
+          is2.textContent = PANEL_CSS;
+          panel.insertBefore(is2, panel.firstChild);
+        }
+      } catch (e) {}
+    }, 5000);
+    if (detectWrapperBoot()) {
+      state.bootedByWrapper = true;
+      setStatus("原站模式运行中", "ok");
+      tlog("wrapper-boot-detected");
+      return;
+    }
+    detectDataServer(function () {
+      setStatus("正在启动客户端…", "warn");
+      setTimeout(boot, 300);
+      setTimeout(function () {
+        if (!state.ready && !state.bootedByPlugin) {
+          setStatus("未检测到客户端，尝试启动…", "warn");
+          tlog("retry-boot");
+          boot();
+        }
+      }, 3500);
+    });
+  }
+
+  // ---------------- V2.7.0 脚本执行器（导入 JSON 模板 · 白名单 8 类动作） ----------------
+  var SCRIPTS_KEY = "dsh_scripts";
+  var SCR_ACTIONS = ["teleport", "walk", "battleOn", "battleOff", "useItem", "stopMove", "check", "talk", "loop", "ifWeight", "store"];
+  function scrLoad() { try { var a = JSON.parse(localStorage.getItem(SCRIPTS_KEY) || "[]"); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+  function scrSave(a) { try { localStorage.setItem(SCRIPTS_KEY, JSON.stringify(a)); } catch (e) {} }
+  function scrValidate(obj) {
+    if (!obj || typeof obj !== "object") return { ok: false, err: "顶层须为对象 {templateId, version, steps[]}" };
+    if (typeof obj.templateId !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(obj.templateId)) return { ok: false, err: "templateId 只能是 1-64 位字母/数字/_/-" };
+    if (!Array.isArray(obj.steps) || !obj.steps.length || obj.steps.length > 500) return { ok: false, err: "steps 须为 1-500 项数组" };
+    for (var i = 0; i < obj.steps.length; i++) {
+      var s = obj.steps[i], p = s && s.params;
+      if (!s || typeof s !== "object") return { ok: false, err: "steps[" + i + "] 须为对象" };
+      if (SCR_ACTIONS.indexOf(s.action) < 0) return { ok: false, err: "steps[" + i + "].action 非法: " + s.action };
+      if (p != null && (typeof p !== "object" || Array.isArray(p))) return { ok: false, err: "steps[" + i + "].params 须为对象" };
+      if (s.onFail && ["skip", "alert", "stop"].indexOf(s.onFail) < 0) return { ok: false, err: "steps[" + i + "].onFail 非法" };
+      if (s.timeoutMs != null && (!isFinite(s.timeoutMs) || s.timeoutMs < 0 || s.timeoutMs > 3600000)) return { ok: false, err: "steps[" + i + "].timeoutMs 非法" };
+      if (s.retry != null && (!Number.isInteger(s.retry) || s.retry < 0 || s.retry > 100)) return { ok: false, err: "steps[" + i + "].retry 非法" };
+      if (s.action === "walk" && (!p || !isFinite(p.x) || !isFinite(p.y))) return { ok: false, err: "steps[" + i + "] walk 缺少 x/y" };
+      if (s.action === "teleport" && (!p || typeof p.map !== "string" || !p.map)) return { ok: false, err: "steps[" + i + "] teleport 缺少 map" };
+      if (s.action === "loop") {
+        if (!p || !Number.isInteger(p.back) || p.back < 1 || p.back > obj.steps.length) return { ok: false, err: "steps[" + i + "] loop.back 越界" };
+        if (!Number.isInteger(p.maxLoops) || p.maxLoops < 1 || p.maxLoops > 100000) return { ok: false, err: "steps[" + i + "] loop.maxLoops 非法" };
+        if (!s.until || typeof s.until !== "object") return { ok: false, err: "steps[" + i + "] loop 须提供顶层 until" };
+      }
+      if (s.action === "ifWeight" && p && p.goto != null && (!Number.isInteger(p.goto) || p.goto < 1 || p.goto > obj.steps.length)) return { ok: false, err: "steps[" + i + "] ifWeight.goto 越界" };
+    }
+    return { ok: true, script: obj };
+  }
+  var scrRun = { running: false, script: null, stepIndex: 0, timer: null, stop: false };
+  function scrLogLine(t) {
+    try {
+      var el = $id("dsh-scr-log");
+      if (!el) return;
+      var pre = el.textContent || "";
+      el.textContent = (pre ? pre + "\n" : "") + t;
+      el.scrollTop = el.scrollHeight;
+      if (el.textContent.length > 3000) el.textContent = el.textContent.slice(-3000);
+    } catch (e) {}
+  }
+  function scrSetState(t, cls) {
+    try { var el = $id("dsh-scr-state"); if (el) { el.textContent = t; if (cls) el.className = "st " + cls; } } catch (e) {}
+  }
+  function scrRenderList() {
+    try {
+      var list = scrLoad(), box = $id("dsh-scr-list"), cnt = $id("dsh-scr-count");
+      if (cnt) cnt.textContent = String(list.length);
+      if (!box) return;
+      box.innerHTML = "";
+      if (!list.length) { box.innerHTML = '<span class="st">空（粘贴 JSON 后点「导入校验」）</span>'; return; }
+      list.forEach(function (it, i) {
+        var row = document.createElement("div");
+        row.style.cssText = "display:flex;align-items:center;gap:6px;padding:3px 4px;border-bottom:1px solid #eef2f6";
+        var nm = document.createElement("span");
+        nm.textContent = (i + 1) + ". " + (it.name || it.templateId || "未命名") + " (v" + (it.version || 1) + ") · " + (it.steps ? it.steps.length : 0) + "步";
+        nm.style.cssText = "flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+        row.appendChild(nm);
+        var runB = document.createElement("button");
+        runB.textContent = "执行";
+        runB.style.cssText = "flex:0 0 auto;padding:1px 8px;font-size:11px";
+        runB.addEventListener("click", function () { scrRunScript(i); });
+        row.appendChild(runB);
+        var delB = document.createElement("button");
+        delB.textContent = "删除";
+        delB.style.cssText = "flex:0 0 auto;padding:1px 8px;font-size:11px;background:#fff;color:#b91c1c;border:1px solid #e5b3b3";
+        delB.addEventListener("click", function () { var a = scrLoad(); a.splice(i, 1); scrSave(a); scrRenderList(); });
+        row.appendChild(delB);
+        box.appendChild(row);
+      });
+    } catch (e) {}
+  }
+  function scrGetPos() { try { var ent = CLIENT.SS && CLIENT.SS.Entity; return ent && ent.position; } catch (e) { return null; } }
+  function scrCheckArrive(step) {
+    if (!step.arrive) return step.action !== "walk" && step.action !== "teleport";
+    var a = step.arrive;
+    if (a.map) {
+      var cur = getMapName();
+      if (!cur || String(cur).toLowerCase() !== String(a.map).toLowerCase()) return false;
+    }
+    if (a.x != null && a.y != null) {
+      var p = scrGetPos();
+      if (!p) return false;
+      var d = Math.abs(p[0] - a.x) + Math.abs(p[1] - a.y);
+      if (d > (a.dist || 0)) return false;
+    }
+    return true;
+  }
+  function scrCheckWait(step) {
+    var w = step.waitFor;
+    if (!w) return true;
+    try {
+      var body = document.body ? document.body.innerText : "";
+      if (w.text) return body.indexOf(w.text) >= 0;
+      var arr = w.options || w.option;
+      if (Array.isArray(arr)) { for (var i = 0; i < arr.length; i++) if (body.indexOf(arr[i]) >= 0) return true; return false; }
+    } catch (e) {}
+    return true;
+  }
+  // ================= V2.24.0 脚本条件系统（官方 ID 段分类 + 击杀计数 + 循环）=================
+  // 判断条件分两类（用户 2026-12 明确要求）：
+  //   ①物品类：识别掉落/背包里的是不是我需要的——单个 ID、多个 ID、ID 段、名字关键字、官方类别
+  //   ②杀怪类：杀够指定怪的数量（默认只算自己打死的）
+  // 官方 ITID 段（复兴后口径）。哪条分错了改这张表就行。
+  var SCR_CLASSES = [
+    { id: "potion",   name: "药水消耗",   lo: 501,   hi: 699    },
+    { id: "etc",      name: "杂物材料",   lo: 700,   hi: 999    },
+    { id: "weapon",   name: "武器",       lo: 1100,  hi: 1749   },
+    { id: "ammo",     name: "箭矢子弹",   lo: 1750,  hi: 1799   },
+    { id: "armor",    name: "防具",       lo: 2100,  hi: 2699   },
+    { id: "card",     name: "卡片",       lo: 4001,  hi: 4999   },
+    { id: "pet",      name: "宠物蛋",     lo: 9001,  hi: 9099   },
+    { id: "material", name: "收藏品材料", lo: 7000,  hi: 7999   },
+    { id: "cash",     name: "商城特殊",   lo: 10000, hi: 999999 }
+  ];
+  function scrClassOf(id) {
+    id = parseInt(id, 10);
+    if (isNaN(id)) return null;
+    for (var sci = 0; sci < SCR_CLASSES.length; sci++) {
+      if (id >= SCR_CLASSES[sci].lo && id <= SCR_CLASSES[sci].hi) return SCR_CLASSES[sci];
+    }
+    return null;
+  }
+  function scrItemName(id) {
+    try { if (typeof getItemName === "function") { var n = getItemName(id); if (n) return String(n); } } catch (e) {}
+    try { var db = window.__ITEM_NAMES__; if (db && db[id]) return String(db[id]); } catch (e) {}
+    return "ID" + id;
+  }
+  function scrInvList() { try { return findInventory() || []; } catch (e) { return []; } }
+  function scrInvId(it) { var v = it ? (it.ITID != null ? it.ITID : it.itemid) : null; var n = parseInt(v, 10); return isNaN(n) ? null : n; }
+  function scrInvQty(it) { if (!it) return 0; var v = (it.amount != null ? it.amount : (it.count != null ? it.count : 1)); return parseInt(v, 10) || 0; }
+  function scrInvIdx(it) { if (!it) return null; var v = (it.index != null ? it.index : (it.idx != null ? it.idx : it.slot)); return v == null ? null : parseInt(v, 10); }
+  // 背包基线快照（dropOnly 用：只算本次挂机新掉进包的，不算老存货）
+  function scrSnapshotInv() {
+    var m = {}, inv = scrInvList();
+    for (var si = 0; si < inv.length; si++) { var id = scrInvId(inv[si]); if (id != null) m[id] = (m[id] || 0) + scrInvQty(inv[si]); }
+    return m;
+  }
+  // 按条件规格统计背包数量
+  //   {item:ID} {items:[..],mode:"any|all"} {range:[lo,hi]} {keyword:"卡片"} {class:"card"} {dropOnly:true}
+  function scrQtyBySpec(sp, dropOnly) {
+    if (!sp) return 0;
+    var inv = scrInvList(), base = (dropOnly || sp.dropOnly) ? (scrRun.baseline || {}) : null;
+    var ids = null, i;
+    if (sp.item != null) ids = [parseInt(sp.item, 10)];
+    else if (Array.isArray(sp.items)) { ids = []; for (i = 0; i < sp.items.length; i++) ids.push(parseInt(sp.items[i], 10)); }
+    var rng = (Array.isArray(sp.range) && sp.range.length >= 2) ? [parseInt(sp.range[0], 10), parseInt(sp.range[1], 10)] : null;
+    var kw = sp.keyword ? String(sp.keyword) : null;
+    var clsDef = null;
+    if (sp["class"]) { for (i = 0; i < SCR_CLASSES.length; i++) { if (SCR_CLASSES[i].id === sp["class"]) clsDef = SCR_CLASSES[i]; } }
+    var per = {}, sum = 0;
+    for (i = 0; i < inv.length; i++) {
+      var id = scrInvId(inv[i]); if (id == null) continue;
+      var hit = false;
+      if (ids && ids.indexOf(id) >= 0) hit = true;
+      if (!hit && rng && id >= rng[0] && id <= rng[1]) hit = true;
+      if (!hit && clsDef && id >= clsDef.lo && id <= clsDef.hi) hit = true;
+      if (!hit && kw && scrItemName(id).indexOf(kw) >= 0) hit = true;
+      if (!hit) continue;
+      var q = scrInvQty(inv[i]);
+      if (base) q = Math.max(0, q - (base[id] || 0));
+      per[id] = (per[id] || 0) + q; sum += q;
+    }
+    if (ids && sp.mode === "any") { var mx = 0; for (i = 0; i < ids.length; i++) mx = Math.max(mx, per[ids[i]] || 0); return mx; }
+    if (ids && sp.mode === "all") { var mn = null; for (i = 0; i < ids.length; i++) { var v = per[ids[i]] || 0; mn = (mn == null || v < mn) ? v : mn; } return mn == null ? 0 : mn; }
+    return sum;
+  }
+  // ---- 击杀计数：默认只算自己打死的 ----
+  // 来源：助手自动战斗的当前目标 zLastTargetGID / 锁定目标 zLock.gid（30 秒内有效）
+  // 脚本根字段 killNearby:true → 改成「玩家 12 格内任何怪死亡都算」，用于配合游戏内挂战斗
+  var scrKill = { total: 0, byMobId: {}, byName: {}, atk: {}, name: {}, mobId: {}, pos: {}, nearby: false };
+  function scrKillReset() { scrKill = { total: 0, byMobId: {}, byName: {}, atk: {}, name: {}, mobId: {}, pos: {}, nearby: !!scrKill.nearby }; }
+  function scrPos() { try { var e = CLIENT.SS && CLIENT.SS.Entity; return (e && e.position) ? e.position : null; } catch (e2) { return null; } }
+  function scrKillSample() {
+    try {
+      var now = Date.now(), g = null;
+      try { g = zLastTargetGID; } catch (e) {}
+      if (g) scrKill.atk[g] = now;
+      try { if (zLock && zLock.gid) scrKill.atk[zLock.gid] = now; } catch (e) {}
+      var ks = Object.keys(scrKill.atk);
+      for (var i = 0; i < ks.length; i++) { if (now - scrKill.atk[ks[i]] > 30000) delete scrKill.atk[ks[i]]; }
+    } catch (e) {}
+  }
+  function scrKillScan() {
+    try {
+      var EM = window.require("Renderer/EntityManager");
+      EM.forEach(function (e) {
+        try {
+          if (e && e.objecttype === 5 && e.GID) {
+            scrKill.name[e.GID] = (e.display && e.display.name) || e.name || e.displayName || ("GID" + e.GID);
+            scrKill.mobId[e.GID] = e._job != null ? Number(e._job) : (e.job != null ? Number(e.job) : (e.mobId != null ? Number(e.mobId) : null));
+            if (e.position) scrKill.pos[e.GID] = [e.position[0], e.position[1]];
+          }
+        } catch (e2) {}
+      });
+    } catch (e) {}
+  }
+  function scrOnRawVanish(bytes) {
+    try {
+      if (bytes.byteLength < 7) return;
+      var dv = new DataView(bytes), gid = dv.getUint32(2, true), type = dv.getUint8(6);
+      if (type !== 1) return;
+      var mine = !!scrKill.atk[gid];
+      if (!mine) {
+        if (!scrKill.nearby) return;
+        var pp = scrPos(), mp = scrKill.pos[gid];
+        if (!pp || !mp || Math.abs(pp[0] - mp[0]) + Math.abs(pp[1] - mp[1]) > 12) return;
+      }
+      var nm = scrKill.name[gid] || ("GID" + gid), mid = scrKill.mobId[gid];
+      scrKill.total++;
+      if (mid != null) scrKill.byMobId[mid] = (scrKill.byMobId[mid] || 0) + 1;
+      scrKill.byName[nm] = (scrKill.byName[nm] || 0) + 1;
+      delete scrKill.atk[gid];
+    } catch (e) {}
+  }
+  (function scrKillInit() {
+    var t = 0;
+    setInterval(function () {
+      t++;
+      scrKillSample();
+      if (t % 3 === 0) scrKillScan();
+    }, 700);
+  })();
+  function scrWeightPct() {
+    try {
+      var wv = document.querySelector(".weight_value"), wt = document.querySelector(".weight_total");
+      if (wv && wt) {
+        var a = parseFloat(wv.textContent), b = parseFloat(wt.textContent);
+        if (!isNaN(a) && !isNaN(b) && b > 0) return a / b * 100;
+      }
+      var e = CLIENT.SS && CLIENT.SS.Entity;
+      if (e) {
+        var w = (e.weight != null ? e.weight : null), mw = (e.maxWeight || e.maxweight);
+        if (w != null && mw) return w / mw * 100;
+      }
+    } catch (e2) {}
+    return null;
+  }
+  function scrZeny() { try { return (CLIENT.SS && CLIENT.SS.zeny != null) ? CLIENT.SS.zeny : null; } catch (e) { return null; } }
+  // 条件求值：对象里写的每一项都要满足（AND）
+  function scrCondMet(cond) {
+    if (!cond) return true;
+    try {
+      var hasItem = (cond.item != null) || Array.isArray(cond.items) || Array.isArray(cond.range) || cond.keyword || cond["class"];
+      if (hasItem) {
+        var needI = cond.itemCount != null ? parseInt(cond.itemCount, 10) : (cond.count != null ? parseInt(cond.count, 10) : 1);
+        var haveI = scrQtyBySpec(cond, !!cond.dropOnly), cmpI = cond.compare || "gte";
+        if (cmpI === "lte" ? haveI > needI : (cmpI === "eq" ? haveI !== needI : haveI < needI)) return false;
+      }
+      var needK = cond.killCount != null ? parseInt(cond.killCount, 10) : (cond.count != null ? parseInt(cond.count, 10) : 1);
+      if (cond.kill != null && (scrKill.byName[String(cond.kill)] || 0) < needK) return false;
+      if (cond.killId != null && (scrKill.byMobId[parseInt(cond.killId, 10)] || 0) < needK) return false;
+      if (cond.killAny != null && scrKill.total < parseInt(cond.killAny, 10)) return false;
+      if (cond.weight != null) { var wp = scrWeightPct(); if (wp == null || wp < parseFloat(cond.weight)) return false; }
+      if (cond.zeny != null) { var z = scrZeny(); if (z == null || z < parseInt(cond.zeny, 10)) return false; }
+      if (cond.time != null) { var el = scrRun.stepStartedAt ? (Date.now() - scrRun.stepStartedAt) / 1000 : 0; if (el < parseFloat(cond.time)) return false; }
+      return true;
+    } catch (e) { return false; }
+  }
+  function scrStorageReady() {
+    try { var st = CLIENT.SS && (CLIENT.SS.Storage || CLIENT.SS.storage); return !!st; } catch (e) { return false; }
+  }
+  // 存仓按队列逐项发送；每项间隔 250ms，并在发送前确认仓库仍处于打开状态。
+  function scrStore(p) {
+    try {
+      if (!scrStorageReady()) { scrLogLine("store: 仓库未打开，拒绝发送"); return; }
+      var inv = scrInvList(), queue = [], specs = Array.isArray(p.items) ? p.items.map(function (x) { return parseInt(x, 10); }) : null;
+      var clsDef = null;
+      if (p["class"]) { for (var c = 0; c < SCR_CLASSES.length; c++) { if (SCR_CLASSES[c].id === p["class"]) clsDef = SCR_CLASSES[c]; } }
+      for (var i = 0; i < inv.length; i++) {
+        var id = scrInvId(inv[i]); if (id == null) continue;
+        var hit = (p.item != null && id === parseInt(p.item, 10)) || (specs && specs.indexOf(id) >= 0) || (Array.isArray(p.range) && id >= p.range[0] && id <= p.range[1]) || (clsDef && id >= clsDef.lo && id <= clsDef.hi) || (p.keyword && scrItemName(id).indexOf(String(p.keyword)) >= 0);
+        if (!hit) continue;
+        var idx = scrInvIdx(inv[i]); if (idx == null) continue;
+        queue.push({ index: idx, id: id, count: p.count != null ? Math.min(parseInt(p.count, 10), scrInvQty(inv[i])) : scrInvQty(inv[i]) });
+        if (p.max != null && queue.length >= parseInt(p.max, 10)) break;
+      }
+      if (!queue.length) { scrLogLine("store: 没有匹配物品"); return; }
+      (function sendNext(n) {
+        if (n >= queue.length) { scrLogLine("store: 已发送存仓 " + queue.length + " 项"); return; }
+        if (!scrStorageReady()) { scrLogLine("store: 仓库已关闭，停止余下 " + (queue.length - n) + " 项"); return; }
+        var q = queue[n], pkt = new CLIENT.PS.CZ.MOVE_ITEM_FROM_BODY_TO_STORE(); pkt.index = q.index; pkt.count = q.count; CLIENT.NM.sendPacket(pkt);
+        setTimeout(function () { sendNext(n + 1); }, 250);
+      })(0);
+    } catch (e) { scrLogLine("store 异常: " + e.message); }
+  }
+  // 循环：条件达成或到上限就结束，否则跳回指定步（back 为步号，从 1 开始）
+  function scrDoLoop(step) {
+    var lp = step.params || {};
+    scrRun.loops = (scrRun.loops || 0) + 1;
+    if (scrCondMet(step.until)) { scrLogLine("循环条件已达成（第 " + scrRun.loops + " 轮）→ 继续下一步"); scrNextStep(); return; }
+    if (lp.maxLoops && scrRun.loops >= parseInt(lp.maxLoops, 10)) { scrLogLine("达到最大循环 " + lp.maxLoops + " 次但条件未达成"); if (step.onFail === "skip" || step.onFail === "alert") scrNextStep(); else scrFinish(false, "循环达到上限"); return; }
+    var back = Math.max(0, (lp.back != null ? parseInt(lp.back, 10) : 1) - 1);
+    var steps = scrRun.script.steps;
+    for (var i = back; i < steps.length; i++) { try { delete steps[i]._started; } catch (e) {} }
+    scrLogLine("第 " + scrRun.loops + " 轮完成 → 回到第 " + (back + 1) + " 步");
+    scrRun.stepIndex = back;
+  }
+  // 负重分支：超过阈值就跳到指定步（goto 为步号，从 1 开始），否则继续下一步
+  function scrDoIfWeight(step) {
+    var p = step.params || {}, wp = scrWeightPct(), over = p.over != null ? parseFloat(p.over) : 80;
+    if (wp != null && wp >= over) {
+      var go = Math.max(0, (p.goto != null ? parseInt(p.goto, 10) : 1) - 1);
+      scrLogLine("负重 " + wp.toFixed(1) + "% ≥ " + over + "% → 跳到第 " + (go + 1) + " 步");
+      scrRun.stepIndex = go;
+    } else {
+      scrLogLine("负重 " + (wp == null ? "读不到" : wp.toFixed(1) + "%") + " < " + over + "% → 继续");
+      scrRun.stepIndex++;
+    }
+  }
+  function scrCheckUntil(step) {
+    var u = step.until;
+    if (!u) return true;
+    try {
+      if (u.count == null && u.amount != null) u.count = u.amount; // 兼容旧写法 {item, amount}
+      return scrCondMet(u);
+    } catch (e) { return false; }
+  }
+  function scrDoAction(step) {
+    var p = step.params || {};
+    try {
+      switch (step.action) {
+        case "teleport": gptTeleport(p.map, p.x, p.y); break;
+        case "walk": walkToXY(p.x, p.y, null, "dsh-scr-log"); break;
+        case "battleOn": setBattle(true); break;
+        case "battleOff": setBattle(false); break;
+        case "useItem": useItemById(p.item != null ? p.item : p.id); break;
+        case "stopMove": stopWalkXY(); break;
+        case "check": scrLogLine("check: map=" + getMapName() + " pos=" + (scrGetPos() ? Math.floor(scrGetPos()[0]) + "," + Math.floor(scrGetPos()[1]) : "?")); break;
+        case "talk": scrTalkNpc(p.npc); break;
+        case "store": scrStore(p); break;
+        case "loop": case "ifWeight": break; // 由 scrTick 直接处理，不走这里
+      }
+    } catch (e) { scrLogLine("动作异常: " + e.message); }
+  }
+  function scrTalkNpc(name) {
+    try {
+      if (!clientReady()) { scrLogLine("talk: 客户端未就绪"); return; }
+      var EM = window.require("Renderer/EntityManager");
+      var ent = CLIENT.SS.Entity, target = null, best = 1e9;
+      EM.forEach(function (e) {
+        try {
+          if ((e.objecttype === 6 || e.objecttype === 12) && ent && e.position) {
+            if (name && String(e.name || e.displayName || "") !== String(name)) return;
+            var d = Math.abs(e.position[0] - ent.position[0]) + Math.abs(e.position[1] - ent.position[1]);
+            if (d < best) { best = d; target = e; }
+          }
+        } catch (e2) {}
+      });
+      if (!target) { scrLogLine("talk: 附近无目标NPC" + (name ? "（" + name + "）" : "")); return; }
+      var pkt = new CLIENT.PS.CZ.CONTACTNPC();
+      pkt.NAID = target.GID; pkt.type = 1;
+      CLIENT.NM.sendPacket(pkt);
+      scrLogLine("talk: 已对话 " + (target.name || target.displayName || target.GID));
+    } catch (e) { scrLogLine("talk异常: " + e.message); }
+  }
+  function scrTick() {
+    if (!scrRun.running || scrRun.stop) return;
+    var script = scrRun.script, i = scrRun.stepIndex;
+    if (!script || i >= script.steps.length) { scrFinish(true); return; }
+    var step = script.steps[i];
+    try {
+      var entG = CLIENT.SS && CLIENT.SS.Entity;
+      if (entG && entG.life && entG.life.hp_max > 0 && entG.life.hp / entG.life.hp_max < 0.25) {
+        scrLogLine("HP<25% 自动停手");
+        stopWalkXY(); try { setBattle(false); } catch (e) {}
+        scrFinish(false, "HP<25% 自动停手");
+        return;
+      }
+    } catch (e) {}
+    if (!step._started) {
+      step._started = Date.now();
+      scrRun.stepStartedAt = step._started;
+      step._tries = 0;
+      scrLogLine("[" + (i + 1) + "/" + script.steps.length + "] " + step.action + (step.params && step.params.map ? " " + step.params.map : "") + (step.params && step.params.x != null ? " (" + step.params.x + "," + step.params.y + ")" : ""));
+      scrDoAction(step);
+      if (step.action === "loop") { scrDoLoop(step); return; }
+      if (step.action === "ifWeight") { scrDoIfWeight(step); return; }
+      if (step.action === "stopMove" || step.action === "check") {
+        if (scrCheckUntil(step)) scrNextStep();
+        return;
+      }
+    }
+    if (scrCheckArrive(step) && scrCheckWait(step) && scrCheckUntil(step)) { scrNextStep(); return; }
+    var maxT = step.timeoutMs || 20000;
+    if (Date.now() - step._started > maxT) {
+      step._tries = (step._tries || 0) + 1;
+      var retry = step.retry != null ? step.retry : 0;
+      if (step._tries <= retry) {
+        scrLogLine("步 " + (i + 1) + " 超时,重试 " + step._tries + "/" + retry);
+        step._started = Date.now();
+        scrRun.stepStartedAt = step._started;
+        scrDoAction(step);
+      } else {
+        scrLogLine("步 " + (i + 1) + " 超时(" + maxT + "ms),onFail=" + (step.onFail || "skip"));
+        if (step.onFail === "stop") scrFinish(false, "步骤超时停止");
+        else if (step.onFail === "alert") { scrSetState("步骤超时", "warn"); scrNextStep(); }
+        else scrNextStep();
+      }
+    }
+  }
+  function scrNextStep() {
+    scrRun.stepIndex++;
+    scrRun.stepStartedAt = 0;
+    scrSetState("运行中… " + scrRun.stepIndex + "/" + scrRun.script.steps.length, "ok");
+  }
+  function scrFinish(ok, msg) {
+    scrRun.running = false;
+    if (scrRun.timer) { clearInterval(scrRun.timer); scrRun.timer = null; }
+    scrSetState(ok ? "完成" : (msg || "已停止"), ok ? "ok" : "warn");
+    scrLogLine(ok ? "脚本执行完成" : (msg || "已停止"));
+    try { if (scrKill.total) scrLogLine("本次击杀 " + scrKill.total + " 只（只算自己打死的）"); } catch (e) {}
+  }
+  function scrRunScript(idx) {
+    if (scrRun.running) { scrRun.stop = true; if (scrRun.timer) { clearInterval(scrRun.timer); scrRun.timer = null; } scrRun.running = false; }
+    var list = scrLoad();
+    if (idx < 0 || idx >= list.length) return;
+    var v = scrValidate(list[idx]);
+    if (!v.ok) { scrSetState("脚本无效: " + v.err, "err"); return; }
+    scrRun.script = JSON.parse(JSON.stringify(v.script));
+    scrRun.script.steps.forEach(function (st) { try { delete st._started; } catch (e) {} });
+    scrRun.stepIndex = 0; scrRun.stop = false;
+    scrRun.loops = 0;
+    scrRun.startedAt = Date.now();
+    scrRun.baseline = scrSnapshotInv();
+    scrKillReset();
+    scrKill.nearby = !!scrRun.script.killNearby;
+    scrSetState("运行中… 0/" + scrRun.script.steps.length, "ok");
+    scrLogLine("执行 " + scrRun.script.templateId + " (v" + (scrRun.script.version || 1) + ")");
+    scrRun.running = true;
+    scrRun.timer = setInterval(scrTick, 800);
+  }
+  try {
+    var impB = $id("dsh-scr-imp");
+    if (impB) impB.addEventListener("click", function () {
+      var msg = $id("dsh-scr-msg");
+      var name = ($id("dsh-scr-name").value || "").trim();
+      var raw = ($id("dsh-scr-json").value || "").trim();
+      if (!raw) { msg.textContent = "请粘贴 JSON 模板"; return; }
+      var obj = null;
+      try { obj = JSON.parse(raw); } catch (e) { msg.textContent = "JSON 解析失败: " + e.message; return; }
+      var v = scrValidate(obj);
+      if (!v.ok) { msg.textContent = v.err; return; }
+      var list = scrLoad();
+      v.script.name = name || v.script.templateId || ("脚本" + (list.length + 1));
+      list.push(v.script);
+      scrSave(list);
+      scrRenderList();
+      msg.textContent = "已导入 " + list.length + " 个";
+      $id("dsh-scr-json").value = "";
+    });
+    var clrB = $id("dsh-scr-clear");
+    if (clrB) clrB.addEventListener("click", function () { $id("dsh-scr-json").value = ""; $id("dsh-scr-name").value = ""; });
+    var stopB = $id("dsh-scr-stop");
+    if (stopB) stopB.addEventListener("click", function () {
+      scrRun.stop = true; scrRun.running = false;
+      if (scrRun.timer) { clearInterval(scrRun.timer); scrRun.timer = null; }
+      try { stopWalkXY(); } catch (e) {}
+      scrSetState("已停止", "warn");
+      scrLogLine("手动停止");
+    });
+    scrRenderList();
+  } catch (e) {}
+  // ---------------- 仓库数据源启动期 hook（V2.26.1）----------------
+  // Storage 的权威列表在组件闭包里，外部读不到；镜像 setItems/addItem/removeItem，并在 onRemove 清空前最终落盘。
+  function storageClone(v) {
+    try { return JSON.parse(JSON.stringify(v)); } catch (e) { return v; }
+  }
+  function storageCacheSet(items) {
+    window.__dshStorageCache = storageClone(Array.isArray(items) ? items : []);
+    return window.__dshStorageCache;
+  }
+  function storageCacheAdd(item) {
+    var list = Array.isArray(window.__dshStorageCache) ? window.__dshStorageCache : [];
+    var idx = item && item.index;
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && String(list[i].index) === String(idx)) {
+        list[i].count = Number(list[i].count || 0) + Number(item.count || 0);
+        return list;
+      }
+    }
+    if (item) list.push(storageClone(item));
+    window.__dshStorageCache = list;
+    return list;
+  }
+  function storageCacheRemove(index, count) {
+    var list = Array.isArray(window.__dshStorageCache) ? window.__dshStorageCache : [];
+    for (var i = 0; i < list.length; i++) {
+      if (!list[i] || String(list[i].index) !== String(index)) continue;
+      var left = Number(list[i].count || 0) - Number(count || 0);
+      if (left > 0) list[i].count = left; else list.splice(i, 1);
+      break;
+    }
+    return list;
+  }
+  function storageDecorateDom() {
+    try {
+      var list = findStorage() || [], byIndex = {};
+      for (var i = 0; i < list.length; i++) if (list[i] && list[i].index != null) byIndex[String(list[i].index)] = list[i];
+      document.querySelectorAll('.Storage .item[data-index],#Storage .item[data-index],.storage .item[data-index]').forEach(function (el) {
+        var item = byIndex[String(el.getAttribute("data-index"))];
+        if (item && item.ITID != null) el.setAttribute("data-dsh-itid", String(item.ITID));
+        else el.removeAttribute("data-dsh-itid");
+      });
+    } catch (e) {}
+  }
+  function storageCacheChanged(finalRead) {
+    storageDecorateDom();
+    if (finalRead) readStorageAndInventory();
+  }
+  function hookStorageEarly() {
+    try {
+      if (window.__dshStorageHookedEarly) return true;
+      if (!CLIENT.UI) { try { CLIENT.UI = window.require && window.require("UI/UIManager"); } catch (e) {} }
+      var UM = CLIENT.UI, inst = null;
+      if (UM) {
+        try { if (typeof UM.get === "function") inst = UM.get("Storage"); } catch (e) {}
+        if (!inst && UM.components) inst = UM.components.Storage || null;
+      }
+      if (!inst || typeof inst.setItems !== "function") return false;
+      window.__dshStorageHookedEarly = true;
+      var origSetItems = inst.setItems, origAddItem = inst.addItem, origRemoveItem = inst.removeItem, origOnRemove = inst.onRemove;
+      inst.setItems = function (items) {
+        var result = origSetItems.apply(this, arguments);
+        if (Array.isArray(items)) {
+          storageCacheSet(items);
+          console.log("[STORAGE] 仓库已缓存 " + items.length + " 件（V" + VER + "）");
+          storageCacheChanged(false);
+          try {
+            if (localStorage.getItem("dsh_ro_inventory_auto") !== "false" && typeof onStorageWindowOpen === "function") {
+              var now = Date.now();
+              if (!window.__dshStorageLastTrig || now - window.__dshStorageLastTrig > 1500) {
+                window.__dshStorageLastTrig = now;
+                onStorageWindowOpen();
+              }
+            }
+          } catch (e) {}
+        }
+        return result;
+      };
+      if (typeof origAddItem === "function") inst.addItem = function (item) {
+        var result = origAddItem.apply(this, arguments);
+        storageCacheAdd(item); storageCacheChanged(false);
+        return result;
+      };
+      if (typeof origRemoveItem === "function") inst.removeItem = function (index, count) {
+        var result = origRemoveItem.apply(this, arguments);
+        storageCacheRemove(index, count); storageCacheChanged(false);
+        return result;
+      };
+      if (typeof origOnRemove === "function") inst.onRemove = function () {
+        storageCacheChanged(true); // 必须在原 onRemove 清空组件闭包列表前保存最后状态。
+        return origOnRemove.apply(this, arguments);
+      };
+      return true;
+    } catch (e) { return false; }
+  }
+  (function () {
+    var tries = 0;
+    var timer = setInterval(function () {
+      tries++;
+      var ok = false;
+      try { ok = hookStorageEarly(); } catch (e) {}
+      if (ok || tries > 50) clearInterval(timer);
+    }, 800);
+  })();
+
+  // ---------------- 自动化 API ----------------
+
+  window.__ROPlugin = {
+    getState: function () { return JSON.parse(JSON.stringify(state)); },
+    getConfig: buildConfig,
+    setAutoLogin: function (acc, pwd) { saved.account = acc; saved.password = pwd; saveSaved(saved); },
+    reboot: function () { location.reload(); },
+    version: version,
+    lockMob: addLock,
+    unlockMob: removeLock,
+    addPickup: addWl,
+    removePickup: removeWl
+  };
+
+// MVP_TIMER_START: 公告栏剩余时间以接收时刻为基准，关闭窗口不停止计时。
+  var mvpStoreKey = "dsh_mvp_timer_v1_cv_" + pickCv();
+  var mvpRecords = {};
+  try { mvpRecords = JSON.parse(localStorage.getItem(mvpStoreKey) || "{}"); } catch (e) {}
+  if (!mvpRecords || typeof mvpRecords !== "object" || Array.isArray(mvpRecords)) mvpRecords = {};
+  var mvpRecent = {}, mvpTimerBody = null, mvpActionStatus = null;
+  function mvpParse(text, now) {
+    var clean = String(text).replace(/\^[0-9a-f]{6}/gi, "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ");
+    var parts = clean.split(/(?=[(（]\s*Lv\.?\s*\d+\s*[)）])/i), rows = [];
+    parts.forEach(function (part) {
+      var head = part.match(/^[(（]\s*Lv\.?\s*(\d+)\s*[)）]\s*/i);
+      if (!head) return;
+      var rest = part.slice(head[0].length).trim();
+      var dead = rest.match(/^(.+?)\s*被击败\s*[(（]([^()（）]+)后复活[)）]/);
+      if (dead) {
+        var duration = dead[2].replace(/\s/g, ""), ms = 0;
+        var remain = duration.replace(/(\d+)(天|小时|分钟|分|秒钟|秒)/g, function (_, value, unit) {
+          ms += Number(value) * ({天:86400000, 小时:3600000, 分钟:60000, 分:60000, 秒钟:1000, 秒:1000}[unit]); return "";
+        });
+        if (remain || !duration || !isFinite(ms)) return;
+        rows.push({ name: dead[1].trim(), level: Number(head[1]), state: "dead", due: now + ms, seen: now });
+        return;
+      }
+      var alive = rest.match(/^(.+?)\s*位于地图\s*([a-z0-9_]+)(?:\.gat)?/i);
+      if (alive) rows.push({ name: alive[1].trim(), level: Number(head[1]), state: "alive", map: alive[2], seen: now });
+    });
+    return rows;
+  }
+  function mvpReceive(text, force) {
+    console.log('[MVP-DEBUG] mvpReceive called, text length:', text ? text.length : 0);
+    var now = Date.now(), rows = mvpParse(text, now);
+    console.log('[MVP-DEBUG] mvpParse returned rows:', rows.length);
+    if (rows.length > 0) {
+      console.log('[MVP-DEBUG] First row:', JSON.stringify(rows[0]));
+    }
+    if (!rows.length) return;
+    // 短时间重复包去重；重新查询即使剩余分钟相同也按新快照校准。
+    if (!force && mvpRecent.text === text && now - mvpRecent.at < 1000) return;
+    mvpRecent = { text: text, at: now };
+    rows.forEach(function (row) { mvpRecords[row.level + ":" + row.name] = row; });
+    try { localStorage.setItem(mvpStoreKey, JSON.stringify(mvpRecords)); } catch (e) {}
+    mvpRender();
+  }
+  function mvpClock(ms) {
+    var s = Math.max(0, Math.ceil(ms / 1000));
+    function pad(n) { return n < 10 ? "0" + n : String(n); }
+    return pad(Math.floor(s / 3600)) + ":" + pad(Math.floor(s / 60) % 60) + ":" + pad(s % 60);
+  }
+  // 从可见日志正文读取，兼容连接建立早于脚本以及自定义对话协议。
+  var mvpDomSeen = new Map(), mvpDomQueued = false;
+  function mvpScanDom() {
+    mvpDomQueued = false;
+    var candidates = new Set(), current = new Map();
+    var walker = document.createTreeWalker(document.body, 4), textNode;
+    while ((textNode = walker.nextNode())) {
+      if (!/MVP\s*日志|[(（]\s*Lv\.?\s*\d+/i.test(textNode.nodeValue || "")) continue;
+      var el = textNode.parentElement;
+      if (!el || el.closest("#dsh-mvp-timers,script,style,textarea")) continue;
+      for (var i = 0; el && el !== document.body && i < 7; i++, el = el.parentElement) {
+        if (el.querySelector("#dsh-mvp-timers")) break;
+        candidates.add(el);
+      }
+    }
+    candidates.forEach(function (el) {
+      if (!el.isConnected || !el.getClientRects().length) return;
+      for (var p = el; p && p !== document.body; p = p.parentElement) {
+        var css = getComputedStyle(p);
+        if (css.display === "none" || css.visibility === "hidden" || css.visibility === "collapse") return;
+      }
+      var text = (el.textContent || "").replace(/\s+/g, " ").trim();
+      if (text.length > 60000 || !mvpParse(text, 0).length) return;
+      current.set(el, text);
+    });
+    // 选包含最多条目的最小正文，避免游戏外层容器的聊天/状态变化触发校准。
+    var selected = new Map(), best = null, bestText = "", bestCount = 0;
+    current.forEach(function (text, el) {
+      var count = mvpParse(text, 0).length;
+      if (count > bestCount || (count === bestCount && (!best || text.length < bestText.length || (text.length === bestText.length && best.contains(el))))) {
+        best = el; bestText = text; bestCount = count;
+      }
+    });
+    if (best) {
+      selected.set(best, bestText);
+      if (mvpDomSeen.get(best) !== bestText) mvpReceive(bestText, true);
+    }
+    mvpDomSeen = selected;
+  }
+  function mvpWatchDom() {
+    function queue() {
+      if (mvpDomQueued) return;
+      mvpDomQueued = true; setTimeout(mvpScanDom, 120);
+    }
+    new MutationObserver(function (changes) {
+      var relevant = changes.some(function (change) {
+        var el = change.target.nodeType === 1 ? change.target : change.target.parentElement;
+        return el && !el.closest("#dsh-mvp-timers");
+      });
+      if (!relevant) return;
+      // 清空/隐藏/移除日志后，即使下次文字相同也允许重新校准。
+      mvpDomSeen.forEach(function (_, el) {
+        if (!el.isConnected || !el.getClientRects().length || !mvpParse(el.textContent || "", 0).length) mvpDomSeen.delete(el);
+      });
+      queue();
+    }).observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["style", "class", "hidden"] });
+    mvpScanDom(); setInterval(queue, 1500);
+  }
+  function mvpRender() {
+    if (!mvpTimerBody || mvpTimerBody.hidden) return;
+    mvpTimerBody.textContent = "";
+    var rows = Object.keys(mvpRecords).map(function (k) { return mvpRecords[k]; }).filter(function (r) {
+      return r && typeof r.name === "string" && isFinite(r.seen) && (r.state === "alive" || (r.state === "dead" && isFinite(r.due)));
+    });
+    if (!rows.length) { mvpTimerBody.textContent = "暂无记录。请打开公告栏#i1 → 第一个选项（MVP日志）。"; return; }
+    rows.sort(function (a, b) { return (a.due || 0) - (b.due || 0); });
+    rows.forEach(function (r) {
+      var line = document.createElement("div"), info = document.createElement("div");
+      line.style.cssText = "padding:7px 0;border-bottom:1px solid #43506a";
+      var remaining = r.due - Date.now();
+      line.textContent = r.name + " · " + (r.state === "alive" ? "日志显示存活" : remaining > 0 ? mvpClock(remaining) + " 后预计复活" : "计时已到 · 待确认");
+      if (r.map && /^[a-z0-9_]+$/i.test(r.map)) {
+        var link = document.createElement("button");
+        link.textContent = r.map + " ↗";
+        link.title = "传送到 " + r.map;
+        link.style.cssText = "background:transparent;color:#8fdcff;border:0;text-decoration:underline;cursor:pointer;padding:2px 4px;font:inherit";
+        link.onclick = function () { mvpTeleport(r.map); };
+        line.appendChild(link);
+      }
+      info.style.cssText = "font-size:11px;color:#aebed6;margin-top:3px";
+      info.textContent = "校准：" + new Date(r.seen).toLocaleString();
+      line.appendChild(info); mvpTimerBody.appendChild(line);
+    });
+  }
+  function mvpTeleport(map) {
+    if (!/^[a-z0-9_]{1,15}$/i.test(map)) return;
+    function status(text) { if (mvpActionStatus) mvpActionStatus.textContent = text; }
+    function current() { return String(getMapName() || "").replace(/\.gat$/i, "").toLowerCase(); }
+    if (!clientReady()) { status("传送失败：客户端未就绪，请先进入游戏"); return; }
+    if (current() === map.toLowerCase()) { status("已在目标地图 " + map); return; }
+    try {
+      status(gptTeleport(map) ? "GPT 传送请求已提交 → " + map : "GPT 传送提交失败");
+    } catch (e) { status("传送失败：" + e.message); }
+  }
+  function mvpInit() {
+    var key = "dsh_mvp_window_v3", prefs = {};
+    try { prefs = JSON.parse(localStorage.getItem(key) || "{}") || {}; } catch (e) {}
+    function number(v, fallback, min, max) { return typeof v === "number" && isFinite(v) ? Math.max(min, Math.min(max, v)) : fallback; }
+    var box = document.createElement("div"), header = document.createElement("div"), toggle = document.createElement("button");
+    var width = number(prefs.width, 300, 220, Math.max(220, innerWidth));
+    var height = number(prefs.height, 340, 120, Math.max(120, innerHeight));
+    var alpha = number(prefs.alpha, 0.45, 0, 1), collapsed = !!prefs.collapsed;
+    box.id = "dsh-mvp-timers";
+    box.style.cssText = "position:fixed;z-index:2147482000;box-sizing:border-box;min-width:220px;min-height:40px;max-width:100vw;max-height:100vh;color:#edf4ff;border:1px solid #8298b066;border-radius:8px;padding:8px;font:13px/1.5 sans-serif;display:flex;flex-direction:column;overflow:hidden;text-shadow:0 1px 3px #000";
+    box.style.width = width + "px";
+    box.style.left = number(prefs.left, Math.max(0, innerWidth - width - 12), 0, Math.max(0, innerWidth - width)) + "px";
+    box.style.top = number(prefs.top, 80, 0, Math.max(0, innerHeight - 40)) + "px";
+    function save() {
+      var rect = box.getBoundingClientRect();
+      try { localStorage.setItem(key, JSON.stringify({left:rect.left,top:rect.top,width:rect.width,height:collapsed?height:rect.height,alpha:alpha,collapsed:collapsed})); } catch (e) {}
+    }
+    function clamp() {
+      var r = box.getBoundingClientRect();
+      box.style.left = Math.max(0, Math.min(r.left, innerWidth - r.width)) + "px";
+      box.style.top = Math.max(0, Math.min(r.top, innerHeight - r.height)) + "px";
+    }
+    header.style.cssText = "display:flex;align-items:center;gap:8px;cursor:move;touch-action:none;flex-shrink:0;user-select:none";
+    var title = document.createElement("span"); title.textContent = "MVP 计时 v4 ⠿"; title.style.flex = "1";
+    toggle.style.cssText = "cursor:pointer;background:#30476588;color:white;border:0;border-radius:4px;padding:2px 8px";
+    var closeBtn = document.createElement("button");
+    closeBtn.textContent = "×";
+    closeBtn.style.cssText = "cursor:pointer;background:#ef454588;color:white;border:0;border-radius:4px;padding:2px 8px;font-size:16px;line-height:1;width:24px";
+    closeBtn.title = "关闭 MVP 计时";
+    closeBtn.onclick = function () { box.style.display = "none"; save(); };
+    header.appendChild(title); header.appendChild(toggle); header.appendChild(closeBtn);
+    var controls = document.createElement("label"); controls.style.cssText = "display:flex;align-items:center;gap:8px;font-size:11px;flex-shrink:0";
+    controls.textContent = "背景浓度";
+    var slider = document.createElement("input"); slider.type = "range"; slider.min = "0"; slider.max = "100"; slider.value = String(alpha * 100); slider.style.width = "100px";
+    slider.oninput = function () { alpha = Number(slider.value)/100; box.style.background = "rgba(24,34,53," + alpha + ")"; save(); };
+    controls.appendChild(slider); box.style.background = "rgba(24,34,53," + alpha + ")";
+    mvpActionStatus = document.createElement("div"); mvpActionStatus.style.cssText = "font-size:11px;color:#c6def9;flex-shrink:0";
+    mvpActionStatus.textContent = "拖标题移动 · 拖右下角缩放 · 点击地图传送";
+    mvpTimerBody = document.createElement("div"); mvpTimerBody.style.cssText = "flex:1;min-height:0;overflow:auto;margin-top:5px";
+    function layout() {
+      toggle.textContent = collapsed ? "展开" : "收起";
+      mvpTimerBody.hidden = controls.hidden = mvpActionStatus.hidden = collapsed;
+      controls.style.display = collapsed ? "none" : "flex";
+      box.style.height = collapsed ? "40px" : height + "px";
+      box.style.resize = collapsed ? "none" : "both";
+    }
+    toggle.onclick = function () { if (!collapsed) height = box.getBoundingClientRect().height; collapsed = !collapsed; layout(); clamp(); save(); mvpRender(); };
+    var drag = null;
+    header.onpointerdown = function (e) {
+      if (e.target === toggle || e.target === closeBtn || e.button !== 0) return;
+      var r = box.getBoundingClientRect(); drag = {x:e.clientX,y:e.clientY,left:r.left,top:r.top};
+      header.setPointerCapture(e.pointerId); e.preventDefault();
+    };
+    // V2.17.0 公共层 A2：窗口按比例缩放时，屏幕位移要除以缩放值才是窗口位移
+    header.onpointermove = function (e) { if (!drag) return; var sc = roScaleOf(box); box.style.left = drag.left + (e.clientX - drag.x) / sc + "px"; box.style.top = drag.top + (e.clientY - drag.y) / sc + "px"; clamp(); };
+    header.onpointerup = header.onpointercancel = function () { drag = null; save(); };
+    box.appendChild(header); box.appendChild(controls); box.appendChild(mvpActionStatus); box.appendChild(mvpTimerBody);
+    document.body.appendChild(box); layout(); clamp();
+    try { isolateEl(box); } catch (e) {} // V2.15.8：浮窗操作隔层，不再漏到游戏 window 级监听
+    try { box.setAttribute("data-dsh-win", "1"); roApplyScale(box); } catch (e) {} // V2.17.0 公共层 A2：随视口缩放
+    // 恢复显示状态（默认显示，除非用户手动关闭过）
+    if (prefs.hidden) box.style.display = "none";
+    // 修改 save 函数，保存显示状态
+    var originalSave = save;
+    save = function () {
+      originalSave();
+      var rect = box.getBoundingClientRect();
+      try { localStorage.setItem(key, JSON.stringify({left:rect.left,top:rect.top,width:rect.width,height:collapsed?height:rect.height,alpha:alpha,collapsed:collapsed,hidden:box.style.display==="none"})); } catch (e) {}
+    };
+    closeBtn.onclick = function () { save(); box.style.display = "none"; };
+    if (typeof ResizeObserver !== "undefined") new ResizeObserver(function () { if (!collapsed) height = box.getBoundingClientRect().height; clamp(); save(); }).observe(box);
+    window.addEventListener("resize", function () { clamp(); save(); });
+    mvpRender(); setInterval(mvpRender, 1000); mvpWatchDom();
+  }
+  // MVP_TIMER_END
+
+  // ---------------- V2.16.21 装备信息悬浮（真名/词条/售价）+ 自动探查 ----------------
+  // 需求：未鉴定装备的真实 ID/名字/随机词条，以及商店买卖单价，只在鼠标悬浮时以浮层显示；采集全自动，无按钮。
+  // 字段依据（客户端源码 Ragna.roBrowser）：
+  //   item.Options[{index,value}] = 随机词条；DB.getOptionName(index) 取名（模板含 %d，%% 转义）；
+  //   DB.getItemInfo(ITID).identifiedDisplayName = 真名；
+  //   DB.getItemName() 在 !item.IsIdentified 时直接 return unidentifiedDisplayName（词条被吞），故需自行拼装；
+  //   售价：ZC.PC_SELL_ITEMLIST(0xc7)={index,price,overchargeprice}、ZC.PC_PURCHASE_ITEMLIST(0xc6)={price,discountprice,type,ITID}。
+  var ITIP = {
+    on: true, el: null, elKey: "", elAt: 0, hover: null, x: 0, y: 0,
+    sell: {}, buy: {},               // 商店单价缓存
+    invSig: "", invAt: 0,            // 背包探查指纹/时间
+    pendingOps: [], seenOps: {},     // 首次出现的 opcode
+    domShop: false, domBag: false,   // DOM 结构只报一次
+    lastIdent: {},                   // ITID#index -> 是否已鉴定（检测鉴定事件）
+    probeLogged: false
+  };
+  function itipDB() { try { return CLIENT.DB || requireDB("DB/DBManager"); } catch (e) { return null; } }
+  function itipInfo(itid) { try { var db = itipDB(); if (!db || typeof db.getItemInfo !== "function") return null; return db.getItemInfo(itid) || null; } catch (e) { return null; } }
+  // V2.16.22：原写法把 unidentifiedDisplayName("未知物品") 排在 name 前面 → 未鉴定装备永远显示"未知物品"。
+  // 实测可用字段与脚本内 getItemName() 一致（identifiedDiSPlayName 是历史拼写，兜底用 .name），这里做多候选 + 占位名过滤。
+  var ITIP_BADNAME = /^(未鉴定|未知物品|Unknown Item|Unknown|\?\?+)$/i;
+  function itipPickName(info) {
+    if (!info) return null;
+    // V2.16.23：lastRO 客户端实测真名就在 identifiedDiSPlayName（大写 S，上游 roBrowser 才叫 identifiedDisplayName）
+    var cands = [info.identifiedDiSPlayName, info.identifiedDisplayName, info.name, info.identifiedName, info.displayName];
+    for (var i = 0; i < cands.length; i++) {
+      if (cands[i] == null) continue;
+      var s = String(cands[i]).trim();
+      if (!s || ITIP_BADNAME.test(s)) continue;
+      return s;
+    }
+    return null;
+  }
+  function itipNameOf(itid) { try { return itipPickName(itipInfo(itid)); } catch (e) { return null; } }
+  function itipNameDiag(itid) {
+    try {
+      var info = itipInfo(itid);
+      if (!info) return "DB 取不到（CLIENT.DB/require 没拿到 DBManager）";
+      var ks = ["identifiedDisplayName", "name", "identifiedName", "unidentifiedDisplayName"];
+      var parts = [];
+      for (var i = 0; i < ks.length; i++) { var v = info[ks[i]]; parts.push(ks[i] + "=" + (v === undefined ? "无" : JSON.stringify(String(v).slice(0, 24)))); }
+      return "表字段[" + Object.keys(info).join(",") + "] " + parts.join(" ");
+    } catch (e) { return "诊断异常:" + e.message; }
+  }
+  function itipEsc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  function itipZeny(n) {
+    var s = String(Math.round(Number(n) || 0)), out = "", c = 0;
+    for (var i = s.length - 1; i >= 0; i--) { out = s.charAt(i) + out; if (++c % 3 === 0 && i > 0) out = "," + out; }
+    return out;
+  }
+  // V2.16.25：内置中文词条表（lastRO 客户端不提供可用的 DB.getOptionName，探查实测返回空）
+  // 译自上游 roBrowser ItemRandomOptionTable.js 全 192 条；%d=数值、%%=百分号
+  var ITIP_OPT_CN = {
+    1: "MaxHP +%d", 2: "MaxSP +%d", 3: "STR +%d", 4: "AGI +%d", 5: "VIT +%d", 6: "INT +%d", 7: "DEX +%d", 8: "LUK +%d",
+    9: "MaxHP +%d%%", 10: "MaxSP +%d%%", 11: "HP自然回复 +%d%%", 12: "SP自然回复 +%d%%",
+    13: "ATK +%d%%", 14: "MATK +%d%%", 15: "ASPD +%d", 16: "攻击后延迟 -%d%%",
+    17: "ATK +%d", 18: "HIT +%d", 19: "MATK +%d", 20: "DEF +%d", 21: "MDEF +%d", 22: "FLEE +%d",
+    23: "完全回避 +%d", 24: "CRIT +%d",
+    25: "无属性抗性 +%d%%", 26: "水属性抗性 +%d%%", 27: "地属性抗性 +%d%%", 28: "火属性抗性 +%d%%",
+    29: "风属性抗性 +%d%%", 30: "毒属性抗性 +%d%%", 31: "圣属性抗性 +%d%%", 32: "暗属性抗性 +%d%%",
+    33: "念属性抗性 +%d%%", 34: "不死属性抗性 +%d%%", 35: "全属性抗性 +%d%%",
+    36: "受到无属性伤害 -%d%%", 37: "对无属性怪物伤害 +%d%%",
+    38: "受到水属性伤害 -%d%%", 39: "对水属性怪物伤害 +%d%%",
+    40: "受到地属性伤害 -%d%%", 41: "对地属性怪物伤害 +%d%%",
+    42: "受到火属性伤害 -%d%%", 43: "对火属性怪物伤害 +%d%%",
+    44: "受到风属性伤害 -%d%%", 45: "对风属性怪物伤害 +%d%%",
+    46: "受到毒属性伤害 -%d%%", 47: "对毒属性怪物伤害 +%d%%",
+    48: "受到圣属性伤害 -%d%%", 49: "对圣属性怪物伤害 +%d%%",
+    50: "受到暗属性伤害 -%d%%", 51: "对暗属性怪物伤害 +%d%%",
+    52: "受到念属性伤害 -%d%%", 53: "对念属性怪物伤害 +%d%%",
+    54: "受到不死属性伤害 -%d%%", 55: "对不死属性怪物伤害 +%d%%",
+    56: "受到无属性魔法伤害 -%d%%", 57: "对无属性怪物魔法伤害 +%d%%",
+    58: "受到水属性魔法伤害 -%d%%", 59: "对水属性怪物魔法伤害 +%d%%",
+    60: "受到地属性魔法伤害 -%d%%", 61: "对地属性怪物魔法伤害 +%d%%",
+    62: "受到火属性魔法伤害 -%d%%", 63: "对火属性怪物魔法伤害 +%d%%",
+    64: "受到风属性魔法伤害 -%d%%", 65: "对风属性怪物魔法伤害 +%d%%",
+    66: "受到毒属性魔法伤害 -%d%%", 67: "对毒属性怪物魔法伤害 +%d%%",
+    68: "受到圣属性魔法伤害 -%d%%", 69: "对圣属性怪物魔法伤害 +%d%%",
+    70: "受到暗属性魔法伤害 -%d%%", 71: "对暗属性怪物魔法伤害 +%d%%",
+    72: "受到念属性魔法伤害 -%d%%", 73: "对念属性怪物魔法伤害 +%d%%",
+    74: "受到不死属性魔法伤害 -%d%%", 75: "对不死属性怪物魔法伤害 +%d%%",
+    76: "防具属性：无", 77: "防具属性：水", 78: "防具属性：地", 79: "防具属性：火", 80: "防具属性：风",
+    81: "防具属性：毒", 82: "防具属性：圣", 83: "防具属性：暗", 84: "防具属性：念", 85: "防具属性：不死",
+    86: "防具属性：全属性",
+    87: "受到无形怪伤害 -%d%%", 88: "受到不死怪伤害 -%d%%", 89: "受到动物怪伤害 -%d%%", 90: "受到植物怪伤害 -%d%%",
+    91: "受到昆虫怪伤害 -%d%%", 92: "受到鱼贝怪伤害 -%d%%", 93: "受到恶魔怪伤害 -%d%%", 94: "受到人型怪伤害 -%d%%",
+    95: "受到天使怪伤害 -%d%%", 96: "受到龙族怪伤害 -%d%%",
+    97: "对无形怪伤害 +%d%%", 98: "对不死怪伤害 +%d%%", 99: "对动物怪伤害 +%d%%", 100: "对植物怪伤害 +%d%%",
+    101: "对昆虫怪伤害 +%d%%", 102: "对鱼贝怪伤害 +%d%%", 103: "对恶魔怪伤害 +%d%%", 104: "对人型怪伤害 +%d%%",
+    105: "对天使怪伤害 +%d%%", 106: "对龙族怪伤害 +%d%%",
+    107: "对无形怪魔法伤害 +%d%%", 108: "对不死怪魔法伤害 +%d%%", 109: "对动物怪魔法伤害 +%d%%", 110: "对植物怪魔法伤害 +%d%%",
+    111: "对昆虫怪魔法伤害 +%d%%", 112: "对鱼贝怪魔法伤害 +%d%%", 113: "对恶魔怪魔法伤害 +%d%%", 114: "对人型怪魔法伤害 +%d%%",
+    115: "对天使怪魔法伤害 +%d%%", 116: "对龙族怪魔法伤害 +%d%%",
+    117: "对无形怪CRIT +%d", 118: "对不死怪CRIT +%d", 119: "对动物怪CRIT +%d", 120: "对植物怪CRIT +%d",
+    121: "对昆虫怪CRIT +%d", 122: "对鱼贝怪CRIT +%d", 123: "对恶魔怪CRIT +%d", 124: "对人型怪CRIT +%d",
+    125: "对天使怪CRIT +%d", 126: "对龙族怪CRIT +%d",
+    127: "无视无形怪DEF %d%%", 128: "无视不死怪DEF %d%%", 129: "无视动物怪DEF %d%%", 130: "无视植物怪DEF %d%%",
+    131: "无视昆虫怪DEF %d%%", 132: "无视鱼贝怪DEF %d%%", 133: "无视恶魔怪DEF %d%%", 134: "无视人型怪DEF %d%%",
+    135: "无视天使怪DEF %d%%", 136: "无视龙族怪DEF %d%%",
+    137: "无视无形怪MDEF %d%%", 138: "无视不死怪MDEF %d%%", 139: "无视动物怪MDEF %d%%", 140: "无视植物怪MDEF %d%%",
+    141: "无视昆虫怪MDEF %d%%", 142: "无视鱼贝怪MDEF %d%%", 143: "无视恶魔怪MDEF %d%%", 144: "无视人型怪MDEF %d%%",
+    145: "无视天使怪MDEF %d%%", 146: "无视龙族怪MDEF %d%%",
+    147: "对普通怪伤害 +%d%%", 148: "对首领类魔物的物理伤害增加 %d%%",
+    149: "受到普通怪伤害 -%d%%", 150: "受到BOSS怪伤害 -%d%%",
+    151: "对普通怪魔法伤害 +%d%%", 152: "对BOSS怪魔法伤害 +%d%%",
+    153: "无视普通怪DEF %d%%", 154: "无视BOSS怪DEF %d%%",
+    155: "无视普通怪MDEF %d%%", 156: "无视BOSS怪MDEF %d%%",
+    157: "对小型怪伤害 +%d%%", 158: "对中型怪伤害 +%d%%", 159: "对大型怪伤害 +%d%%",
+    160: "受到小型怪伤害 -%d%%", 161: "受到中型怪伤害 -%d%%", 162: "受到大型怪伤害 -%d%%",
+    163: "武器体型惩罚无效",
+    164: "暴击伤害 +%d%%", 165: "受到暴击伤害 -%d%%",
+    166: "远距离物理伤害 +%d%%", 167: "受到远距离物理伤害 -%d%%",
+    168: "治愈技能效果 +%d%%", 169: "受到治愈效果 +%d%%",
+    170: "变动咏唱时间 -%d%%", 171: "技能后延迟 -%d%%", 172: "SP消耗 -%d%%",
+    173: "攻击时吸收HP", 174: "攻击时吸收SP",
+    175: "武器属性：无", 176: "武器属性：水", 177: "武器属性：地", 178: "武器属性：火", 179: "武器属性：风",
+    180: "武器属性：毒", 181: "武器属性：圣", 182: "武器属性：暗", 183: "武器属性：念", 184: "武器属性：不死",
+    185: "战斗中不会损坏（武器）", 186: "战斗中不会损坏（防具）",
+    187: "对小型怪魔法伤害 +%d%%", 188: "对中型怪魔法伤害 +%d%%", 189: "对大型怪魔法伤害 +%d%%",
+    190: "受到小型怪魔法伤害 -%d%%", 191: "受到中型怪魔法伤害 -%d%%", 192: "受到大型怪魔法伤害 -%d%%",
+    203: "最大负载增加 %d"
+  };
+  // ITEM_OPTION_COLOR_START
+  // V2.30.0：装备词条分色（物品提示悬停词条按档着色，始终开启、不设开关，不改 RO_MODULES）
+  // 只补缺失 id：190/191/192 与 117-126 沿用助手现有本地文案，绝不覆盖。
+  var ITIP_OPT_CN_EXT = {
+    200: "消灭魔物一定几率获得(1 - %d)金钱",
+    201: "消灭魔物恢复%d点HP",
+    202: "消灭魔物恢复%d点SP",
+    204: "空",
+    301: "丁丁",
+    302: "巨人",
+    303: "披风不会被破坏",
+    304: "头饰不会被破坏",
+    305: "盾牌不会被破坏",
+    306: "鞋不会被破坏",
+    307: "受到小型魔物的魔法伤害减少%d%",
+    308: "受到中型魔物的魔法伤害减少%d%",
+    309: "受到大型魔物的魔法伤害减少%d%",
+    310: "对无型魔物的物理伤害减少+%d%",
+    311: "对不死型魔物的物理伤害减少+%d%",
+    312: "对动物型魔物的物理伤害减少+%d%",
+    313: "对植物型魔物的物理伤害减少+%d%",
+    314: "对昆虫型魔物的物理伤害减少+%d%",
+    315: "对鱼贝类魔物的物理伤害减少+%d%",
+    316: "对恶魔型魔物的物理伤害减少+%d%",
+    317: "对人类型魔物的物理伤害减少+%d%",
+    318: "对天使型魔物的物理伤害减少+%d%",
+    319: "对龙族魔物的物理伤害减少+%d%",
+    320: "受到人型系玩家的伤害降低%d%",
+    321: "对喵族玩家的耐性+%d%",
+    322: "对人类型玩家的物理伤害+%d%",
+    323: "对喵族玩家的物理伤害+%d%",
+    324: "对人类型玩家的魔法伤害+%d%",
+    325: "对喵族玩家的魔法伤害+%d%",
+    326: "对人类型玩家的 CRI + %d",
+    327: "对喵族玩家的 CRI + %d",
+    328: "对人类型玩家的物理防御力无视%d%",
+    329: "对喵族玩家的物理防御力无视%d%",
+    330: "对人类型玩家的魔法防御力无视%d%",
+    331: "对喵族玩家的魔法防御力无视%d%",
+    332: "近距离物理伤害+%d%",
+    333: "受到的近距离物理伤害-%d%",
+    334: "无属性魔法伤害+%d%",
+    335: "水属性魔法伤害+%d%",
+    336: "地属性魔法伤害+%d%",
+    337: "火属性魔法伤害+%d%",
+    338: "风属性魔法伤害+%d%",
+    339: "毒属性魔法伤害+%d%",
+    340: "圣属性魔法伤害+%d%",
+    341: "暗属性魔法伤害+%d%",
+    342: "念属性魔法伤害+%d%",
+    343: "不死属性魔法伤害+%d%",
+    344: "所有属性魔法伤害+%d%"
+  };
+  for (var _k in ITIP_OPT_CN_EXT) { if (!(_k in ITIP_OPT_CN)) ITIP_OPT_CN[_k] = ITIP_OPT_CN_EXT[_k]; }
+  // 满值上限表 = 独立版 ITIP_OPT_MAX（196 键）补 192:5（助手 190/191/192 为「受到X怪魔法伤害」，192 独立版缺失）
+  var ITIP_OPT_MAX = {"1":1000,"2":100,"3":5,"4":5,"5":5,"6":5,"7":5,"8":5,"9":5,"10":5,"11":5,"12":5,"13":10,"14":10,"15":5,"16":10,"17":100,"18":10,"19":100,"22":5,"24":10,"25":5,"26":5,"27":5,"28":5,"29":5,"30":5,"31":5,"32":5,"33":5,"34":5,"36":5,"37":10,"38":5,"39":10,"40":5,"41":10,"42":5,"43":10,"44":5,"45":10,"46":5,"47":10,"48":5,"49":10,"50":5,"51":10,"52":5,"53":10,"54":5,"55":10,"56":5,"57":10,"58":5,"59":10,"60":5,"61":10,"62":5,"63":10,"64":5,"65":10,"66":5,"67":10,"68":5,"69":10,"70":5,"71":10,"72":5,"73":10,"74":5,"75":10,"87":5,"88":5,"89":5,"90":5,"91":5,"92":5,"93":5,"94":5,"95":5,"96":5,"97":10,"98":10,"99":10,"100":10,"101":10,"102":10,"103":10,"104":10,"105":10,"106":10,"107":10,"108":10,"109":10,"110":10,"111":10,"112":10,"113":10,"114":10,"115":10,"116":10,"117":10,"118":10,"119":10,"120":10,"121":10,"122":10,"123":10,"124":10,"125":10,"126":10,"127":10,"128":10,"129":10,"130":10,"131":10,"132":10,"133":10,"134":10,"135":10,"136":10,"137":10,"138":10,"139":10,"140":10,"141":10,"142":10,"143":10,"144":10,"145":10,"146":10,"147":10,"148":10,"149":5,"150":5,"151":10,"152":10,"153":10,"154":10,"155":10,"156":10,"157":10,"158":10,"159":10,"160":5,"161":5,"162":5,"164":10,"165":5,"166":10,"167":5,"168":10,"169":10,"170":5,"171":5,"172":5,"187":10,"188":10,"189":10,"190":5,"191":5,"192":5,"200":100,"201":100,"202":20,"203":100,"307":5,"308":5,"309":5,"310":5,"311":5,"312":5,"313":5,"314":5,"315":5,"316":5,"317":5,"318":5,"319":5,"320":5,"322":10,"324":10,"326":10,"328":10,"330":10,"332":10,"333":5,"334":10,"335":10,"336":10,"337":10,"338":10,"339":10,"340":10,"341":10,"342":10,"343":10};
+  // 固定效果白名单：文案不含 %d 的 id，排除占位项（未开启/空/丁丁/巨人）
+  var FIXED_IDS = [76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 163, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 303, 304, 305, 306];
+  function itipOptRange(id) { var max = ITIP_OPT_MAX[id]; return max ? { min: 1, max: max } : null; }
+  function itipOptGrade(oe) {
+    var id = Number(oe.id), value = Number(oe.value);
+    if (FIXED_IDS.indexOf(id) !== -1) return { tier: "fixed", color: "#ffd479", label: "固定" };
+    var range = itipOptRange(id);
+    if (!range) return { tier: "neutral", color: "", label: "" };
+    if (!Number.isFinite(value) || value < range.min || value > range.max) return { tier: "unrated", color: "#8f9bb3", label: "未评级" };
+    var lowEnd = range.min + Math.floor((range.max - range.min + 1) / 2) - 1;
+    if (value === range.max) return { tier: "max", color: "#ffd479", label: "" };
+    if (value <= lowEnd) return { tier: "low", color: "#7ef0a8", label: "" };
+    return { tier: "middle", color: "#c9a0ff", label: "" };
+  }
+  function itipOptHtml(oe) {
+    var g = itipOptGrade(oe);
+    var s = g.color ? "color:" + g.color + ";" : "";
+    var b = g.label ? ' <span style="color:#8f9bb3;font-size:11px">[' + g.label + "]</span>" : "";
+    return '<div style="margin-top:2px;' + s + '">· ' + itipEsc(oe.text) + b + "</div>";
+  }
+  // ITEM_OPTION_COLOR_END
+  function itipOptText(o) {
+    var id = parseInt(o.index, 10);
+    var cn = ITIP_OPT_CN[id];
+    if (cn) return cn.replace(/%d/g, String(o.value)).replace(/%%/g, "%");
+    var nm = null;
+    try { var db = itipDB(); if (db && typeof db.getOptionName === "function") nm = db.getOptionName(id); } catch (e) {}
+    if (nm && nm !== "UNKNOWN RANDOM OPTION") return String(nm).replace(/%d/g, String(o.value)).replace(/%%/g, "%");
+    return "词条#" + id + " 值" + o.value;
+  }
+  function itipOptList(item) {
+    var out = [];
+    try {
+      // V2.16.24：lastRO 的 options 是对象 {Index0,Value0,Param0,...,Index4,Value4,Param4}（实测），
+      // 上游 roBrowser 是数组 Options[1..5]={index,value,param}，两种都支持。
+      // 注意 nRandomOptionCnt 在 lastRO 里不可靠（有词条时也可能是 0），不能拿它判断有无词条。
+      var ops = item && (item.options || item.Options);
+      if (!ops) return out;
+      if (!Array.isArray(ops) && ops.Index0 !== undefined) {
+        for (var k = 0; k <= 4; k++) {
+          var ix = Number(ops["Index" + k] || 0);
+          if (!ix) continue;
+          out.push({ id: ix, value: Number(ops["Value" + k] || 0), text: itipOptText({ index: ix, value: Number(ops["Value" + k] || 0), param: Number(ops["Param" + k] || 0) }) });
+        }
+        return out;
+      }
+      for (var i = 1; i <= 5; i++) {
+        var o = ops[i];
+        if (!o || !o.index) continue;
+        out.push({ id: Number(o.index), value: Number(o.value), text: itipOptText(o) });
+      }
+    } catch (e) {}
+    return out;
+  }
+  function itipCardList(item) {
+    var out = [];
+    try {
+      var slot = item && item.slot;
+      if (!slot) return out;
+      for (var i = 1; i <= 4; i++) {
+        var c = slot["card" + i];
+        if (!c || c === 0xff || c === 0x00ff || c === 0xff00) continue;
+        out.push(itipNameOf(c) || ("卡片#" + c));
+      }
+    } catch (e) {}
+    return out;
+  }
+  function itipInvMap() {
+    var map = {}, list = null;
+    try { list = findInventory(); } catch (e) {}
+    if (!list) return map;
+    for (var i = 0; i < list.length; i++) {
+      var it = list[i];
+      if (!it || typeof it !== "object") continue;
+      map[(it.index != null) ? Number(it.index) : i] = it;
+    }
+    return map;
+  }
+  function itipInvById(itid, map) {
+    for (var k in map) { var it = map[k]; if (it && String(it.ITID != null ? it.ITID : it.itemid) === String(itid)) return it; }
+    return null;
+  }
+  function itipStorageMap() {
+    var map = {}, list = findStorage() || [];
+    for (var i = 0; i < list.length; i++) {
+      var it = list[i];
+      if (it && typeof it === "object" && it.index != null) map[Number(it.index)] = it;
+    }
+    return map;
+  }
+  function itipIsStorage(el) {
+    try { return !!(el && el.closest && el.closest(".Storage,#Storage,.storage")); } catch (e) { return false; }
+  }
+  // ---- 浮层 DOM ----
+  function itipNode() {
+    if (ITIP.el && ITIP.el.parentNode) return ITIP.el;
+    var d = document.createElement("div");
+    d.id = "dsh-itemtip";
+    d.style.cssText = "position:fixed;left:0;top:0;z-index:2147483000;display:none;pointer-events:none;max-width:340px;padding:7px 10px;border-radius:5px;background:rgba(12,18,30,0.96);border:1px solid rgba(120,170,240,0.6);color:#e9eff8;font:12px/1.6 'Microsoft YaHei',Arial,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,0.55);white-space:normal;word-break:break-all;text-align:left";
+    try { document.documentElement.appendChild(d); } catch (e) {}
+    ITIP.el = d;
+    return d;
+  }
+  function itipHide() { try { if (ITIP.el) ITIP.el.style.display = "none"; ITIP.elKey = ""; } catch (e) {} }
+  function itipPlace(x, y) {
+    try {
+      var d = ITIP.el; if (!d) return;
+      var w = d.offsetWidth || 200, h = d.offsetHeight || 60;
+      var left = x + 16, top = y + 18;
+      if (left + w > window.innerWidth - 8) left = Math.max(8, x - w - 12);
+      if (top + h > window.innerHeight - 8) top = Math.max(8, window.innerHeight - h - 8);
+      d.style.left = left + "px"; d.style.top = top + "px";
+    } catch (e) {}
+  }
+  function itipChain(el) {
+    var out = [], n = el, g = 0;
+    while (n && g++ < 40) {
+      out.push(n);
+      var root = null;
+      try { root = n.getRootNode ? n.getRootNode() : null; } catch (e) {}
+      n = (root && root.host) ? root.host : (n.parentElement || null);
+    }
+    return out;
+  }
+  function itipIsShop(chain) {
+    for (var i = 0; i < chain.length; i++) {
+      var n = chain[i];
+      try { if (n.id === "NpcStore") return true; } catch (e) {}
+      try { if (n.classList && n.classList.contains("NpcStore")) return true; } catch (e) {}
+    }
+    return false;
+  }
+  function itipBody(item, priceObj) {
+    try {
+      var itid = (item.ITID != null) ? item.ITID : item.itemid;
+      if (itid == null) return "";
+      var ident = !!item.IsIdentified;
+      var opts = itipOptList(item);
+      var cards = itipCardList(item);
+      var refined = Number(item.RefiningLevel || item.refine || 0);
+      var grade = Number(item.enchantgrade || 0);
+      if (ident && !opts.length && !cards.length && !refined && !grade && !priceObj) return ""; // 无隐藏信息 → 不弹
+      var L = [];
+      if (!ident) L.push('<div style="color:#ffcf5c;font-weight:bold">未鉴定</div>');
+      var head = "";
+      if (refined > 0) head += "+" + refined + " ";
+      if (grade > 0) head += "[" + (["", "D", "C", "B", "A"][grade] || "") + "] ";
+      var realName = itipNameOf(itid);
+      head += (realName || "未知物品");
+      if (cards.length) head += " [" + cards.length + "卡]";
+      L.push('<div style="color:#7fd1ff;font-weight:bold">' + itipEsc(head) + "</div>");
+      L.push('<div style="color:#8f9bb3">物品 ID ' + itid + "</div>");
+      if (opts.length) {
+        // V2.30.0：装备词条分色——每条词条单独一行按档着色，不再把 175-186 单独绿色分组
+        for (var oi3 = 0; oi3 < opts.length; oi3++) L.push(itipOptHtml(opts[oi3]));
+      } else if (!ident) {
+        L.push('<div style="color:#8f9bb3;margin-top:3px">（无随机词条）</div>');
+      }
+      // V2.16.22 诊断：字段没读到时把客户端原始字段名/值打出来（定位 lastRO 改过的字段名，定位完删掉）
+      try {
+        var dg = [];
+        if (!realName) dg.push("名称 " + itipNameDiag(itid));
+        if (!opts.length) {
+          var nroc = (item.nRandomOptionCnt == null) ? "无" : String(item.nRandomOptionCnt);
+          var raw = "";
+          try { var ro = item.options || item.Options; if (ro) raw = JSON.stringify(ro).slice(0, 140); } catch (eR) { raw = "ERR"; }
+          dg.push("词条 options=" + (("options" in item) ? "有" : "无") + " 条数=" + nroc + " 原始=" + (raw || "空"));
+        }
+        // V2.22.0：词条显示已确认正常，临时诊断行（dg）不再输出到提示条
+      } catch (eD) {}
+      if (cards.length) L.push('<div style="color:#9fd48a;margin-top:3px">插卡：' + itipEsc(cards.join("、")) + "</div>");
+      if (priceObj) {
+        var pz = "";
+        if (priceObj.overchargeprice != null) pz = "卖价 " + itipZeny(priceObj.overchargeprice) + " z";
+        else if (priceObj.price != null) pz = "卖价 " + itipZeny(priceObj.price) + " z";
+        if (priceObj.discountprice != null && priceObj.discountprice !== priceObj.price) pz += "（原价 " + itipZeny(priceObj.price) + "）";
+        if (pz) L.push('<div style="color:#ffd479;margin-top:3px">' + itipEsc(pz) + "</div>");
+      }
+      return L.join("");
+    } catch (e) { return ""; }
+  }
+  function itipShopRow(el) {
+    try {
+      var nm = "", pr = "";
+      try { var nEl = el.querySelector(".name") || el.querySelector(".nameOverlay"); if (nEl) nm = (nEl.textContent || "").trim(); } catch (e) {}
+      try { var pEl = el.querySelector(".price"); if (pEl) pr = (pEl.textContent || "").trim(); } catch (e) {}
+      if (!nm && !pr) return "";
+      var L = ['<div style="color:#7fd1ff;font-weight:bold">' + itipEsc(nm || "商品") + "</div>"];
+      if (pr) L.push('<div style="color:#ffd479">买价 ' + itipEsc(pr) + "</div>");
+      return L.join("");
+    } catch (e) { return ""; }
+  }
+  function itipShopSide(el) {
+    try {
+      if (!el || !el.closest || !el.closest("#NpcStore")) return "";
+      if (el.closest("#NpcStore .InputWindow")) return "input";
+      if (el.closest("#NpcStore .OutputWindow")) return "output";
+    } catch (e) {}
+    return "";
+  }
+  function itipShopSellMode(el) {
+    try {
+      var store = el && el.closest && el.closest("#NpcStore");
+      var sell = store && store.querySelector(".WinSell");
+      if (!sell) return false;
+      var css = getComputedStyle(sell);
+      return css.display !== "none" && css.visibility !== "hidden";
+    } catch (e) { return false; }
+  }
+  function itipOver(e) {
+    try {
+      if (!ITIP.on) return;
+      var t = e.target;
+      try { var pth = e.composedPath && e.composedPath(); if (pth && pth.length) t = pth[0]; } catch (e0) {}
+      if (!t || !t.closest) return;
+      var el = t.closest(".item");
+      if (!el) { itipHide(); return; }
+      ITIP.hover = el; ITIP.x = e.clientX; ITIP.y = e.clientY;
+      var html = "";
+      if (itipIsShop(itipChain(el))) {
+        var side = itipShopSide(el);
+        var isSell = !!side && itipShopSellMode(el);
+        var si = el.getAttribute("data-index");
+        var inv = itipInvMap();
+        var sItem = (si != null) ? inv[Number(si)] : null;
+        html = (isSell && sItem) ? itipBody(sItem, ITIP.sell[Number(si)] || null) : itipShopRow(el);
+      } else if (itipIsStorage(el)) {
+        var storageIndex = el.getAttribute("data-index");
+        var storageItem = (storageIndex != null) ? itipStorageMap()[Number(storageIndex)] : null;
+        if (!storageItem) { itipHide(); return; }
+        html = itipBody(storageItem, null); // 仓库只按实例 index 映射，同 ITID 装备不能互相替代。
+      } else {
+        var itid = el.getAttribute("data-itid");
+        if (!itid) { itipHide(); return; }
+        var idx = el.getAttribute("data-index");
+        var inv2 = itipInvMap();
+        var item = (idx != null) ? inv2[Number(idx)] : null;
+        // 装备/交易实例只能按 data-index 精确映射；同 ITID 可能有不同精炼与词条，禁止反查替代。
+        if (item && String(item.ITID != null ? item.ITID : item.itemid) !== String(itid)) item = null;
+        if (!item) { itipHide(); return; }
+        html = itipBody(item, null);
+      }
+      if (!html) { itipHide(); return; }
+      var key = html.length + "|" + html.slice(0, 80);
+      var d = itipNode();
+      if (key !== ITIP.elKey) { d.innerHTML = html; ITIP.elKey = key; }
+      d.style.display = "block";
+      itipPlace(e.clientX, e.clientY);
+    } catch (err) { itipHide(); }
+  }
+  function itipRefresh() {
+    try {
+      var el = ITIP.hover;
+      if (!el || !el.isConnected) { itipHide(); return; }
+      itipOver({ target: el, clientX: ITIP.x, clientY: ITIP.y, composedPath: function () { return [el]; } });
+    } catch (e) { itipHide(); }
+  }
+  // ---- 商店单价解析 ----
+  function itipShopPkt(bytes, op) {
+    try {
+      var u8 = new Uint8Array(bytes);
+      var dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+      var total = u8.length;
+      if (op === 0xc7) {
+        var n7 = ((total - 4) / 10) | 0;
+        for (var i = 0; i < n7; i++) {
+          var o7 = 4 + i * 10;
+          ITIP.sell[dv.getInt16(o7, true)] = { price: dv.getInt32(o7 + 2, true), overchargeprice: dv.getInt32(o7 + 6, true) };
+        }
+      } else if (op === 0xc6) {
+        var sz = 0, rest = total - 4;
+        if (rest > 0 && rest % 13 === 0) sz = 13; else if (rest > 0 && rest % 11 === 0) sz = 11;
+        if (sz) {
+          var n6 = (rest / sz) | 0;
+          for (var j = 0; j < n6; j++) {
+            var o6 = 4 + j * sz;
+            var itid6 = (sz === 13) ? dv.getInt32(o6 + 9, true) : dv.getUint16(o6 + 9, true);
+            ITIP.buy[itid6] = { price: dv.getInt32(o6, true), discountprice: dv.getInt32(o6 + 4, true) };
+          }
+        }
+      }
+    } catch (e) {}
+  }
+  // ---- 自动探查（无按钮，静默）----
+  // V2.16.24：鉴定前后取证用的双向包环（只在背包状态变化时随探查一起上报）
+  var ITIP_RING = { in: [], out: [], hooked: false };
+  function itipRingPush(arr, rec) {
+    try { arr.push(rec); if (arr.length > 120) arr.shift(); } catch (e) {}
+  }
+  function itipHookOut() {
+    if (ITIP_RING.hooked) return;
+    try {
+      if (!CLIENT.NM) { try { clientReady(); } catch (e0) {} }
+      if (!CLIENT.NM || typeof CLIENT.NM.sendPacket !== "function") return;
+      var orig = CLIENT.NM.sendPacket;
+      CLIENT.NM.sendPacket = function (p) {
+        try {
+          var b = txBuild(p);
+          if (b && b.op >= 0) itipRingPush(ITIP_RING.out, { t: Date.now(), op: b.op, len: b.len, hex: b.hex });
+        } catch (e) {}
+        return orig.apply(this, arguments);
+      };
+      ITIP_RING.hooked = true;
+    } catch (e) {}
+  }
+  function itipPktProbe(bytes, op) {
+    try {
+      var u8 = new Uint8Array(bytes);
+      var hx = "", mm = Math.min(u8.length, 96);
+      for (var q = 0; q < mm; q++) hx += (u8[q] < 16 ? "0" : "") + u8[q].toString(16);
+      itipRingPush(ITIP_RING.in, { t: Date.now(), op: op, len: u8.length, hex: hx });
+      if (ITIP.seenOps[op] != null) return;
+      var hex = "", m = Math.min(u8.length, 256);
+      for (var i = 0; i < m; i++) hex += (u8[i] < 16 ? "0" : "") + u8[i].toString(16);
+      ITIP.seenOps[op] = 1;
+      ITIP.pendingOps.push({ op: op, len: u8.length, hex: hex });
+    } catch (e) {}
+  }
+  function itipProbeInv() {
+    try {
+      var inv = findInventory();
+      if (!inv || !inv.length) return;
+      var db = itipDB();
+      var items = [], sig = [];
+      for (var i = 0; i < inv.length && items.length < 80; i++) {
+        var it = inv[i];
+        if (!it || typeof it !== "object") continue;
+        var itid = (it.ITID != null) ? it.ITID : it.itemid;
+        if (itid == null) continue;
+        var rec = { i: (it.index != null ? it.index : i), ITID: itid, fields: Object.keys(it) };
+        var pas = ["IsIdentified", "identify", "type", "itemType", "count", "amount", "RefiningLevel", "refine", "enchantgrade", "slotCount", "location", "wearState", "WearState", "IsDamaged", "bound", "PlaceETCTab", "nRandomOptionCnt", "bindOnEquipType", "SpareBits"];
+        for (var p = 0; p < pas.length; p++) { try { if (it[pas[p]] !== undefined) rec[pas[p]] = it[pas[p]]; } catch (e1) {} }
+        try { rec.slot = it.slot ? JSON.parse(JSON.stringify(it.slot)) : null; } catch (e2) { rec.slot = "ERR"; }
+        try {
+          var rawOps = it.options || it.Options || null; // V2.16.24：lastRO 用小写 options，形态是 {Index0,Value0,Param0,...} 对象
+          if (rawOps) {
+            rec.optionsRaw = JSON.parse(JSON.stringify(rawOps));
+            rec.Options = [];
+            for (var oi = 0; oi <= 4; oi++) {
+              var ix = 0, vv = 0, pp = 0;
+              if (!Array.isArray(rawOps) && rawOps["Index" + oi] !== undefined) {
+                ix = Number(rawOps["Index" + oi] || 0); vv = Number(rawOps["Value" + oi] || 0); pp = Number(rawOps["Param" + oi] || 0);
+              } else {
+                var o = rawOps[oi + 1];
+                if (o) { ix = Number(o.index || 0); vv = Number(o.value || 0); pp = Number(o.param || 0); }
+              }
+              if (!ix) { rec.Options.push(null); continue; }
+              var onm = null;
+              try { if (db && db.getOptionName) onm = db.getOptionName(ix); } catch (e3) {}
+              rec.Options.push({ slot: oi, index: ix, value: vv, param: pp, name: onm });
+            }
+          } else { rec.Options = null; }
+        } catch (e4) { rec.Options = "ERR"; }
+        try {
+          var info = db && db.getItemInfo ? db.getItemInfo(itid) : null;
+          if (info) {
+            rec.dbKeys = Object.keys(info);
+            rec.dbName = info.identifiedDisplayName || null;
+            rec.dbNameAlt = info.name || null;
+            rec.dbUnident = info.unidentifiedDisplayName || null;
+            rec.dbSlotCount = info.slotCount;
+            rec.dbClassNum = info.ClassNum;
+            rec.dbPicked = itipPickName(info);
+          } else { rec.dbKeys = "INFO_NULL"; }
+        } catch (e5) { rec.dbKeys = "ERR:" + e5.message; }
+        try { if (db && db.getItemName) rec.clientName = db.getItemName(it); } catch (e6) {}
+        items.push(rec);
+        sig.push(itid + ":" + (it.IsIdentified ? 1 : 0) + ":" + JSON.stringify(rec.Options));
+      }
+      if (!items.length) return;
+      var s2 = sig.join("|");
+      var now = Date.now();
+      if (s2 === ITIP.invSig) return;
+      if (now - ITIP.invAt < 10000) return;
+      ITIP.invSig = s2; ITIP.invAt = now;
+      var identChanged = false;
+      for (var q2 = 0; q2 < items.length; q2++) {
+        var ik = items[q2].ITID + "#" + items[q2].i;
+        var nowId = items[q2].IsIdentified ? 1 : 0;
+        if (ITIP.lastIdent[ik] === 0 && nowId === 1) identChanged = true;
+        ITIP.lastIdent[ik] = nowId;
+      }
+      var payload = { type: "itemprobe", kind: "inv", ver: VER, map: getMapName(), count: items.length, items: items, ts: new Date().toISOString() };
+      if (identChanged) { payload.identifyEvent = true; payload.ringIn = ITIP_RING.in.slice(-50); payload.ringOut = ITIP_RING.out.slice(-40); }
+      ingest(payload);
+    } catch (e) {}
+  }
+  function itipProbeDom() {
+    try {
+      var shop = document.getElementById("NpcStore");
+      if (shop && !ITIP.domShop) {
+        var sr = null;
+        try { sr = shop.shadowRoot || null; } catch (e0) {}
+        var root = sr || shop;
+        var rows = root.querySelectorAll ? root.querySelectorAll(".item") : [];
+        var sample = [];
+        for (var i = 0; i < rows.length && i < 6; i++) sample.push(rows[i].outerHTML.slice(0, 500));
+        ITIP.domShop = true;
+        ingest({ type: "itemprobe", kind: "dom-shop", ver: VER, map: getMapName(),
+          shadow: !!sr, host: shop.outerHTML.slice(0, 300), inner: (root.innerHTML || "").slice(0, 3000),
+          rows: sample, sellCache: ITIP.sell, buyCache: ITIP.buy, ts: new Date().toISOString() });
+      }
+      if (!ITIP.domBag) {
+        var it = document.querySelector(".item[data-itid]");
+        if (it) {
+          var up = [], p = it.parentElement, g = 0;
+          while (p && g++ < 4) { up.push(p.tagName + "#" + (p.id || "") + "." + String(p.className || "").slice(0, 60)); p = p.parentElement; }
+          ITIP.domBag = true;
+          ingest({ type: "itemprobe", kind: "dom-bag", ver: VER, map: getMapName(), html: it.outerHTML.slice(0, 600), up: up, ts: new Date().toISOString() });
+        }
+      }
+    } catch (e) {}
+  }
+  try {
+    document.addEventListener("mouseover", itipOver, true);
+    document.addEventListener("mousemove", function (e) { try { if (ITIP.el && ITIP.el.style.display === "block") itipPlace(e.clientX, e.clientY); } catch (e2) {} }, true);
+    document.addEventListener("mouseout", function (e) {
+      try {
+        var rt = e.relatedTarget;
+        try { if (rt && rt.closest && rt.closest(".item")) return; } catch (e2) {}
+        ITIP.hover = null; itipHide();
+      } catch (e3) {}
+    }, true);
+    document.addEventListener("scroll", function () { setTimeout(itipRefresh, 0); }, true);
+  } catch (e) {}
+  // V2.16.26 自动技能探查：把辅助技能配置 + 判活表 + 开关/SP 一起上报，定位「不触发释放」
+  var ASKP = { sig: "", at: 0 };
+  function askProbe() {
+    try {
+      if (!clientReady()) return;
+      var now = Date.now();
+      var en = $id("dsh-asken") ? !!$id("dsh-asken").checked : null;
+      var intv = $id("dsh-askint") ? $id("dsh-askint").value : null;
+      var spGuard = $id("dsh-asksp") ? $id("dsh-asksp").value : null;
+      var spPct = null;
+      try {
+        var ent = CLIENT.SS && CLIENT.SS.Entity;
+        var mx = ent && ent.life ? (ent.life.sp_max != null ? ent.life.sp_max : ent.life.maxsp) : 0;
+        if (mx > 0) spPct = Math.round((ent.life.sp != null ? ent.life.sp : 0) / mx * 1000) / 10;
+      } catch (e0) {}
+      var list = [];
+      for (var i = 0; i < askList.length; i++) {
+        var s = askList[i];
+        var rs = -1, on = null;
+        try { if (s.st) { rs = buffStId(s.st); on = (rs >= 0) ? buffStateOn(rs) : null; } } catch (e2) {}
+        list.push({ i: i, skid: s.skid, lv: s.lv, name: s.name, st: s.st, stInv: !!s.stInv, missCnt: s.missCnt || 0,
+          lastAgoSec: s.lastAt ? Math.round((now - s.lastAt) / 1000) : null, resolvedStId: rs, stOn: on });
+      }
+      var ba = [];
+      for (var k in buffActive) {
+        try { ba.push({ id: Number(k), on: !!buffActive[k].on, life: buffActive[k].life,
+          endInSec: buffActive[k].endAt === Infinity ? "inf" : Math.round((buffActive[k].endAt - now) / 1000),
+          seenAgoSec: Math.round((now - buffActive[k].seenAt) / 1000) }); } catch (e3) {}
+      }
+      var sig = JSON.stringify(list) + "|" + ba.length + "|" + en + "|" + spPct;
+      if (sig === ASKP.sig && now - ASKP.at < 60000) return;
+      ASKP.sig = sig; ASKP.at = now;
+      var learned = null;
+      try { learned = JSON.parse(localStorage.getItem("dsh_ro_skill_status_v1") || "{}"); } catch (e4) {}
+      var eqInfo = null;
+      try { var wq2 = readEquippedWeaponType(); var am2 = readEquippedAmmo(); eqInfo = { wItid: wq2.itid, wType: wq2.wt, why: wq2.why, arrowEn: ($id("dsh-arrowen") ? !!$id("dsh-arrowen").checked : null), ammoItid: am2 ? am2.itid : null, ammoCount: am2 ? am2.count : null, bagArrowN: (function(){ try { return readBagArrows().reduce(function (a, b) { return a + b.count; }, 0); } catch (e) { return null; } })() }; } catch (eE) {}
+      ingest({ type: "itemprobe", kind: "ask", ver: VER, map: getMapName(), askEn: en, askIntv: intv, askSpGuard: spGuard, equip: eqInfo,
+        spPct: spPct, siHook: (typeof dshSIState !== "undefined" ? dshSIState : null), list: list, buffActive: ba, learned: learned, ts: new Date().toISOString() });
+    } catch (e) {}
+  }
+  setInterval(function () { try { askProbe(); } catch (e) {} }, 15000);
+  setInterval(function () { try { itipHookOut(); } catch (e) {} }, 2000);
+  setInterval(function () { try { itipProbeInv(); itipProbeDom(); } catch (e) {} }, 3000);
+  setInterval(function () {
+    try {
+      if (!ITIP.pendingOps.length) return;
+      var list = ITIP.pendingOps; ITIP.pendingOps = [];
+      ingest({ type: "itemprobe", kind: "opmap", ver: VER, map: getMapName(), ops: list, ts: new Date().toISOString() });
+    } catch (e) {}
+  }, 10000);
+  // ITIP_END
+
+  // ================= V2.32.0 跨入口 KV 互通（纯本地 8899 中继，last-write-wins）=================
+  // post.lastro.cn / game.lastro.cn 两 origin 的 localStorage 相互隔离，经本机 8899 中转互通下列 7 键；
+  // 不同步 dsh_ro_plugin_v1（全局登录配置）。8899 不可用一律 try/catch 静默跳过，绝不影响其它功能。
+  var KV_BASE = "http://127.0.0.1:8899/api/kv";
+  var KV_KEYS = ["dsh_ro_profiles_v2", "dsh_ro_last_active", "dsh_ro_tp_global_v1", "dsh_ro_hotkeys_v2", "dsh_ro_hlrules", "dsh_ro_whitelist", "dsh_ro_itemlist", "dsh_ro_casttrace"];
+  var KV_TS_PRE = "dsh_kv_ts_";
+  var KV_PREV = {}; // 上一轮各 key 本地值（用于判定「本地值较上一轮变化」）
+  function kvTs(key) { try { var t = parseInt(localStorage.getItem(KV_TS_PRE + key), 10); return (isFinite(t) && t > 0) ? t : 0; } catch (e) { return 0; } }
+  function kvSetTs(key, t) { try { localStorage.setItem(KV_TS_PRE + key, String(t)); } catch (e) {} }
+  function kvRefreshProfile() {
+    try {
+      profiles = loadProfiles();
+      var ak = localStorage.getItem("dsh_ro_last_active");
+      if (ak && profiles[ak]) activeCharKey = ak;
+      else if (!profiles[activeCharKey]) activeCharKey = "default";
+      saved = loadSaved();
+      if (panel && panel.style.display !== "none") applyProfileUI();
+    } catch (e) {}
+  }
+  function kvSyncKey(key) {
+    try {
+      var localTs = kvTs(key);
+      fetch(KV_BASE + "/get?key=" + encodeURIComponent(key))
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (j && j.ok) {
+            var rts = parseInt(j.ts, 10); if (isNaN(rts)) rts = 0;
+            if (rts > localTs && typeof j.value === "string") {
+              try { localStorage.setItem(key, j.value); } catch (e) {}
+              kvSetTs(key, rts);
+              if (key === "dsh_ro_profiles_v2" || key === "dsh_ro_last_active") kvRefreshProfile();
+            }
+          }
+          var cur = null; try { cur = localStorage.getItem(key); } catch (e) {}
+          if (cur !== KV_PREV[key]) {
+            KV_PREV[key] = cur;
+            var now = Date.now();
+            kvSetTs(key, now);
+            if (cur != null) {
+              fetch(KV_BASE + "/save", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ key: key, value: cur, ts: now })
+              }).catch(function () {});
+            }
+          }
+        })
+        .catch(function () {});
+    } catch (e) {}
+  }
+  function kvSyncLoop() {
+    try {
+      if (typeof fetch !== "function") return;
+      for (var i = 0; i < KV_KEYS.length; i++) kvSyncKey(KV_KEYS[i]);
+    } catch (e) {}
+  }
+  setTimeout(function () {
+    try { kvSyncLoop(); } catch (e) {}
+    setInterval(function () { try { kvSyncLoop(); } catch (e) {} }, 5000);
+  }, 2500);
+  init();
+})();

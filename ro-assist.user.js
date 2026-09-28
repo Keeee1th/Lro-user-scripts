@@ -4,7 +4,7 @@
 // @version      2.34.3
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
-// @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
+// @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 支持私有本机客户端。
 // @author       DSH
 // @match        http://post.lastro.cn/*
 // @match        https://post.lastro.cn/*
@@ -16,6 +16,8 @@
 // @match        https://game.lastro.cn/*
 // @match        http://game.lastro.cn/ro/api.html*
 // @match        https://game.lastro.cn/ro/api.html*
+// @match        http://127.0.0.1:8971/client/api.html*
+// @match        http://localhost:8971/client/api.html*
 // @run-at       document-idle
 // @grant        none
 // ==/UserScript==
@@ -61,6 +63,7 @@
 // 2. 内挂自动战斗状态校准：开/关内挂前先读内挂面板与聊天回执的权威状态，已是目标状态则绝不发包（修「助手以为内挂开着、其实关了」）。
 // 3. 混合寻怪兜底：内挂实际关闭，或 2.5 秒原地未动且（被打 / 距怪≤接管距离+8）→ 判定内挂没在工作，助手自行接管 12 秒，不再死等。
 // 4. 自动坐下放宽：锁定目标已不在射程内且未被打时允许坐下；新增坐下/攻击原因诊断字段 sitWhy、atkWhy。
+// 5. 支持私有本机客户端：localhost匹配 + 通过内置LegacyAssistBridge连接真实ESM单例，不改变战斗逻辑。
 
 (function () {
   "use strict";

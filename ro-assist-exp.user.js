@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手 · 实验版）
 // @namespace    dsh.ro-plugin
-// @version      2.34.0
+// @version      2.34.1
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -50,6 +50,9 @@
 // 6. 本地化方案 B：配置导出/导入按钮（跨入口/跨机器备份）。
 // ---------------- V2.34.0 变更摘要 ----------------
 // 功能菜单重排为五栏（常用/战斗功能/战斗辅助/提示/其他）；助手战斗设置拆成「战斗设置 / 技能设置 / 附近怪物实时列表」三个一级浮窗；物品拾取与攻击名单分家、移除物品搜索；技能点选与顺序表可直接改等级，释放% 输入不再被定时重绘覆盖。
+// ---------------- V2.34.1 变更摘要 ----------------
+// 战斗判定诊断（默认关）升级为死亡自动取证：每拍额外记录 HP/最大HP/SP/SP上限/地图/坐标/助手运行态/最近 6 只怪（ID·距离·是否首领·血量%）；
+// 角色死亡瞬间自动把最近 200 拍发往本机接收服务（http://127.0.0.1:8899/api/probe-collect，仅本机、不出外网），另有 10 分钟保底上报；修复「复制诊断」按钮点不动（面板/浮窗事件隔离层在冒泡阶段 stopPropagation，监听改捕获阶段），按钮同时触发一次本机上报。
 
 (function () {
   "use strict";
@@ -75,7 +78,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.34.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.34.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
 
   // V2.11.0：仓库+背包读取全局变量
@@ -6839,7 +6842,7 @@
     } catch (e) { return false; }
   }
   // A3：BOSS 三模式判定（瞬移 / 优先攻击 / 等待残血补尾刀 / 不处理）
-  var zLastBossAct = "不处理", zLastBossHp = -1, zLastGrpCount = 0, zLastFlyReason = "";
+  var zLastBossAct = "不处理", zLastBossHp = -1, zLastGrpCount = 0, zLastFlyReason = "", zLastFlyReasonAt = 0;
   var zBossSkipGid = 0; // 尾刀模式「未到尾刀线」的 BOSS：既不打也不飞（从候选池剔除，不动用户显式锁定）
   function zBossDecide(mobs) {
     try {
@@ -6882,13 +6885,49 @@
       if (doWalk !== false) { try { zWalk(); } catch (e2) {} }
     } catch (e) {}
   }
-  // ================= V2.34.0 A7：战斗判定诊断（默认关 · 每秒一拍 · 环形 200 条 · 复用现成机制，不联网不写文件）=================
-  var zDiagAt = 0;
+  // ================= V2.34.0 A7 / V2.34.1：战斗判定诊断（默认关 · 每秒一拍 · 环形 200 条 · 复用现成机制）+ 死亡自动取证（仅在角色死亡/满 10 分钟/手动按钮时 POST 到本机 127.0.0.1:8899，不出外网）=================
+  var zDiagAt = 0; var zDiagDead = 0;
+  var zDiagPostAt = 0;
+  function zDiagPost(tag) {
+    try {
+      if (typeof fetch !== "function") return;
+      var arrP = window.__dshZDiag || [];
+      if (!arrP.length) return;
+      var entP = CLIENT.SS && CLIENT.SS.Entity, whoP = "";
+      try { whoP = (entP && entP.display && entP.display.name) || ""; } catch (e0) {}
+      fetch("http://127.0.0.1:8899/api/probe-collect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ t: tag || "zdiag", ver: VER, who: whoP, at: Date.now(), arr: arrP.slice(-200) })
+      }).catch(function () {});
+    } catch (e) {}
+  }
   function zDiagSnapNow() {
     var nowD = Date.now(), hf = zHitFresh(nowD);
     var mobsD = (scanMobs && scanMobs.length) ? scanMobs : lastMobs;
+    var entD = CLIENT.SS && CLIENT.SS.Entity, lifeD = entD && entD.life, posD = entD && entD.position;
+    var mobSnap = [];
+    try {
+      for (var mi = 0; mi < mobsD.length && mobSnap.length < 6; mi++) {
+        var md = mobsD[mi];
+        if (!md || !(md.dist >= 0)) continue;
+        mobSnap.push([md.mid != null ? md.mid : 0, Math.round(md.dist), md.isBoss ? 1 : 0, zEntHpPct(md.GID)]);
+      }
+    } catch (eM) {}
     return {
       t: nowD,
+      hp: lifeD && lifeD.hp != null ? Number(lifeD.hp) : -1,
+      hpMax: lifeD && lifeD.hp_max != null ? Number(lifeD.hp_max) : -1,
+      sp: lifeD && lifeD.sp != null ? Number(lifeD.sp) : -1,
+      spMax: lifeD && lifeD.sp_max != null ? Number(lifeD.sp_max) : -1,
+      map: (function () { try { return getMapName(); } catch (e0) { return ""; } })(),
+      x: posD ? Math.round(posD[0]) : -1,
+      y: posD ? Math.round(posD[1]) : -1,
+      running: !!zRunning,
+      npHunt: !!npHuntOn,
+      dead: !!(entD && (entD.isDeath || (entD.ACTION && entD.action === entD.ACTION.DIE))),
+      flyAt: zLastFlyReasonAt || 0,
+      mobs: mobSnap,
       onaMode: ($id("dsh-z-ona") && $id("dsh-z-ona").value) || "还击",
       beingHit: (nowD - zHpWatch.lastHitAt) < 3000,
       zAllMobs: !$id("dsh-z-allmobs") || $id("dsh-z-allmobs").checked,
@@ -6915,10 +6954,13 @@
       if (zDiagAt && nowD - zDiagAt < 900) return;
       zDiagAt = nowD;
       var s = zDiagSnapNow();
+      if ((s.hp === 0 || s.dead) && !zDiagDead) { zDiagDead = 1; zDiagPost("zdiag-death"); }
+      else if (s.hp > 0 && !s.dead && zDiagDead) { zDiagDead = 0; }
       var arr = window.__dshZDiag || (window.__dshZDiag = []);
       arr.push(s);
       if (arr.length > 200) arr.splice(0, arr.length - 200);
       try { if (btDiagOn) btLog('zdiag', JSON.stringify(s)); } catch (e1) {}
+      if (nowD - zDiagPostAt > 600000) { zDiagPostAt = nowD; zDiagPost("zdiag-10min"); }
     } catch (e) {}
   }
   try { masterTickReg(function () { try { zDiagTick(); } catch (e) {} }); } catch (e) {}
@@ -6931,9 +6973,10 @@
         var arr2 = window.__dshZDiag || [];
         var box = $id("dsh-z-diagbox");
         if (box) { box.value = JSON.stringify(arr2); box.focus(); box.select(); }
+        zDiagPost("zdiag-manual");
         setStatus("诊断已写入文本框（" + arr2.length + " 条），可手动复制", "ok");
       } catch (e2) {}
-    }, false);
+    }, true);
   } catch (e) {}
   function tickSelfHeal() {
     try {
@@ -7021,6 +7064,7 @@
       var flyCool = (now < flyFailUntil) || (now - lastFly < flyInt);
       if (needFly && !flyCool) {
         zLastFlyReason = reason; // V2.34.0 A7：诊断用最近一次飞的原因
+      zLastFlyReasonAt = Date.now();
         // 紧急防御只走已学瞬移术；确认地图/坐标变化前持续阻塞治愈与普通技能。
         var flyResult = requestEmergencyEscape(reason);
         var flyOk = flyResult === "teleport" || flyResult === "wait" || flyResult === "stand";

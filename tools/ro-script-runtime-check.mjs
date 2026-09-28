@@ -647,10 +647,24 @@ test('exp 技能点选/顺序表等级输入与释放% 即时写回守卫', () =
   assert.ok(order.includes('map(skillLine).join("\\n")'), '写回必须用 skillLine 原格式（7 段）拼回 textarea');
 });
 
-test('exp 版本号 v2.34.0 且文件头与运行时常量一致', () => {
-  assert.equal(/@version\s+(\S+)/.exec(expSource)?.[1], '2.34.0');
-  assert.equal(/var VER = "([^"]+)"/.exec(expSource)?.[1], '2.34.0');
+test('exp 版本号格式合法且文件头与运行时常量一致', () => {
+  const hv = /@version\s+(\S+)/.exec(expSource)?.[1];
+  const rv = /var VER = "([^"]+)"/.exec(expSource)?.[1];
+  assert.match(String(hv), /^[0-9]+\.[0-9]+\.[0-9]+$/, '@version 必须是 x.y.z');
+  assert.equal(hv, rv, '@version 必须与运行时常量 VER 一致');
   assert.ok(expSource.includes('V2.34.0 变更摘要'), '文件头必须有 V2.34.0 变更摘要');
+});
+
+test('exp 战斗诊断升级：每拍含 HP/死亡标记/怪物快照，死亡自动上报，复制按钮走捕获阶段', () => {
+  const snap = expExtract('  function zDiagSnapNow() {', '  function zDiagTick() {');
+  ['hp:', 'hpMax:', 'sp:', 'spMax:', 'map:', 'x:', 'y:', 'running:', 'npHunt:', 'dead:', 'flyAt:', 'mobs:'].forEach((k) => assert.ok(snap.includes(k), 'zDiagSnapNow 必须含字段 ' + k));
+  const tick = expExtract('  function zDiagTick() {', 'masterTickReg(function');
+  assert.ok(tick.includes('zDiagPost("zdiag-death")'), '死亡必须自动上报');
+  assert.ok(tick.includes('zDiagPost("zdiag-10min")'), '必须有 10 分钟保底上报');
+  assert.ok(expSource.includes('zDiagPost("zdiag-manual")'), '复制按钮必须同时触发一次上报');
+  assert.ok(expSource.includes('    }, true);'), '复制按钮监听必须在捕获阶段（冒泡会被事件隔离层拦掉）');
+  const post = expExtract('  function zDiagPost(tag) {', '  function zDiagSnapNow() {');
+  assert.ok(post.includes('127.0.0.1:8899/api/probe-collect'), '上报目标只能本机接收服务');
 });
 
 // ================= V2.34.0 追改：尾刀模式「等待残血补尾刀」对用户显式锁定的 BOSS 同样生效 =================

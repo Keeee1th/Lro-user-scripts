@@ -712,3 +712,76 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
   assert.equal((expSource.match(/if \(zBossSkipGid && gidInt\(e\.GID\) === zBossSkipGid\) return;/g) || []).length, 2, '候选池剔除必须保持 zWalk/zAttack 各一处');
   assert.ok(expSource.includes('if (gidInt(hk) === gidInt(zLock.gid)) continue; // 排除锁定目标本身'), '非选中攻击者一路不得改动');
 });
+
+// ================= V2.34.3：格子距离口径 / 内挂状态校准 / 混合接管兜底 / 坐下放宽 =================
+test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
+  // 1) 版本号：稳定版与实验版都必须是 2.34.3（@version 与运行时常量一致）
+  for (const [name, src] of [['stable', source], ['exp', expSource]]) {
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.34.3', name + ' @version 必须是 2.34.3');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.34.3', name + ' 运行时常量 VER 必须是 2.34.3');
+  }
+  // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
+  const stripHead = (s) => s.split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
+  assert.equal(stripHead(source), stripHead(expSource), '两文件除 3 行头部外必须完全一致');
+  assert.ok(expSource.includes('// @name         仙境传说 · 原站插件模式（游戏助手 · 实验版）'));
+  assert.ok(expSource.includes('main/ro-assist-exp.user.js'));
+  assert.ok(!source.includes('main/ro-assist-exp.user.js'), '稳定版不得指向实验版地址');
+  // 3) 格子距离口径：函数就位 + 选目标/攻击/追怪链上的位置距离已全部改口径
+  const zrd = expExtract('  function zRangeDist(a, b) {', '  function npSyncTargets() {');
+  const zctx = { Math }; vm.createContext(zctx); vm.runInContext(zrd + ';this.fn = zRangeDist', zctx);
+  assert.equal(zctx.fn([0, 0], [3, 3]), 3, '斜角按格计（max 口径，不是曼哈顿 6）');
+  assert.equal(zctx.fn([0, 0], [0, 5]), 5);
+  assert.equal(zctx.fn([2, 7], [5, 3]), 4);
+  assert.equal(zctx.fn(null, [1, 1]), 1e9, '取不到坐标要给极大值');
+  const zWalkSeg = expExtract('  function zWalk() {', '  // 无锁定怪持续 N 秒');
+  const zAtkSeg = expExtract('  function zAttack() {', '  // 技能行统一序列化');
+  for (const [name, seg] of [['zWalk', zWalkSeg], ['zAttack', zAtkSeg]]) {
+    assert.ok(seg.includes('zRangeDist('), name + ' 必须使用 zRangeDist');
+    assert.doesNotMatch(seg, /var (?:d|cdist7|bd|ld|dNear|tD2|tD|distCd|distToT2|distToT) = Math\.abs\(/, name + ' 仍残留曼哈顿位置距离');
+  }
+  // 诊断快照：怪物数组前 5 项顺序不变，末尾追加曼哈顿距离 + 格子距离
+  const snap = expExtract('  function zDiagSnapNow() {', '  function zDiagTick() {');
+  assert.match(snap, /mobSnap\.push\([\s\S]*?String\(md\.name \|\| ""\), Math\.round\(md\.dist\), mdGrid\]\)/, 'mobSnap 末尾必须追加两列');
+  assert.ok(snap.includes('sitWhy: zSitWhy') && snap.includes('atkWhy: zAtkWhy'), '快照必须含 sitWhy/atkWhy');
+  // 4) 内挂状态校准 + 混合接管兜底：权威状态优先，一次调用最多一个 toggle（运行时验证）
+  assert.ok(source.includes('hyTakeoverUntil'), '必须有混合接管兜底字段');
+  assert.ok(source.includes('zWalkState.hyTakeoverUntil = hyNow + 12000'), '接管窗口必须是 12 秒');
+  assert.ok(source.includes('内挂未接管（'), '必须提示「内挂未接管」');
+  const ensSrc = expExtract('  function npEnsureHunt() {', '  function npHuntStop() {');
+  const stopSrc = expExtract('  function npHuntStop() {', '  // 寻怪方式下拉 change');
+  const runHunt = (src, fnName, real, startOn) => {
+    const calls = [];
+    const ctx = { npBattleState: () => real, npIsThree: () => false, clientReady: () => true, tlog: () => {},
+      npToggleHunt: () => { calls.push('toggle'); return true; }, npSendUpdate: () => { calls.push('update'); return true; },
+      DEFAULTS: { ClientVer: 5 }, npHuntOn: startOn, npBattleKnown: false };
+    vm.createContext(ctx); vm.runInContext(src + ';this.fn = ' + fnName, ctx);
+    ctx.fn();
+    return { ctx, toggles: calls.filter((c) => c === 'toggle').length, sends: calls.length };
+  };
+  let r = runHunt(ensSrc, 'npEnsureHunt', true, false);
+  assert.equal(r.sends, 0, '权威说已开 → npEnsureHunt 绝不再发包');
+  assert.equal(r.ctx.npHuntOn, true); assert.equal(r.ctx.npBattleKnown, true);
+  r = runHunt(ensSrc, 'npEnsureHunt', false, true);
+  assert.equal(r.toggles, 1, '权威说已关 → 只发一次 toggle 打开');
+  r = runHunt(ensSrc, 'npEnsureHunt', null, true);
+  assert.equal(r.sends, 0, '状态未知且本地认为已开 → 保持原逻辑不发包');
+  r = runHunt(stopSrc, 'npHuntStop', false, true);
+  assert.equal(r.sends, 0, '权威说已关 → npHuntStop 绝不再发包');
+  assert.equal(r.ctx.npHuntOn, false); assert.equal(r.ctx.npBattleKnown, true);
+  r = runHunt(stopSrc, 'npHuntStop', true, false);
+  assert.equal(r.toggles, 1, '权威说已开 → 只发一次 toggle 关闭');
+  r = runHunt(stopSrc, 'npHuntStop', null, false);
+  assert.equal(r.sends, 0, '状态未知且本地认为已关 → 保持原逻辑不发包');
+  // 5) 坐下 gate 已放宽 + 诊断原因齐全
+  const sitSeg = expExtract('  function doSitCycle(mobs) {', '  // V2.15.23：逃脱=直接移动避开怪');
+  assert.doesNotMatch(sitSeg, /if \(zLock\.gid\) return;/, '不得保留无条件「有锁定目标就不坐下」');
+  assert.ok(sitSeg.includes('var zlLock = zEntOf(zLock.gid);'), '必须用 zEntOf 实时取锁定怪实体');
+  assert.ok(sitSeg.includes('zRangeDist(zlLock.position, zlEnt.position)'));
+  assert.ok(sitSeg.includes('zlD >= 0 && zlD <= calcAtkRange()'));
+  for (const why of ['开关关', '已坐下', '锁定怪在射程内', '刚被打', '附近有怪(战斗状态不坐下)', '等待拾取', '弹层打开', '起身冷却', '动作锁被占', '阈值未到', '已触发坐下']) {
+    assert.ok(sitSeg.includes('"' + why + '"'), '坐下诊断缺少原因 ' + why);
+  }
+  for (const why of ['脱战挂起', '已坐下', '已停手(打死换下一个关)', '锁定怪在射程外', '无怪在射程', '走位追怪', '等技能冷却', '无目标寻怪', '已出手']) {
+    assert.ok(zAtkSeg.includes('zAtkWhy = "' + why + '"'), '攻击诊断缺少原因 ' + why);
+  }
+});

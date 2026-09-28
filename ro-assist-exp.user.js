@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手 · 实验版）
 // @namespace    dsh.ro-plugin
-// @version      2.34.2
+// @version      2.34.3
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -56,6 +56,11 @@
 // ---------------- V2.34.2 变更摘要 ----------------
 // 修复挂机猝死：救命瞬移不再被「连败 10 秒锁」和瞬移间隔锁死（血线之下 / 2秒失血≥25% / 贴身≥3只且HP<60% 强制解锁，只留 1 秒防抖）；新增「2 秒失血 ≥25% 最大HP」
 // 紧急逃生触发；紧急脱战新增翅膀类道具兜底（瞬移术被公共CD吞或未学/SP不足时改用苍蝇翅膀类道具）；诊断上报改为先入库再上报（死亡那一拍不再丢失）+ 记录怪物名/瞬移术等级/翅膀/连败数/关键设置快照。
+// ---------------- V2.34.3 变更摘要 ----------------
+// 1. 交战距离口径与客户端一致：统一改为格子距离 max(|dx|,|dy|)（斜角按格计），选目标/攻击/追怪一条链共用同一口径；诊断快照怪物数组末尾追加曼哈顿距离与格子距离。
+// 2. 内挂自动战斗状态校准：开/关内挂前先读内挂面板与聊天回执的权威状态，已是目标状态则绝不发包（修「助手以为内挂开着、其实关了」）。
+// 3. 混合寻怪兜底：内挂实际关闭，或 2.5 秒原地未动且（被打 / 距怪≤接管距离+8）→ 判定内挂没在工作，助手自行接管 12 秒，不再死等。
+// 4. 自动坐下放宽：锁定目标已不在射程内且未被打时允许坐下；新增坐下/攻击原因诊断字段 sitWhy、atkWhy。
 
 (function () {
   "use strict";
@@ -81,7 +86,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.34.2"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.34.3"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
 
   // V2.11.0：仓库+背包读取全局变量
@@ -6026,6 +6031,13 @@
   // V2.33.0 混合寻怪：内挂长距离寻怪走路 + 助手按接管距离提前接管最后靠近+打怪
   function isHybrid() { return npHuntMode() === "hybrid"; }
   function takeoverDist() { try { var v = parseInt($id("dsh-z-takeover") ? $id("dsh-z-takeover").value : "12", 10); return (isFinite(v) && v >= 3) ? v : 12; } catch (e) { return 12; } }
+  // V2.34.3：交战距离口径与客户端一致（RO 格子距离 = max(|dx|,|dy|)，斜角按格计）
+  function zRangeDist(a, b) {
+    try {
+      if (!a || !b) return 1e9;
+      return Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]));
+    } catch (e) { return 1e9; }
+  }
   function npSyncTargets() {
     // 把锁定目录同步给内挂：NOTIFY_ONLYTARGET{id=mobid(4字节), value=1} 只打勾选怪
     try {
@@ -6089,8 +6101,11 @@
   }
   function npEnsureHunt() {
     // 需要开启内挂寻怪：本地认为已开 → 不再发包（避免 toggle 多翻一次变关）；未开 → toggle 一次
+    // V2.34.3：先问权威状态（内挂面板/聊天回执，读不到才回退本地标记）——权威说已开则绝不发包；一次调用最多发一次 toggle
     try {
-      if (npHuntOn) return;
+      var real = npBattleState();
+      if (real === true) { npHuntOn = true; npBattleKnown = true; return; }
+      if (real === null && npHuntOn) return; // 未知：保持原逻辑（本地认为已开 → 不发包）
       if (npIsThree()) {
         npToggleHunt();
       } else {
@@ -6098,16 +6113,19 @@
         npToggleHunt();      // toggle 开自动战斗
       }
       npHuntOn = true;
-      tlog("np-hunt-on (toggle) cv=" + DEFAULTS.ClientVer);
+      tlog("np-hunt-on (toggle) cv=" + DEFAULTS.ClientVer + " real=" + real);
     } catch (e) {}
   }
   function npHuntStop() {
     // 停止助手时关闭内挂自动战斗：本地认为已开 → toggle 一次关掉；已关 → 不发
+    // V2.34.3：同样先问权威状态——权威说已关 → 绝不再发包（防本地标记过期时反向 toggle 把内挂打开）；一次调用最多发一次 toggle
     try {
-      if (!npHuntOn) return;
+      var real = npBattleState();
+      if (real === false) { npHuntOn = false; npBattleKnown = true; return; }
+      if (real === null && !npHuntOn) return; // 未知：保持原逻辑
       if (clientReady()) npToggleHunt();
       npHuntOn = false;
-      tlog("np-hunt-off (toggle)");
+      tlog("np-hunt-off (toggle) real=" + real);
     } catch (e) {}
   }
   // 寻怪方式下拉 change：切到「内挂机制」→ 仅校准面板状态 + 同步锁定目录，不发 toggle（等点开自动战斗后由 zWalk 状态机自动发第一次）；
@@ -6473,6 +6491,8 @@
       return worst;
     } catch (e) { return 0; }
   }
+  var zSitWhy = "";                       // V2.34.3 坐下诊断：最近一次「没坐下/坐下」的原因（进快照 sitWhy）
+  var zAtkWhy = "";                       // V2.34.3 攻击诊断：最近一次 zAttack 决策原因（进快照 atkWhy）
   var sitSince = 0, sitHpAt = -1;         // 坐下看门狗（30s 血未回升 → 站起并入瞬移链）
   var sitSendAt = 0;                      // V2.15.22：坐/立发包节流（1.5s，防多路重复发）
   var sitStandAt = 0;                     // V2.15.22：被打站起冷却（站起后 5s 内不立刻坐下，防坐-站抖动）
@@ -6522,7 +6542,7 @@
   // V2.15.22：坐下状态维护——坐下期间被打/回满/30s 看门狗 → 自动站起（无需手动）
   function sitMaintain() {
     try {
-      if (!$id("dsh-z-sit") || !$id("dsh-z-sit").checked) return;
+      if (!$id("dsh-z-sit") || !$id("dsh-z-sit").checked) { zSitWhy = "开关关"; return; }
       if (!isSitting()) { sitSince = 0; sitHpAt = -1; return; } // V2.16.9：没坐着（无论谁站起）清坐下标记，防手动站起残留
       var nowM = Date.now();
       var entM = CLIENT.SS && CLIENT.SS.Entity;
@@ -6565,9 +6585,16 @@
       // V2.16.8：内挂模式不再让位——助手自己发包坐下（sendSit 直接发包，不依赖内挂 .opensit 是否真正生效）；
       //   坐下期间 zWalk 有 isSitting 保护（检测到坐着直接 return 不寻怪），与内挂寻怪不冲突；数值已由 pushSitToBot 双向同步
       sitMaintain();
-      if (isSitting()) return;
-      if (!$id("dsh-z-sit") || !$id("dsh-z-sit").checked) return;
-      if (zLock.gid) return; // 有锁定目标（战斗/还击中）→ 不坐下
+      if (isSitting()) { zSitWhy = "已坐下"; return; }
+      if (!$id("dsh-z-sit") || !$id("dsh-z-sit").checked) { zSitWhy = "开关关"; return; }
+      // V2.34.3：不再「有锁定目标就一律不坐」——只有锁定目标确实还在射程内（或 3 秒内刚被打）才算在战斗
+      if (zLock.gid) {
+        var zlEnt = CLIENT.SS && CLIENT.SS.Entity;
+        var zlLock = zEntOf(zLock.gid);
+        var zlD = (zlEnt && zlEnt.position && zlLock && zlLock.position) ? zRangeDist(zlLock.position, zlEnt.position) : -1;
+        if (zlD >= 0 && zlD <= calcAtkRange()) { zSitWhy = "锁定怪在射程内"; return; } // 仍在射程内交战 → 不坐下
+        if ((Date.now() - zHpWatch.lastHitAt) < 3000) { zSitWhy = "刚被打"; return; }
+      }
       var entD = CLIENT.SS && CLIENT.SS.Entity;
       var lifeD = entD && entD.life;
       if (!lifeD) return;
@@ -6576,13 +6603,18 @@
       var spD = lifeD.maxsp > 0 ? lifeD.sp / lifeD.maxsp * 100 : 100;
       var loD = parseInt($id("dsh-z-sithplo").value, 10) || 40;
       var sLoD = parseInt($id("dsh-z-sitsplo").value, 10) || 30;
-      var shouldSitD = (hpD < loD || spD < sLoD) && !($id("dsh-z-sitnofight").checked && mobs && mobs.length > 0) && !pendingPick;
-      if (shouldSitD && (nowD - zHpWatch.lastHitAt) >= 3000 && !isWinOpen() && (nowD - sitStandAt > 5000) && isActFreeOnline("sit")) {
-        sendSit(true);
-        sitSince = Date.now(); sitHpAt = hpD;
-        lockAct("sit", 60000);
-        setStatus("HP/SP 低，自动坐下回血(" + Math.round(hpD) + "%/" + Math.round(spD) + "%)…", "st");
-      }
+      if (!(hpD < loD || spD < sLoD)) { zSitWhy = "阈值未到"; return; }
+      if ($id("dsh-z-sitnofight").checked && mobs && mobs.length > 0) { zSitWhy = "附近有怪(战斗状态不坐下)"; return; }
+      if (pendingPick) { zSitWhy = "等待拾取"; return; }
+      if ((nowD - zHpWatch.lastHitAt) < 3000) { zSitWhy = "刚被打"; return; }
+      if (isWinOpen()) { zSitWhy = "弹层打开"; return; }
+      if (nowD - sitStandAt <= 5000) { zSitWhy = "起身冷却"; return; }
+      if (!isActFreeOnline("sit")) { zSitWhy = "动作锁被占"; return; }
+      sendSit(true);
+      sitSince = Date.now(); sitHpAt = hpD;
+      lockAct("sit", 60000);
+      zSitWhy = "已触发坐下";
+      setStatus("HP/SP 低，自动坐下回血(" + Math.round(hpD) + "%/" + Math.round(spD) + "%)…", "st");
     } catch (e) {}
   }
   // V2.15.23：逃脱=直接移动避开怪（往远离最近怪的方向走，A* 避障；4s 内不重复发；逃脱中 zWalk 让位）
@@ -6958,7 +6990,13 @@
       for (var mi = 0; mi < mobsD.length && mobSnap.length < 6; mi++) {
         var md = mobsD[mi];
         if (!md || !(md.dist >= 0)) continue;
-        mobSnap.push([md.mid != null ? md.mid : 0, Math.round(md.dist), md.isBoss ? 1 : 0, zEntHpPct(md.GID), String(md.name || "")]);
+        // V2.34.3：前 5 项顺序不变（有脚本按索引 0/1 读）；末尾追加曼哈顿距离与格子距离（取不到 -1）
+        var mdGrid = -1;
+        try {
+          var mdE = zEntOf(md.GID);
+          if (mdE && mdE.position && posD) mdGrid = zRangeDist(mdE.position, posD);
+        } catch (eG) {}
+        mobSnap.push([md.mid != null ? md.mid : 0, Math.round(md.dist), md.isBoss ? 1 : 0, zEntHpPct(md.GID), String(md.name || ""), Math.round(md.dist), mdGrid]);
       }
     } catch (eM) {}
     return {
@@ -6994,7 +7032,9 @@
       bossHp: zLastBossHp,
       flyReason: zLastFlyReason,
       flyFailUntil: flyFailUntil || 0,
-      lastFly: lastFly || 0
+      lastFly: lastFly || 0,
+      sitWhy: zSitWhy,
+      atkWhy: zAtkWhy
     };
   }
   function zDiagTick() {
@@ -7564,7 +7604,7 @@
     } catch (e) {}
   }
   masterTickReg(function () { try { tickRein(); } catch (e) {} });
-  var zWalkState = { lastMove: 0, lastChase: 0, dir: 0, noTargetSince: 0, lastIdleFly: 0, lastPos: null, stuckCnt: 0, stuckAt: 0, tried: 0, lastSeenDir: null, lastSeenAt: 0, center: null, chaseGid: null, chaseDist: 0, chaseSince: 0, startMap: null, lastMoveDir: 0, backMapAt: 0, backDir: 0, backTeleportAt: 0 }; // V2.16.4 stuckAt=卡住时间窗口起点；center=地图边界锚点(启动点)；V2.16.7 chase*=追怪卡住检测
+  var zWalkState = { lastMove: 0, lastChase: 0, dir: 0, noTargetSince: 0, lastIdleFly: 0, lastPos: null, stuckCnt: 0, stuckAt: 0, tried: 0, lastSeenDir: null, lastSeenAt: 0, center: null, chaseGid: null, chaseDist: 0, chaseSince: 0, startMap: null, lastMoveDir: 0, backMapAt: 0, backDir: 0, backTeleportAt: 0, hySince: 0, hyGid: 0, hyPos: null, hyTakeoverUntil: 0 }; // V2.16.4 stuckAt=卡住时间窗口起点；center=地图边界锚点(启动点)；V2.16.7 chase*=追怪卡住检测；V2.34.3 hy*=混合寻怪「内挂是否真的在接管」判定（内挂死等兜底）
   var zEscape = { until: 0 };                 // V2.15.23：逃脱状态（坐下被打→移动避开怪，期间不寻怪不打怪）
   var zAStarState = { active: false, tx: 0, ty: 0, since: 0, lastTry: 0, stuckSince: 0, lastPos: null, aim: null }; // V2.10.0 A* 绕障行走状态
   // 状态前置穿插平A计时：zWaitSince = 上次穿插普攻时间（间隔跟随攻击循环，见 zAttack wait 分支）
@@ -7825,7 +7865,7 @@
             var inLockN = !anyLock || zAllMobsW || (mid && lockList[mid]); // V2.34.0 A5：补 zAllMobs，与 zAttack 口径一致
             if (!inLockN && !allowHitTarget) return;
             if (!ent.position || !e.position) return;
-            var d = Math.abs(e.position[0] - ent.position[0]) + Math.abs(e.position[1] - ent.position[1]);
+            var d = zRangeDist(e.position, ent.position); // V2.34.3：格子距离口径（与客户端一致）
             // V2.15.25：血少优先（绝对剩余HP）→ 血量相同按距离近优先；读不到血量按极大排最后
             var hpNow = (e.life && e.life.hp != null) ? e.life.hp : 1e18;
             if (inLockN) {
@@ -7856,13 +7896,40 @@
           var atkR0 = calcAtkRange();
           if (isHybrid()) {
             // V2.33.0 混合寻怪：锁定怪还在接管距离外 → 交内挂长距离寻怪走路，助手不接管移动
+            // V2.34.3 内挂死等兜底：内挂实际关闭、或 2.5s 原地未动且（被打 / 距怪≤接管距离+8）→ 判定内挂没在工作，
+            //   助手自行接管 12s；接管窗口内即使仍在接管距离外也不再让位（修「助手以为内挂开着、其实关了」站桩）
             var takeD0 = takeoverDist();
             if (nearD > takeD0) {
-              npEnsureHunt();
-              setStatus("锁定怪距" + nearD + "格 > 接管距离" + takeD0 + "，内挂寻怪走路中…", "st");
-              return;
+              var realNp = npBattleState(), hyNow = Date.now();
+              if (hyNow < zWalkState.hyTakeoverUntil) {
+                // 助手临时接管窗口：内挂若在跑先关掉，防两边抢控制
+                if (npHuntOn) npHuntStop();
+              } else {
+                if (!zWalkState.hySince || zWalkState.hyGid !== near.GID) {
+                  zWalkState.hySince = hyNow;
+                  zWalkState.hyGid = near.GID;
+                  zWalkState.hyPos = [ent.position[0], ent.position[1]];
+                }
+                var hyMoved = zWalkState.hyPos ? (Math.abs(ent.position[0] - zWalkState.hyPos[0]) > 1 || Math.abs(ent.position[1] - zWalkState.hyPos[1]) > 1) : false;
+                var hyHit = (hyNow - zHpWatch.lastHitAt) < 3000;
+                var hyWaited = hyNow - zWalkState.hySince;
+                if (realNp === false || (hyWaited >= 2500 && !hyMoved && (hyHit || nearD <= takeD0 + 8))) {
+                  zWalkState.hyTakeoverUntil = hyNow + 12000;
+                  zWalkState.hySince = 0;
+                  tlog("hybrid-takeover realNp=" + realNp + " waited=" + hyWaited + " moved=" + hyMoved + " hit=" + hyHit + " nearD=" + nearD);
+                  setStatus("内挂未接管（" + (realNp === false ? "内挂实际关闭" : "2.5秒未移动") + "），助手自行接管…", "warn");
+                } else {
+                  npEnsureHunt();
+                  setStatus("锁定怪距" + nearD + "格 > 接管距离" + takeD0 + "，内挂寻怪走路中…", "st");
+                  return;
+                }
+              }
+            } else {
+              // 已进入接管距离：清兜底计时，交助手自己追怪
+              zWalkState.hySince = 0;
+              zWalkState.hyTakeoverUntil = 0;
+              if (npHuntOn) npHuntStop();
             }
-            if (npHuntOn) npHuntStop();
           } else if (nearD > atkR0) {
             if (npHuntOn) npHuntStop(); // 超射程：关内挂一次（助手接管移动），防每轮 toggle 拉锯
             setStatus("锁定怪超出攻击范围(" + nearD + ">" + atkR0 + ")，助手主动追怪靠近中…", "ok");
@@ -7873,7 +7940,7 @@
         // V2.16.7：追怪不再直发怪坐标（会走到脸上）——目标改为「距怪 射程-1 格」可走点，停在射程边缘即可攻击（玩家手动点怪同款：射程内直接打）
         // V2.16.7 追怪卡住检测（与无目标瞬移合并）：追怪目标连续 4s 距离未缩短 → 瞬移（覆盖围殴走不动/障碍物不可达发呆）
         var cgid7 = near.GID;
-        var cdist7 = Math.abs(near.position[0] - ent.position[0]) + Math.abs(near.position[1] - ent.position[1]);
+        var cdist7 = zRangeDist(near.position, ent.position); // V2.34.3：格子距离口径
         if (zWalkState.chaseGid === cgid7 && cdist7 >= zWalkState.chaseDist) {
           if (!zWalkState.chaseSince) zWalkState.chaseSince = now;
         } else if (zWalkState.chaseGid !== cgid7) {
@@ -8212,7 +8279,7 @@
       if (!ent || !ent.life) return;
       var now = Date.now();
       // V2.34.0 A6：瞬移挂起期间只跳过攻击包发送，不再整拍 return（防御判定与走路继续）
-      if (escapePending()) { requestEmergencyEscape(escapeState.reason); zHoldTick("紧急脱战（等待位移确认）", true); return; }
+      if (escapePending()) { zAtkWhy = "脱战挂起"; requestEmergencyEscape(escapeState.reason); zHoldTick("紧急脱战（等待位移确认）", true); return; }
       // V2.7.2 锁定怪站桩修复：np 模式（内挂机制寻怪）→ 目标判定强制 ld<=atkRange（射程外锁定怪不当目标、
       //   不解锁、交内挂移动靠近），杜绝「npHuntStop 关内挂⇄zWalk npEnsureHunt 开内挂」每轮拉锯站桩
       var npMode = npHuntMode() === "np" || isHybrid();
@@ -8220,7 +8287,7 @@
       sitMaintain(); // V2.15.22：坐下期间被打自动站起逃生（战斗循环每 tick，不依赖侦查扫描）
       // V2.32.2 坐下优先：sitMaintain 未站起（没被打/没回满/没过看门狗）→ 保持坐下，本拍不锁怪不攻击不追怪
       // V2.34.0 A6：坐着时仍允许防御判定（血量/群殴/受击），攻击可跳过；走路由 zWalk 自行跳过
-      if (isSitting()) { zHoldTick("坐下回血中", false); return; }
+      if (isSitting()) { zAtkWhy = "已坐下"; zHoldTick("坐下回血中", false); return; }
       var EM = window.require("Renderer/EntityManager");
       var range = parseInt($id("dsh-z-range").value, 10) || 12; // 寻怪范围（触发目标考虑）
       // 攻击距离：物理/魔法按技能射程自动选择（普攻=物理距离；技能=技能射程与对应距离取大）
@@ -8236,6 +8303,7 @@
       // 「打死换下一个=关」：锁定目标已击杀 → 完全停手（等待用户重新开自动战斗）
       if (zLock.done) {
         // V2.34.0 A6：只停攻击，不冻结防御判定与走路
+        zAtkWhy = "已停手(打死换下一个关)";
         zHoldTick("已停手（等指令）", true);
         setStatus("锁定目标已击杀（打死换下一个=关），等待重新开启…", "st");
         return;
@@ -8253,7 +8321,7 @@
         if (bossWantD && bossWantD.rec && bossWantD.want) {
           var bEnt = zEntOf(bossWantD.rec.GID);
           if (bEnt && bEnt.position && ent.position) {
-            var bd = Math.abs(bEnt.position[0] - ent.position[0]) + Math.abs(bEnt.position[1] - ent.position[1]);
+            var bd = zRangeDist(bEnt.position, ent.position); // V2.34.3：格子距离口径
             var bgid = bEnt.GID != null ? bEnt.GID : bossWantD.rec.GID;
             if (bd <= (npMode ? npThD : atkRange) && defSnap && defSnap.isCombatMap && gidInt(zLock.gid) !== gidInt(bgid)) {
               zLock.gid = bgid;
@@ -8277,7 +8345,7 @@
             if (e.GID !== zLock.gid || e.objecttype !== 5) return;
             if (e.isDeath || (e.ACTION && e.action === e.ACTION.DIE) || e.remove_tick) return;
             if (!ent.position || !e.position) return;
-            var ld = Math.abs(e.position[0] - ent.position[0]) + Math.abs(e.position[1] - ent.position[1]);
+            var ld = zRangeDist(e.position, ent.position); // V2.34.3：格子距离口径
             // follow 开：寻怪范围内持续打/追；follow 关：仅攻击距离内，超出即解锁
             // V2.7.2：np 模式下无论 follow 一律仅攻击距离内才当战斗目标（射程外交内挂靠近）
             if (npMode ? ld <= npThD : (zFollow ? ld <= range : ld <= atkRange)) { target = e; zLock.dist = ld; }
@@ -8288,6 +8356,7 @@
           zLock.name = (target.display && target.display.name) || String(target._job != null ? target._job : target.GID);
         } else if (npMode && lockAliveOutside) {
           // V2.7.2 站桩修复：np 模式下锁定怪仍存活但超出攻击距离 → 不解锁（交内挂移动靠近，由 zWalk np 分支 ensureHunt）
+          zAtkWhy = "锁定怪在射程外";
           zMon.action = "锁定怪超出射程（内挂靠近）";
         } else {
           // 目标死亡/丢失 → 解锁；next=关 时击杀后停手（done），否则重新扫描换下一个
@@ -8314,7 +8383,7 @@
             var mid = e._job != null ? String(e._job) : (e.job != null ? String(e.job) : (e.mobId != null ? String(e.mobId) : null));
             var inLock = !anyLock || zAllMobs || (mid && lockList[mid]); // V2.22.0：打全部怪开 → 不看锁定名单
             if (!ent.position || !e.position) return;
-            var d = Math.abs(e.position[0] - ent.position[0]) + Math.abs(e.position[1] - ent.position[1]);
+            var d = zRangeDist(e.position, ent.position); // V2.34.3：格子距离口径
             if (inLock) {
               // 锁定怪：攻击距离内直接打（atkRange）；超出但寻怪范围内 → 由 zWalk 追击
               // V2.15.25：血少优先（绝对剩余HP，抢尾刀）→ 血量相同按距离近优先；读不到血量按极大排最后
@@ -8335,6 +8404,8 @@
           zLock.dist = best;
           zLock.reactive = false;
           if (btDiagOn) { try { var pH = (target.life && target.life.hp != null) ? target.life.hp : -1; btLog('pick', '锁定 ' + zLock.name + ' gid=' + target.GID + ' hp=' + pH + ' d=' + best); } catch (e3) {} }
+        } else {
+          zAtkWhy = "无怪在射程"; // V2.34.3：本轮扫描无任何射程内候选
         }
       }
       // V2.15.23：坐下被攻击应对（dsh-z-sitxw：无视/还击/瞬移/逃脱）——需要坐下且被打（锁定+非锁定怪都算）→ 优先于非选中怪/锁定判断
@@ -8419,11 +8490,11 @@
       } else {
         zLastTargetGID = null; // 无目标，重置以便下次直接出手
       }
-      if (!target) { zMon.action = "寻怪（走路）"; zWalk(); return; } // 无目标 → 自动走路寻怪
+      if (!target) { zAtkWhy = "无目标寻怪"; zMon.action = "寻怪（走路）"; zWalk(); return; } // 无目标 → 自动走路寻怪
       // V2.16.4 最短攻击距离区间：目标过近（<最短距离）→ 后撤拉开再打（技能和普攻共用同一区间判定）
       var minR = parseInt($id("dsh-z-minrange").value, 10) || 0;
       if (minR > 0 && target && target.position && ent.position) {
-        var dNear = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]);
+        var dNear = zRangeDist(target.position, ent.position); // V2.34.3：格子距离口径
         if (dNear < minR) {
           var bdx = ent.position[0] - target.position[0], bdy = ent.position[1] - target.position[1];
           var bl = Math.abs(bdx) + Math.abs(bdy);
@@ -8460,9 +8531,10 @@
       var cast = castOrderSkill(order, target);
       var attNextGap = attMix ? skillNextGap(order) : Infinity; // Infinity=没有可用技能 → 直接普攻
       // V2.33.0 自回传施法轨迹（经 8899 KV 中继，助手直接提取，无需复制粘贴）
-      try { var tD2 = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]); dshCastLog("cast=" + cast + " gap=" + (attNextGap === Infinity ? "Inf" : Math.round(attNextGap)) + " d=" + tD2 + " lastSk=" + (zLastCastSkid || 0)); } catch (e) {}
-      if (btDiagOn) { try { var tD = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]); btLog('zAtk', 'cast=' + cast + ' targetDist=' + tD + ' atkRange=' + atkRange + ' pmRange=' + pmRange + ' npMode=' + npMode); } catch (e) {} }
+      try { var tD2 = zRangeDist(target.position, ent.position); dshCastLog("cast=" + cast + " gap=" + (attNextGap === Infinity ? "Inf" : Math.round(attNextGap)) + " d=" + tD2 + " lastSk=" + (zLastCastSkid || 0)); } catch (e) {}
+      if (btDiagOn) { try { var tD = zRangeDist(target.position, ent.position); btLog('zAtk', 'cast=' + cast + ' targetDist=' + tD + ' atkRange=' + atkRange + ' pmRange=' + pmRange + ' npMode=' + npMode); } catch (e) {} }
       if (cast === "walk") {
+        zAtkWhy = "走位追怪";
         zWaitSince = 0; // 走位后穿插普攻立即出手（上次普攻时间重置）
         zAtkLast.outOfRange = true; // V2.15.29：走位追怪会打断系统连击 → 回来后需重新锁定
         zMon.action = "追怪（走近施放）";
@@ -8474,22 +8546,26 @@
         // 技能释放冷却窗口（技能层内部冷却）→ 开=冷却间隙补普攻；关=干等技能
         // V2.22.0 技能优先：技能马上就要冷却好（剩余 < 让位余量）→ 这轮不发普攻，把攻击循环让给技能
         if (attNextGap <= attMixGap) {
+          zAtkWhy = "等技能冷却";
           zMon.action = "等技能（还差" + Math.ceil(attNextGap) + "ms）";
           setStatus("技能即将就绪，让位不补普攻…", "st");
           return;
         }
         if (!attMix) {
+          zAtkWhy = "等技能冷却";
           zMon.action = "技能冷却中";
           setStatus("技能释放冷却中…", "st");
           return;
         }
-        var distCd = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]);
+        var distCd = zRangeDist(target.position, ent.position); // V2.34.3：格子距离口径
         if (distCd <= pmRange) {
+          zAtkWhy = "已出手";
           sendNormalAtk(target.GID); // V2.15.29 NOCTRL 平A（同目标锁定不重发，仅换目标/重进射程补发）
           zMon.action = "技能空档补普攻";
           setStatus("技能冷却空档，补普攻…", "st");
           return;
         }
+        zAtkWhy = "走位追怪";
         zAtkLast.outOfRange = true; // V2.15.29：目标出射程追怪 → 回来需重新锁定（系统连击在移动中已断）
         zMon.action = "追怪（普攻射程外）";
         zWalk();
@@ -8498,18 +8574,21 @@
       if (cast === "wait") {
         // 技能层全部不满足（前置缺/补状态节流中）→ 落到第一层：默认锁定普攻
         if (!attMix) {
+          zAtkWhy = "等技能冷却";
           zMon.action = "等状态前置";
           setStatus("等状态前置（技能空档补普攻已关，纯技能流）…", "st");
           return;
         }
         // 默认锁定普攻：对锁定目标 REQUEST_ACT（间隔=攻击循环本身，每轮一击，无需额外判断）
-        var distToT2 = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]);
+        var distToT2 = zRangeDist(target.position, ent.position); // V2.34.3：格子距离口径
         if (distToT2 <= pmRange) {
+          zAtkWhy = "已出手";
           sendNormalAtk(target.GID); // V2.15.29 NOCTRL 平A
           zMon.action = "技能空档补普攻";
           setStatus("前置未就绪，补普攻…", "st");
           return;
         }
+        zAtkWhy = "走位追怪";
         zAtkLast.outOfRange = true; // V2.15.29：目标出射程追怪 → 回来需重新锁定
         zMon.action = "追怪（普攻射程外）";
         zWalk();
@@ -8518,11 +8597,13 @@
       zWaitSince = 0; // 释放成功 → 下次技能层不动作时锁定普攻立即出手
       if (cast === "none" || !cast) {
         // V2.22.0：完全没配技能 → 直接普攻，不受「技能空档补普攻」开关限制
-        var distToT = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]);
-        if (distToT > pmRange) { zAtkLast.outOfRange = true; zMon.action = "追怪（普攻射程外）"; zWalk(); return; } // V2.15.29：出射程追怪 → 回来重新锁定
+        var distToT = zRangeDist(target.position, ent.position); // V2.34.3：格子距离口径
+        if (distToT > pmRange) { zAtkWhy = "走位追怪"; zAtkLast.outOfRange = true; zMon.action = "追怪（普攻射程外）"; zWalk(); return; } // V2.15.29：出射程追怪 → 回来重新锁定
+        zAtkWhy = "已出手";
         sendNormalAtk(target.GID); // V2.15.29 NOCTRL 平A
         zMon.action = "普攻(锁定)";
       } else {
+        zAtkWhy = "已出手";
         zMon.action = "施放技能";
       }
     } catch (e) {}

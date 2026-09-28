@@ -667,6 +667,26 @@ test('exp 战斗诊断升级：每拍含 HP/死亡标记/怪物快照，死亡�
   assert.ok(post.includes('127.0.0.1:8899/api/probe-collect'), '上报目标只能本机接收服务');
 });
 
+test('exp v2.34.2 救命逃生补丁：失血速率触发 / 强制解锁 / 翅膀兜底 / 上报顺序', () => {
+  assert.ok(expSource.includes('function hpDrop2sPct(maxhp, now) {'), '必须有失血速率采样函数');
+  assert.ok(expSource.includes('now - hpDropHist[0].t > 2000'), '窗口必须是 2 秒');
+  const def = expExtract('  var hpDrop = 0;', '      var flyInt = ');
+  assert.ok(def.includes('hpDrop >= 25 && mobs.length > 0'), '失血 ≥25%/2s 必须触发瞬移');
+  assert.ok(def.includes('reason = "失血"'), '必须记录原因「失血」');
+  const cool = expExtract('      var critEsc = false;', '      if (needFly && !flyCool) {');
+  assert.ok(cool.includes('flyFailUntil = 0'), '救命场景必须清连败锁');
+  assert.ok(cool.includes('zQoaNearCount(mobs) >= 3'), '贴身≥3只是救命条件之一');
+  assert.ok(expSource.includes('|| flyResult === "backoff"'), '退避不得计入失败');
+  const esc = expExtract('  function castEmergencyEscape() {', '  function escapePending() {');
+  assert.ok(esc.includes('findFlyWing()') && esc.includes('useItemByIndex(wf.index)'), '紧急脱战必须有翅膀兜底');
+  assert.ok(esc.includes('escapeState.attempts >= 2'), '第 2 次尝试起优先翅膀');
+  const tick = expExtract('  function zDiagTick() {', 'masterTickReg(function');
+  assert.ok(tick.indexOf('arr.push(s)') < tick.indexOf('zDiagPost("zdiag-death")'), '死亡那一拍必须先入库再上报');
+  assert.ok(expSource.includes('cfg: cfgP'), '上报必须带设置快照');
+  const snap = expExtract('  function zDiagSnapNow() {', '  function zDiagTick() {');
+  ['s26:', 'wing:', 'flyFail:'].forEach((k) => assert.ok(snap.includes(k), '快照必须含字段 ' + k));
+});
+
 // ================= V2.34.0 追改：尾刀模式「等待残血补尾刀」对用户显式锁定的 BOSS 同样生效 =================
 test('exp 尾刀模式锁定跳过：守卫同时引用 zBossSkipGid 与 zLock.gid 且绝不清锁', () => {
   const guard = expExtract('      // V2.34.0 追改：尾刀模式下锁定的 BOSS', '        EM.forEach(function (e) {');

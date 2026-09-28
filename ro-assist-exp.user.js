@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手 · 实验版）
 // @namespace    dsh.ro-plugin
-// @version      2.34.1
+// @version      2.34.2
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -53,6 +53,9 @@
 // ---------------- V2.34.1 变更摘要 ----------------
 // 战斗判定诊断（默认关）升级为死亡自动取证：每拍额外记录 HP/最大HP/SP/SP上限/地图/坐标/助手运行态/最近 6 只怪（ID·距离·是否首领·血量%）；
 // 角色死亡瞬间自动把最近 200 拍发往本机接收服务（http://127.0.0.1:8899/api/probe-collect，仅本机、不出外网），另有 10 分钟保底上报；修复「复制诊断」按钮点不动（面板/浮窗事件隔离层在冒泡阶段 stopPropagation，监听改捕获阶段），按钮同时触发一次本机上报。
+// ---------------- V2.34.2 变更摘要 ----------------
+// 修复挂机猝死：救命瞬移不再被「连败 10 秒锁」和瞬移间隔锁死（血线之下 / 2秒失血≥25% / 贴身≥3只且HP<60% 强制解锁，只留 1 秒防抖）；新增「2 秒失血 ≥25% 最大HP」
+// 紧急逃生触发；紧急脱战新增翅膀类道具兜底（瞬移术被公共CD吞或未学/SP不足时改用苍蝇翅膀类道具）；诊断上报改为先入库再上报（死亡那一拍不再丢失）+ 记录怪物名/瞬移术等级/翅膀/连败数/关键设置快照。
 
 (function () {
   "use strict";
@@ -78,7 +81,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.34.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.34.2"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
 
   // V2.11.0：仓库+背包读取全局变量
@@ -6452,6 +6455,24 @@
   var selfHealHoldUntil = 0;
   var potNoPotion = false;                // 喝水无药标记（瀑布：低血无药被围 → 升级瞬移）
   var flyFailCount = 0, flyFailUntil = 0; // 瞬移连续失败冷却（3 次 → 10s 不重试）
+  // V2.34.2：掉血速率采样（最近 2 秒），用于「2 秒掉血 ≥25% 最大HP」紧急逃生判定
+  var hpDropHist = [];
+  function hpDrop2sPct(maxhp, now) {
+    try {
+      if (!(maxhp > 0)) return 0;
+      var entH = CLIENT.SS && CLIENT.SS.Entity, lifeH = entH && entH.life;
+      var hpNow = lifeH && lifeH.hp != null ? Number(lifeH.hp) : -1;
+      if (hpNow < 0) return 0;
+      hpDropHist.push({ t: now, hp: hpNow });
+      while (hpDropHist.length > 12 || (hpDropHist.length && now - hpDropHist[0].t > 2000)) hpDropHist.shift();
+      var worst = 0;
+      for (var i = 0; i < hpDropHist.length; i++) {
+        var d = (hpDropHist[i].hp - hpNow) / maxhp * 100;
+        if (d > worst) worst = d;
+      }
+      return worst;
+    } catch (e) { return 0; }
+  }
   var sitSince = 0, sitHpAt = -1;         // 坐下看门狗（30s 血未回升 → 站起并入瞬移链）
   var sitSendAt = 0;                      // V2.15.22：坐/立发包节流（1.5s，防多路重复发）
   var sitStandAt = 0;                     // V2.15.22：被打站起冷却（站起后 5s 内不立刻坐下，防坐-站抖动）
@@ -6658,7 +6679,29 @@
   function castEmergencyEscape() {
     var now = Date.now();
     escapeState.attempts++; escapeState.lastCast = now; escapeState.ackAt = 0; escapeState.deadline = now + ESCAPE_TIMEOUT_MS;
+    // V2.34.2 A2：第 2 次尝试起优先道具（瞬移术会被技能公共CD静默吞掉，等不到位移）；否则仍先试瞬移术
+    var useWingFirst = escapeState.attempts >= 2, wf = null;
+    if (useWingFirst) {
+      try { wf = findFlyWing(); } catch (e0) { wf = null; }
+      if (wf && useItemByIndex(wf.index)) {
+        zWalkState.dir = Math.floor(Math.random() * 8);
+        zWalkState.lastPos = null; zWalkState.stuckCnt = 0; zWalkState.tried = 0;
+        tlog("escape-wing-" + wf.itid);
+        setStatus("紧急脱战：翅膀(" + escapeState.reason + ")，等待位移…", "warn");
+        return "teleport";
+      }
+    }
     if (castTeleport()) { setStatus("紧急脱战：瞬移(" + escapeState.reason + ")，等待回执和位移…", "warn"); return "teleport"; }
+    if (!useWingFirst) {
+      try { wf = findFlyWing(); } catch (e1) { wf = null; }
+      if (wf && useItemByIndex(wf.index)) {
+        zWalkState.dir = Math.floor(Math.random() * 8);
+        zWalkState.lastPos = null; zWalkState.stuckCnt = 0; zWalkState.tried = 0;
+        tlog("escape-wing-" + wf.itid);
+        setStatus("紧急脱战：翅膀(" + escapeState.reason + ")，等待位移…", "warn");
+        return "teleport";
+      }
+    }
     escapeState.lastCast = 0; escapeState.deadline = now; escapeState.nextRetry = now + Math.min(1200, 300 * Math.pow(2, escapeState.attempts - 1));
     return "reject";
   }
@@ -6895,10 +6938,14 @@
       if (!arrP.length) return;
       var entP = CLIENT.SS && CLIENT.SS.Entity, whoP = "";
       try { whoP = (entP && entP.display && entP.display.name) || ""; } catch (e0) {}
+      var cfgP = {};
+      try {
+        cfgP = { flymode: $id("dsh-z-flymode") ? $id("dsh-z-flymode").value : "", flyint: $id("dsh-z-flyint") ? $id("dsh-z-flyint").value : "", flygrp: $id("dsh-z-flygrp") ? !!$id("dsh-z-flygrp").checked : null, grpn: $id("dsh-z-grpn") ? $id("dsh-z-grpn").value : "", hpfly: $id("dsh-z-hpfly") ? $id("dsh-z-hpfly").value : "", flystuck: $id("dsh-z-flystuck") ? !!$id("dsh-z-flystuck").checked : null, flykill: $id("dsh-z-flykill") ? !!$id("dsh-z-flykill").checked : null, ona: $id("dsh-z-ona") ? $id("dsh-z-ona").value : "" };
+      } catch (eC) {}
       fetch("http://127.0.0.1:8899/api/probe-collect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ t: tag || "zdiag", ver: VER, who: whoP, at: Date.now(), arr: arrP.slice(-200) })
+        body: JSON.stringify({ t: tag || "zdiag", ver: VER, who: whoP, at: Date.now(), cfg: cfgP, arr: arrP.slice(-200) })
       }).catch(function () {});
     } catch (e) {}
   }
@@ -6911,7 +6958,7 @@
       for (var mi = 0; mi < mobsD.length && mobSnap.length < 6; mi++) {
         var md = mobsD[mi];
         if (!md || !(md.dist >= 0)) continue;
-        mobSnap.push([md.mid != null ? md.mid : 0, Math.round(md.dist), md.isBoss ? 1 : 0, zEntHpPct(md.GID)]);
+        mobSnap.push([md.mid != null ? md.mid : 0, Math.round(md.dist), md.isBoss ? 1 : 0, zEntHpPct(md.GID), String(md.name || "")]);
       }
     } catch (eM) {}
     return {
@@ -6928,6 +6975,9 @@
       dead: !!(entD && (entD.isDeath || (entD.ACTION && entD.action === entD.ACTION.DIE))),
       flyAt: zLastFlyReasonAt || 0,
       mobs: mobSnap,
+      s26: (function () { try { return learnedSkillLv(26); } catch (e0) { return -1; } })(),
+      wing: (function () { try { var w = findFlyWing(); return w ? String(w.itid || w.index || 1) : ""; } catch (e0) { return ""; } })(),
+      flyFail: flyFailCount || 0,
       onaMode: ($id("dsh-z-ona") && $id("dsh-z-ona").value) || "还击",
       beingHit: (nowD - zHpWatch.lastHitAt) < 3000,
       zAllMobs: !$id("dsh-z-allmobs") || $id("dsh-z-allmobs").checked,
@@ -6954,11 +7004,11 @@
       if (zDiagAt && nowD - zDiagAt < 900) return;
       zDiagAt = nowD;
       var s = zDiagSnapNow();
-      if ((s.hp === 0 || s.dead) && !zDiagDead) { zDiagDead = 1; zDiagPost("zdiag-death"); }
-      else if (s.hp > 0 && !s.dead && zDiagDead) { zDiagDead = 0; }
       var arr = window.__dshZDiag || (window.__dshZDiag = []);
       arr.push(s);
       if (arr.length > 200) arr.splice(0, arr.length - 200);
+      if ((s.hp === 0 || s.dead) && !zDiagDead) { zDiagDead = 1; zDiagPost("zdiag-death"); }
+      else if (s.hp > 0 && !s.dead && zDiagDead) { zDiagDead = 0; }
       try { if (btDiagOn) btLog('zdiag', JSON.stringify(s)); } catch (e1) {}
       if (nowD - zDiagPostAt > 600000) { zDiagPostAt = nowD; zDiagPost("zdiag-10min"); }
     } catch (e) {}
@@ -7019,11 +7069,15 @@
       zLastBossAct = bossD.act; zLastBossHp = bossD.hp;
       if (btDiagOn) btLog('def', 'mobs=' + mobs.length + ' isCombatMap=' + isCombatMap + ' bossAct=' + bossD.act + ' zRunning=' + zRunning);
       var life = ent && ent.life;
+      var hpDrop = 0;
       if (life) {
         var hpPct = life.maxhp > 0 ? life.hp / life.maxhp * 100 : 100;
         var spPct = life.maxsp > 0 ? life.sp / life.maxsp * 100 : 100;
+        hpDrop = hpDrop2sPct(life.maxhp, now);
         if (isCombatMap && hpPct < (parseInt($id("dsh-z-hpfly").value, 10) || 20)) { needFly = true; reason = "HP" + Math.round(hpPct) + "%"; }
         if (isCombatMap && spPct < (parseInt($id("dsh-z-spfly").value, 10) || 10)) { needFly = true; reason = "SP" + Math.round(spPct) + "%"; }
+        // V2.34.2：失血速率紧急逃生——固定血线会被「一秒掉 25%」的爆发直接跨过去
+        if (isCombatMap && hpDrop >= 25 && mobs.length > 0) { needFly = true; reason = "失血" + Math.round(hpDrop) + "%/2s"; }
         if (hpPct < (parseInt($id("dsh-z-hpout").value, 10) || 5)) { setStatus("HP极低，10秒后下线", "err"); }
         // V1.9.4 瀑布接管：低血(喝水线) + 无药 + 被围 → 升级瞬移（消 25% 无药死区）
         var potThrNow = potHpThr();
@@ -7061,13 +7115,22 @@
       }
       // V1.9.4：瞬移冷却门（连续失败 3 次后 10s 停手 + 瞬移间隔）——不再整拍 return，只挡瞬移本身
       var flyInt = (parseInt($id("dsh-z-flyint").value, 10) || 30) * 1000;
-      var flyCool = (now < flyFailUntil) || (now - lastFly < flyInt);
+      // V2.34.2 A1：救命瞬移不受「连败 10s 锁」与瞬移间隔限制——血线之下 / 2秒失血≥25% / 贴身≥3只且HP<60% 时强制解锁（只留 1s 防抖）
+      var critEsc = false;
+      if (life && life.maxhp > 0 && mobs.length > 0) {
+        var hpNowPct = life.hp / life.maxhp * 100;
+        if (hpNowPct < (parseInt($id("dsh-z-hpfly").value, 10) || 20)) critEsc = true;
+        else if (hpDrop >= 25) critEsc = true;
+        else if (hpNowPct < 60 && zQoaNearCount(mobs) >= 3) critEsc = true;
+      }
+      if (critEsc) { flyFailCount = 0; flyFailUntil = 0; }
+      var flyCool = (now < flyFailUntil) || (now - lastFly < (critEsc ? 1000 : flyInt));
       if (needFly && !flyCool) {
         zLastFlyReason = reason; // V2.34.0 A7：诊断用最近一次飞的原因
       zLastFlyReasonAt = Date.now();
         // 紧急防御只走已学瞬移术；确认地图/坐标变化前持续阻塞治愈与普通技能。
         var flyResult = requestEmergencyEscape(reason);
-        var flyOk = flyResult === "teleport" || flyResult === "wait" || flyResult === "stand";
+        var flyOk = flyResult === "teleport" || flyResult === "wait" || flyResult === "stand" || flyResult === "backoff"; // V2.34.2：退避/等待不算失败，避免“飞不出去→锁更久”自锁
         if (btDiagOn) btLog('def-fly', reason + ' -> ' + (flyOk ? '成功' : '失败') + ' (failCnt=' + flyFailCount + ' failUntil=' + (flyFailUntil - now > 0 ? ((flyFailUntil - now) / 1000).toFixed(1) + 's后' : '无') + ')');
         if (!flyOk) markFlyFail(); else markFlyOk();
         lastFly = now;

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手 · 实验版）
 // @namespace    dsh.ro-plugin
-// @version      2.33.0
+// @version      2.34.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。
@@ -48,6 +48,8 @@
 // 4. 换图反向走加固：新图名连续稳定 1.2s 且坐标有效才认定换图，防瞬态误触反向走。
 // 5. 换角色切档双检测：角色名+GID 双比对（游戏内切角色 GID 不变也能切档）。
 // 6. 本地化方案 B：配置导出/导入按钮（跨入口/跨机器备份）。
+// ---------------- V2.34.0 变更摘要 ----------------
+// 功能菜单重排为五栏（常用/战斗功能/战斗辅助/提示/其他）；助手战斗设置拆成「战斗设置 / 技能设置 / 附近怪物实时列表」三个一级浮窗；物品拾取与攻击名单分家、移除物品搜索；技能点选与顺序表可直接改等级，释放% 输入不再被定时重绘覆盖。
 
 (function () {
   "use strict";
@@ -73,7 +75,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.33.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.34.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
 
   // V2.11.0：仓库+背包读取全局变量
@@ -681,25 +683,18 @@
       '<button class="ghost" id="dsh-probe-neidom" style="flex:0 0 auto">探查内挂DOM</button></div>' +
       '',
     zhu: '' +
-      // V2.21.0：去掉侧边抽屉，改成页内二级页签（战斗设置 / 技能设置 / 附近怪物），合并为「助手战斗设置」
+      // V2.34.0：页内三页签拆成三个一级窗口（战斗设置 / 技能设置 / 附近怪物实时列表），页签 UI 移除
       '<div class="row"><span class="st" id="dsh-z-state" style="font-size:10px">助手未启动</span>' +
       '<button class="ghost" id="dsh-fw-btn-zhu2" data-fw="zhu2" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
       '<div id="dsh-fw-zhu2">' +
-      '<div class="sub-tabs">' +
-      '<button class="sub-tab active" data-sub="zs-battle">战斗设置</button>' +
-      '<button class="sub-tab" data-sub="zs-skill">技能设置</button>' +
-      '<button class="sub-tab" data-sub="zs-near">附近怪物</button></div>' +
-      '<div class="sub-page active" data-subpage="zs-battle">' +
       '<div class="sec">助手模式（自控发包 · 无CD）</div>' +
-      '<div class="sec">怪物侦查扫描（间隔可调）</div>' +
-      '<div class="row"><label class="switch"><input id="dsh-scanen" type="checkbox" checked>启用侦查扫描</label>' +
-      '<span class="lb" style="margin-left:auto;min-width:26px">间隔</span>' +
-      '<input id="dsh-scanint" type="number" value="0.5" min="0.3" step="0.1" style="flex:0 0 44px"><span style="color:#5a6b7f">s（最低0.3）</span></div>' +
       '<div class="row"><label class="switch"><input id="dsh-healfirst" type="checkbox">优先使用治愈术替代药品（V2.29.0 自辅助页移入）</label><span class="st">未学会、SP不足或冷却时仍使用物品</span></div>' +
       '<div class="sec">防御与瞬移（助手自实现）</div>' +
       '<div class="row"><span class="lb">非选中怪攻击</span><select id="dsh-z-ona" style="flex:0 0 100px"><option>无视</option><option>瞬移</option><option selected>还击</option></select></div>' +
-      '<div class="row"><span class="lb">群殴时</span><span style="color:#5a6b7f">n≥</span><input id="dsh-z-grp" type="number" value="6" min="0" style="flex:0 0 38px"><span style="color:#5a6b7f">只怪（0=关闭）→</span>' +
-      '<select id="dsh-z-grpact" style="flex:0 0 88px"><option>解围技能</option><option selected>瞬移</option></select></div>' +
+      // V2.34.0 A1：群殴与解围彻底分开——群殴 dsh-z-grpn（0=关闭）→ 飞；解围技能独立开关 + 贴身数量 + 独立 CD
+      '<div class="row"><span class="lb">群殴时</span><span style="color:#5a6b7f">n≥</span><input id="dsh-z-grpn" type="number" value="6" min="0" style="flex:0 0 38px"><span style="color:#5a6b7f">只怪（0=关闭）→ 飞</span></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-z-flyrange" type="checkbox" checked>远程怪计入群殴</label><span class="st" style="font-size:10px">3秒内命中过我且≥4格</span></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-z-qoaen" type="checkbox" checked>解围技能</label><span style="color:#5a6b7f">贴身≤2格 n≥</span><input id="dsh-z-qoan" type="number" value="3" min="1" style="flex:0 0 38px"><span style="color:#5a6b7f">只</span></div>' +
       '<div class="row"><span class="lb">解围技能</span><select id="dsh-z-qoaskill"><option value="">- 请选择 -</option></select>' +
       '<span class="lb" style="min-width:26px">Lv</span><input id="dsh-z-qoaskilllv" type="number" value="5" min="1" max="10" style="flex:0 0 38px"></div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-flygrp" type="checkbox">群殴自动瞬移</label>' +
@@ -713,13 +708,19 @@
       '<div class="row"><span class="lb" style="min-width:80px">地图边缘距离</span><input id="dsh-z-mapbound-edge" type="number" value="15" min="3" style="flex:0 0 42px"><span style="color:#5a6b7f;font-size:11px">格（距当前地图物理边界小于此值就回头，防走到别的图）</span></div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-idlefly" type="checkbox">无目标持续自动瞬移</label>' +
       '<span class="lb" style="min-width:34px">超过</span><input id="dsh-z-idleflysec" type="number" value="10" style="flex:0 0 40px"><span style="color:#5a6b7f">s无锁定怪→瞬移</span></div>' +
-      '<div class="row"><label class="switch"><input id="dsh-z-bossfly" type="checkbox">BOSS出现瞬移</label>' +
+      // V2.34.0 A3：BOSS 三模式（默认不处理）+ 尾刀线；瞬移间隔 dsh-z-flyint 保留
+      '<div class="row"><span class="lb">BOSS 出现</span><select id="dsh-z-bossact" style="flex:0 0 130px"><option>瞬移</option><option>优先攻击</option><option>等待残血补尾刀</option><option selected>不处理</option></select><span class="st">锁定则优先攻击</span></div>' +
+      '<div class="row"><span class="lb">尾刀线</span><input id="dsh-z-bosshp" type="number" value="30" min="1" max="99" style="flex:0 0 40px"><span style="color:#5a6b7f">%（各职业自填）</span>' +
       '<span class="lb" style="min-width:52px">瞬移间隔</span><input id="dsh-z-flyint" type="number" value="4" style="flex:0 0 40px"><span style="color:#5a6b7f">s</span></div>' +
       '<div class="row"><span class="lb">HP低于</span><input id="dsh-z-hpfly" type="number" value="20" style="flex:0 0 40px"><span style="color:#5a6b7f">%瞬移</span>' +
       '<span class="lb" style="min-width:50px">SP低于</span><input id="dsh-z-spfly" type="number" value="10" style="flex:0 0 40px"><span style="color:#5a6b7f">%瞬移</span></div>' +
       '<div class="row"><span class="lb">HP低于</span><input id="dsh-z-hpout" type="number" value="5" style="flex:0 0 40px"><span style="color:#5a6b7f">%下线</span>' +
       '<span class="lb" style="min-width:50px">无法瞬移</span><select id="dsh-z-keep" style="flex:0 0 70px"><option selected>无视</option><option>逃脱</option></select></div>' +
       '<div class="row"><span class="st" id="dsh-defstate" style="font-size:11px">防御状态：-</span></div>' +
+      // V2.34.0 A7：战斗判定诊断（默认关；复用 __dshDiag/__dshBattle 机制，不联网不写文件）
+      '<div class="row"><label class="switch"><input id="dsh-z-diag" type="checkbox">战斗判定诊断(默认关)</label>' +
+      '<button class="ghost" id="dsh-z-diagcopy" style="flex:0 0 auto;padding:0 8px;font-size:11px">复制诊断</button></div>' +
+      '<div class="row"><textarea id="dsh-z-diagbox" readonly style="width:100%;height:56px;font-size:10px;font-family:monospace"></textarea></div>' +
       '<div class="sec">坐下（参考内挂 · 助手自实现）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-sit" type="checkbox" checked>自动坐下</label>' +
       '<span class="lb" style="margin-left:auto;min-width:26px">HP</span><input id="dsh-z-sithplo" type="number" value="30" style="flex:0 0 38px"><span style="color:#5a6b7f">~</span><input id="dsh-z-sithphi" type="number" value="80" style="flex:0 0 38px"><span style="color:#5a6b7f">%</span></div>' +
@@ -751,7 +752,9 @@
       '<div class="row"><span class="st" id="dsh-bt-state" style="font-size:10px">诊断: 关</span></div>' +
       '<div id="dsh-bt-log" style="font-size:10px;max-height:150px;overflow:auto;background:#f4f6f8;border:1px solid #d8e0e8;border-radius:4px;padding:4px;font-family:monospace;white-space:pre-wrap;line-height:1.5">诊断日志: 关</div></details>' +
       '</div>' +
-      '<div class="sub-page" data-subpage="zs-skill">' +
+      '<div class="row"><span class="st" style="font-size:10px">技能设置（一级窗口 · 可拖动浮窗）</span>' +
+      '<button class="ghost" id="dsh-fw-btn-zskill" data-fw="zskill" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
+      '<div id="dsh-fw-zskill">' +
       '<div class="sec">普攻兜底（技能优先 · 只补空档）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-attmix" type="checkbox" checked>技能空档补普攻</label>' +
       '<span class="lb" style="margin-left:auto;min-width:56px">让位余量</span>' +
@@ -796,10 +799,15 @@
       '<div class="row"><span class="lb" style="min-width:48px">当前状态</span><span class="st" id="dsh-statusview" style="flex:1;line-height:1.6">未读取（客户端就绪后显示）</span>' +
       '<button class="ghost" id="dsh-statehelp" style="flex:0 0 auto">状态速查</button></div>' +
       '</div>' +
-      '<div class="sub-page" data-subpage="zs-near">' +
+      '<div class="row"><span class="st" style="font-size:10px">附近怪物实时列表（一级窗口 · 可拖动浮窗）</span>' +
+      '<button class="ghost" id="dsh-fw-btn-znear" data-fw="znear" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
+      '<div id="dsh-fw-znear">' +
+      '<div class="sec">怪物侦查扫描（间隔可调）</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-scanen" type="checkbox" checked>启用侦查扫描</label>' +
+      '<span class="lb" style="margin-left:auto;min-width:26px">间隔</span>' +
+      '<input id="dsh-scanint" type="number" value="0.5" min="0.3" step="0.1" style="flex:0 0 44px"><span style="color:#5a6b7f">s（最低0.3）</span></div>' +
       '<div class="sec">附近怪物（实时 · <span id="dsh-scanst">未启动</span>）</div>' +
       '<div class="box" style="margin-top:2px"><div id="dsh-scanlist" style="font-size:11px;max-height:120px;overflow:auto">未启动侦查</div></div>' +
-      '</div>' +
       '</div>',
     assist: '' +
       '<div class="a-layout">' +
@@ -907,10 +915,9 @@
       '</div>' +
       // 子页7：物品（拾取 + 背包整理，V2.15.1 自拾取页搬入）
       '<div class="sub-page" data-subpage="ap-item">' +
-      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">物品 · 拾取 + 背包整理</span>' +
+      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">物品 · 拾取与整理</span>' +
       '<button class="ghost" id="dsh-fw-btn-item" data-fw="item" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
       '<div id="dsh-fw-item">' +
-      '<div class="sec">拾取</div>' +
 '<div class="sec">① 百分比拾取（直接联动内挂）</div>' +
       '<div class="row"><span class="lb">拾取机率</span>' +
       '<input id="dsh-lootprob" type="number" value="10" style="flex:0 0 50px"><span style="color:#5a6b7f">%</span>' +
@@ -922,6 +929,18 @@
       '<div class="sec">② 指定 ID 拾取（怪物掉落树 · 点选物品加入）</div>' +
       '<div class="row"><span class="lb">当前地图</span><span class="st" id="dsh-pickmap" style="flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—（未进图）</span>' +
       '<button class="ghost" id="dsh-pickmapbtn" style="flex:0 0 auto">本图怪物掉落</button></div>' +
+      '<div class="box"><div class="b-hd">当前白名单 <span class="tag green" id="dsh-wlcount" style="float:right">0 个物品ID</span></div>' +
+      '<div id="dsh-wllist" style="font-size:11px;max-height:70px;overflow:auto">空</div>' +
+      '<div class="row" style="margin-top:2px"><span class="lb">物品ID</span><input id="dsh-wlid" type="text" placeholder="数字ID" style="flex:0 0 88px">' +
+      '<button class="ghost" id="dsh-wladdbtn" style="flex:0 0 auto">＋加入</button><span class="st" style="font-size:10px">手动加ID到白名单（替代原「搜物品」）</span></div>' +
+      '</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-picken" type="checkbox">启用指定ID自动拾取</label><span class="st" id="dsh-pickstate" style="margin-left:auto"></span><span class="st" id="dsh-picklog"></span></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-pickwalk" type="checkbox" checked>距离不足自动走过去捡</label></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-picksafe" type="checkbox" checked>危险时不走过去捡（Boss/低血/低SP 在场）</label></div>' +
+      '<div class="log">白名单=指定ID自动拾取要捡的物品ID（掉落树勾选或上方输入ID「＋加入」）；物品一落地即检测白名单并自动拾取（15格内）。「本图怪物掉落」在攻击名单窗口的掉落树里展开勾选。</div>' +
+      '<div class="sec">背包整理（按物品ID · 自动丢弃白名单）</div>' +
+      '<div class="row"><span class="st" id="dsh-bag-state" style="font-size:10px">未初始化（登录后自动就绪）</span></div>' +
+      '<div id="dsh-bag-clean" style="font-size:11px"></div>' +
       '</div>' +
       '<div class="sec">目标锁定条 / 队伍面板</div>' +
       '<div class="row"><span class="st" style="font-size:11px">V2.29.0 起改为全透明悬浮层：直接在游戏画面上拖动，位置自动保存；在 功能菜单 勾选「目标状态 / 队伍血条」显示；队友色块点击即锁定。</span></div>' +
@@ -931,26 +950,12 @@
       '<div class="box" style="margin-top:2px"><div id="dsh-z-maplock" style="font-size:11px;max-height:120px;overflow:auto"><span class="st">读取当前地图怪物表（换图自动刷新）</span></div></div></details>' +
       '<div class="box"><div class="b-hd">攻击名单 <button class="ghost" id="dsh-lockclear" style="flex:0 0 auto;padding:0 8px;font-size:11px">清空名单</button><span class="tag green" id="dsh-lockcount" style="float:right">0 种</span></div><div id="dsh-locklist" style="font-size:11px">名单为空（勾选本图怪物或侦查扫描到的怪）</div>' +
       '<div class="log" style="margin-top:2px">锁定后自动切换目标：优先级=勾选怪 &gt; 最近 &gt; 血最少</div></div>' +
-      '</div>' +
       '<div class="row"><input id="dsh-mobsearch" type="text" placeholder="搜索怪物名/ID…（全量图鉴）">' +
       '<button class="ghost" id="dsh-mobsearchbtn" style="flex:0 0 auto">搜索</button>' +
       '<button class="ghost" id="dsh-mobsearchclr" style="flex:0 0 auto">清空</button></div>' +
-      '<div class="row"><input id="dsh-itemsearch" type="text" placeholder="搜索物品名/ID…（搜物品查掉落，或直接「＋加入」指定ID）">' +
-      '<button class="ghost" id="dsh-itemsearchadd" style="flex:0 0 auto">＋加入</button>' +
-      '<button class="ghost" id="dsh-itemsearchbtn" style="flex:0 0 auto">搜物品</button>' +
-      '<button class="ghost" id="dsh-itemsearchclr" style="flex:0 0 auto">清空</button></div>' +
-      '<div id="dsh-itemsearch-res" style="font-size:11px;max-height:150px;overflow:auto"></div>' +
-      '<div class="box"><div class="b-hd">当前白名单 <span class="tag green" id="dsh-wlcount" style="float:right">0 个物品ID</span></div>' +
-      '<div id="dsh-wllist" style="font-size:11px;max-height:70px;overflow:auto">空</div></div>' +
       '<div id="dsh-drop-tree" style="font-size:11px;max-height:200px;overflow:auto">' +
       '<div class="st">怪物掉落树：点「本图怪物掉落」直接看当前地图怪 → 展开勾选物品加入白名单；也可搜索。</div></div>' +
-      '<div class="row"><label class="switch"><input id="dsh-picken" type="checkbox">启用指定ID自动拾取</label><span class="st" id="dsh-pickstate" style="margin-left:auto"></span><span class="st" id="dsh-picklog"></span></div>' +
-      '<div class="row"><label class="switch"><input id="dsh-pickwalk" type="checkbox" checked>距离不足自动走过去捡</label></div>' +
-      '<div class="row"><label class="switch"><input id="dsh-picksafe" type="checkbox" checked>危险时不走过去捡（Boss/低血/低SP 在场）</label></div>' +
-      '<div class="log">怪物=当前地图表联动（同内挂检测目标）+挂机实测自动入列；掉落=mob_db 全量数据零网络。勾选物品→自动加入上方白名单并保存；物品一落地即检测白名单并自动拾取（15格内）。「本图锁定目录」=读本图怪物表生成锁定列表（勾选进战斗锁定目录，换图自动刷新）。</div>' +
-      '<div class="sec">背包整理（按物品ID · 自动丢弃白名单）</div>' +
-      '<div class="row"><span class="st" id="dsh-bag-state" style="font-size:10px">未初始化（登录后自动就绪）</span></div>' +
-      '<div id="dsh-bag-clean" style="font-size:11px"></div>' +
+      '<div class="log">怪物=当前地图表联动（同内挂检测目标）+挂机实测自动入列；掉落=mob_db 全量数据零网络。勾选物品→自动加入白名单并保存；物品一落地即检测白名单并自动拾取（15格内）。「本图锁定目录」=读本图怪物表生成锁定列表（勾选进战斗锁定目录，换图自动刷新）。</div>' +
       '</div>' +
       // 子页9：战斗统计（伤害统计 + 首领警报，V2.28.0）
       '<div class="sub-page" data-subpage="ap-dps">' +
@@ -1803,7 +1808,10 @@
   try {
     fwReg("mlock", "攻击名单", function () { return document.getElementById("dsh-fw-mlock"); });
     fwReg("tp", "传送功能", function () { return document.getElementById("dsh-fw-tp"); });
-    fwReg("zhu2", "助手战斗设置", function () { return document.getElementById("dsh-fw-zhu2"); });
+    fwReg("zhu2", "战斗设置", function () { return document.getElementById("dsh-fw-zhu2"); });
+    // V2.34.0：原「助手战斗设置」页内三页签拆成三个一级浮窗，各自独立登记
+    fwReg("zskill", "技能设置", function () { return document.getElementById("dsh-fw-zskill"); });
+    fwReg("znear", "附近怪物实时列表", function () { return document.getElementById("dsh-fw-znear"); });
     fwReg("aid", "战斗辅助", function () { return document.getElementById("dsh-fw-aid"); });
     // MVP 计时是独立 custom 窗口，由 roModOpen/roModClose 直接管理，不进入标准浮窗登记。
     // V2.15.1 物品（拾取+背包整理）浮窗：标准浮窗（可拖动/透明/×收回）
@@ -1860,25 +1868,28 @@
   // V2.24.1：菜单里 5 个「设置页」行合并为一行「旧版设置界面」（id 沿用 panel）。
   //   点「打开」= 展开大面板，之后所有交互都在旧面板内进行（5 个页签 + 9 个子页签照旧）。
   //   kind 仍标 "page" 只是为了让渲染层不给它画「总开关」勾选框（面板没有开/关语义）。
+  // V2.34.0：菜单重排五栏（sec 顺序 = 显示顺序），新增 zskill（技能设置）/ znear（附近怪物实时列表）两个一级浮窗
   var RO_MODULES = [
     { id: "menu",  name: "功能菜单快捷键",  kind: "menu", noToggle: true, sec: "常用" },
-    { id: "askcombo", name: "一键补 buff", kind: "action", noToggle: true, sec: "常用" },
-    { id: "mlock", name: "攻击名单",        kind: "fw", sec: "功能窗口" },
-    { id: "tp",    name: "传送功能",        kind: "fw", sec: "功能窗口" },
-    { id: "zhu2",  name: "助手战斗设置",    kind: "fw", sec: "功能窗口" },
-    { id: "aid",   name: "战斗辅助",        kind: "fw", sec: "功能窗口" },
-    { id: "item",  name: "物品 · 拾取与整理", kind: "fw", sec: "功能窗口" },
-    { id: "perf",  name: "画面性能",        kind: "fw", sec: "功能窗口" },
-    { id: "tgt",   name: "目标状态",        kind: "fw", sec: "功能窗口" },
-    { id: "party", name: "队伍血条",        kind: "fw", sec: "功能窗口" },
-    { id: "dps",   name: "伤害统计",        kind: "fw", sec: "功能窗口" },
-    { id: "boss",  name: "首领警报",        kind: "fw", sec: "功能窗口", defOff: true },
-    { id: "mvp",   name: "MVP 计时",        kind: "custom", sec: "功能窗口" },
-    { id: "zhud",  name: "战斗监控横条",    kind: "custom", sec: "功能窗口" },
-    { id: "ztip",  name: "动作提示条",      kind: "custom", noToggle: true, sec: "功能窗口" },
-    { id: "np",    name: "内挂自动战斗",    kind: "act", noToggle: true, sec: "动作" },
-    { id: "zhu",   name: "助手自动战斗",    kind: "act", noToggle: true, sec: "动作" },
-    { id: "panel", name: "高级设置",          kind: "page", sec: "高级" }
+    { id: "tp",    name: "传送功能",        kind: "fw", sec: "常用" },
+    { id: "np",    name: "内挂自动战斗",    kind: "act", noToggle: true, sec: "常用" },
+    { id: "zhu",   name: "助手自动战斗",    kind: "act", noToggle: true, sec: "常用" },
+    { id: "mlock", name: "攻击名单",        kind: "fw", sec: "战斗功能" },
+    { id: "zhu2",  name: "战斗设置",        kind: "fw", sec: "战斗功能" },
+    { id: "zskill", name: "技能设置",       kind: "fw", sec: "战斗功能" },
+    { id: "aid",   name: "战斗辅助",        kind: "fw", sec: "战斗辅助" },
+    { id: "party", name: "队伍血条",        kind: "fw", sec: "战斗辅助" },
+    { id: "dps",   name: "伤害统计",        kind: "fw", sec: "战斗辅助" },
+    { id: "boss",  name: "首领警报",        kind: "fw", sec: "战斗辅助", defOff: true },
+    { id: "askcombo", name: "一键补 buff（技能+物品）", kind: "action", noToggle: true, sec: "战斗辅助" },
+    { id: "item",  name: "物品 · 拾取与整理", kind: "fw", sec: "战斗辅助" },
+    { id: "zhud",  name: "战斗监控横条",    kind: "custom", sec: "提示" },
+    { id: "ztip",  name: "战斗提示横条",    kind: "custom", noToggle: true, sec: "提示" },
+    { id: "tgt",   name: "目标状态",        kind: "fw", sec: "提示" },
+    { id: "znear", name: "附近怪物实时列表", kind: "fw", sec: "提示" },
+    { id: "perf",  name: "画面性能",        kind: "fw", sec: "其他" },
+    { id: "mvp",   name: "MVP 计时",        kind: "custom", sec: "其他" },
+    { id: "panel", name: "高级设置",        kind: "page", sec: "其他" }
   ];
   function roModEl(id) {
     if (roModPage(id) || id === "panel") return document.getElementById("dsh-ro-panel");
@@ -3459,10 +3470,10 @@
     ["dsh-askint", "v"], ["dsh-asksp", "v"], ["dsh-asken", "c"],
     ["dsh-prereq", "c"], ["dsh-z-attmix", "c"],
     ["dsh-scanen", "c"], ["dsh-scanint", "v"],
-    ["dsh-z-ona", "v"], ["dsh-z-grp", "v"], ["dsh-z-grpact", "v"], ["dsh-z-qoaskill", "v"], ["dsh-z-qoaskilllv", "v"],
+    ["dsh-z-ona", "v"], ["dsh-z-grpn", "v"], ["dsh-z-qoaen", "c"], ["dsh-z-qoan", "v"], ["dsh-z-qoaskill", "v"], ["dsh-z-qoaskilllv", "v"],
     ["dsh-z-flymode", "v"], ["dsh-z-flyauto", "c"], ["dsh-z-flystuck", "c"],
-    ["dsh-z-idlefly", "c"], ["dsh-z-idleflysec", "v"], ["dsh-z-bossfly", "c"], ["dsh-z-flyint", "v"],
-    ["dsh-z-flygrp", "c"], ["dsh-z-flykill", "c"],
+    ["dsh-z-idlefly", "c"], ["dsh-z-idleflysec", "v"], ["dsh-z-bossact", "v"], ["dsh-z-bosshp", "v"], ["dsh-z-flyint", "v"],
+    ["dsh-z-flygrp", "c"], ["dsh-z-flyrange", "c"], ["dsh-z-flykill", "c"], ["dsh-z-diag", "c"],
     ["dsh-z-hpfly", "v"], ["dsh-z-spfly", "v"], ["dsh-z-hpout", "v"], ["dsh-z-keep", "v"],
     ["dsh-z-sit", "c"], ["dsh-z-sithplo", "v"], ["dsh-z-sithphi", "v"], ["dsh-z-sitsplo", "v"], ["dsh-z-sitsphi", "v"],
     ["dsh-z-sitxw", "v"], ["dsh-z-sitback", "c"], ["dsh-z-sitnofight", "c"],
@@ -3506,8 +3517,43 @@
       try { captureAll(); } catch (e2) {}
     });
   } catch (e) {}
+  // V2.34.0 一次性配置迁移（A1/A3）：旧 dsh-z-grp → dsh-z-grpn；旧 dsh-z-bossfly(勾选) → dsh-z-bossact=瞬移，未勾选 → 不处理
+  //   迁移后删除旧键（dsh-z-grpact 无对应新键，直接丢弃）；对当前档与所有已保存档各执行一次，迁移后立即落盘。
+  function migrateZControls(ui) {
+    try {
+      if (!ui) return false;
+      var changed = false;
+      if (ui["dsh-z-grp"] !== undefined) {
+        if (ui["dsh-z-grpn"] === undefined) {
+          var gv = parseInt(ui["dsh-z-grp"], 10);
+          ui["dsh-z-grpn"] = String(isNaN(gv) ? 6 : gv);
+        }
+        delete ui["dsh-z-grp"];
+        changed = true;
+      }
+      if (ui["dsh-z-grpact"] !== undefined) { delete ui["dsh-z-grpact"]; changed = true; }
+      if (ui["dsh-z-bossfly"] !== undefined) {
+        if (ui["dsh-z-bossact"] === undefined) ui["dsh-z-bossact"] = ui["dsh-z-bossfly"] ? "瞬移" : "不处理";
+        delete ui["dsh-z-bossfly"];
+        changed = true;
+      }
+      return changed;
+    } catch (e) { return false; }
+  }
+  function migrateZControlsAll() {
+    try {
+      var any = false;
+      try { if (saved && saved.ui && migrateZControls(saved.ui)) any = true; } catch (e0) {}
+      try {
+        for (var k in profiles) { var pv = profiles[k]; if (pv && pv.saved && pv.saved.ui && migrateZControls(pv.saved.ui)) any = true; }
+      } catch (e1) {}
+      if (any) { try { saveSaved(saved); } catch (e2) {} try { saveProfiles(); } catch (e3) {} }
+      return any;
+    } catch (e) { return false; }
+  }
   function applyProfileUI() {
     try {
+      try { migrateZControlsAll(); } catch (em) {}
       // V2.32.1：重置回 HTML 默认值（checked/selected/value 属性），而非一刀切清空——修「防御瞬移总开关等默认勾选项被重置成关闭」
       for (var ri = 0; ri < PROF_CONTROLS.length; ri++) {
         var rid = PROF_CONTROLS[ri][0], rtp = PROF_CONTROLS[ri][1];
@@ -6648,9 +6694,11 @@
   function emergencyThreatReason(mobs) {
     try {
       mobs = mobs || lastMobs || [];
-      var group = parseInt($id("dsh-z-grp").value, 10) || 0;
-      var mobbing = group > 0 && mobs.length >= group && $id("dsh-z-grpact") && $id("dsh-z-grpact").value === "瞬移" && $id("dsh-z-flygrp") && $id("dsh-z-flygrp").checked;
-      if (mobbing) return "群殴(" + mobs.length + "只)";
+      // V2.34.0 A1：这里只保留「群殴自动瞬移」；解围技能不进紧急原因（它不是瞬移，也不得挡普通攻击技能）
+      var group = parseInt($id("dsh-z-grpn") ? $id("dsh-z-grpn").value : 0, 10) || 0;
+      var gn = zGrpCount(mobs).n;
+      var mobbing = group > 0 && gn >= group && $id("dsh-z-flygrp") && $id("dsh-z-flygrp").checked;
+      if (mobbing) return "群殴(" + gn + "只)";
       var recentHit = Date.now() - zHpWatch.lastHitAt < 3000;
       if (recentHit && $id("dsh-z-ona") && $id("dsh-z-ona").value === "瞬移") return "最近受击";
     } catch (e) {}
@@ -6661,6 +6709,232 @@
     if (threat) requestEmergencyEscape(threat);
     return escapePending();
   }
+  // ================= V2.34.0 A1-A4：群殴数口径 / 远程受击观测 / 解围技能 / BOSS 三模式 =================
+  // A4：最近 3 秒内命中过我的攻击者（gid → {ts, dist}；dist=命中那一刻攻击者到玩家的曼哈顿距离）
+  var zHitBy = {};
+  var zHitKeepMs = 3000;
+  function zHitMark(gid) {
+    try {
+      gid = gidInt(gid); if (!gid) return;
+      var d = -1;
+      try {
+        var EMz = window.require && window.require("Renderer/EntityManager");
+        var me = CLIENT.SS && CLIENT.SS.Entity, e = EMz && EMz.get ? EMz.get(gid) : null;
+        if (me && me.position && e && e.position) d = Math.abs(e.position[0] - me.position[0]) + Math.abs(e.position[1] - me.position[1]);
+      } catch (e1) {}
+      zHitBy[gid] = { ts: Date.now(), dist: d };
+      zHitPrune(zHitBy[gid].ts);
+    } catch (e2) {}
+  }
+  function zHitPrune(now) {
+    try {
+      now = now || Date.now();
+      for (var k in zHitBy) { var r = zHitBy[k]; if (!r || now - r.ts >= zHitKeepMs) delete zHitBy[k]; }
+    } catch (e) {}
+  }
+  function zHitFresh(now) {
+    var n = 0, best = -1;
+    try {
+      now = now || Date.now();
+      for (var k in zHitBy) {
+        var r = zHitBy[k]; if (!r || now - r.ts >= zHitKeepMs) continue;
+        n++;
+        if (r.dist >= 0 && (best < 0 || r.dist < best)) best = r.dist;
+      }
+    } catch (e) {}
+    return { n: n, nearest: best };
+  }
+  // A4 群殴数口径（用户确认「按实际围攻」）：最近 3 秒内命中过我的怪(去重) ∪ 视野内贴身 ≤2 格的怪(去重)
+  //   远程怪（命中时 dist ≥4）仅在 dsh-z-flyrange 勾选时计入；zHitBy 无数据 → 退化为只数贴身 ≤2 格。
+  function zGrpCount(mobs) {
+    try {
+      var rangedOn = !!($id("dsh-z-flyrange") && $id("dsh-z-flyrange").checked);
+      var now = Date.now(), seen = {}, n = 0, hitTotal = 0;
+      for (var g in zHitBy) {
+        var r = zHitBy[g]; if (!r || now - r.ts >= zHitKeepMs) continue;
+        hitTotal++;
+        if (r.dist >= 4 && !rangedOn) continue;
+        if (!seen[g]) { seen[g] = 1; n++; }
+      }
+      mobs = mobs || [];
+      for (var i = 0; i < mobs.length; i++) {
+        var m = mobs[i];
+        if (!m || m.GID == null || !(m.dist >= 0) || m.dist > 2) continue;
+        var k2 = String(gidInt(m.GID));
+        if (!k2 || k2 === "0" || seen[k2]) continue;
+        seen[k2] = 1; n++;
+      }
+      return { n: n, hit: hitTotal, rangedOn: rangedOn };
+    } catch (e) { return { n: 0, hit: 0, rangedOn: false }; }
+  }
+  // A3：实体取血量百分比（取不到 → -1 未知；未知时不进尾刀模式）
+  function zEntHpPct(gid) {
+    try {
+      var e = zEntOf(gid), life = e && e.life;
+      if (!life || !(life.maxhp > 0) || life.hp == null) return -1;
+      return life.hp / life.maxhp * 100;
+    } catch (e2) { return -1; }
+  }
+  function zEntOf(gid) {
+    try {
+      if (gid == null || gid === "") return null;
+      var EMz = window.require && window.require("Renderer/EntityManager");
+      var e = null;
+      try { e = EMz && EMz.get ? EMz.get(gid) : null; } catch (e0) {}
+      if (!e) { var gi = gidInt(gid); if (gi) e = EMz && EMz.get ? EMz.get(gi) : null; }
+      if (!e || e.objecttype !== 5) return null;
+      if (e.isDeath || e.remove_tick || (e.ACTION && e.action != null && e.action === e.ACTION.DIE)) return null;
+      return e;
+    } catch (e2) { return null; }
+  }
+  // A1：解围技能——贴身 ≤2 格 且 n ≥ dsh-z-qoan；血线之上才放；带技能 CD/公共CD 门（scan 每 0.3-0.5s 不得重放）
+  var zQoaNextAt = 0, zLastQoaCount = 0;
+  function zQoaNearCount(mobs) {
+    var n = 0;
+    try {
+      for (var i = 0; i < (mobs || []).length; i++) { var m = mobs[i]; if (m && m.dist >= 0 && m.dist <= 2) n++; }
+    } catch (e) {}
+    return n;
+  }
+  function zQoaTry(mobs, ent, now) {
+    try {
+      if (!($id("dsh-z-qoaen") && $id("dsh-z-qoaen").checked)) return false;
+      if (!clientReady()) return false;
+      if (escapePending()) return false; // 瞬移挂起期间不发技能（但绝不触发 ordinaryCastBlocked）
+      var cnt = zQoaNearCount(mobs);
+      zLastQoaCount = cnt;
+      var need = parseInt($id("dsh-z-qoan") ? $id("dsh-z-qoan").value : 3, 10); if (isNaN(need) || need < 1) need = 3;
+      if (cnt < need) return false;
+      if (isSitting()) return false;
+      var life = ent && ent.life;
+      if (life && life.maxhp > 0 && (life.hp / life.maxhp * 100) < (parseInt($id("dsh-z-hpfly").value, 10) || 20)) return false; // 血线之下交给瞬移瀑布
+      var skid = parseInt($id("dsh-z-qoaskill") ? $id("dsh-z-qoaskill").value : 0, 10); if (isNaN(skid)) skid = 0;
+      var lv = parseInt($id("dsh-z-qoaskilllv") ? $id("dsh-z-qoaskilllv").value : 0, 10); if (isNaN(lv) || lv < 1) lv = 1;
+      if (!(skid > 0)) {
+        var orderQ = [];
+        try { orderQ = parseSkillOrder($id("dsh-skillorder").value) || []; } catch (e0) { orderQ = []; }
+        if (orderQ.length) { skid = orderQ[0].skid; lv = orderQ[0].lv || lv; }
+      }
+      if (!(skid > 0)) return false;
+      now = now || Date.now();
+      var cdUntil = Math.max(skillNextAt[skid] || 0, zQoaNextAt || 0);
+      if (now < cdUntil) return false; // CD 门：同一技能与其公共冷却内绝不重放
+      var atkG = 3;
+      try { atkG = parseInt($id("dsh-z-mgrange").value, 10) || 9; } catch (e1) {}
+      var tg = null, td = 1e9;
+      for (var i = 0; i < (mobs || []).length; i++) {
+        var mm = mobs[i];
+        if (mm && mm.GID && mm.dist >= 0 && mm.dist < td && mm.dist <= atkG) { td = mm.dist; tg = mm; }
+      }
+      if (!tg) return false;
+      var p = new CLIENT.PS.CZ.USE_SKILL();
+      p.SKID = skid; p.selectedLevel = lv; p.targetID = tg.GID;
+      CLIENT.NM.sendPacket(p);
+      var cd = Math.max(skillCdMs({ skid: skid, cd: 0 }), 1000); // 保底 1s：扫描拍 0.3-0.5s 不可能重放同一解围技能
+      skillNextAt[skid] = now + cd; zQoaNextAt = now + cd;
+      dshCastMark(skid, lv, tg.GID, "qoa");
+      setStatus("解围技能 " + getSkillNameById(skid) + "（贴身" + cnt + "只）", "warn");
+      tlog("defense-qoa skill=" + skid + " n=" + cnt);
+      return true;
+    } catch (e) { return false; }
+  }
+  // A3：BOSS 三模式判定（瞬移 / 优先攻击 / 等待残血补尾刀 / 不处理）
+  var zLastBossAct = "不处理", zLastBossHp = -1, zLastGrpCount = 0, zLastFlyReason = "";
+  var zBossSkipGid = 0; // 尾刀模式「未到尾刀线」的 BOSS：既不打也不飞（从候选池剔除，不动用户显式锁定）
+  function zBossDecide(mobs) {
+    try {
+      mobs = mobs || scanMobs || lastMobs || [];
+      var rec = null;
+      for (var i = 0; i < mobs.length; i++) {
+        var m = mobs[i];
+        // BOSS 识别沿用 mob_db.MvpDropsNum > 0（scan 已标 isBoss），距离口径沿用 DS_BOSS_DIST
+        if (m && m.isBoss && m.dist >= 0 && m.dist <= DS_BOSS_DIST && (!rec || m.dist < rec.dist)) rec = m;
+      }
+      var out = { rec: rec, act: "不处理", fly: false, reason: "", want: 0, hp: -1, skip: 0 };
+      zBossSkipGid = 0;
+      if (!rec) return out;
+      var act = ($id("dsh-z-bossact") && $id("dsh-z-bossact").value) || "不处理";
+      // 瞬移模式：BOSS 在锁定名单（lockList[mid] 命中，mid=怪物 job id）→ 自动按「优先攻击」处理（不飞）
+      if (act === "瞬移" && rec.mid != null && lockList[String(rec.mid)]) act = "优先攻击";
+      out.act = act;
+      if (act === "瞬移") { out.fly = true; out.reason = "BOSS(" + (rec.name || rec.mid) + ")"; }
+      else if (act === "优先攻击") { out.want = gidInt(rec.GID); }
+      else if (act === "等待残血补尾刀") {
+        out.hp = zEntHpPct(rec.GID);
+        var line = parseInt($id("dsh-z-bosshp") ? $id("dsh-z-bosshp").value : 30, 10); if (isNaN(line)) line = 30;
+        if (out.hp >= 0 && out.hp <= line) out.want = gidInt(rec.GID); // 残血到位 → 切过去补尾刀
+        else if (out.hp >= 0) out.skip = gidInt(rec.GID);              // 未到尾刀线 → 既不打也不飞
+        // out.hp < 0（血量取不到＝未知）→ 既不进尾刀模式也不跳过，按普通怪处理
+      }
+      zBossSkipGid = out.skip || 0;
+      return out;
+    } catch (e) { zBossSkipGid = 0; return { rec: null, act: "不处理", fly: false, reason: "", want: 0, hp: -1, skip: 0 }; }
+  }
+  // A6：早退点不冻结整拍——只跳过攻击包发送，防御判定与走路继续（与侦查扫描同源去重，避免同拍重复判定）
+  var zDefTickAt = 0;
+  function zHoldTick(msg, doWalk) {
+    try {
+      zMon.action = msg;
+      var nowH = Date.now();
+      if (nowH - zDefTickAt > 250) {
+        try { checkDefense(scanMobs && scanMobs.length ? scanMobs : lastMobs, CLIENT.SS && CLIENT.SS.Entity); } catch (e1) {}
+      }
+      if (doWalk !== false) { try { zWalk(); } catch (e2) {} }
+    } catch (e) {}
+  }
+  // ================= V2.34.0 A7：战斗判定诊断（默认关 · 每秒一拍 · 环形 200 条 · 复用现成机制，不联网不写文件）=================
+  var zDiagAt = 0;
+  function zDiagSnapNow() {
+    var nowD = Date.now(), hf = zHitFresh(nowD);
+    var mobsD = (scanMobs && scanMobs.length) ? scanMobs : lastMobs;
+    return {
+      t: nowD,
+      onaMode: ($id("dsh-z-ona") && $id("dsh-z-ona").value) || "还击",
+      beingHit: (nowD - zHpWatch.lastHitAt) < 3000,
+      zAllMobs: !$id("dsh-z-allmobs") || $id("dsh-z-allmobs").checked,
+      target: zLastTargetGID != null ? zLastTargetGID : null,
+      zLockGid: zLock.gid != null ? gidInt(zLock.gid) : null,
+      zLockDone: !!zLock.done,
+      escapePend: escapePending(),
+      sitting: isSitting(),
+      hitByCount: hf.n,
+      nearestHitDist: hf.nearest,
+      grpCount: zGrpCount(mobsD).n,
+      qoaCount: zLastQoaCount,
+      bossAct: zLastBossAct,
+      bossHp: zLastBossHp,
+      flyReason: zLastFlyReason,
+      flyFailUntil: flyFailUntil || 0,
+      lastFly: lastFly || 0
+    };
+  }
+  function zDiagTick() {
+    try {
+      if (!($id("dsh-z-diag") && $id("dsh-z-diag").checked)) return;
+      var nowD = Date.now();
+      if (zDiagAt && nowD - zDiagAt < 900) return;
+      zDiagAt = nowD;
+      var s = zDiagSnapNow();
+      var arr = window.__dshZDiag || (window.__dshZDiag = []);
+      arr.push(s);
+      if (arr.length > 200) arr.splice(0, arr.length - 200);
+      try { if (btDiagOn) btLog('zdiag', JSON.stringify(s)); } catch (e1) {}
+    } catch (e) {}
+  }
+  try { masterTickReg(function () { try { zDiagTick(); } catch (e) {} }); } catch (e) {}
+  // 「复制诊断」按钮：把 __dshZDiag 的 JSON 写进只读 textarea（事件委托，面板重建/换页后仍有效）
+  try {
+    document.addEventListener("click", function (e) {
+      var t = e.target;
+      if (!t || t.id !== "dsh-z-diagcopy") return;
+      try {
+        var arr2 = window.__dshZDiag || [];
+        var box = $id("dsh-z-diagbox");
+        if (box) { box.value = JSON.stringify(arr2); box.focus(); box.select(); }
+        setStatus("诊断已写入文本框（" + arr2.length + " 条），可手动复制", "ok");
+      } catch (e2) {}
+    }, false);
+  } catch (e) {}
   function tickSelfHeal() {
     try {
       if (saved.healFirst !== true || ordinaryCastBlocked() || !clientReady() || !isActFreeOnline("heal")) return false;
@@ -6691,65 +6965,16 @@
       var isCombatMap = defSnap.isCombatMap;
       if (!clientReady()) return;
       var now = Date.now();
-      var urgentReason = emergencyThreatReason(mobs);
-      if (urgentReason) { requestEmergencyEscape(urgentReason); return; }
+      zDefTickAt = now;
+      // V2.34.0 A2：此处不再按「紧急原因」提前 return——判定顺序固定：
+      //   0 瘫痪(坐下)守卫 → 1 BOSS → 2 血量安全线 → 3 群殴(含远程) → 4 解围技能(独立)
       doSitCycle(mobs);
-      // V1.9.4：瞬移连续失败冷却（无翅膀/无瞬移术/SP不足 3 次后 10s 停手，避免空转抖动）
-      if (now < flyFailUntil) return;
-      var flyInt = (parseInt($id("dsh-z-flyint").value, 10) || 30) * 1000;
-      if (now - lastFly < flyInt) return;
       var needFly = false, reason = "";
-      var group = parseInt($id("dsh-z-grp").value, 10);
-      if (btDiagOn) btLog('def', 'mobs=' + mobs.length + ' isCombatMap=' + isCombatMap + ' grp=' + group + ' zRunning=' + zRunning);
-      if (!group || group < 0) group = 0; // 0 = 群殴处理关闭
-      var grpAct = $id("dsh-z-grpact") ? $id("dsh-z-grpact").value : "瞬移";
-      if (group > 0 && mobs.length >= group) {
-        if (grpAct === "解围技能") {
-          // 群殴 → 解围技能：优先用独立解围技能（dsh-z-qoaskill），未设置回退技能顺序第一个（目标在攻击距离内）
-          var qoSkid = $id("dsh-z-qoaskill") ? parseInt($id("dsh-z-qoaskill").value, 10) : 0;
-          var qoLv = $id("dsh-z-qoaskilllv") ? parseInt($id("dsh-z-qoaskilllv").value, 10) : 0;
-          if (isNaN(qoSkid)) qoSkid = 0; if (isNaN(qoLv)) qoLv = 0;
-          var qoSkill = qoSkid > 0 ? { skid: qoSkid, lv: qoLv > 0 ? qoLv : 1 } : null;
-          var orderG = parseSkillOrder($id("dsh-skillorder").value);
-          var entG = CLIENT.SS && CLIENT.SS.Entity;
-          var tgG = null, tdG = 1e9, atkG = 3;
-          try {
-            atkG = parseInt($id("dsh-z-mgrange").value, 10) || 9;
-            for (var gi = 0; gi < mobs.length; gi++) {
-              var mmG = mobs[gi];
-              if (mmG && mmG.dist >= 0 && mmG.dist < tdG && mmG.dist <= atkG) { tdG = mmG.dist; tgG = mmG; }
-            }
-          } catch (e5) {}
-          var qoUse = qoSkill || (orderG.length ? orderG[0] : null);
-          if (tgG && qoUse && tgG.GID) {
-            try {
-              var pg = new CLIENT.PS.CZ.USE_SKILL();
-              pg.SKID = qoUse.skid;
-              pg.selectedLevel = qoUse.lv;
-              pg.targetID = tgG.GID;
-              CLIENT.NM.sendPacket(pg);
-              setStatus("群殴(" + mobs.length + "只)，解围技能 " + getSkillNameById(qoUse.skid), "warn");
-              tlog("defense-qo skill=" + qoUse.skid);
-            } catch (e6) {}
-            return; // 已施放解围，本轮不做其他防御
-          }
-        }
-        // V2.16.0：群殴自动瞬移恢复独立开关（dsh-z-flygrp，默认关）——grp>0 且 grpact=「瞬移」且勾选才启用
-        if (grpAct === "瞬移" && isCombatMap && $id("dsh-z-flygrp") && $id("dsh-z-flygrp").checked) {
-          needFly = true;
-          reason = "群殴(" + mobs.length + "只)";
-        }
-      }
-      // BOSS 瞬移（dsh-z-bossfly 开关，默认关）：V1.9.4 统一距离口径 DS_BOSS_DIST（默认25格），与拾取共用
-      if (isCombatMap && $id("dsh-z-bossfly") && $id("dsh-z-bossfly").checked && !needFly) {
-        for (var bi = 0; bi < mobs.length; bi++) {
-          if (mobs[bi] && mobs[bi].isBoss && mobs[bi].dist >= 0 && mobs[bi].dist <= DS_BOSS_DIST) {
-            needFly = true;
-            reason = "BOSS(" + (mobs[bi].name || mobs[bi].mid) + ")";
-            break;
-          }
-        }
-      }
+      // ---- (1) BOSS 三模式（最高优先级；内部先看血量——血量瀑布在下方先判，血线之下任何模式都先飞）----
+      var bossD = zBossDecide(mobs);
+      var bossFly = !!bossD.fly && isCombatMap, bossFlyReason = bossD.reason;
+      zLastBossAct = bossD.act; zLastBossHp = bossD.hp;
+      if (btDiagOn) btLog('def', 'mobs=' + mobs.length + ' isCombatMap=' + isCombatMap + ' bossAct=' + bossD.act + ' zRunning=' + zRunning);
       var life = ent && ent.life;
       if (life) {
         var hpPct = life.maxhp > 0 ? life.hp / life.maxhp * 100 : 100;
@@ -6772,7 +6997,18 @@
       }
       // V2.16.19：已坐下 / 正在等坐下（无怪无锁定且 HP·SP 低于坐下阈值）都不算卡死
       var waitingSit = !zLock.gid && !(mobs && mobs.length) && needSitNow();
-      if (isCombatMap && zRunning && $id("dsh-z-flystuck").checked && zStuckSince && (now - zStuckSince > 4000) && (!zLock.gid || atkInvalid) && !isSitting() && !waitingSit) { needFly = true; reason = "卡死4s"; }
+      // V2.34.0 A6：瞬移挂起(escapePending)或瞬移失败冷却期间不重复累计卡死判定；命中后重置计时，
+      //   断开「不动→判卡死→请求瞬移→飞不出去→继续不动」自锁环（每 4s 最多触发一次）
+      if (isCombatMap && zRunning && $id("dsh-z-flystuck").checked && zStuckSince && (now - zStuckSince > 4000) && (!zLock.gid || atkInvalid) && !isSitting() && !waitingSit && !escapePending() && now >= flyFailUntil) { needFly = true; reason = "卡死4s"; zStuckSince = now; }
+      // ---- (3) 群殴（血线之上才判；数量口径见 zGrpCount：最近3秒命中过我的怪 ∪ 贴身≤2格的怪）----
+      var grpN = parseInt($id("dsh-z-grpn") ? $id("dsh-z-grpn").value : 0, 10) || 0;
+      if (grpN < 0) grpN = 0; // 0 = 群殴处理关闭
+      var grpCnt = zGrpCount(mobs).n;
+      zLastGrpCount = grpCnt;
+      var grpFly = grpN > 0 && grpCnt >= grpN && isCombatMap && $id("dsh-z-flygrp") && $id("dsh-z-flygrp").checked;
+      // V2.34.0 A2/A3：血线之下任何模式都先飞（上方血量瀑布已判）；血线之上才轮到 BOSS 与群殴
+      if (!needFly && bossFly) { needFly = true; reason = bossFlyReason || "BOSS"; }
+      if (!needFly && grpFly) { needFly = true; reason = "群殴(" + grpCnt + "只)"; }
       // V2.16.0：防御瞬移总开关（dsh-z-flykill，默认开）——关掉后群殴/BOSS/低血/SP/被围/卡死/坐下看门狗全部不再瞬移，坐下回血不受影响
       if ($id("dsh-z-flykill") && !$id("dsh-z-flykill").checked) needFly = false;
       // V2.15.22：SP 低瞬移让位——坐下条件满足且未被围、HP 未到危险线时，SP 瞬移让位给坐下回蓝
@@ -6780,7 +7016,11 @@
         needFly = false;
         reason = "";
       }
-      if (needFly) {
+      // V1.9.4：瞬移冷却门（连续失败 3 次后 10s 停手 + 瞬移间隔）——不再整拍 return，只挡瞬移本身
+      var flyInt = (parseInt($id("dsh-z-flyint").value, 10) || 30) * 1000;
+      var flyCool = (now < flyFailUntil) || (now - lastFly < flyInt);
+      if (needFly && !flyCool) {
+        zLastFlyReason = reason; // V2.34.0 A7：诊断用最近一次飞的原因
         // 紧急防御只走已学瞬移术；确认地图/坐标变化前持续阻塞治愈与普通技能。
         var flyResult = requestEmergencyEscape(reason);
         var flyOk = flyResult === "teleport" || flyResult === "wait" || flyResult === "stand";
@@ -6788,6 +7028,11 @@
         if (!flyOk) markFlyFail(); else markFlyOk();
         lastFly = now;
         setStatus("瞬移(" + reason + ")", "warn");
+      }
+      // ---- (4) 解围技能（独立）：只有上方都不需要飞时才考虑；血线之上、带技能 CD 门；
+      //        不挡普通攻击技能（不进 emergencyThreatReason / 不触发 ordinaryCastBlocked）----
+      else if (!needFly) {
+        zQoaTry(mobs, ent, now);
       }
       // V2.16.19：坐下周期已提前到本函数开头（不受瞬移冷却影响），此处不再重复调用
       // V1.9.4 面板防御状态行
@@ -7453,6 +7698,8 @@
       var beingHit = (now - zHpWatch.lastHitAt) < 3000; // 被攻击中
       var onaMode = $id("dsh-z-ona") ? $id("dsh-z-ona").value : "还击";
       var allowHitTarget = beingHit && onaMode === "还击"; // 被攻击且设置为还击 → 无锁定怪时非锁定怪也追
+      // V2.34.0 A5：与 zAttack 7921 口径一致——「打全部怪」打开时不再受锁定名单限制
+      var zAllMobsW = !$id("dsh-z-allmobs") || $id("dsh-z-allmobs").checked;
       // V2.16.3：追怪候选分两池——锁定怪候选（lockNear）永远优先；还击候选（hitNear）仅当没有任何锁定怪候选时才兜底。
       //   旧实现把还击怪混入同一候选并按「血少优先」排序，快死的非锁定怪会抢走锁定怪目标（来回转向/追怪中断）。
       var near = null, nearD = 1e9, nearHp = 1e18; // V2.15.25：nearHp=最近候选绝对剩余HP（血少优先抢尾刀）
@@ -7465,8 +7712,10 @@
             if (e.isDeath) return;
             if (e.ACTION && e.action != null && e.action === e.ACTION.DIE) return;
             if (e.remove_tick) return;
+            // V2.34.0 A3：尾刀模式未到尾刀线的 BOSS 不追（既不打也不飞）
+            if (zBossSkipGid && gidInt(e.GID) === zBossSkipGid) return;
             var mid = e._job != null ? String(e._job) : (e.job != null ? String(e.job) : null);
-            var inLockN = !anyLock || (mid && lockList[mid]);
+            var inLockN = !anyLock || zAllMobsW || (mid && lockList[mid]); // V2.34.0 A5：补 zAllMobs，与 zAttack 口径一致
             if (!inLockN && !allowHitTarget) return;
             if (!ent.position || !e.position) return;
             var d = Math.abs(e.position[0] - ent.position[0]) + Math.abs(e.position[1] - ent.position[1]);
@@ -7855,14 +8104,16 @@
       var ent = CLIENT.SS.Entity;
       if (!ent || !ent.life) return;
       var now = Date.now();
-      if (escapePending()) { requestEmergencyEscape(escapeState.reason); zMon.action = "紧急脱战（等待位移确认）"; return; }
+      // V2.34.0 A6：瞬移挂起期间只跳过攻击包发送，不再整拍 return（防御判定与走路继续）
+      if (escapePending()) { requestEmergencyEscape(escapeState.reason); zHoldTick("紧急脱战（等待位移确认）", true); return; }
       // V2.7.2 锁定怪站桩修复：np 模式（内挂机制寻怪）→ 目标判定强制 ld<=atkRange（射程外锁定怪不当目标、
       //   不解锁、交内挂移动靠近），杜绝「npHuntStop 关内挂⇄zWalk npEnsureHunt 开内挂」每轮拉锯站桩
       var npMode = npHuntMode() === "np" || isHybrid();
       updateHpWatch(ent);
       sitMaintain(); // V2.15.22：坐下期间被打自动站起逃生（战斗循环每 tick，不依赖侦查扫描）
       // V2.32.2 坐下优先：sitMaintain 未站起（没被打/没回满/没过看门狗）→ 保持坐下，本拍不锁怪不攻击不追怪
-      if (isSitting()) { zMon.action = "坐下回血中"; return; }
+      // V2.34.0 A6：坐着时仍允许防御判定（血量/群殴/受击），攻击可跳过；走路由 zWalk 自行跳过
+      if (isSitting()) { zHoldTick("坐下回血中", false); return; }
       var EM = window.require("Renderer/EntityManager");
       var range = parseInt($id("dsh-z-range").value, 10) || 12; // 寻怪范围（触发目标考虑）
       // 攻击距离：物理/魔法按技能射程自动选择（普攻=物理距离；技能=技能射程与对应距离取大）
@@ -7877,7 +8128,8 @@
       var beingHit = (now - zHpWatch.lastHitAt) < 3000;
       // 「打死换下一个=关」：锁定目标已击杀 → 完全停手（等待用户重新开自动战斗）
       if (zLock.done) {
-        zMon.action = "已停手（等指令）";
+        // V2.34.0 A6：只停攻击，不冻结防御判定与走路
+        zHoldTick("已停手（等指令）", true);
         setStatus("锁定目标已击杀（打死换下一个=关），等待重新开启…", "st");
         return;
       }
@@ -7888,7 +8140,31 @@
       var hitTarget = null, hitBest = 1e9;
       // 锁定模式：已锁定目标 → 只认锁定目标（固定 GID 持续攻击，防目标漂移），不重新扫描选最近
       var lockAliveOutside = false; // V2.7.2：锁定怪仍在但超攻击距离（np 模式下不解锁）
-      if (zLock.gid) {
+      // V2.34.0 A3：BOSS「优先攻击 / 等待残血补尾刀」→ BOSS 越过锁定目标成为最高优先级（不因 BOSS 存在而飞）
+      try {
+        var bossWantD = zBossDecide();
+        if (bossWantD && bossWantD.rec && bossWantD.want) {
+          var bEnt = zEntOf(bossWantD.rec.GID);
+          if (bEnt && bEnt.position && ent.position) {
+            var bd = Math.abs(bEnt.position[0] - ent.position[0]) + Math.abs(bEnt.position[1] - ent.position[1]);
+            var bgid = bEnt.GID != null ? bEnt.GID : bossWantD.rec.GID;
+            if (bd <= (npMode ? npThD : atkRange) && defSnap && defSnap.isCombatMap && gidInt(zLock.gid) !== gidInt(bgid)) {
+              zLock.gid = bgid;
+              zLock.name = (bEnt.display && bEnt.display.name) || String(bEnt._job != null ? bEnt._job : bgid);
+              zLock.dist = bd; zLock.reactive = false; zLock.done = false;
+              zLockCounts = {}; zCastIdx = 0;
+              sendLockInject(bgid);
+              zAtkLast.gid = bgid; zAtkLast.at = now; zAtkLast.outOfRange = false;
+              tlog("boss-priority gid=" + bgid + " d=" + bd + " act=" + bossWantD.act);
+            }
+          }
+        }
+      } catch (eBoss) {}
+      // V2.34.0 追改：尾刀模式下锁定的 BOSS 未到尾刀线（zBossSkipGid）→ 本拍不打它、不因它保持追击、也不因它拒绝换目标，
+      //   且绝不清除 zLock.gid：锁留着，HP% 掉进 dsh-z-bosshp 尾刀线后同一把锁自动恢复生效，用户无需重新锁定
+      var zLockBossSkip = !!(zBossSkipGid && zLock.gid && gidInt(zLock.gid) === zBossSkipGid);
+      if (zLockBossSkip) zMon.action = "锁定BOSS未到尾刀线（等待残血，保留锁）";
+      if (zLock.gid && !zLockBossSkip) {
         EM.forEach(function (e) {
           try {
             if (e.GID !== zLock.gid || e.objecttype !== 5) return;
@@ -7926,6 +8202,8 @@
             if (e.isDeath) return;
             if (e.ACTION && e.action != null && e.action === e.ACTION.DIE) return;
             if (e.remove_tick) return;
+            // V2.34.0 A3：尾刀模式未到尾刀线的 BOSS 不进候选（既不打也不飞）
+            if (zBossSkipGid && gidInt(e.GID) === zBossSkipGid) return;
             var mid = e._job != null ? String(e._job) : (e.job != null ? String(e.job) : (e.mobId != null ? String(e.mobId) : null));
             var inLock = !anyLock || zAllMobs || (mid && lockList[mid]); // V2.22.0：打全部怪开 → 不看锁定名单
             if (!ent.position || !e.position) return;
@@ -7978,22 +8256,44 @@
       // 被攻击处理（非选中怪攻击）：有锁定目标 → 正常打锁定；无锁定目标但被攻击 → 按设置处理
       // V2.16.3：还击加保护——zLock.gid 还挂着（正在追/打锁定怪，即使锁定怪当前超射程）→ 被非锁定怪打不还击，
       //   防止还击把 zLock 目标换成非锁定怪导致追怪中断/来回转向（还击只在确无锁定目标时才触发）
-      if (!target && !zLock.gid && beingHit && hitTarget) {
-        if (onaMode === "无视" || (onaMode === "瞬移" && $id("dsh-z-flykill") && !$id("dsh-z-flykill").checked)) { /* 不反击，继续寻怪（总开关关：瞬移按无视处理） */ }
-        else if (onaMode === "瞬移") {
-          requestEmergencyEscape("最近受击");
-          zMon.action = "瞬移脱离";
-          setStatus("被非目标怪攻击，瞬移脱离…", "warn");
-          return;
-        }
-        else {
-          target = hitTarget;
-          // V2.15.22：还击锁定攻击者——持续打到死再继续寻怪（不再只打一下；还击怪打死必继续，不套「打死换下一个=关」）
-          zLock.gid = hitTarget.GID;
-          zLock.name = (hitTarget.display && hitTarget.display.name) || String(hitTarget._job != null ? hitTarget._job : hitTarget.GID);
-          zLock.dist = hitBest;
-          zLock.reactive = true;
-          setStatus("被攻击，还击 " + (hitTarget.display && hitTarget.display.name || ""), "ok");
+      // V2.34.0 A5：非选中怪独立一路判定——候选 = 最近 3 秒内命中过我的怪（zHitBy，运行时观测）
+      //   排除本拍 target 与 zLock.gid；不看 zAllMobs、不看 lockList、不受 atkRange 限制（远程怪必然在 atkRange 外）
+      if (!target) {
+        zHitPrune(now);
+        var hitCandGid = 0, hitCandDist = -1, hitCandTs = -1;
+        try {
+          for (var hk in zHitBy) {
+            var hr = zHitBy[hk];
+            if (!hr || now - hr.ts >= zHitKeepMs) continue;
+            if (gidInt(hk) === gidInt(zLock.gid)) continue; // 排除锁定目标本身
+            var hg = gidInt(hk); if (!hg) continue;
+            var better = false;
+            if (!hitCandGid) better = true;
+            else if (hr.dist >= 0 && (hitCandDist < 0 || hr.dist < hitCandDist)) better = true;
+            else if (hr.dist < 0 && hitCandDist < 0 && hr.ts > hitCandTs) better = true;
+            if (better) { hitCandGid = hg; hitCandDist = hr.dist; hitCandTs = hr.ts; }
+          }
+        } catch (eH) {}
+        var hitCandEnt = hitCandGid ? zEntOf(hitCandGid) : null;
+        if (hitCandEnt) {
+          if (onaMode === "瞬移" && !($id("dsh-z-flykill") && !$id("dsh-z-flykill").checked)) {
+            requestEmergencyEscape("最近受击");
+            zMon.action = "瞬移脱离";
+            setStatus("被非目标怪攻击，瞬移脱离…", "warn");
+            return;
+          }
+          if (onaMode === "无视" || onaMode === "瞬移") {
+            // 无视（含总开关关闭时瞬移按无视）：不反击，继续追锁定目标
+            zMon.action = zLock.gid ? "无视非选中攻击者（继续追锁定目标）" : "无视非选中攻击者";
+          } else {
+            target = hitCandEnt;
+            // V2.15.22：还击锁定攻击者——持续打到死再继续寻怪（不套「打死换下一个=关」）
+            zLock.gid = hitCandEnt.GID;
+            zLock.name = (hitCandEnt.display && hitCandEnt.display.name) || String(hitCandEnt._job != null ? hitCandEnt._job : hitCandEnt.GID);
+            zLock.dist = hitCandDist >= 0 ? hitCandDist : null;
+            zLock.reactive = true;
+            setStatus("被攻击，还击 " + (hitCandEnt.display && hitCandEnt.display.name || ""), "ok");
+          }
         }
       }
       // 换怪延迟：目标变化时记录延迟点；延迟窗口内不攻击（等设定秒数再出手）
@@ -8830,6 +9130,8 @@
     } catch (e) {}
     return out;
   }
+  // V2.34.0：技能输入去抖计时器（按字段独立，避免互相取消）
+  var skDebounceTimers = {};
   // 技能顺序可视化列表：textarea ↔ 拖拽列表双向同步
   function renderSkillOrderList() {
     var el = $id("dsh-skillorderlist");
@@ -8851,28 +9153,48 @@
           if (parts2.length) dispCond = "自动:" + parts2.join(",");
         }
       }
+      // V2.34.0：顺序行内可直接改等级（上限=已学等级，读不到不设上限）与释放%
+      var lvMax = 0; try { lvMax = learnedSkillLv(o.skid) || 0; } catch (e0) {}
       html += '<div class="prow drag-item" data-drag-i="' + i + '" draggable="true" title="拖动调整顺序"><span class="dh">⠿</span><span class="pidx">' + (i + 1) + '</span>' +
-        '<span class="pnm">' + nm + ' <span class="st">Lv' + o.lv + ' · ID' + o.skid + (dispCond ? ' · 需' + dispCond : '') + '</span></span>' +
+        '<span class="pnm">' + nm + ' <span class="st">ID' + o.skid + (dispCond ? ' · 需' + dispCond : '') + '</span></span>' +
+        '<span class="lb">Lv</span><input type="number" min="1"' + (lvMax > 0 ? ' max="' + lvMax + '"' : '') + ' value="' + o.lv + '" data-lv="' + o.skid + '" title="释放等级（直接写回技能顺序）" style="flex:0 0 44px;text-align:center">' +
         '<input type="number" min="0" max="100" value="' + (o.prob != null ? o.prob : 100) + '" data-prob="' + o.skid + '" title="释放百分比" style="flex:0 0 48px;text-align:center">' +
         '<span class="st">%</span>' +
         '<button class="ghost" data-rm-sk="' + o.skid + '" style="flex:0 0 auto;padding:0 7px">删除</button></div>';
     }
     el.innerHTML = html;
-    // 释放百分比实时修改 → 写回 textarea（对象序列化，保留 cond、不吞技能名）
+    // V2.34.0：等级/释放% 改为 input 即时写回（去抖 300ms）+ blur 归一化。
+    //   旧实现只在 change(失焦) 写回，未失焦时 1 秒定时器每 3 秒重建列表 → 输入被旧值弹回。
     el.querySelectorAll("[data-prob]").forEach(function (inp) {
-      inp.addEventListener("change", function () {
-        var skid = parseInt(this.getAttribute("data-prob"), 10);
-        var pvRaw = parseInt(this.value, 10);
-        // 空值/非法 → 100；输入 0 → 保留 0（0=不释放）
-        var pv = (isNaN(pvRaw) ? 100 : Math.max(0, Math.min(100, pvRaw)));
-        var order = parseSkillOrder($id("dsh-skillorder").value);
-        var hit = false;
-        for (var i2 = 0; i2 < order.length; i2++) {
-          if (order[i2].skid === skid) { order[i2].prob = pv; hit = true; }
-        }
-        $id("dsh-skillorder").value = order.map(skillLine).join("\n");
-        if (hit) setStatus("技能 " + skid + " 释放概率 → " + pv + "%", "ok");
-        renderSkillOrderList();
+      var skid = parseInt(inp.getAttribute("data-prob"), 10);
+      inp.addEventListener("input", function () {
+        var raw = parseInt(this.value, 10);
+        if (String(this.value).trim() === "" || isNaN(raw)) return;   // 空值/非数字不写
+        var pv = Math.max(0, Math.min(100, raw));
+        skDebounce("p" + skid, function () { if (skPatch(skid, function (o) { o.prob = pv; })) setStatus("技能 " + skid + " 释放概率 → " + pv + "%", "ok"); });
+      });
+      inp.addEventListener("blur", function () {
+        var raw = parseInt(this.value, 10);
+        var pv = (String(this.value).trim() === "" || isNaN(raw)) ? 100 : Math.max(0, Math.min(100, raw));
+        this.value = pv;
+        skClearDebounce("p" + skid);
+        skPatch(skid, function (o) { o.prob = pv; });
+      });
+    });
+    el.querySelectorAll("[data-lv]").forEach(function (inp) {
+      var skid = parseInt(inp.getAttribute("data-lv"), 10);
+      inp.addEventListener("input", function () {
+        var raw = parseInt(this.value, 10);
+        if (String(this.value).trim() === "" || isNaN(raw)) return;   // 空值/非数字不写
+        var lv = Math.max(1, raw);
+        skDebounce("l" + skid, function () { if (skPatch(skid, function (o) { o.lv = lv; })) setStatus("技能 " + skid + " 等级 → " + lv, "ok"); });
+      });
+      inp.addEventListener("blur", function () {
+        var raw = parseInt(this.value, 10);
+        var lv = (String(this.value).trim() === "" || isNaN(raw)) ? 1 : Math.max(1, raw);
+        this.value = lv;
+        skClearDebounce("l" + skid);
+        skPatch(skid, function (o) { o.lv = lv; });
       });
     });
     el.querySelectorAll("[data-rm-sk]").forEach(function (b) {
@@ -8901,19 +9223,26 @@
     if (!el) return;
     var list = learnedActiveSkills();
     if (!list.length) { el.innerHTML = '<span class="st">未读取到已学技能（登录后展开）</span>'; return; }
-    // 当前技能顺序里已有的 skid
-    var orderSkids = {};
-    parseSkillOrder($id("dsh-skillorder").value).forEach(function (o) { orderSkids[o.skid] = true; });
+    // 当前技能顺序里已有的 skid / 等级
+    var orderSkids = {}, orderLv = {};
+    parseSkillOrder($id("dsh-skillorder").value).forEach(function (o) { orderSkids[o.skid] = true; orderLv[o.skid] = o.lv; });
     var html = "";
     list.forEach(function (s) {
+      // V2.34.0：每行加等级输入，上限=该技能已学等级；默认=已学等级（已在顺序表里则显示表内等级）
+      var shown = orderLv[s.skid] != null ? orderLv[s.skid] : s.lv;
       html += '<div class="list-item"><label class="switch" title="' + s.name + ' Lv' + s.lv + '"><input type="checkbox" data-sk="' + s.skid + '" data-lv="' + s.lv + '" data-nm="' + s.name + '"' + (orderSkids[s.skid] ? " checked" : "") + '>' +
-        s.name + ' Lv' + s.lv + '</label></div>';
+        s.name + ' Lv' + s.lv + '</label>' +
+        '<span class="lb">Lv</span><input type="number" data-lvsel="' + s.skid + '" min="1" max="' + s.lv + '" value="' + shown + '" title="加入技能顺序使用的等级（上限=已学等级）" style="flex:0 0 44px;text-align:center"></div>';
     });
     el.innerHTML = html;
     el.querySelectorAll('input[data-sk]').forEach(function (c) {
       c.addEventListener("change", function () {
         var skid = parseInt(this.getAttribute("data-sk"), 10);
-        var lv = parseInt(this.getAttribute("data-lv"), 10) || 5;
+        var learned = parseInt(this.getAttribute("data-lv"), 10) || 0;
+        var lvSel = el.querySelector('[data-lvsel="' + skid + '"]');
+        var lv = lvSel ? parseInt(lvSel.value, 10) : NaN;
+        if (!(lv >= 1)) lv = learned >= 1 ? learned : 5;
+        if (learned > 0 && lv > learned) lv = learned;   // 等级不得超过已学等级
         var nm = this.getAttribute("data-nm") || String(skid);
         var ta = $id("dsh-skillorder");
         var lines = String(ta.value || "").split(/\r?\n/).filter(function (l) { return l.trim(); });
@@ -8932,9 +9261,44 @@
         }
         ta.value = lines.join("\n");
         renderSkillOrderList();
-        setStatus(this.checked ? "已加入技能顺序: " + nm : "已移除: " + nm, this.checked ? "ok" : "st");
+        setStatus(this.checked ? "已加入技能顺序: " + nm + " Lv" + lv : "已移除: " + nm, this.checked ? "ok" : "st");
+      });
+      // 已在顺序表里的技能：改网格等级输入后（失焦）直接把表内等级改掉，无需取消再勾选
+      var lvInp = el.querySelector('[data-lvsel="' + c.getAttribute("data-sk") + '"]');
+      if (lvInp) lvInp.addEventListener("change", function () {
+        var skid2 = parseInt(this.getAttribute("data-lvsel"), 10);
+        var learned2 = parseInt(c.getAttribute("data-lv"), 10) || 0;
+        var v = parseInt(this.value, 10);
+        if (!(v >= 1)) v = learned2 >= 1 ? learned2 : 5;
+        if (learned2 > 0 && v > learned2) v = learned2;
+        this.value = v;
+        var arr = parseSkillOrder($id("dsh-skillorder").value), hit = false;
+        for (var i2 = 0; i2 < arr.length; i2++) { if (arr[i2].skid === skid2) { arr[i2].lv = v; hit = true; } }
+        if (hit) { $id("dsh-skillorder").value = arr.map(skillLine).join("\n"); renderSkillOrderList(); setStatus("技能 " + skid2 + " 等级 → " + v, "ok"); }
       });
     });
+  }
+  // V2.34.0：技能顺序行写回（读当前 textarea → 改一段 → 用 skillLine 原格式写回，7 段兼容不变）
+  function skPatch(skid, mutate) {
+    var arr = parseSkillOrder($id("dsh-skillorder").value), hit = false;
+    for (var i2 = 0; i2 < arr.length; i2++) { if (arr[i2].skid === skid) { mutate(arr[i2]); hit = true; } }
+    if (hit) $id("dsh-skillorder").value = arr.map(skillLine).join("\n");
+    return hit;
+  }
+  function skDebounce(key, fn) {
+    skClearDebounce(key);
+    skDebounceTimers[key] = setTimeout(function () { delete skDebounceTimers[key]; try { fn(); } catch (e) {} }, 300);
+  }
+  function skClearDebounce(key) {
+    if (skDebounceTimers[key]) { clearTimeout(skDebounceTimers[key]); delete skDebounceTimers[key]; }
+  }
+  // V2.34.0：用户正在技能点选/顺序表里输入（焦点在内）→ 定时自动重绘跳过，避免输入被旧值覆盖
+  function skillEditFocused() {
+    try {
+      var ae = document.activeElement;
+      if (!ae || !ae.closest) return false;
+      return !!(ae.closest("#dsh-skillorderlist") || ae.closest("#dsh-skillpick"));
+    } catch (e) { return false; }
   }
   $id("dsh-skillorder").addEventListener("input", function () { try { renderSkillPick(); renderSkillOrderList(); } catch (e) {} });
   $id("dsh-skillclear").addEventListener("click", function () {
@@ -9221,7 +9585,7 @@
     var ids = Object.keys(wl);
     $id("dsh-wlcount").textContent = ids.length + " 个物品ID";
     var psEl = $id("dsh-pickstate");
-    if (psEl) psEl.textContent = ids.length ? ("拾取名单 " + ids.length + " 个 ID · 落地即自动拾取") : ("白名单为空：搜物品或直接「＋加入」指定 ID");
+    if (psEl) psEl.textContent = ids.length ? ("拾取名单 " + ids.length + " 个 ID · 落地即自动拾取") : ("白名单为空：在「＋加入」处输入物品ID");
     if (!ids.length) { el.innerHTML = '<span class="st">空</span>'; return; }
     var html = "";
     ids.forEach(function (id) {
@@ -9306,119 +9670,24 @@
     renderDropTree(null); // null → 内部自动回退当前地图怪物/图鉴前8
     setStatus("搜索已清空，恢复当前地图掉落", "st");
   });
-  // ---------------- 拾取页物品搜索（V1.9.4）：搜物品名/ID → 一键加白名单（丢物测试等）----------------
-  // 反向索引：扫描 mob_db 全部怪的 Drop0~8id → itid → {name, mobs:[{id,kName,per}]}（懒构建缓存）
-  var itemXIndex = null;
-  var itemIdxBuiltAt = 0;
-  function buildItemXIndex() {
-    try {
-      var mobDB = getMobDb();
-      if (!mobDB) return null;
-      var idx = {};
-      Object.keys(mobDB).forEach(function (mid) {
-        var m = mobDB[mid];
-        if (!m) return;
-        for (var d = 0; d < 9; d++) {
-          var did = m["Drop" + d + "id"];
-          if (did == null) continue;
-          if (!idx[did]) idx[did] = { mobs: [] };
-          idx[did].mobs.push({ id: mid, kName: m.kName || m.name || ("ID" + mid), per: m["Drop" + d + "per"] });
-        }
-      });
-      itemXIndex = idx;
-      return idx;
-    } catch (e) { return null; }
-  }
+  // V2.34.0：物品搜索（搜物品名/ID → 掉落反查索引 → 结果区加白名单）整体移除，只保留白名单手动加 ID。
   function getItemNameS(id) {
     try { return getItemName(id) || ("ID" + id); } catch (e) { return "ID" + id; }
   }
-  function renderItemSearch(list, kw) {
-    var res = $id("dsh-itemsearch-res");
-    if (!res) return;
-    if (!list || !list.length) { res.innerHTML = '<span class="st">未找到物品' + (kw ? "：「" + kw + "」" : "") + '</span>'; return; }
-    var html = '';
-    for (var i = 0; i < list.length; i++) {
-      var itid = list[i].itid;
-      var nm = list[i].name;
-      var mobs = list[i].mobs || [];
-      var inWl = wl[String(itid)] ? true : false;
-      // V1.9.4：加入按钮 HTML 先生成（掉落信息异常也不吞按钮）
-      var btnHtml = '<button class="ghost" data-wlswitch="' + itid + '" data-nm="' + nm.replace(/"/g, "&quot;") + '" style="flex:0 0 auto;margin-left:auto">' + (inWl ? "已加" : "加入白名单") + '</button>';
-      html += '<div class="list-item" style="border-bottom:1px dashed #334"><span class="dh">◆</span>' + nm + ' <span class="st">(' + itid + ')</span>';
-      try {
-        if (mobs.length) {
-          html += '<span class="st"> · ' + mobs.length + ' 只怪掉：</span>';
-          for (var mi = 0; mi < mobs.length; mi++) {
-            var mob = mobs[mi];
-            var pv = Number(mob.per);
-            var pct = (mob.per != null && isFinite(pv)) ? (pv / 100).toFixed(2) + "%" : "?";
-            html += '<button class="ghost moblk" data-mid="' + mob.id + '" style="flex:0 0 auto;margin-left:3px;font-size:10px;padding:0 4px">' + mob.kName + ' ' + pct + '</button>';
-          }
-        }
-      } catch (e2) {}
-      html += btnHtml + '</div>';
-    }
-    res.innerHTML = html;
-    res.querySelectorAll('[data-mid]').forEach(function (b) {
-      b.addEventListener("click", function () {
-        var mid = this.getAttribute("data-mid");
-        var mobDB = getMobDb();
-        if (mobDB && mobDB[mid]) { renderDropTree([{ id: mid, m: mobDB[mid] }]); setStatus("已展开 " + (mobDB[mid].kName || mid) + " 掉落树", "ok"); }
-      });
-    });
-    res.querySelectorAll('[data-wlswitch]').forEach(function (b) {
-      b.addEventListener("click", function () {
-        var id = this.getAttribute("data-wlswitch");
-        var nm2 = this.getAttribute("data-nm");
-        if (wl[String(id)]) { removeWl(id); }
-        else { addWl(id, nm2); }
-        renderItemSearch(list, kw); // 刷新按钮态
-      });
-    });
-  }
-  $id("dsh-itemsearchbtn").addEventListener("click", function () {
-    var kw = ($id("dsh-itemsearch").value || "").trim();
-    if (!kw) { setStatus("先输入物品ID或名称", "st"); return; }
-    var out = [];
-    if (/^\d+$/.test(kw)) {
-      // V1.9.4：数字 ID 直查走物品库（CLIENT.DB），不依赖怪物掉落索引——任何 ID 都能出结果并加入拾取名单
-      var id2 = parseInt(kw, 10);
-      var rIdx = itemXIndex || buildItemXIndex();
-      var got = rIdx ? rIdx[id2] : null;
-      out.push({ itid: id2, name: getItemNameS(id2), mobs: (got && got.mobs) || [] });
-    } else {
-      var idx = itemXIndex || buildItemXIndex();
-      if (!idx) { setStatus("物品索引未就绪（怪物库加载后重试）", "err"); return; }
-      var seen = {};
-      Object.keys(idx).forEach(function (itid) {
-        if (out.length >= 15 || seen[itid]) return;
-        var nm = getItemNameS(itid);
-        if (nm && nm.indexOf(kw) !== -1) { seen[itid] = true; out.push({ itid: parseInt(itid, 10), name: nm, mobs: idx[itid].mobs }); }
-      });
-    }
-    renderItemSearch(out, kw);
-    setStatus(out.length ? ("找到 " + out.length + " 个物品") : ("未找到物品「" + kw + "」"), out.length ? "ok" : "err");
-  });
-  $id("dsh-itemsearchclr").addEventListener("click", function () {
-    $id("dsh-itemsearch").value = "";
-    $id("dsh-itemsearch-res").innerHTML = "";
-    setStatus("物品搜索已清空", "st");
-  });
-  // V1.9.4：「＋加入」直达——输入数字 ID 直接写入拾取名单，不依赖搜索/物品库/掉落索引
-  $id("dsh-itemsearchadd").addEventListener("click", function () {
-    var kw = ($id("dsh-itemsearch").value || "").trim();
+  // V2.34.0：「＋加入」直达——白名单区块内的小 ID 输入行；输入数字 ID 直接写入拾取名单（不依赖搜索/物品库/掉落索引）
+  $id("dsh-wladdbtn").addEventListener("click", function () {
+    var kw = ($id("dsh-wlid").value || "").trim();
     if (!/^\d+$/.test(kw)) { setStatus("先输入数字物品ID，再点「＋加入」", "st"); return; }
     var id = parseInt(kw, 10);
     if (wl[String(id)]) { setStatus("ID " + id + " 已在拾取名单", "ok"); return; }
     var nm = getItemNameS(id);
     addWl(String(id), nm);
-    renderItemSearch([{ itid: id, name: nm, mobs: [] }], kw); // 结果区显示该行并刷新为 已加
     setStatus("已加入拾取名单：ID " + id + (nm !== ("ID" + id) ? "（" + nm + "）" : ""), "ok");
   });
   // V1.9.4：开启「指定ID自动拾取」时确认白名单状态（空名单 = 提示先加 ID，避免开关无效感）
   if ($id("dsh-picken")) $id("dsh-picken").addEventListener("change", function () {
     var ids = Object.keys(wl);
-    if (this.checked && !ids.length) setStatus("白名单为空：搜物品或直接「＋加入」指定 ID，否则不会拾取任何物品", "st");
+    if (this.checked && !ids.length) setStatus("白名单为空：先在「＋加入」处输入物品ID，否则不会拾取任何物品", "st");
     else if (this.checked) setStatus("拾取名单 " + ids.length + " 个 ID，落地即自动拾取", "ok");
     else setStatus("指定ID自动拾取已关闭", "st");
   });
@@ -9482,7 +9751,9 @@
     }
     if (!list.length) { setStatus("该图怪物库无匹配数据", "err"); return; }
     renderDropTree(list);
-    setStatus("已显示「" + info.name + "」的 " + list.length + " 只怪掉落", "ok");
+    // V2.34.0：掉落树已随「攻击名单」窗口独立出去，这里顺手把该窗口打开，按钮点下去才看得到树
+    try { if (!fwActualOpen("mlock")) roModOpen("mlock"); } catch (e) {}
+    setStatus("已显示「" + info.name + "」的 " + list.length + " 只怪掉落（攻击名单窗口）", "ok");
   });
   // 指定ID拾取轮询
   function parseIds(txt) {
@@ -11589,7 +11860,7 @@
       if (sig === dps.lastSig && now - dps.lastSigAt <= 2) return;
       dps.lastSig = sig; dps.lastSigAt = now;
       if (!dps.sessionAt) dps.sessionAt = now;
-      if (tg === aid && gid !== aid) { if (dmg > 0) dps.taken += dmg; return; }
+      if (tg === aid && gid !== aid) { if (dmg > 0) { dps.taken += dmg; zHitMark(gid); } return; } // V2.34.0 A4：记录最近命中过我的攻击者（远程怪判定/群殴计数/非选中怪判定共用）
       if (gid !== aid || dmg < 0) return;
       dps.mine++;
       dps.total += dmg; dps.hits += cnt; dps.max = Math.max(dps.max, dmg / cnt);
@@ -12149,7 +12420,8 @@
         // 拾取页当前地图名/技能列表/锁定目录刷新 —— V2.5.0 后台隐藏跳过（纯 UI，换图事件内已补刷）
         if (!UI_BG) {
           refreshPickMap();
-          if (++skillPickTicker % 3 === 0) { renderSkillPick(); renderSkillOrderList(); }
+          // V2.34.0：用户正在技能点选/顺序表里输入时跳过自动重绘（否则释放%/等级会被旧值弹回）
+          if (++skillPickTicker % 3 === 0 && !skillEditFocused()) { renderSkillPick(); renderSkillOrderList(); }
           // 助手页本图怪物锁定：details 展开时才刷新（避免频繁重建 DOM）
           try {
             var zmLock = $id("dsh-z-maplock");

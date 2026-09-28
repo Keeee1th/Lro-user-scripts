@@ -281,7 +281,9 @@ test('patch regressions cover hosts virtual rows tooltips and monk prerequisites
 
 test('spirit packets cache only the current character',()=>{
   const code=extract('  function onSelfSpirits(bytes) {','  // V2.15.24：拦截服务器下发的技能真实后摇');
-  const ctx={DataView,Math,CLIENT:{SS:{AID:42,Entity:{GID:42}}},selfSpirits:{aid:0,num:0,map:''},normMapKey:x=>x,getMapName:()=> 'moc_pryd02'};vm.createContext(ctx);vm.runInContext(code+';this.fn=onSelfSpirits;this.read=()=>selfSpirits',ctx);
+  // V2.34.0：补齐 vm 注入（gidInt / dshSphereLog）——此前缺失使 onSelfSpirits 内部抛错被 catch 吞掉，缓存永不命中
+  const ctx={DataView,Math,CLIENT:{SS:{AID:42,Entity:{GID:42}}},selfSpirits:{aid:0,num:0,map:''},normMapKey:x=>x,getMapName:()=> 'moc_pryd02',
+    gidInt:v=>{const n=Math.floor(Number(v));return Number.isFinite(n)&&n>0?n:0;},dshSphereLog:()=>{}};vm.createContext(ctx);vm.runInContext(code+';this.fn=onSelfSpirits;this.read=()=>selfSpirits',ctx);
   const packet=(aid,num)=>{const b=new ArrayBuffer(8),v=new DataView(b);v.setUint32(2,aid,true);v.setUint16(6,num,true);return b};
   ctx.fn(packet(99,5));assert.equal(ctx.read().aid,0);ctx.fn(packet(42,5));assert.equal(ctx.read().aid,42);assert.equal(ctx.read().num,5);assert.equal(ctx.read().map,'moc_pryd02');
 });
@@ -370,9 +372,10 @@ test('configured item automation remains available fallback',()=>{
   assert.ok(source.includes('masterTickReg(function () { try { tickItems(); } catch (e) {} });'));
 });
 
-test('version constants agree at v2.30.0 and feedback is visible',()=>{
+test('version constants agree and feedback is visible',()=>{
   const meta=source.match(/@version\s+(\S+)/)?.[1], runtime=source.match(/var VER = "([^"]+)"/)?.[1];
-  assert.equal(meta,'2.30.0');assert.equal(runtime,meta);
+  // V2.34.0：不再写死版本号——只校验格式与「文件头 / 运行时常量一致」，升版不用改用例
+  assert.ok(/^\d+\.\d+\.\d+$/.test(meta),'@version 必须是 x.y.z，实际=' + meta);assert.equal(runtime,meta);
   assert.ok(source.includes('function roFeedback(text, cls)'));
   assert.ok(source.includes('id = "dsh-feedback"'));
 });
@@ -386,4 +389,286 @@ test('startup always collapses legacy panel regardless of saved state',()=>{
   assert.ok(source.includes('applyCollapse(false);'));
   // 快捷键 toggle 基于 collapsed 翻转：启动已写回 true → 首次按下即打开，不会「按了没反应」
   assert.ok(source.includes('if (saved.collapsed) { saved.collapsed = false; saveSaved(saved); applyCollapse(false); }'));
+});
+
+// ================= V2.34.0 实验版：群殴/解围/BOSS 三模式离线自检 =================
+// 说明：上方既有用例读取发布文件 ro-assist.user.js；本次改动落在实验版 ro-assist-exp.user.js，
+//       故本组用例显式读取实验版文件（纯新增用例，不改动既有断言与框架）。
+const expSource = fs.readFileSync(new URL('../ro-assist-exp.user.js', import.meta.url), 'utf8');
+function expExtract(start, end) { const a = expSource.indexOf(start), b = expSource.indexOf(end, a); assert.ok(a >= 0 && b > a, 'expExtract 失败: ' + start); return expSource.slice(a, b); }
+
+test('exp 防御与瞬移新控件 id 全部就位且默认值正确', () => {
+  assert.ok(expSource.includes('id="dsh-z-grpn" type="number" value="6" min="0"'));
+  assert.ok(expSource.includes('id="dsh-z-flyrange" type="checkbox" checked>远程怪计入群殴'));
+  assert.ok(expSource.includes('id="dsh-z-qoaen" type="checkbox" checked>解围技能'));
+  assert.ok(expSource.includes('id="dsh-z-qoan" type="number" value="3"'));
+  assert.ok(expSource.includes('id="dsh-z-qoaskill"'));
+  assert.ok(expSource.includes('id="dsh-z-qoaskilllv"'));
+  assert.ok(expSource.includes('id="dsh-z-bossact"'));
+  assert.ok(expSource.includes('id="dsh-z-bosshp" type="number" value="30" min="1" max="99"'));
+  assert.ok(expSource.includes('%（各职业自填）'));
+  assert.ok(expSource.includes('id="dsh-z-flyint" type="number" value="4"'), '瞬移间隔控件不得丢失');
+  assert.ok(expSource.includes('id="dsh-z-diag" type="checkbox">战斗判定诊断(默认关)'));
+  assert.ok(expSource.includes('id="dsh-z-diagcopy"'));
+  assert.ok(expSource.includes('id="dsh-z-diagbox" readonly'));
+});
+
+test('exp 旧控件已移除、PROF_CONTROLS 同步清理且旧配置一次性迁移', () => {
+  assert.ok(!expSource.includes('id="dsh-z-grp"'));
+  assert.ok(!expSource.includes('id="dsh-z-grpact"'));
+  assert.ok(!expSource.includes('id="dsh-z-bossfly"'));
+  const profCode = expExtract('  var PROF_CONTROLS = [', '  ];') + '  ];';
+  assert.ok(!profCode.includes('"dsh-z-grp"'), 'PROF_CONTROLS 仍登记 dsh-z-grp');
+  assert.ok(!profCode.includes('"dsh-z-grpact"'), 'PROF_CONTROLS 仍登记 dsh-z-grpact');
+  assert.ok(!profCode.includes('"dsh-z-bossfly"'), 'PROF_CONTROLS 仍登记 dsh-z-bossfly');
+  const migCode = expExtract('  function migrateZControls(ui) {', '  function migrateZControlsAll() {');
+  const ctx = {}; vm.createContext(ctx); vm.runInContext(migCode + ';this.mig = migrateZControls', ctx);
+  const ui1 = { 'dsh-z-grp': '8', 'dsh-z-grpact': '解围技能', 'dsh-z-bossfly': 1, 'dsh-z-hpfly': '25' };
+  assert.equal(ctx.mig(ui1), true);
+  assert.equal(ui1['dsh-z-grpn'], '8');            // 旧群殴数字迁到 dsh-z-grpn
+  assert.equal(ui1['dsh-z-bossact'], '瞬移');       // 旧勾选 → 瞬移
+  assert.equal(ui1['dsh-z-grp'], undefined);
+  assert.equal(ui1['dsh-z-grpact'], undefined);
+  assert.equal(ui1['dsh-z-bossfly'], undefined);
+  assert.equal(ui1['dsh-z-hpfly'], '25');          // 其它档位不受影响
+  const ui2 = { 'dsh-z-bossfly': 0 }; ctx.mig(ui2); assert.equal(ui2['dsh-z-bossact'], '不处理');
+  const ui3 = { 'dsh-z-grpn': '4', 'dsh-z-grp': '9' }; ctx.mig(ui3); assert.equal(ui3['dsh-z-grpn'], '4');
+  assert.equal(ctx.mig({}), false);
+});
+
+test('exp PROF_CONTROLS 已登记全部新控件且类型正确', () => {
+  const code = expExtract('  var PROF_CONTROLS = [', '  ];') + '  ];';
+  const ctx = {}; vm.createContext(ctx);
+  vm.runInContext(code + ';this.ids = PROF_CONTROLS.map(function (r) { return r[0]; }); this.types = {}; for (var i = 0; i < PROF_CONTROLS.length; i++) this.types[PROF_CONTROLS[i][0]] = PROF_CONTROLS[i][1];', ctx);
+  for (const id of ['dsh-z-grpn', 'dsh-z-qoaen', 'dsh-z-qoan', 'dsh-z-bossact', 'dsh-z-bosshp', 'dsh-z-flyrange', 'dsh-z-diag']) assert.ok(ctx.ids.includes(id), 'PROF_CONTROLS 缺 ' + id);
+  assert.equal(ctx.types['dsh-z-grpn'], 'v');
+  assert.equal(ctx.types['dsh-z-qoaen'], 'c');
+  assert.equal(ctx.types['dsh-z-qoan'], 'v');
+  assert.equal(ctx.types['dsh-z-bossact'], 'v');
+  assert.equal(ctx.types['dsh-z-bosshp'], 'v');
+  assert.equal(ctx.types['dsh-z-flyrange'], 'c');
+  assert.equal(ctx.types['dsh-z-diag'], 'c');
+});
+
+test('exp 受击观测 zHitBy 在伤害回调里记录攻击者与命中距离', () => {
+  assert.ok(expSource.includes('var zHitBy = {};'));
+  assert.ok(expSource.includes('zHitBy[gid] = { ts: Date.now(), dist: d };'));
+  assert.ok(expSource.includes('EMz.get(gid)'));
+  assert.ok(expSource.includes('if (dmg > 0) { dps.taken += dmg; zHitMark(gid); }'), 'dpsOnDamage 必须调用 zHitMark');
+  assert.ok(expSource.includes('zHitKeepMs = 3000'));
+  assert.ok(expSource.includes('r.dist >= 4 && !rangedOn'), '远程判定必须是命中距离 >= 4');
+});
+
+test('exp 群殴数按实际围攻计算并受远程怪开关控制', () => {
+  const code = expExtract('  var zHitBy = {};', '  function zEntHpPct(gid) {');
+  let rangeOn = true;
+  const ctx = { gidInt: v => { const n = Math.floor(Number(v)); return isFinite(n) && n > 0 ? n : 0; },
+    $id: id => (id === 'dsh-z-flyrange' ? { checked: rangeOn } : null), window: {}, Date };
+  vm.createContext(ctx); vm.runInContext(code + ';this.count = zGrpCount', ctx);
+  const now = Date.now();
+  const mobs = [{ GID: 101, dist: 2 }, { GID: 102, dist: 3 }];   // 101 贴身, 102 不贴身
+  ctx.zHitBy = { 11: { ts: now - 100, dist: 1 }, 22: { ts: now - 200, dist: 6 }, 33: { ts: now - 9000, dist: 1 } };
+  rangeOn = true;
+  assert.equal(ctx.count(mobs).n, 3);        // 11 + 22(远程计入) + 101 = 3（33 过期不计）
+  assert.equal(ctx.count(mobs).hit, 2);
+  rangeOn = false;
+  assert.equal(ctx.count(mobs).n, 2);        // 远程 22 不计 → 11 + 101
+  ctx.zHitBy = {};
+  rangeOn = true;
+  assert.equal(ctx.count(mobs).n, 1);        // zHitBy 无数据 → 退化为只数贴身 <=2 格
+});
+
+test('exp zWalk 锁定候选口径与 zAttack 一致（补 zAllMobs）', () => {
+  assert.ok(expSource.includes('!anyLock || zAllMobsW || (mid && lockList[mid])'));
+  const walk = expExtract('  function zWalk() {', '  function zAttack() {');
+  assert.ok(walk.includes('var zAllMobsW = !$id("dsh-z-allmobs") || $id("dsh-z-allmobs").checked;'));
+});
+
+test('exp 三个早退点不再冻结整拍且卡死判定断开自锁环', () => {
+  assert.ok(expSource.includes('zHoldTick("紧急脱战（等待位移确认）", true)'));
+  assert.ok(expSource.includes('zHoldTick("坐下回血中", false)'));
+  assert.ok(expSource.includes('zHoldTick("已停手（等指令）", true)'));
+  assert.ok(!/if \(escapePending\(\)\) \{ requestEmergencyEscape\(escapeState\.reason\); zMon\.action/.test(expSource), 'escapePending 分支不得再整拍 return');
+  const hold = expExtract('  function zHoldTick(msg, doWalk) {', '  // ================= V2.34.0 A7');
+  assert.ok(hold.includes('checkDefense('), 'zHoldTick 必须继续防御判定');
+  assert.ok(hold.includes('zWalk()'), 'zHoldTick 必须继续走路');
+  assert.ok(expSource.includes('&& !escapePending() && now >= flyFailUntil) { needFly = true; reason = "卡死4s"; zStuckSince = now; }'));
+});
+
+test('exp BOSS 三模式与解围技能按确认顺序排列（BOSS→血量→群殴→解围）', () => {
+  const sel = expExtract('id="dsh-z-bossact"', '</select>');
+  for (const opt of ['瞬移', '优先攻击', '等待残血补尾刀']) assert.ok(sel.includes('<option>' + opt + '</option>'), 'BOSS 选项缺 ' + opt);
+  assert.ok(sel.includes('<option selected>不处理</option>'), 'BOSS 默认必须是不处理');
+  assert.ok(expSource.includes('<span class="st">锁定则优先攻击</span>'));
+  assert.ok(expSource.includes('var isBoss = !!(mb && mb.MvpDropsNum > 0);'), 'BOSS 识别必须沿用 MvpDropsNum');
+  const start = expSource.indexOf('function checkDefense(mobs, ent)');
+  const boss = expSource.indexOf('var bossD = zBossDecide(mobs);', start);
+  const life = expSource.indexOf('var life = ent && ent.life;', start);
+  const stuck = expSource.indexOf('reason = "卡死4s"', start);
+  const grp = expSource.indexOf('var grpCnt = zGrpCount(mobs).n;', start);
+  const bossApply = expSource.indexOf('if (!needFly && bossFly)', start);
+  const grpApply = expSource.indexOf('if (!needFly && grpFly)', start);
+  const cool = expSource.indexOf('var flyCool', start);
+  const qoa = expSource.indexOf('zQoaTry(mobs, ent, now);', start);
+  assert.ok(boss > start && boss < life && life < stuck && stuck < grp && grp < bossApply && bossApply < grpApply && grpApply < cool && cool < qoa, '判定顺序必须是 BOSS→血量(含卡死)→群殴→解围');
+  const threat = expExtract('  function emergencyThreatReason(mobs) {', '  function ordinaryCastBlocked() {');
+  assert.ok(!threat.includes('qoa'), '解围技能不得进 emergencyThreatReason');
+  assert.ok(threat.includes('dsh-z-grpn'), '群殴自动瞬移仍须在紧急原因里');
+  const qoaFn = expExtract('  function zQoaTry(mobs, ent, now) {', '  // A3：BOSS 三模式判定');
+  assert.ok(!/ordinaryCastBlocked\s*\(/.test(qoaFn), '解围技能不得调用 ordinaryCastBlocked');
+  assert.ok(qoaFn.includes('skillNextAt[skid]') && qoaFn.includes('zQoaNextAt'), '解围技能必须有 CD/公共CD 门');
+  assert.ok(qoaFn.includes('Math.max(skillCdMs({ skid: skid, cd: 0 }), 1000)'), '解围技能必须有 1s 保底 CD 防每拍重放');
+  assert.ok(qoaFn.includes('dsh-z-hpfly'), '解围技能只在血线之上放');
+  const bossFn = expExtract('  function zBossDecide(mobs) {', '  // A6：早退点不冻结整拍');
+  assert.ok(bossFn.includes('out.hp >= 0 && out.hp <= line'), '残血到位才切过去补尾刀');
+  assert.ok(bossFn.includes('else if (out.hp >= 0) out.skip = gidInt(rec.GID)'), '未到尾刀线既不打也不飞');
+  assert.ok(bossFn.includes('lockList[String(rec.mid)]'), '瞬移模式遇锁定 BOSS 必须转优先攻击');
+  assert.equal((expSource.match(/if \(zBossSkipGid && gidInt\(e\.GID\) === zBossSkipGid\) return;/g) || []).length, 2, 'zAttack/zWalk 都要剔除未到尾刀线的 BOSS');
+});
+
+// ================= V2.34.0：功能菜单五栏 / 一级窗口 / 物品区 / 技能输入离线自检 =================
+// 说明：读取实验版 ro-assist-exp.user.js；用「极小标签嵌套解析」直接验证 PAGE_HTML 生成的 DOM 归属，
+//       不依赖浏览器，能真正抓出「浮窗套浮窗 / 内容留错窗口 / 旧控件没删干净」。
+const EXP_VOID = new Set(['input','br','img','hr','meta','link','source','col','area','base','wbr','embed','param','track']);
+// id → 祖先链（形如 "div#dsh-fw-mlock>div"），只统计 id，不做样式/文本解析
+function expAncestors(html) {
+  const out = {}; const stack = [];
+  const re = /<(\/?)([a-zA-Z][\w-]*)\b([^>]*)>/g; let m;
+  while ((m = re.exec(html))) {
+    const close = m[1] === '/', tag = m[2].toLowerCase(), attrs = m[3];
+    if (close) { for (let i = stack.length - 1; i >= 0; i--) { if (stack[i].tag === tag) { stack.length = i; break; } } continue; }
+    const idm = /id="([^"]+)"/.exec(attrs);
+    if (idm) out[idm[1]] = stack.map(x => x.tag + (x.id ? '#' + x.id : '')).join('>');
+    if (!EXP_VOID.has(tag)) stack.push({ tag, id: idm ? idm[1] : null });
+  }
+  return out;
+}
+// 按属性定位 PAGE_HTML 里的某一段纯字符串拼接，从行首截到 endMarker，再当 JS 表达式求值
+function expHtmlByAttr(attr, endMarker) {
+  const a = expSource.indexOf(attr);
+  assert.ok(a >= 0, '找不到标记 ' + attr);
+  const lineStart = expSource.lastIndexOf('\n', a) + 1;
+  const b = expSource.indexOf(endMarker, a);
+  assert.ok(b > a, '找不到结束标记 ' + endMarker);
+  return vm.runInNewContext('(' + expSource.slice(lineStart, b).replace(/\+\s*$/, '') + ')');
+}
+function expZhuHtml() {
+  let code = expExtract("zhu: '' +", "assist: '' +");
+  code = code.replace(/^\s*zhu:\s*/, '').replace(/,\s*$/, '');
+  return vm.runInNewContext('(' + code + ')');
+}
+
+test('exp 功能菜单五栏顺序与条目齐全', () => {
+  const code = expExtract('  var RO_MODULES = [', '  ];') + '  ];';
+  const ctx = {}; vm.createContext(ctx);
+  vm.runInContext(code + ';this.secs=[];this.bySec={};for(var i=0;i<RO_MODULES.length;i++){var m=RO_MODULES[i];if(this.secs[this.secs.length-1]!==m.sec)this.secs.push(m.sec);(this.bySec[m.sec]=this.bySec[m.sec]||[]).push(m.id);}', ctx);
+  assert.deepEqual(Array.from(ctx.secs), ['常用', '战斗功能', '战斗辅助', '提示', '其他'], 'sec 顺序即菜单显示顺序');
+  assert.deepEqual(Array.from(ctx.bySec['常用']), ['menu', 'tp', 'np', 'zhu']);
+  assert.deepEqual(Array.from(ctx.bySec['战斗功能']), ['mlock', 'zhu2', 'zskill']);
+  assert.deepEqual(Array.from(ctx.bySec['战斗辅助']), ['aid', 'party', 'dps', 'boss', 'askcombo', 'item']);
+  assert.deepEqual(Array.from(ctx.bySec['提示']), ['zhud', 'ztip', 'tgt', 'znear']);
+  assert.deepEqual(Array.from(ctx.bySec['其他']), ['perf', 'mvp', 'panel']);
+});
+
+test('exp 三个一级窗口容器 + fwReg + RO_MODULES 登记齐全且走标准浮窗分支', () => {
+  const html = expZhuHtml();
+  for (const id of ['zhu2', 'zskill', 'znear']) {
+    assert.ok(html.includes('id="dsh-fw-' + id + '"'), '缺少容器 #dsh-fw-' + id);
+    assert.ok(expSource.includes('fwReg("' + id + '"'), '缺少 fwReg("' + id + '")');
+    assert.ok(html.includes('data-fw="' + id + '"'), '缺少浮窗按钮 data-fw=' + id);
+    assert.ok(html.includes('id="dsh-fw-btn-' + id + '"'), '缺少浮窗按钮 #dsh-fw-btn-' + id);
+  }
+  assert.ok(expSource.includes('{ id: "zskill", name: "技能设置"'), 'RO_MODULES 缺 zskill');
+  assert.ok(expSource.includes('{ id: "znear", name: "附近怪物实时列表"'), 'RO_MODULES 缺 znear');
+  // 新 id 不得另起一套窗口系统：继续沿用 fwSyncState / fwOpen / fwClose
+  assert.ok(expSource.includes('return fwSyncState(id);'));
+  assert.ok(expSource.includes('if (!fwActualOpen(id)) fwOpen(id, false);'));
+  assert.ok(expSource.includes('document.getElementById("dsh-win-fw-" + id)'));
+});
+
+test('exp 助手页三个窗口 DOM 归属正确且旧页签 UI 已移除', () => {
+  const html = expZhuHtml();
+  assert.ok(!/sub-tabs|data-sub="zs-|data-subpage="zs-/.test(html), '旧的三页签 UI 必须移除');
+  const anc = expAncestors(html);
+  assert.ok((anc['dsh-healfirst'] || '').includes('dsh-fw-zhu2'), '战斗设置内容应在 #dsh-fw-zhu2');
+  assert.ok((anc['dsh-z-allmobs'] || '').includes('dsh-fw-zhu2'), '目标范围设置应在 #dsh-fw-zhu2');
+  assert.ok((anc['dsh-skillpick'] || '').includes('dsh-fw-zskill'), '点选技能应在 #dsh-fw-zskill');
+  assert.ok((anc['dsh-skillorderlist'] || '').includes('dsh-fw-zskill'), '技能顺序表应在 #dsh-fw-zskill');
+  assert.ok((anc['dsh-askskill'] || '').includes('dsh-fw-zskill'), '辅助技能应在 #dsh-fw-zskill');
+  for (const id of ['dsh-scanen', 'dsh-scanint', 'dsh-scanlist', 'dsh-scanst']) assert.ok((anc[id] || '').includes('dsh-fw-znear'), id + ' 应在 #dsh-fw-znear');
+  assert.ok(!(anc['dsh-scanen'] || '').includes('dsh-fw-zhu2'), '侦查扫描行必须自战斗设置移出');
+});
+
+test('exp 攻击名单与物品窗口拆分：mlock 独立、掉落树随 mlock、白名单/背包归 item', () => {
+  const html = expHtmlByAttr('data-subpage="ap-item"', '// 子页9');
+  const anc = expAncestors(html);
+  assert.ok(html.includes('id="dsh-fw-item"') && html.includes('id="dsh-fw-mlock"'));
+  assert.ok(!(anc['dsh-fw-mlock'] || '').includes('dsh-fw-item'), '#dsh-fw-mlock 不得嵌套在 #dsh-fw-item 内');
+  assert.ok((anc['dsh-drop-tree'] || '').includes('dsh-fw-mlock'), '怪物掉落树应留在攻击名单窗口');
+  assert.ok((anc['dsh-z-maplock'] || '').includes('dsh-fw-mlock'), '本图攻击名单应在 mlock');
+  assert.ok((anc['dsh-locklist'] || '').includes('dsh-fw-mlock'), '攻击名单列表应在 mlock');
+  assert.ok((anc['dsh-lockcount'] || '').includes('dsh-fw-mlock'));
+  assert.ok((anc['dsh-mobsearch'] || '').includes('dsh-fw-mlock'), '怪物搜索（掉落树搜索）归攻击名单窗口');
+  for (const id of ['dsh-wllist', 'dsh-wlcount', 'dsh-bag-state', 'dsh-bag-clean', 'dsh-picken', 'dsh-pickwalk', 'dsh-picksafe', 'dsh-pickmap', 'dsh-pickmapbtn']) assert.ok((anc[id] || '').includes('dsh-fw-item'), id + ' 应在 #dsh-fw-item');
+});
+
+test('exp 物品搜索控件与代码已删净，「＋加入」落在白名单区块内', () => {
+  assert.ok(!expSource.includes('dsh-itemsearch'), '物品搜索输入框/按钮/结果区与绑定必须删净');
+  assert.ok(!expSource.includes('renderItemSearch'), 'renderItemSearch 必须删净');
+  assert.ok(!expSource.includes('buildItemXIndex'), '掉落反查索引（只服务物品搜索）必须删净');
+  const html = expHtmlByAttr('data-subpage="ap-item"', '// 子页9');
+  const anc = expAncestors(html);
+  assert.ok((anc['dsh-wlid'] || '').includes('dsh-fw-item'), '手动加ID输入应在物品窗口的白名单区块内');
+  assert.ok((anc['dsh-wladdbtn'] || '').includes('dsh-fw-item'), '「＋加入」按钮应在物品窗口的白名单区块内');
+  assert.ok(expSource.includes('$id("dsh-wladdbtn").addEventListener("click"'), '「＋加入」必须已绑定新的小ID输入行');
+  assert.ok(expSource.includes('function getItemNameS(id)'), 'getItemNameS 仍被图鉴/仓库统计复用，必须保留');
+});
+
+test('exp 技能点选/顺序表等级输入与释放% 即时写回守卫', () => {
+  assert.ok(expSource.includes('data-lvsel="'), '点选网格每行必须有等级输入');
+  assert.ok(expSource.includes('skillLine({ skid: skid, lv: lv, cond: "", prob: 100 })'), '勾选加入顺序表必须用输入框里的等级');
+  assert.ok(expSource.includes("if (++skillPickTicker % 3 === 0 && !skillEditFocused())"), '3 秒自动重绘必须有焦点守卫');
+  const guard = expExtract('  function skillEditFocused() {', '  $id("dsh-skillorder").addEventListener("input"');
+  assert.ok(guard.includes('document.activeElement'), '守卫必须判断 document.activeElement');
+  assert.ok(guard.includes('#dsh-skillorderlist') && guard.includes('#dsh-skillpick'), '守卫必须覆盖顺序表与点选网格');
+  const order = expExtract('  function renderSkillOrderList() {', '  function renderSkillPick() {');
+  assert.ok(order.includes('data-lv="'), '顺序表每行必须有等级输入');
+  assert.ok(order.includes('inp.addEventListener("input"'), '等级/释放% 必须走 input 即时写回');
+  assert.ok(order.includes('inp.addEventListener("blur"'), '失焦必须归一化');
+  assert.ok(order.includes('skDebounce('), '写回必须去抖');
+  assert.ok(!order.includes('inp.addEventListener("change"'), '释放% 不得再只绑 change（未失焦会被旧值弹回）');
+  assert.ok(order.includes('skPatch(skid'), '写回必须统一走 skillLine 序列化（7 段格式不变）');
+  assert.ok(order.includes('map(skillLine).join("\\n")'), '写回必须用 skillLine 原格式（7 段）拼回 textarea');
+});
+
+test('exp 版本号 v2.34.0 且文件头与运行时常量一致', () => {
+  assert.equal(/@version\s+(\S+)/.exec(expSource)?.[1], '2.34.0');
+  assert.equal(/var VER = "([^"]+)"/.exec(expSource)?.[1], '2.34.0');
+  assert.ok(expSource.includes('V2.34.0 变更摘要'), '文件头必须有 V2.34.0 变更摘要');
+});
+
+// ================= V2.34.0 追改：尾刀模式「等待残血补尾刀」对用户显式锁定的 BOSS 同样生效 =================
+test('exp 尾刀模式锁定跳过：守卫同时引用 zBossSkipGid 与 zLock.gid 且绝不清锁', () => {
+  const guard = expExtract('      // V2.34.0 追改：尾刀模式下锁定的 BOSS', '        EM.forEach(function (e) {');
+  assert.ok(guard.includes('zBossSkipGid'), '跳过守卫必须引用 zBossSkipGid');
+  assert.ok(guard.includes('zLock.gid'), '跳过守卫必须引用 zLock.gid');
+  assert.ok(expSource.includes('if (zLock.gid && !zLockBossSkip) {'), '锁定目标校验块必须由 !zLockBossSkip 守卫（未命中时整块行为不变）');
+  assert.ok(expSource.includes('var zLockBossSkip = !!(zBossSkipGid && zLock.gid && gidInt(zLock.gid) === zBossSkipGid);'), '守卫判定必须同时要求 skip 命中且锁指向它');
+  // 该跳过路径不得清锁：整份脚本里 zLock.gid = null 只允许改动前既有的 3 处
+  assert.doesNotMatch(guard, /zLock\.gid\s*=\s*(null|undefined|""|'')/, '跳过分支内不得出现清除 zLock.gid 的赋值');
+  assert.equal((expSource.match(/zLock\.gid = null/g) || []).length, 3, '不得新增任何清除 zLock.gid 的赋值（既有 3 处不变）');
+});
+
+test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中攻击者一路均未改动', () => {
+  // skip 只在「等待残血补尾刀」分支产出；瞬移/优先攻击分支不得出现 out.skip
+  const other = expExtract('if (act === "瞬移" && rec.mid != null', 'else if (act === "等待残血补尾刀") {');
+  assert.ok(!other.includes('out.skip'), '瞬移/优先攻击分支不得产出 skip（三模式行为不变）');
+  const tail = expExtract('else if (act === "等待残血补尾刀") {', '      zBossSkipGid = out.skip || 0;');
+  assert.ok(tail.includes('out.skip'), 'skip 只能由尾刀分支产出');
+  assert.ok(other.includes('act = "优先攻击"'), '瞬移模式下 BOSS 已在锁定名单仍转优先攻击');
+  assert.ok(other.includes('else if (act === "优先攻击") { out.want = gidInt(rec.GID); }'));
+  assert.ok(tail.includes('if (out.hp >= 0 && out.hp <= line) out.want = gidInt(rec.GID);'), '尾刀线内仍切去补尾刀');
+  // 候选池剔除保持 2 处（zWalk + zAttack），非选中攻击者一路仍排除锁定目标本身
+  assert.equal((expSource.match(/if \(zBossSkipGid && gidInt\(e\.GID\) === zBossSkipGid\) return;/g) || []).length, 2, '候选池剔除必须保持 zWalk/zAttack 各一处');
+  assert.ok(expSource.includes('if (gidInt(hk) === gidInt(zLock.gid)) continue; // 排除锁定目标本身'), '非选中攻击者一路不得改动');
 });

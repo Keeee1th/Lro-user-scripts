@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.34.6
+// @version      2.34.7
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -73,6 +73,8 @@
 // 3. 新增黄金副本：经本机 8899 保存/读取恢复副本，启动时自动补齐缺失的档与键（只补不覆盖）；功能菜单「导出配置/导入配置」同一行新增「保存为恢复副本」「恢复上次配置」两个按钮。
 // ---------------- V2.34.6 变更摘要 ----------------
 // 修复旧面板/旧聊天回执覆盖本地态导致无限 toggle：新增聊天回执增量观察、自动意图 800ms 稳定防抖、显式动作 350ms latest-wins 排队。
+// ---------------- V2.34.7 变更摘要 ----------------
+// 数据抓包迁入悬浮球功能菜单，改为复用标准 fwMakeWin 独立浮窗；不再依赖已弃用的旧设置面板或“传送”页 DOM。
 
 (function () {
   "use strict";
@@ -98,7 +100,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.34.6"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.34.7"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
 
   // V2.11.0：仓库+背包读取全局变量
@@ -1110,10 +1112,6 @@
       '<div id="dsh-menu-recon" style="font-size:11px;max-height:140px;overflow:auto;background:#f6f8fa;border:1px solid #dfe5ec;border-radius:4px;padding:6px;white-space:pre-wrap">菜单：未捕获（点NPC对话后自动出现）</div>' +
       '<div class="st" id="dsh-menu-status" style="font-size:11px">自动上报：待命</div>' +
       '<div class="row" style="margin-top:6px;gap:6px"><button id="dsh-menu-export" style="flex:0 0 auto">导出JSON</button><button class="ghost" id="dsh-menu-copy" style="flex:0 0 auto">复制</button></div>' +
-      '<div class="sec">出站抓包（真机对比用）</div>' +
-      '<div class="row" style="gap:6px;flex-wrap:wrap"><button id="dsh-txcap" style="flex:0 0 auto">开始抓包</button><button class="ghost" id="dsh-txstop" style="flex:0 0 auto">停止</button><button class="ghost" id="dsh-txexp" style="flex:0 0 auto">导出</button><button class="ghost" id="dsh-txdl" style="flex:0 0 auto">下载成文件</button><button class="ghost" id="dsh-spheredump" style="flex:0 0 auto">导出气弹诊断</button></div>' +
-      '<div class="st" id="dsh-txlog" style="font-size:11px">出站抓包：未开始</div>' +
-      '<textarea id="dsh-txout" style="width:100%;height:110px;font-size:10px;font-family:monospace" readonly placeholder="点「导出出站序列」后这里出现内容"></textarea>' +
       '<div class="row" style="margin-top:6px;align-items:center;gap:6px"><span class="lb" style="min-width:0;margin:0">选第</span><input id="dsh-menu-num" type="number" min="0" value="0" style="flex:0 0 48px;padding:3px 6px"><span class="lb" style="margin:0">项</span><button id="dsh-menu-choose" style="flex:0 0 auto">发 CHOOSE_MENU</button><button class="ghost" id="dsh-menu-next" style="flex:0 0 auto">下一段</button></div>',
     system: '' +
       '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">画面性能</span>' +
@@ -1857,10 +1855,26 @@
     } catch (e) { return fwError(onlyId || "refresh", "刷新内容", e, true); }
   }
 
+  // V2.34.7：抓包内容自建隐藏宿主，标准浮窗打开时移动该节点；不依赖旧面板/传送页 DOM。
+  function txCapEnsureHost() {
+    var host = document.getElementById("dsh-fw-txcap");
+    if (host) return host;
+    var dock = document.getElementById("dsh-txcap-dock");
+    if (!dock) { dock = document.createElement("div"); dock.id = "dsh-txcap-dock"; dock.style.display = "none"; document.documentElement.appendChild(dock); }
+    host = document.createElement("div"); host.id = "dsh-fw-txcap";
+    host.innerHTML = '<div class="sec">数据抓包（真机对比用）</div>' +
+      '<div class="row" style="gap:6px;flex-wrap:wrap"><button id="dsh-txcap" style="flex:0 0 auto">开始抓包</button><button class="ghost" id="dsh-txstop" style="flex:0 0 auto">停止</button><button class="ghost" id="dsh-txexp" style="flex:0 0 auto">导出</button><button class="ghost" id="dsh-txdl" style="flex:0 0 auto">下载成文件</button><button class="ghost" id="dsh-spheredump" style="flex:0 0 auto">导出气弹诊断</button></div>' +
+      '<div class="st" id="dsh-txlog" style="font-size:11px">双向抓包：未开始</div>' +
+      '<textarea id="dsh-txout" style="width:100%;height:180px;font-size:10px;font-family:monospace" readonly placeholder="点「导出」后这里出现内容"></textarea>';
+    dock.appendChild(host);
+    return host;
+  }
+
   // 三个可浮窗区块注册（V2.10.0）：本图怪物锁定 / 传送功能 / 助手技能设置
   try {
     fwReg("mlock", "攻击名单", function () { return document.getElementById("dsh-fw-mlock"); });
     fwReg("tp", "传送功能", function () { return document.getElementById("dsh-fw-tp"); });
+    fwReg("txcap", "数据抓包", txCapEnsureHost);
     fwReg("zhu2", "战斗设置", function () { return document.getElementById("dsh-fw-zhu2"); });
     // V2.34.0：原「助手战斗设置」页内三页签拆成三个一级浮窗，各自独立登记
     fwReg("zskill", "技能设置", function () { return document.getElementById("dsh-fw-zskill"); });
@@ -1941,6 +1955,7 @@
     { id: "tgt",   name: "目标状态",        kind: "fw", sec: "提示" },
     { id: "znear", name: "附近怪物实时列表", kind: "fw", sec: "提示" },
     { id: "perf",  name: "画面性能",        kind: "fw", sec: "其他" },
+    { id: "txcap", name: "数据抓包",        kind: "fw", sec: "其他" },
     { id: "mvp",   name: "MVP 计时",        kind: "custom", sec: "其他" },
     { id: "panel", name: "高级设置",        kind: "page", sec: "其他" }
   ];

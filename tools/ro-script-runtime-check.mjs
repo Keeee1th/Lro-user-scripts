@@ -573,7 +573,7 @@ test('exp 功能菜单五栏顺序与条目齐全', () => {
   assert.deepEqual(Array.from(ctx.bySec['战斗功能']), ['mlock', 'zhu2', 'zskill']);
   assert.deepEqual(Array.from(ctx.bySec['战斗辅助']), ['aid', 'party', 'dps', 'boss', 'askcombo', 'item']);
   assert.deepEqual(Array.from(ctx.bySec['提示']), ['zhud', 'ztip', 'tgt', 'znear']);
-  assert.deepEqual(Array.from(ctx.bySec['其他']), ['perf', 'mvp', 'panel']);
+  assert.deepEqual(Array.from(ctx.bySec['其他']), ['perf', 'txcap', 'mvp', 'panel']);
 });
 
 test('exp 三个一级窗口容器 + fwReg + RO_MODULES 登记齐全且走标准浮窗分支', () => {
@@ -717,8 +717,8 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
   // 1) 版本号：稳定版与实验版都必须是 2.34.5（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.34.6', name + ' @version 必须是 2.34.6');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.34.6', name + ' 运行时常量 VER 必须是 2.34.6');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.34.7', name + ' @version 必须是 2.34.7');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.34.7', name + ' 运行时常量 VER 必须是 2.34.7');
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
   const stripHead = (s) => s.split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
@@ -1076,8 +1076,8 @@ test('V2.34.5 战斗诊断快照 prof 字段已就位（不改既有字段）', 
 // ================= V2.34.5：配置自动备份（两代）/ 黄金副本找回（纯函数真值表 / 按钮 / 键隔离）=================
 test('V2.34.5 版本号升到 2.34.5（@version 与运行时常量一致，两文件同步）', () => {
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.34.6', name + ' @version 必须是 2.34.6');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.34.6', name + ' 运行时常量 VER 必须是 2.34.6');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.34.7', name + ' @version 必须是 2.34.7');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.34.7', name + ' 运行时常量 VER 必须是 2.34.7');
   }
 });
 
@@ -1201,3 +1201,17 @@ test('V2.34.6 explicit OFF after ON waits remainder then sends once',()=>{const 
 test('V2.34.6 failed explicit timer clears without periodic retry',()=>{const h=battleVm();h.req(true,'on',true);h.tick(100);h.ctx.send=false;h.req(false,'off',true);h.tick(250);assert.equal(h.pending(),0);assert.equal(h.ctx.npBattleExplicit,null);h.tick(30000);assert.equal(h.packets.length,2)});
 test('V2.34.6 automatic twenty rounds do not resend after prediction',()=>{const h=battleVm();h.req(true,'auto',false);h.tick(800);h.req(true,'auto',false);for(let i=0;i<20;i++){h.tick(800);h.req(true,'auto',false)}assert.equal(h.packets.length,1);assert.equal(h.ctx.npHuntOn,true)});
 test('V2.34.6 state declarations precede observer installation',()=>{for(const src of[source,expSource])assert.ok(src.indexOf('var npHuntOn = false')<src.indexOf('npWatchBattleChat();'))});
+
+// ================= V2.34.7：功能菜单独立数据抓包浮窗 =================
+test('V2.34.7 数据抓包由功能菜单打开标准独立浮窗且不依赖旧面板页面 DOM', () => {
+  for (const [name, src] of [['stable', source], ['exp', expSource]]) {
+    assert.ok(src.includes('{ id: "txcap", name: "数据抓包",        kind: "fw", sec: "其他" }'), name + ' RO_MODULES 缺数据抓包');
+    assert.ok(src.includes('fwReg("txcap", "数据抓包", txCapEnsureHost);'), name + ' 未走标准 fwReg');
+    const host = src.slice(src.indexOf('  function txCapEnsureHost() {'), src.indexOf('  // 三个可浮窗区块注册'));
+    for (const id of ['dsh-txcap', 'dsh-txstop', 'dsh-txexp', 'dsh-txdl', 'dsh-txlog', 'dsh-txout']) assert.ok(host.includes(id), name + ' 抓包浮窗缺 ' + id);
+    assert.ok(host.includes('document.documentElement.appendChild(dock)'), name + ' 抓包宿主未独立挂载');
+    const teleport = src.slice(src.indexOf('    teleport:'), src.indexOf('    system:'));
+    assert.doesNotMatch(teleport, /dsh-tx(?:cap|stop|exp|dl|log|out)/, name + ' 抓包仍依赖 teleport 页 DOM');
+    assert.ok(src.includes('if (!fwActualOpen(id)) fwOpen(id, false);'), name + ' 功能菜单未走标准 fwOpen 分支');
+  }
+});

@@ -1426,7 +1426,7 @@ test('V2.36.0 builtin dojo joins the shared lease and refuses when the lease is 
   assert.deepEqual(okk.calls.filter(c=>c[0]==='clear')[0],['clear','builtin-dojo']);
 });
 
-test('V2.36.0 undroppable or unknown items only exit through mail and bag',()=>{
+test('V2.36.1 出口策略三态：显式不可丢锁 mail/bag，unknown 与普通物品放行',()=>{
   for(const[name,s]of splitSources){
     assert.ok(s.includes('itemOutletAllowed(it.ITID, "sell")'),name+' NPC 出售必须走出口校验');
     assert.ok(s.includes('itemOutletAllowed(id, "store")'),name+' 仓库存放必须走出口校验');
@@ -1450,19 +1450,34 @@ test('V2.36.0 undroppable or unknown items only exit through mail and bag',()=>{
   assert.equal(nd.out(501,'mail').ok,true);
   assert.equal(nd.out(501,'mail').restricted,true);
   assert.equal(nd.out(501,'bag').ok,true);
-  const un=outlet(null);
+  const un=outlet(null); // V2.36.1：DB / 字段完全无法判定 → unknown 不锁出口，恢复原行为放行
   assert.equal(un.state(501),'unknown');
-  assert.equal(un.out(501,'sell').ok,false);
+  assert.equal(un.out(501,'sell').ok,true);
+  assert.equal(un.out(501,'store').ok,true);
   assert.equal(un.out(501,'mail').ok,true);
   assert.equal(un.out(501,'bag').ok,true);
   const keep=outlet({NoDrop:0});
   assert.equal(keep.state(501),'keep');
   assert.equal(keep.out(501,'sell').ok,true);
+  const keepStr=outlet({no_drop:'0'});
+  assert.equal(keepStr.state(501),'keep');
+  assert.equal(keepStr.out(501,'store').ok,true);
+  const keepUndef=outlet({NoDrop:undefined}); // 字段疑似存在但没给值 → 视同无证据，按可丢放行
+  assert.equal(keepUndef.state(501),'keep');
+  assert.equal(keepUndef.out(501,'sell').ok,true);
+  const unk=outlet({NoDrop:'yes'}); // 字段在但取值无法判定 → 保守锁出口
+  assert.equal(unk.state(501),'nodrop');
+  assert.equal(unk.out(501,'sell').ok,false);
+  assert.equal(unk.out(501,'mail').ok,true);
+  const plain=outlet({identifiedDisplayName:'红色药水',identifiedDescriptionName:'恢复少量 HP'}); // 普通物品无任何 NoDrop 字段 → 必须可卖可存
+  assert.equal(plain.state(501),'keep');
+  assert.equal(plain.out(501,'sell').ok,true);
+  assert.equal(plain.out(501,'store').ok,true);
   const txt=outlet({identifiedDescriptionName:'某材料'+String.fromCharCode(10)+'无法丢弃'});
   assert.equal(txt.state(501),'nodrop');
   const badId=outlet({NoDrop:0});
   assert.equal(badId.state('x'),'unknown');
-  assert.equal(badId.out(0,'sell').ok,false);
+  assert.equal(badId.out(0,'sell').ok,true); // 非法 ID → unknown → 放行，不再整类拒绝
 });
 
 test('V2.36.0 mail probing is fail-closed when no complete MAIL packet constructor exists',()=>{
@@ -1508,6 +1523,118 @@ test('V2.36.0 mail probing is fail-closed when no complete MAIL packet construct
   const notReady=mailVm({MAIL_SEND:function(){this.to='';this.title='';this.body='';this.itemIndex=0;this.itemAmount=0;}},false);
   assert.equal(notReady.ctx.send({to:'u1'}).error,'client-not-ready');
   assert.equal(notReady.sent.length,0);
+});
+
+// ================= V2.36.1 出口策略三态修正 + 合并后行为门禁（独立审计 B1 / B2）=================
+test('V2.36.1 普通物品（无 NoDrop 字段）恢复可卖可存，只有显式或可疑不可丢才锁出口',()=>{
+  const code=extract('  var ITEM_OUTLET_NOTE=','  // pushplus：token');
+  function outlet(info){
+    const ctx={CLIENT:{DB:{getItemInfo:()=>info}},requireDB:()=>null,Object,Number,String,Array};
+    vm.createContext(ctx);vm.runInContext(code+';this.state=itemNoDropState;this.out=itemOutletAllowed',ctx);
+    return ctx;
+  }
+  const plain=outlet({identifiedDisplayName:'红色药水',identifiedDescriptionName:'恢复少量 HP'}); // 普通物品：DB 里没有 NoDrop 类字段
+  assert.equal(plain.state(501),'keep','无 NoDrop 字段的普通物品必须判为可丢');
+  assert.equal(plain.out(501,'sell').ok,true,'普通物品必须允许 NPC 出售（回归点）');
+  assert.equal(plain.out(501,'store').ok,true,'普通物品必须允许存仓（回归点）');
+  assert.equal(plain.out(501,'sell').state,'keep');
+  const undef=outlet({NoDrop:undefined});
+  assert.equal(undef.state(501),'keep','字段没给值不算不可丢证据');
+  assert.equal(undef.out(501,'sell').ok,true);
+  const zero=outlet({Undroppable:'0'});
+  assert.equal(zero.state(501),'keep');
+  assert.equal(zero.out(501,'store').ok,true);
+  const odd=outlet({NoDrop:'yes'}); // 字段在但取值无法判定 → 保守
+  assert.equal(odd.state(501),'nodrop');
+  assert.equal(odd.out(501,'sell').ok,false);
+  assert.equal(odd.out(501,'store').error,'item-outlet-locked');
+  assert.equal(odd.out(501,'mail').ok,true);
+  assert.equal(odd.out(501,'bag').ok,true);
+  assert.match(odd.out(501,'sell').note,/只允许/,'锁定文案必须保留');
+  const explicit=outlet({NoDrop:1});
+  assert.equal(explicit.state(501),'nodrop');
+  assert.equal(explicit.out(501,'sell').ok,false);
+  assert.equal(explicit.out(501,'mail').ok,true);
+  assert.equal(explicit.out(501,'mail').restricted,true);
+  assert.equal(explicit.out(501,'bag').ok,true);
+  const described=outlet({identifiedDescriptionName:'某材料'+String.fromCharCode(10)+'无法丢弃'});
+  assert.equal(described.state(501),'nodrop');
+  assert.equal(described.out(501,'store').ok,false);
+  const noDb=outlet(null); // DB 拿不到 / 物品不在库 → unknown → 放行（恢复原行为）
+  assert.equal(noDb.state(501),'unknown');
+  assert.equal(noDb.out(501,'sell').ok,true);
+  assert.equal(noDb.out(501,'store').ok,true);
+  const badId=outlet({NoDrop:0});
+  assert.equal(badId.state('x'),'unknown');
+  assert.equal(badId.out(0,'store').ok,true);
+});
+
+test('V2.36.1 内置道馆换箭 gate：未就绪 / 被阻塞 / 目标不匹配都不开战',()=>{
+  const code=extract('  function dojoTick(g){','  function dojoStart(){');
+  const base={ready:true,inDojoMap:true,mobs:[],npcs:[],player:{position:[0,0],hp:100,maxHp:100},dialogOpen:false,menu:null}; // ready:true 否则 dojoTick 直接 dojoStop
+  function tick(arrow,arrowCfg,mob,extra){
+    const calls=[];
+    const run={on:true,generation:1,phase:'',npc:null,lastMenu:'',lastFly:0,round:0,remaining:null,timer:null};
+    const arrowRules=arrowCfg||{enabled:false};
+    const m=mob||{mid:1002,gid:42,dead:false};
+    const e=extra||{};
+    const snap=Object.assign({},base,{mobs:[m],arrow:arrow},e.arrow!==undefined?{arrow:e.arrow}:{});
+    const a={snapshot:()=>snap,setArrowTarget:()=>{calls.push(['setArrow']);return{ok:true};},requestBattle:(o,on)=>{calls.push(['battle',on]);},clearArrowTarget:()=>calls.push(['clearArrow']),contactNpc:()=>calls.push(['contact']),walkTo:()=>calls.push(['walk']),requestFly:()=>calls.push(['fly']),chooseMenu:()=>calls.push(['choose'])};
+    const ctx={dojoRun:run,dojoCfg:Object.assign({difficulty:'advanced',stop100:false,fly:false,emergency:false},e.cfg||{}),
+      arrowRules:e.arrowRules||arrowRules,DOJO_OWNER:'builtin-dojo',dojoApi:()=>a,dojoRender:()=>{},dojoStop:r=>{calls.push(['stop',r]);return r;},
+      dojoChoose:()=>false,dojoContact:()=>{},dojoNorm:s=>String(s||''),Math,Number,String,Array,Object,Infinity,Date};
+    vm.createContext(ctx);vm.runInContext(code+';this.tick=dojoTick',ctx);
+    ctx.tick(1);
+    const battles=calls.filter(c=>c[0]==='battle');
+    return {calls,on:battles.length?battles[battles.length-1][1]:undefined,phase:run.phase};
+  }
+  const r1=tick({enabled:true,ready:false,blocked:false,target:{mid:1002,gid:42}});
+  assert.equal(r1.on,false,'enabled=true 但 ready=false 必须禁止开战');
+  assert.equal(r1.phase,'等待换箭就绪');
+  assert.equal(tick({enabled:true,ready:true,blocked:true,target:{mid:1002,gid:42}}).on,false,'blocked=true 必须禁止开战');
+  assert.equal(tick({enabled:true,ready:true,blocked:false,target:{mid:9999,gid:42}}).on,false,'换箭目标不匹配（mid 不同）必须禁止开战');
+  assert.equal(tick({enabled:true,ready:true,blocked:false,target:{mid:1002,gid:77}}).on,false,'换箭目标不匹配（gid 不同）必须禁止开战');
+  assert.equal(tick({enabled:true,ready:true,blocked:false,target:null}).on,false,'没有换箭目标必须禁止开战');
+  const ok=tick({enabled:true,ready:true,blocked:false,target:{mid:1002,gid:42}});
+  assert.equal(ok.on,true,'ready 且未阻塞且目标匹配必须开战');
+  assert.equal(ok.phase,'战斗中');
+  const basic=tick({enabled:false}, {enabled:false}, null, {cfg:{difficulty:'basic'}}); // basic + arrow.enabled=false → 放行
+  assert.equal(basic.on,true,'基本难度且未启用换箭必须放行（不受 ready/blocked 影响）');
+  assert.equal(basic.phase,'战斗中');
+  const basicOn=tick({enabled:false}, {enabled:false}, null, {cfg:{difficulty:'basic'}, arrowRules:{enabled:true}});
+  assert.equal(basicOn.on,true,'放行只看快照 arrow.enabled=false，与本地 arrowRules.enabled 无关');
+  const mid=tick({enabled:false});
+  assert.equal(mid.on,false,'advanced 难度且换箭未启用必须禁止开战');
+});
+
+test('V2.36.1 暂停与限次顺序：先清定时器 / 先占位指纹再发包（审计 B2 迁移）',()=>{
+  // B2-1 占位先于发包：菜单指纹必须在 chooseMenu 之前写进 dojoRun.lastMenu（防重复提交）
+  const choose=extract('  function dojoChoose(a,s)','  function dojoNpcs(');
+  const reserve=choose.indexOf('dojoRun.lastMenu=m.fingerprint');
+  const send=choose.indexOf('a.chooseMenu(DOJO_OWNER,');
+  assert.ok(reserve>=0&&send>reserve,'菜单指纹必须在发包前占位');
+  // B2-2 暂停先清 interval：dojoStop 必须先清定时器再进入停止态
+  const stop=extract('  function dojoStop(reason){','  function dojoRender(){');
+  const onOff=stop.indexOf('dojoRun.on=false');
+  const clear=stop.indexOf('clearInterval(dojoRun.timer)');
+  const null0=stop.indexOf('dojoRun.timer=null');
+  assert.ok(onOff>=0&&clear>onOff,'dojoStop 必须先置 on=false 再清定时器（顺序性回归）');
+  assert.ok(null0>clear,'清定时器后必须把 timer 置回 null');
+  for(const[name,s]of splitSources){
+    const m=s.match(/if\(dojoCfg\.stop100&&dojoRun\.round>=100\)return dojoStop\("第100轮领奖前暂停"\)/);
+    assert.ok(m,name+' 100 轮领奖前暂停必须仍然触发 dojoStop');
+  }
+  // 行为：定期器在清掉时必须已经不再挂在 run.timer 上
+  const run={on:true,generation:1,phase:'',npc:null,lastMenu:'',lastFly:0,round:100,remaining:1,timer:7};
+  const calls=[];
+  const ctx={dojoRun:run,dojoCfg:{difficulty:'basic',stop100:true,fly:false,emergency:false},
+    dojoApi:()=>null,dojoRender:()=>{},clearInterval:t=>{calls.push(['clearInterval',t,run.on,run.timer]);run.timer=null;},
+    Math,Number,String,Array,Object,Date};
+  vm.createContext(ctx);vm.runInContext(extract('  function dojoStop(reason){','  function dojoRender(){')+';this.stop=dojoStop',ctx);
+  ctx.stop('第100轮领奖前暂停');
+  assert.deepEqual(calls[0],['clearInterval',7,false,7],'清定时器时 run.on 必须已是 false');
+  assert.equal(run.timer,null);
+  assert.equal(run.phase,'第100轮领奖前暂停');
 });
 
 test('V2.36.0 builtin dojo keeps standalone semantics for menu NPC and arrow gates',()=>{

@@ -13892,38 +13892,45 @@
 
   // ================= V2.36.0 不可丢物品出口策略 / pushplus / 窗口注册门面 =================
   // 不可丢物品：只认 DB 明确字段（NoDrop 等）或描述里的“无法丢弃”字样。
-  // 标记为不可丢、或字段缺失导致状态未知时，只放行 mail（邮件）与 bag（背包丢弃）两个出口。
+  // V2.36.1 三态：nodrop（显式或可疑不可丢）只放行 mail 与 bag；keep（显式可丢或读不到不可丢证据）放行全部；
+  // unknown（DB/字段整体无法判定）同样不锁出口，交回原行为放行出售与存仓——只有 nodrop 才锁。
   var ITEM_OUTLET_NOTE="不可丢或状态未知的物品只允许「邮件发送」「背包丢弃」两个出口，NPC 出售 / 仓库存放等其它出口一律拒绝。";
   var ITEM_NODROP_FIELDS=["NoDrop","noDrop","nodrop","NoDropFlag","Undroppable","CantDrop","CannotDrop","NotDroppable","DropDeny","no_drop"];
+  // V2.36.1：三态出口策略修正——只有"显式或被描述证明不可丢"才锁定出口，
+  // DB / 字段完全无法判定时返回 unknown 放行出售与存仓，避免普通物品被整类误锁（功能回归修复）。
   function itemNoDropState(itid){
     try{
       var id=Number(itid);if(!Number.isInteger(id)||id<=0)return "unknown";
       var db=CLIENT.DB||requireDB("DB/DBManager");
-      if(!db||typeof db.getItemInfo!=="function")return "unknown";
+      if(!db||typeof db.getItemInfo!=="function")return "unknown"; // 拿不到物品库，无从判定 → 交回出口策略放行
       var info=db.getItemInfo(id);
-      if(!info||typeof info!=="object")return "unknown";
+      if(!info||typeof info!=="object")return "unknown"; // 物品不在库中，同样无从判定 → 放行
       for(var i=0;i<ITEM_NODROP_FIELDS.length;i++){
         var k=ITEM_NODROP_FIELDS[i];
         if(!Object.prototype.hasOwnProperty.call(info,k))continue;
         var v=info[k];
-        if(v===true||v===1||v==="1")return "nodrop";
-        if(v===false||v===0||v==="0")return "keep";
-        return "unknown"; // 字段在但取值不明 → 未知，按不可丢处理
+        if(v===false||v===0||v==="0")return "keep"; // 显式可丢 → 放行所有出口
+        if(v!==true&&v!==1&&v!=="1"){
+          if(v==null)continue; // null / undefined 视同未给值，继续看下一个字段
+          return "nodrop"; // 字段在但取值无法判定 → 保守按不可丢锁出口
+        }
+        return "nodrop"; // 显式不可丢 → 除 mail / bag 外一律拒绝
       }
-      // 无标记字段时退回描述文本探测（无法丢弃 / 不可丢弃 / 不能丢弃）
+      // 物品确实读到、但没有任何标记字段：仅在描述文本证明不可丢时锁定，否则按可丢处理（恢复原行为）
       var descs=[info.identifiedDescriptionName,info.unidentifiedDescriptionName];
       for(var j=0;j<descs.length;j++){
         var raw=descs[j];if(raw==null)continue;
         var text=(Array.isArray(raw)?raw.join("\n"):String(raw)).replace(/\^[0-9a-f]{6}/gi,"").replace(/<[^>]*>/g," ");
         if(/无法丢弃|不可丢弃|不能丢弃/.test(text))return "nodrop";
       }
-      return "unknown"; // 无明确标记 → 未知，不放行其它出口
-    }catch(e){return "unknown";}
+      return "keep"; // 三态收敛：读到物品且无任何“不可丢”证据 → 可丢，放行出售与存仓（恢复原行为）
+    }catch(e){return "nodrop";} // 判定过程抛错 → 保守锁出口（保留原有兜底方向）
   }
   function itemOutletAllowed(itid,outlet){
     try{
       var state=itemNoDropState(itid);
       if(state==="keep")return {ok:true,state:state,restricted:false};
+      if(state==="unknown")return {ok:true,state:state,restricted:false}; // V2.36.1：三态里只有 nodrop 才锁出口；unknown 不锁，恢复原行为
       if(outlet==="mail"||outlet==="bag")return {ok:true,state:state,restricted:true};
       return {ok:false,error:"item-outlet-locked",state:state,note:ITEM_OUTLET_NOTE};
     }catch(e){return {ok:false,error:"item-outlet-locked",state:"unknown",note:ITEM_OUTLET_NOTE};}

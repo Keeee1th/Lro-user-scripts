@@ -1,0 +1,818 @@
+// ==UserScript==
+// @name         私有客户端只读探针
+// @namespace    dsh.ro-probe
+// @version      1.0.0
+// @match        http://127.0.0.1:8971/*
+// @match        http://localhost:8971/*
+// @grant        none
+// @run-at       document-idle
+// @description  只读探测本机私有客户端（不发包、不登录、不写存储）
+// @author       DSH
+// ==/UserScript==
+
+/* ============================================================
+ * private-client-probe.user.js —— 本机私有客户端「只读」探针（油猴版）
+ * 目标页面：http://127.0.0.1:8971/ （标题：仙境传说 网页客户端启动器）
+ *
+ * 为什么跑在启动器页而不是客户端入口页：
+ *   /client/api.html 单独开标签页必然黑屏（它要等父窗口 postMessage 引导），
+ *   所以探针必须挂在启动器页上，只读探测 #roeFrame 的 contentWindow（同源可直接访问）。
+ *
+ * 用法：
+ *   1. 油猴（Tampermonkey / Violentmonkey）安装本脚本。
+ *   2. 打开 http://127.0.0.1:8971/ ，让客户端 iframe（#roeFrame）跑起来。
+ *   3. 打开 F12 Console 看结果 JSON；脚本同时会尝试复制到剪贴板，
+ *      并 POST 到本机 http://127.0.0.1:8899/api/probe-collect 。
+ *
+ * 只读硬约束（与 tools/private-client-probe.js 同源同口径）：
+ *   - 不发任何游戏封包：封包构造器只做 typeof 检查，绝不实例化、绝不调用 sendPacket。
+ *   - 不登录、不读账号/口令/令牌；绝不写 localStorage / sessionStorage（只数 dsh_ro_ 前缀键名个数）。
+ *   - 不点击、不勾选、不改 DOM、不改目标窗口任何对象属性；除「等 iframe 就绪」的 500ms 轮询外
+ *     不注册任何定时器，就绪或超时后一定 clearInterval。
+ *   - 只输出白名单化的键名与类型；字符串内容一律不打印（只给长度）。
+ * ============================================================ */
+(function () {
+  'use strict';
+
+  var ENDPOINT = 'http://127.0.0.1:8899/api/probe-collect';
+  var POLL_MS = 500;
+  var DEADLINE_MS = 60000;
+  var GUARD = '__dshPrivateClientProbeV1';
+
+  // 防重入：同一页面只跑一次（本仓库其它脚本另有前缀，互不干扰）
+  try { if (window[GUARD]) { return; } window[GUARD] = true; } catch (e) { /* 顶层 window 不可读则忽略防重入 */ }
+
+  /* ==PROBE-CORE-BEGIN== */
+  /* ---------- 采集核心：无副作用、不碰顶层 window、不碰 localStorage 写接口 ---------- */
+
+  var CAP_KEYS = 200;
+  var CAP_CZ_KEYS = 160;
+  var CAP_LIST = 300;
+  var CAP_ITER = 5000;
+
+  var GLOB_RE = /client|entity|network|packet|legacy|bridge|ro|renderer|engine/i;
+  var AUTO_RE = /auto|assist|robot|bot|hunt|battle|farm/i;
+
+  var REQ_CANDIDATES = [
+    'Renderer/EntityManager',
+    'Utils/PathFinding',
+    'Engine/SessionStorage',
+    'Network/NetworkManager',
+    'Network/PacketStructure'
+  ];
+
+  var LIFE_FIELDS = ['hp', 'maxhp', 'maxHp', 'hp_max', 'max_hp', 'sp', 'maxsp', 'maxSp', 'sp_max'];
+
+  var FLAG_NAMES = ['__dshBattle', 'npHuntOn', 'ROConfig', '__ROExt', '__ROPlugin', '__dshStorageCache', 'autoBattle', 'autoAttack', 'autoFight', '__AUTO_BATTLE__'];
+
+  var AB_SELS = [
+    { sel: '#vbk', what: '内挂主面板容器' },
+    { sel: '#vbk input.openattack', what: '内挂自动战斗开关（面板权威状态来源）' },
+    { sel: 'input.openattack', what: '自动战斗开关（不限容器）' },
+    { sel: '#chatbox', what: '聊天窗容器' },
+    { sel: '#chatbox .containers .border', what: '聊天回执容器（开启/关闭自动战斗文本）' },
+    { sel: '#dsh-ro-panel', what: '本仓库助手主面板' },
+    { sel: '#dsh-ro-menu', what: '本仓库助手菜单' },
+    { sel: '#dsh-ball', what: '本仓库助手悬浮球' }
+  ];
+
+  var ASSIST_SEL = '[id^="dsh-"],[class*="dsh-"]';
+  var ASSIST_GLOBALS = ['__dshDiag', '__dshCombinedActive', '__dshBattle', 'dshDiag', 'inAssistantUI'];
+
+  function errOf(e) {
+    try {
+      if (!e) return 'unknown error';
+      var nm = e.name ? String(e.name) : '';
+      var msg = (e.message === undefined || e.message === null) ? String(e) : String(e.message);
+      return (nm ? nm + ': ' : '') + msg;
+    } catch (e2) {
+      return 'unreadable error';
+    }
+  }
+
+  function typeName(v) {
+    try {
+      if (v === null) return 'null';
+      if (v === undefined) return 'undefined';
+      if (typeof v === 'object' && Object.prototype.toString.call(v) === '[object Array]') return 'array';
+      return typeof v;
+    } catch (e) { return 'unreadable'; }
+  }
+
+  function ctorName(v) {
+    try {
+      if (v === null || v === undefined) return null;
+      var c = v.constructor;
+      return (c && c.name) ? String(c.name) : null;
+    } catch (e) { return null; }
+  }
+
+  // 只返回类型/结构；boolean 与 number 附带取值，字符串只给长度（内容不打印）
+  function safeValue(v) {
+    var r = { type: typeName(v) };
+    try {
+      if (r.type === 'boolean' || r.type === 'number') {
+        r.value = v;
+      } else if (r.type === 'string') {
+        r.length = v.length;
+      } else if (r.type === 'object' || r.type === 'function' || r.type === 'array') {
+        r.ctor = ctorName(v);
+      }
+    } catch (e) { r.error = errOf(e); }
+    return r;
+  }
+
+  function keysOf(o, cap) {
+    var res = { ok: false, count: null, keys: null, error: null, truncated: false };
+    try {
+      if (o === null || o === undefined) { res.error = 'not available (' + typeName(o) + ')'; return res; }
+      var t = typeof o;
+      if (t !== 'object' && t !== 'function') { res.error = 'not an object (' + t + ')'; return res; }
+      var ks = Object.keys(o);
+      res.ok = true;
+      res.count = ks.length;
+      res.keys = ks.slice(0, cap || CAP_KEYS);
+      res.truncated = ks.length > res.keys.length;
+    } catch (e) { res.error = errOf(e); }
+    return res;
+  }
+
+  function keyList(o, cap) {
+    var k = keysOf(o, cap);
+    return k.ok ? k.keys : null;
+  }
+
+  function describe(v) {
+    var d = { type: typeName(v) };
+    try {
+      if (d.type === 'boolean' || d.type === 'number') d.value = v;
+      if (v !== null && v !== undefined && (d.type === 'object' || d.type === 'function' || d.type === 'array')) {
+        d.ctor = ctorName(v);
+        var k = keysOf(v, 60);
+        d.keyCount = k.count;
+        d.keys = k.keys;
+        d.keysError = k.error;
+      }
+    } catch (e) { d.error = errOf(e); }
+    return d;
+  }
+
+  function describeProp(o, k) {
+    try { return describe(o[k]); }
+    catch (e) { return { type: 'unreadable', error: errOf(e) }; }
+  }
+
+  function hasProp(o, k) {
+    try { return !!(o && (k in o)); } catch (e) { return false; }
+  }
+
+  // 只数元素个数，不读文本、不改 DOM
+  function countEls(win, sel) {
+    var res = { count: 0, error: null };
+    try {
+      var d = win ? win.document : null;
+      if (!d || typeof d.querySelectorAll !== 'function') { res.error = 'document.querySelectorAll 不可用'; return res; }
+      var list = d.querySelectorAll(sel);
+      res.count = list ? list.length : 0;
+    } catch (e) { res.error = errOf(e); }
+    return res;
+  }
+
+  // 只枚举键名（不读任何键值、不写、不删）
+  function storageKeyNames(win, prefix) {
+    var res = { available: false, prefix: prefix, count: 0, keys: [], capped: false, error: null };
+    try {
+      var ls = win ? win.localStorage : null;
+      if (!ls) { res.error = 'localStorage 不可用'; return res; }
+      res.available = true;
+      var total = 0;
+      try { total = (typeof ls.length === 'number') ? ls.length : 0; } catch (e) { total = 0; }
+      for (var i = 0; i < total && i < CAP_ITER; i++) {
+        var k = null;
+        try { k = ls.key(i); } catch (e) { k = null; }
+        if (typeof k !== 'string') continue;
+        if (prefix && k.indexOf(prefix) !== 0) continue;
+        res.count++;
+        if (res.keys.length < 60) res.keys.push(k);
+        else res.capped = true;
+      }
+    } catch (e) { res.error = errOf(e); }
+    return res;
+  }
+
+  /* collectFrom(win)：纯采集函数。
+   * 只读入参 win（目标 iframe 的 contentWindow），不读顶层 window、不碰任何存储写接口、
+   * 不改 win 及其任何属性、不注册定时器、不打印任何字符串内容。返回结果对象。 */
+  function collectFrom(win) {
+    var out = {
+      probe: 'private-client-probe',
+      version: '1.0.0',
+      generatedAt: null,
+      ready: null,
+      targetHow: null,
+      href: null,
+      hasRequire: null,
+      hasClient: null,
+      clientKeys: null,
+      clientReadError: null,
+      clientSSKeys: null,
+      clientNMKeys: null,
+      clientPSKeys: null,
+      globals: null,
+      globalsInfo: null,
+      requireProbe: null,
+      moduleSources: null,
+      entityProbe: null,
+      lifeProbe: null,
+      packetProbe: null,
+      autoBattleProbe: null,
+      frame: null,
+      assistant: null,
+      notes: []
+    };
+
+    function note(s) {
+      try { out.notes.push(String(s)); } catch (e) {}
+    }
+
+    function getter(fn, cap, label) {
+      try { return keyList(fn(), cap); }
+      catch (e) { note(label + ': ' + errOf(e)); return null; }
+    }
+
+    try { out.generatedAt = new Date().toISOString(); } catch (e) {}
+
+    if (!win) {
+      note('目标窗口不可用：未取到任何同源可读的 iframe.contentWindow（或跨源不可读）');
+      out.frame = null;
+      out.assistant = null;
+      return out;
+    }
+
+    /* ---------------- 0. 目标窗口基本信息 ---------------- */
+
+    var FR = { href: null, hasRequire: false, hasClient: false, engine: false, engineType: null, error: null };
+    out.frame = FR;
+    try { FR.href = String(win.location.href); }
+    catch (e) { FR.error = errOf(e); note('frame.location: ' + errOf(e)); }
+    out.href = FR.href;
+    try { FR.hasRequire = (typeof win.require === 'function'); } catch (e) { FR.hasRequire = false; note('frame.require: ' + errOf(e)); }
+    try { FR.hasClient = !!(win.CLIENT); } catch (e) { FR.hasClient = false; note('frame.CLIENT: ' + errOf(e)); }
+    try {
+      var eng = win.__roeLocalClient;
+      FR.engine = !!eng;
+      FR.engineType = typeName(eng);
+    } catch (e) { FR.engine = false; FR.engineType = 'unreadable'; }
+
+    /* ---------------- 0b. 助手（ro-assist 系列）在目标窗口内的存在性 ---------------- */
+
+    var AS = { els: 0, elsSelector: ASSIST_SEL, globals: { count: 0, hits: [] }, storageKeys: null, errors: [] };
+    out.assistant = AS;
+    try {
+      var ec = countEls(win, ASSIST_SEL);
+      AS.els = ec.count;
+      if (ec.error) AS.errors.push('els: ' + ec.error);
+    } catch (e) { AS.errors.push('els: ' + errOf(e)); }
+    try {
+      for (var ag = 0; ag < ASSIST_GLOBALS.length; ag++) {
+        if (hasProp(win, ASSIST_GLOBALS[ag])) { AS.globals.count++; AS.globals.hits.push(ASSIST_GLOBALS[ag]); }
+      }
+    } catch (e) { AS.errors.push('globals: ' + errOf(e)); }
+    try { AS.storageKeys = storageKeyNames(win, 'dsh_ro_'); }
+    catch (e) { AS.errors.push('storageKeys: ' + errOf(e)); }
+
+    /* ---------------- 1. window.require ---------------- */
+
+    var req = null;
+    try { req = win.require; } catch (e) { note('win.require: ' + errOf(e)); }
+    out.hasRequire = typeName(req);
+
+    /* ---------------- 2. window.CLIENT ---------------- */
+
+    var CLI = null;
+    var cliSS = null, cliNM = null, cliPS = null;
+    try { CLI = win.CLIENT; } catch (e) { note('win.CLIENT: ' + errOf(e)); }
+    out.hasClient = (CLI !== null && CLI !== undefined);
+
+    if (out.hasClient) {
+      var ck = keysOf(CLI, CAP_KEYS);
+      out.clientKeys = ck.keys;
+      out.clientReadError = ck.error;
+      out.clientSSKeys = getter(function () { return CLI.SS; }, 120, 'CLIENT.SS');
+      out.clientNMKeys = getter(function () { return CLI.NM; }, 120, 'CLIENT.NM');
+      out.clientPSKeys = getter(function () { return CLI.PS; }, CAP_CZ_KEYS, 'CLIENT.PS');
+      try { cliSS = CLI.SS; } catch (e) { note('CLIENT.SS ref: ' + errOf(e)); }
+      try { cliNM = CLI.NM; } catch (e) { note('CLIENT.NM ref: ' + errOf(e)); }
+      try { cliPS = CLI.PS; } catch (e) { note('CLIENT.PS ref: ' + errOf(e)); }
+    } else {
+      out.clientReadError = 'win.CLIENT = ' + typeName(CLI);
+    }
+
+    /* ---------------- 3. 目标窗口全局键名（白名单正则） ---------------- */
+
+    try {
+      var allKeys = Object.keys(win);
+      var hits = [];
+      for (var gi = 0; gi < allKeys.length; gi++) {
+        if (GLOB_RE.test(allKeys[gi])) hits.push(allKeys[gi]);
+      }
+      out.globals = hits.slice(0, CAP_LIST);
+      out.globalsInfo = {
+        pattern: 'client|entity|network|packet|legacy|bridge|ro|renderer|engine（忽略大小写）',
+        windowKeyCount: allKeys.length,
+        matchedCount: hits.length,
+        truncated: hits.length > CAP_LIST
+      };
+    } catch (e) {
+      out.globals = null;
+      out.globalsInfo = { error: errOf(e) };
+      note('globals: ' + errOf(e));
+    }
+
+    /* ---------------- 4. requireProbe ---------------- */
+
+    var store = {};
+    out.requireProbe = [];
+
+    for (var ri = 0; ri < REQ_CANDIDATES.length; ri++) {
+      var entry = {
+        module: REQ_CANDIDATES[ri],
+        ok: false,
+        type: null,
+        ctor: null,
+        keyCount: null,
+        keys: null,
+        keysError: null,
+        error: null,
+        extraCandidate: ri >= 2
+      };
+      try {
+        if (typeof req !== 'function') {
+          entry.error = 'window.require is not a function（' + typeName(req) + '）';
+        } else {
+          var mod = req(REQ_CANDIDATES[ri]);
+          if (mod === null || mod === undefined) {
+            entry.error = 'require 返回 ' + typeName(mod);
+          } else {
+            entry.ok = true;
+            entry.type = typeName(mod);
+            entry.ctor = ctorName(mod);
+            var mk = keysOf(mod, 60);
+            entry.keyCount = mk.count;
+            entry.keys = mk.keys;
+            entry.keysError = mk.error;
+            store[REQ_CANDIDATES[ri]] = mod;
+          }
+        }
+      } catch (e) {
+        entry.error = errOf(e);
+      }
+      out.requireProbe.push(entry);
+    }
+
+    /* ---------------- 5. 模块来源（require 优先，window.CLIENT 兜底） ---------------- */
+
+    var EM = store['Renderer/EntityManager'] || null;
+    var SS = store['Engine/SessionStorage'] || cliSS || null;
+    var NM = store['Network/NetworkManager'] || cliNM || null;
+    var PS = store['Network/PacketStructure'] || cliPS || null;
+
+    out.moduleSources = {
+      EntityManager: EM ? (store['Renderer/EntityManager'] ? 'window.require' : 'window.CLIENT') : null,
+      SessionStorage: SS ? (store['Engine/SessionStorage'] ? 'window.require' : 'window.CLIENT.SS') : null,
+      NetworkManager: NM ? (store['Network/NetworkManager'] ? 'window.require' : 'window.CLIENT.NM') : null,
+      PacketStructure: PS ? (store['Network/PacketStructure'] ? 'window.require' : 'window.CLIENT.PS') : null,
+      note: '本仓库脚本以 window.require 为准；window.CLIENT 仅作兜底，二者都拿不到即 null'
+    };
+
+    /* ---------------- 6. entityProbe ---------------- */
+
+    var mob = null;
+    var EP = {
+      source: null,
+      forEachIsFunction: null,
+      getIsFunction: null,
+      entityCount: null,
+      iterCapped: null,
+      firstMob: null,
+      error: null
+    };
+    out.entityProbe = EP;
+
+    try {
+      if (EM) {
+        EP.source = out.moduleSources.EntityManager;
+        EP.forEachIsFunction = (typeof EM.forEach === 'function');
+        EP.getIsFunction = (typeof EM.get === 'function');
+        var count = 0;
+        var capped = false;
+        if (EP.forEachIsFunction) {
+          EM.forEach(function (e) {
+            try {
+              if (count >= CAP_ITER) { capped = true; return; }
+              count++;
+              if (!mob && e && e.objecttype === 5) mob = e;
+            } catch (e2) { /* 单个实体读失败不影响整体 */ }
+          });
+        } else if (typeof EM.getList === 'function') {
+          var list = EM.getList();
+          if (list && typeof list.length === 'number') {
+            for (var li = 0; li < list.length && li < CAP_ITER; li++) {
+              count++;
+              var le = list[li];
+              if (!mob && le && le.objecttype === 5) mob = le;
+            }
+            capped = list.length > CAP_ITER;
+          }
+        }
+        EP.entityCount = count;
+        EP.iterCapped = capped;
+      } else {
+        EP.error = 'EntityManager 不可用（require 与 window.CLIENT 都未取到）';
+      }
+    } catch (e) {
+      EP.error = errOf(e);
+    }
+
+    try {
+      if (mob) {
+        var own = keysOf(mob, 120);
+        var chain = [];
+        try {
+          var proto = Object.getPrototypeOf(mob);
+          var depth = 0;
+          while (proto && proto !== Object.prototype && depth < 5) {
+            var pk = Object.keys(proto);
+            for (var pi = 0; pi < pk.length; pi++) {
+              if (chain.indexOf(pk[pi]) < 0) chain.push(pk[pi]);
+            }
+            proto = Object.getPrototypeOf(proto);
+            depth++;
+          }
+        } catch (e4) { note('原型链读取: ' + errOf(e4)); }
+        EP.firstMob = {
+          found: true,
+          objecttype: describeProp(mob, 'objecttype'),
+          ownKeyCount: own.count,
+          ownKeys: own.keys,
+          chainKeyCount: chain.length,
+          chainKeys: chain.slice(0, 150),
+          fieldTypes: {
+            GID: describeProp(mob, 'GID'),
+            _job: describeProp(mob, '_job'),
+            job: describeProp(mob, 'job'),
+            position: describeProp(mob, 'position'),
+            life: describeProp(mob, 'life'),
+            action: describeProp(mob, 'action')
+          }
+        };
+      } else {
+        EP.firstMob = { found: false, error: EP.error || '遍历完成但未找到 objecttype===5 的实体' };
+      }
+    } catch (e) {
+      EP.firstMob = { found: false, error: errOf(e) };
+    }
+
+    /* ---------------- 7. lifeProbe ---------------- */
+
+    var LP = {
+      source: null,
+      exists: false,
+      keyCount: null,
+      keys: null,
+      hasHp: null,
+      hasMaxHp: null,
+      maxHpFields: null,
+      hpIsNumber: null,
+      maxHpIsNumber: null,
+      hp: null,
+      maxHp: null,
+      fieldTypes: null,
+      error: null
+    };
+    out.lifeProbe = LP;
+
+    try {
+      var life = null;
+      if (mob) {
+        LP.source = 'firstMob.life';
+        try { life = mob.life; } catch (e) { note('mob.life: ' + errOf(e)); }
+      }
+      if (life === null || life === undefined) {
+        var se = null;
+        try { se = SS ? SS.Entity : null; } catch (e) { note('SS.Entity: ' + errOf(e)); }
+        if (se && se.life) { life = se.life; LP.source = 'SS.Entity.life'; }
+      }
+
+      if (life === null || life === undefined) {
+        LP.error = 'life 对象不可用（无 objecttype===5 实体，或该实体没有 life）';
+      } else {
+        LP.exists = true;
+        var lk = keysOf(life, 80);
+        LP.keys = lk.keys;
+        LP.keyCount = lk.count;
+        var types = {};
+        var maxHpFound = [];
+        for (var lf = 0; lf < LIFE_FIELDS.length; lf++) {
+          var fname = LIFE_FIELDS[lf];
+          if (!hasProp(life, fname)) continue;
+          types[fname] = describeProp(life, fname);
+          if (fname === 'maxhp' || fname === 'maxHp' || fname === 'hp_max' || fname === 'max_hp') maxHpFound.push(fname);
+        }
+        LP.fieldTypes = types;
+        LP.hasHp = hasProp(life, 'hp');
+        LP.hasMaxHp = maxHpFound.length > 0;
+        LP.maxHpFields = maxHpFound;
+        var hpv = null, mhv = null;
+        try { hpv = life.hp; } catch (e) {}
+        if (maxHpFound.length) { try { mhv = life[maxHpFound[0]]; } catch (e) {} }
+        LP.hpIsNumber = (typeof hpv === 'number');
+        LP.maxHpIsNumber = (typeof mhv === 'number');
+        LP.hp = LP.hpIsNumber ? hpv : null;
+        LP.maxHp = LP.maxHpIsNumber ? mhv : null;
+      }
+    } catch (e) {
+      LP.error = errOf(e);
+    }
+
+    /* ---------------- 8. packetProbe ---------------- */
+
+    var PP = {
+      nmSource: null,
+      psSource: null,
+      nmSendPacketIsFunction: null,
+      nmKeys: null,
+      psKeys: null,
+      psCZExists: null,
+      psCZKeyCount: null,
+      psCZKeys: null,
+      psCZFunctionKeys: null,
+      hasREQUEST_ACT: null,
+      hasUSE_SKILL: null,
+      REQUEST_ACT: null,
+      USE_SKILL: null,
+      note: '只做 typeof 检查：未 new、未调用发送接口、未发送任何封包',
+      error: null
+    };
+    out.packetProbe = PP;
+
+    try {
+      PP.nmSource = out.moduleSources.NetworkManager;
+      PP.psSource = out.moduleSources.PacketStructure;
+
+      if (NM) {
+        PP.nmSendPacketIsFunction = (typeof NM.sendPacket === 'function');
+        PP.nmKeys = keyList(NM, 60);
+      } else if (!PP.error) {
+        PP.error = 'NetworkManager 不可用';
+      }
+
+      if (PS) {
+        PP.psKeys = keyList(PS, CAP_CZ_KEYS);
+      } else if (!PP.error) {
+        PP.error = 'PacketStructure 不可用';
+      }
+
+      var CZ = null;
+      try { CZ = PS ? PS.CZ : null; } catch (e) { note('PS.CZ: ' + errOf(e)); }
+
+      if (CZ === null || CZ === undefined) {
+        PP.psCZExists = false;
+        if (!PP.error) PP.error = 'PS.CZ 不可用';
+      } else {
+        PP.psCZExists = true;
+        var czk = keysOf(CZ, CAP_CZ_KEYS);
+        PP.psCZKeyCount = czk.count;
+        PP.psCZKeys = czk.keys;
+        var czf = [];
+        for (var ci = 0; ci < (czk.keys || []).length; ci++) {
+          var cname = czk.keys[ci];
+          var isFn = false;
+          try { isFn = typeof CZ[cname] === 'function'; } catch (e) { isFn = false; }
+          if (isFn) czf.push(cname);
+        }
+        PP.psCZFunctionKeys = czf;
+        PP.REQUEST_ACT = describeProp(CZ, 'REQUEST_ACT');
+        PP.USE_SKILL = describeProp(CZ, 'USE_SKILL');
+        PP.hasREQUEST_ACT = (PP.REQUEST_ACT && PP.REQUEST_ACT.type === 'function');
+        PP.hasUSE_SKILL = (PP.USE_SKILL && PP.USE_SKILL.type === 'function');
+      }
+    } catch (e) {
+      PP.error = errOf(e);
+    }
+
+    /* ---------------- 9. autoBattleProbe（只读存在性，不改变状态） ---------------- */
+
+    var AB = {
+      readOnly: true,
+      dom: [],
+      globalFlags: [],
+      note: '只读存在性探测：不点击、不勾选、不取消、不触发任何开关，不改变状态',
+      error: null
+    };
+    out.autoBattleProbe = AB;
+
+    try {
+      var doc = win.document;
+      for (var si = 0; si < AB_SELS.length; si++) {
+        var item = AB_SELS[si];
+        var de = { selector: item.sel, what: item.what, source: 'win.document.querySelector', exists: false };
+        try {
+          var el = doc ? doc.querySelector(item.sel) : null;
+          de.exists = !!(el && el.nodeType === 1);
+          if (de.exists && item.sel === '#vbk input.openattack') {
+            de.tag = el.tagName ? String(el.tagName).toLowerCase() : null;
+            de.hasCheckedProp = (typeof el.checked === 'boolean'); // 只判断可读性，不读取/不改变取值
+          }
+        } catch (e) {
+          de.error = errOf(e);
+        }
+        AB.dom.push(de);
+      }
+    } catch (e) {
+      AB.error = errOf(e);
+    }
+
+    try {
+      var seen = {};
+      var addFlag = function (name, source) {
+        try {
+          if (seen[name]) return;
+          seen[name] = true;
+          var v = null;
+          var readErr = null;
+          try { v = win[name]; } catch (e) { readErr = errOf(e); }
+          var sv = safeValue(v);
+          var fe = { name: name, source: source, exists: (v !== undefined && v !== null), type: sv.type };
+          if (sv.value !== undefined) fe.value = sv.value;   // 仅 boolean/number 带值
+          if (sv.ctor) fe.ctor = sv.ctor;
+          if (sv.length !== undefined) fe.length = sv.length;
+          if (readErr) fe.error = readErr;
+          AB.globalFlags.push(fe);
+        } catch (e) { /* 单个标志位失败不影响整体 */ }
+      };
+
+      for (var fn2 = 0; fn2 < FLAG_NAMES.length; fn2++) addFlag(FLAG_NAMES[fn2], 'win（已知候选名）');
+
+      try {
+        var wk = Object.keys(win);
+        for (var wi = 0; wi < wk.length && AB.globalFlags.length < 60; wi++) {
+          if (!AUTO_RE.test(wk[wi])) continue;
+          addFlag(wk[wi], 'win（正则扫描 auto|assist|robot|bot|hunt|battle|farm）');
+        }
+      } catch (e) { note('标志位扫描: ' + errOf(e)); }
+    } catch (e) {
+      AB.error = errOf(e);
+    }
+
+    return out;
+  }
+  /* ==PROBE-CORE-END== */
+
+  /* ---------------- 目标窗口解析（只读，仅同源可读的 contentWindow） ---------------- */
+
+  function lookLikeClient(w) {
+    try {
+      if (!w) return false;
+      if (typeof w.require === 'function') return true;
+      if (w.CLIENT) return true;
+      if (w.ROConfig) return true;
+    } catch (e) { return false; }
+    return false;
+  }
+
+  function scanIframes() {
+    var res = null;
+    try {
+      var fs = document.querySelectorAll('iframe');
+      for (var i = 0; i < fs.length && i < 50; i++) {
+        var cw = null;
+        try { cw = fs[i].contentWindow; } catch (e) { cw = null; }
+        if (!cw) continue;
+        if (lookLikeClient(cw)) return { win: cw, how: 'iframe[' + i + '].contentWindow', ready: true };
+        if (!res) res = { win: cw, how: 'iframe[' + i + '].contentWindow', ready: false };
+      }
+    } catch (e) { /* 遍历失败按未就绪处理 */ }
+    return res;
+  }
+
+  function findTarget() {
+    var fw = null;
+    try {
+      var f = document.getElementById('roeFrame');
+      if (f) fw = f.contentWindow;
+    } catch (e) { fw = null; }
+    if (lookLikeClient(fw)) return { win: fw, how: '#roeFrame.contentWindow', ready: true };
+    var scanned = scanIframes();
+    if (scanned && scanned.ready) return scanned;
+    if (fw) return { win: fw, how: '#roeFrame.contentWindow', ready: false };
+    return scanned || null;
+  }
+
+  /* ---------------- 输出：console + copy() + POST 本机 8899 ---------------- */
+
+  function postTo8899(json) {
+    var sent = false;
+    try {
+      if (navigator && typeof navigator.sendBeacon === 'function') {
+        sent = !!navigator.sendBeacon(ENDPOINT, json);   // 字符串 → text/plain 简单请求，不触发 CORS 预检
+        if (sent) {
+          try { console.log('[private-client-probe] 已发送到本机 8899（sendBeacon / text/plain 简单请求）'); } catch (e) {}
+        }
+      }
+    } catch (e) { sent = false; }
+    if (sent) return;
+
+    try {
+      fetch(ENDPOINT, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: json })
+        .then(function () {
+          try { console.log('[private-client-probe] 已发送到本机 8899（fetch no-cors）'); } catch (e) {}
+        })
+        .catch(function (e1) {
+          fetch(ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: json })
+            .then(function () {
+              try { console.log('[private-client-probe] 已发送到本机 8899（fetch cors）'); } catch (e) {}
+            })
+            .catch(function (e2) {
+              try { console.log('[private-client-probe] 发送到 8899 失败（不影响页面功能）：' + errOf(e2 || e1)); } catch (e) {}
+            });
+        });
+    } catch (e) {
+      try { console.log('[private-client-probe] 发送到 8899 失败（不影响页面功能）：' + errOf(e)); } catch (e2) {}
+    }
+  }
+
+  function finalize(win, how, ready, tries) {
+    var result;
+    try {
+      result = collectFrom(win);
+    } catch (e) {
+      result = { probe: 'private-client-probe', version: '1.0.0', error: 'collectFrom threw: ' + errOf(e), notes: [] };
+    }
+    result.ready = !!ready;
+    result.targetHow = how || null;
+    result.pollTries = tries;
+    try { result.elapsedMs = Date.now() - startedAt; } catch (e) { result.elapsedMs = null; }
+    try {
+      if (!ready) {
+        result.notes.push(how
+          ? ('等待 60 秒仍未就绪：已找到 ' + how + '，但其内没有 require / CLIENT / ROConfig')
+          : '等待 60 秒仍未就绪：页面上没有任何同源可读的 iframe.contentWindow');
+      }
+    } catch (e) {}
+
+    var json = null;
+    try { json = JSON.stringify(result, null, 2); }
+    catch (e) { json = '{"probe":"private-client-probe","error":"JSON.stringify failed"}'; }
+
+    try { console.log('[private-client-probe] 只读探测完成（不发包、不登录、不写存储），结果 JSON 如下：'); } catch (e) {}
+    try { console.log(json); } catch (e) {}
+    try {
+      if (typeof copy === 'function') {
+        copy(json);
+        try { console.log('[private-client-probe] 已尝试把结果复制到剪贴板。'); } catch (e) {}
+      }
+    } catch (e) {}
+    postTo8899(json);
+  }
+
+  /* ---------------- 主流程：就绪 或 超时，二选一，绝不静默 ---------------- */
+
+  var startedAt = Date.now();
+  var tries = 0;
+  var lastCandidate = null;
+  var timer = null;
+
+  function stop() {
+    if (timer !== null) {
+      clearInterval(timer);
+      timer = null;
+    }
+  }
+
+  function tick() {
+    var t = findTarget();
+    if (t && t.ready) { stop(); finalize(t.win, t.how, true, tries); return; }
+    if (t) lastCandidate = t;
+    tries++;
+    if ((Date.now() - startedAt) >= DEADLINE_MS) {
+      stop();
+      finalize(lastCandidate ? lastCandidate.win : null, lastCandidate ? lastCandidate.how : null, false, tries);
+    }
+  }
+
+  try { console.log('[private-client-probe] 开始等待客户端 iframe 就绪（每 500ms 重试，最长 60 秒，全程只读）…'); } catch (e) {}
+
+  try {
+    var first = findTarget();
+    if (first && first.ready) {
+      finalize(first.win, first.how, true, 0);
+    } else {
+      lastCandidate = first || null;
+      timer = setInterval(tick, POLL_MS);
+    }
+  } catch (e) {
+    stop();
+    finalize(null, null, false, tries);
+  }
+})();

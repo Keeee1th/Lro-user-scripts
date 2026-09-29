@@ -1215,3 +1215,84 @@ test('V2.34.7 数据抓包由功能菜单打开标准独立浮窗且不依赖旧
     assert.ok(src.includes('if (!fwActualOpen(id)) fwOpen(id, false);'), name + ' 功能菜单未走标准 fwOpen 分支');
   }
 });
+
+
+// ================= bagClean v2：丢弃黑名单、类别与逐包复核 =================
+function bagCleanVm(storeInit={},typeDb=null){
+  const store=new Map(Object.entries(storeInit));
+  const code=extract("  var BAG_CLEAN_KEY = 'dsh-bag-clean-v2'",'  function bagCleanUnitWeight(id)');
+  const ctx={Number,String,Object,Array,JSON,Math,isFinite,document:{querySelector:()=>null},requireDB:n=>n==='DB/Items/ItemType'?typeDb:null,require:()=>null,
+    localStorage:{getItem:k=>store.has(k)?store.get(k):null,setItem:(k,v)=>store.set(k,String(v))},bagCleanSay(){}};
+  vm.createContext(ctx);vm.runInContext(code+';this.load=bagCleanLoad;this.norm=bagCleanNormalize;this.describe=bagCleanDescribe;this.typeNames=bagCleanTypeNames;this.disarm=bagCleanDisarm',ctx);
+  return {ctx,store};
+}
+function safeGear(extra={}){return Object.assign({ITID:1201,index:7,type:4,count:1,IsIdentified:1,RefiningLevel:0,refiningLevel:0,slot:{card1:0,card2:0,card3:0,card4:0},nRandomOptionCnt:0,IsDamaged:false},extra)}
+
+test('bagClean v2 migration copies simple v1 rules without deleting old key',()=>{
+  const old=JSON.stringify({'501':4,'1201:u':0}),h=bagCleanVm({'dsh-bag-clean-rules-v1':old});const cfg=h.ctx.load();
+  assert.equal(JSON.stringify(cfg.discardRules),JSON.stringify({'501':4,'1201:u':0}));assert.equal(cfg.armed,false);assert.deepEqual(Array.from(cfg.categoryTypes),[]);assert.equal(h.store.get('dsh-bag-clean-rules-v1'),old);assert.ok(h.store.has('dsh-bag-clean-v2'));
+});
+
+test('bagClean v2 migration accepts legacy wrapper discardRules and starts disabled',()=>{
+  const h=bagCleanVm({'dsh-bag-clean-rules-v1':JSON.stringify({discardRules:{'502':9},enabled:true,armed:true})});const cfg=h.ctx.load();
+  assert.equal(cfg.discardRules['502'],9);assert.equal(cfg.armed,false);assert.equal(h.ctx.bagClean.enabled,false);
+});
+
+test('bagClean v2 normalization validates rules categories protected IDs and forces legacy unarmed',()=>{
+  const h=bagCleanVm(),cfg=h.ctx.norm({version:2,discardRules:{'501':2,bad:3},categoryTypes:[3,3,999],protectedIds:[501,501,-1],armed:true},false);
+  assert.equal(JSON.stringify(cfg.discardRules),JSON.stringify({'501':2}));assert.deepEqual(Array.from(cfg.categoryTypes),[3]);assert.deepEqual(Array.from(cfg.protectedIds),[501]);assert.equal(cfg.armed,true);
+  assert.equal(h.ctx.norm({'501':2},true).armed,false);
+});
+
+test('bagClean type names reverse runtime ItemType mappings and retain safe generic names',()=>{
+  const h=bagCleanVm({}, {Healing:0,Material:3}),names=h.ctx.typeNames();assert.equal(names[0],'Healing');assert.equal(names[3],'Material');assert.equal(names[2],'消耗');assert.equal(names[11],'技能消耗');
+});
+
+test('bagClean conflicting runtime type names are not batch selectable',()=>{
+  const h=bagCleanVm({}, {Material:3,Etc:3}),names=h.ctx.typeNames();assert.equal(names[3],false);
+  const cfg={discardRules:{},categoryTypes:[3],protectedIds:[]};assert.equal(h.ctx.describe({ITID:501,index:1,type:3,count:2},cfg,names).ok,false);
+});
+
+test('bagClean blacklist keeps configured quantity and category is union fallback',()=>{
+  const h=bagCleanVm(),names=h.ctx.typeNames(),explicit={discardRules:{'501':3},categoryTypes:[],protectedIds:[]},category={discardRules:{},categoryTypes:[3],protectedIds:[]};
+  const a=h.ctx.describe({ITID:501,index:1,type:3,count:8},explicit,names),b=h.ctx.describe({ITID:502,index:2,type:3,count:8},category,names);
+  assert.equal(a.ok,true);assert.equal(a.keep,3);assert.equal(a.source,'黑名单');assert.equal(b.ok,true);assert.equal(b.keep,0);assert.match(b.source,/类别/);
+});
+
+test('bagClean protectedIds overrides explicit blacklist and category selection',()=>{
+  const h=bagCleanVm(),d=h.ctx.describe({ITID:501,index:1,type:3,count:8},{discardRules:{'501':0},categoryTypes:[3],protectedIds:[501]},h.ctx.typeNames());
+  assert.equal(d.ok,false);assert.match(d.reason,/永不丢/);
+});
+
+test('bagClean unknown type is protected even under explicit blacklist',()=>{
+  const h=bagCleanVm(),d=h.ctx.describe({ITID:501,index:1,type:255,count:8},{discardRules:{'501':0},categoryTypes:[255],protectedIds:[]},h.ctx.typeNames());
+  assert.equal(d.ok,false);assert.match(d.reason,/未知/);
+});
+
+test('bagClean unidentified equipment requires explicit :u rule and never category',()=>{
+  const h=bagCleanVm(),names=Object.assign(h.ctx.typeNames(),{4:'武器'}),byCategory=h.ctx.describe(safeGear({IsIdentified:0}),{discardRules:{},categoryTypes:[4],protectedIds:[]},names),explicit=h.ctx.describe(safeGear({IsIdentified:0}),{discardRules:{'1201:u':0},categoryTypes:[],protectedIds:[]},names);
+  assert.equal(byCategory.ok,false);assert.match(byCategory.reason,/:u/);assert.equal(explicit.ok,true);assert.equal(explicit.key,'1201:u');
+});
+
+test('bagClean equipment refinement cards random options wear and incomplete fields stay protected',()=>{
+  const h=bagCleanVm(),names=Object.assign(h.ctx.typeNames(),{4:'武器'}),cfg={discardRules:{'1201':0},categoryTypes:[],protectedIds:[]};
+  for(const item of [safeGear({RefiningLevel:1}),safeGear({slot:{card1:4001}}),safeGear({nRandomOptionCnt:1}),safeGear({IsEquipped:true}),safeGear({slot:null}),safeGear({IsIdentified:undefined})])assert.equal(h.ctx.describe(item,cfg,names).ok,false);
+});
+
+test('bagClean preview and ITEM_THROW paths contain fresh index identity type quantity and rule checks',()=>{
+  for(const [name,src] of [['stable',source],['exp',expSource]]){const preview=src.slice(src.indexOf('  function bagCleanPreview()'),src.indexOf('  function bagCleanInit()'));const execute=src.slice(src.indexOf('  function bagCleanRevalidate('),src.indexOf('  function bagCleanPreview()'));
+    assert.ok(preview.includes('bagCleanRevalidate(s,s.amount)'),name+' preview must reread each index');assert.ok(execute.includes('d.amount!==stack.amount'),name+' quantity must match when captured');assert.ok(execute.includes('d.id!==stack.id'));assert.ok(execute.includes('d.type!==stack.type'));assert.ok(execute.includes('d.source!==stack.source'));assert.ok(execute.indexOf('bagCleanRevalidate(stack,want)')<execute.indexOf('new CLIENT.PS.CZ.ITEM_THROW()'));
+  }
+});
+
+test('bagClean rule changes disarm automation and initial automatic enable requires preview arming',()=>{
+  for(const [name,src] of [['stable',source],['exp',expSource]]){const ui=src.slice(src.indexOf('  function bagCleanInit()'),src.indexOf('  // ---------------- 拾取页：内挂百分比联动'));
+    assert.ok(ui.includes("function changed(msg){bagCleanDisarm("),name+' changes must disarm');assert.ok(ui.includes("if(!bagClean.config.armed){this.checked=false"),name+' enable must require armed');assert.ok(ui.includes('bagClean.config.armed=true'),name+' preview confirmation must arm');assert.ok(ui.includes('这是不可逆操作，确认执行？'),name+' manual cleanup needs detailed confirmation');
+  }
+});
+
+test('bagClean v2 UI and storage contract is lockstep and documents unsupported boss-source filtering',()=>{
+  for(const [name,src] of [['stable',source],['exp',expSource]]){assert.ok(src.includes("'dsh-bag-clean-v2'"));assert.ok(src.includes("'dsh-bag-clean-rules-v1'"));assert.ok(src.includes('丢弃黑名单（勾选=要丢'));assert.ok(src.includes('类别保护例外（永不丢）'));assert.ok(src.includes('协议不含掉落怪来源，无法安全区分BOSS掉落，故不提供该规则。'));assert.ok(src.includes('导出v2'));}
+  const a=source.slice(source.indexOf('  // ---------------- 背包安全清理 v2'),source.indexOf('  // ---------------- 拾取页：内挂百分比联动'));
+  const b=expSource.slice(expSource.indexOf('  // ---------------- 背包安全清理 v2'),expSource.indexOf('  // ---------------- 拾取页：内挂百分比联动'));assert.equal(a,b);
+});

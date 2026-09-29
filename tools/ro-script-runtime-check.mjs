@@ -484,8 +484,8 @@ test('exp 群殴数按实际围攻计算并受远程怪开关控制', () => {
   assert.equal(ctx.count(mobs).n, 1);        // zHitBy 无数据 → 退化为只数贴身 <=2 格
 });
 
-test('exp zWalk 锁定候选口径与 zAttack 一致（补 zAllMobs）', () => {
-  assert.ok(expSource.includes('!anyLock || zAllMobsW || (mid && lockList[mid])'));
+test('exp zWalk 锁定候选口径与 zAttack 一致（V2.34.4 名单优先）', () => {
+  assert.ok(expSource.includes('anyLock ? !!(mid && lockList[mid]) : zAllMobsW'));
   const walk = expExtract('  function zWalk() {', '  function zAttack() {');
   assert.ok(walk.includes('var zAllMobsW = !$id("dsh-z-allmobs") || $id("dsh-z-allmobs").checked;'));
 });
@@ -710,7 +710,7 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
   assert.ok(tail.includes('if (out.hp >= 0 && out.hp <= line) out.want = gidInt(rec.GID);'), '尾刀线内仍切去补尾刀');
   // 候选池剔除保持 2 处（zWalk + zAttack），非选中攻击者一路仍排除锁定目标本身
   assert.equal((expSource.match(/if \(zBossSkipGid && gidInt\(e\.GID\) === zBossSkipGid\) return;/g) || []).length, 2, '候选池剔除必须保持 zWalk/zAttack 各一处');
-  assert.ok(expSource.includes('if (gidInt(hk) === gidInt(zLock.gid)) continue; // 排除锁定目标本身'), '非选中攻击者一路不得改动');
+  assert.ok(expSource.includes('if (gidInt(hk) === gidInt(zLock.gid)) continue; // 排除锁定目标本身'), '非选中攻击者一路必须排除锁定目标本身');
 });
 
 // ================= V2.34.3：格子距离口径 / 内挂状态校准 / 混合接管兜底 / 坐下放宽 =================
@@ -785,3 +785,92 @@ test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、�
     assert.ok(zAtkSeg.includes('zAtkWhy = "' + why + '"'), '攻击诊断缺少原因 ' + why);
   }
 });
+
+// ================= V2.34.4：锁定名单语义（3A）+ 受击死角（3B） =================
+// 权威语义：名单非空 → 只主动攻击名单内怪（「打全部怪」不再覆盖）；名单为空 → 按「打全部怪」；
+//           还击 / 群殴瞬移 / 解围技能与名单完全解耦。
+const INLOCK_RE = { zWalk: /var inLockN = ([^;]+);/, zAttack: /var inLock = ([^;]+);/ };
+function inLockExpr(src, which) {
+  const m = INLOCK_RE[which].exec(src);
+  assert.ok(m, which + ' 未找到 inLock 表达式');
+  return m[1].trim();
+}
+function inLockEval(expr, anyLock, allMobs, lockList, mid) {
+  const ctx = { anyLock, zAllMobs: allMobs, zAllMobsW: allMobs, lockList, mid };
+  vm.createContext(ctx);
+  vm.runInContext('this.r = !!(' + expr + ')', ctx);
+  return ctx.r;
+}
+
+test('exp V2.34.4 3A：zWalk/zAttack 的 inLock 表达式已切到「名单优先」且旧口径消失', () => {
+  for (const [name, src] of [['stable', source], ['exp', expSource]]) {
+    assert.ok(src.includes('var inLockN = anyLock ? !!(mid && lockList[mid]) : zAllMobsW; // V2.34.4：名单非空→只认名单；名单为空→按「打全部怪」'), name + ' zWalk 表达式必须是名单优先口径');
+    assert.ok(src.includes('var inLock = anyLock ? !!(mid && lockList[mid]) : zAllMobs; // V2.34.4：名单非空→只认名单；名单为空→按「打全部怪」'), name + ' zAttack 表达式必须是名单优先口径');
+    assert.ok(!src.includes('!anyLock || zAllMobsW || (mid && lockList[mid])'), name + ' 旧 zWalk 口径必须消失');
+    assert.ok(!src.includes('!anyLock || zAllMobs || (mid && lockList[mid])'), name + ' 旧 zAttack 口径必须消失');
+  }
+  const walk = expExtract('  function zWalk() {', '  function zAttack() {');
+  const atk = expExtract('  function zAttack() {', '  // 技能行统一序列化');
+  assert.ok(walk.includes('var inLockN = anyLock ?'), 'zWalk 段内必须是名单优先口径');
+  assert.ok(!walk.includes('var inLock ='), 'zAttack 的口径不得出现在 zWalk 段内');
+  assert.ok(atk.includes('var inLock = anyLock ?'), 'zAttack 段内必须是名单优先口径');
+  assert.ok(!atk.includes('var inLockN ='), 'zWalk 的口径不得出现在 zAttack 段内');
+});
+
+test('exp V2.34.4 3A：名单有/无 × 打全部怪开/关 真值表（vm 实跑两处表达式）', () => {
+  const exprs = { zWalk: inLockExpr(expSource, 'zWalk'), zAttack: inLockExpr(expSource, 'zAttack') };
+  const list = { 1002: { name: 'Poring' } };
+  const midCases = [null, undefined, '', '1002', '9999'];
+  for (const [name, expr] of Object.entries(exprs)) {
+    assert.ok(expr.includes('anyLock ?'), name + ' 表达式必须是 anyLock 三元');
+    for (const mid of midCases) {
+      const tag = name + ' mid=' + String(mid) + ' ';
+      assert.equal(inLockEval(expr, true, true, list, mid), mid === '1002', tag + '名单非空+全打开:只认名单');
+      assert.equal(inLockEval(expr, true, false, list, mid), mid === '1002', tag + '名单非空+全打关:只认名单');
+      assert.equal(inLockEval(expr, false, true, {}, mid), true, tag + '名单为空+全打开:全部主动攻击');
+      assert.equal(inLockEval(expr, false, false, {}, mid), false, tag + '名单为空+全打关:一律不主动攻击');
+    }
+  }
+});
+
+test('exp V2.34.4 3A：名单为空且关「打全部怪」时主动攻击为假，但还击兜底链路仍在', () => {
+  const walk = expExtract('  function zWalk() {', '  // 无锁定怪持续 N 秒');
+  assert.equal(inLockEval(inLockExpr(expSource, 'zWalk'), false, false, {}, '1002'), false, '名单为空+全打关 → 非名单怪不主动攻击');
+  assert.ok(walk.includes('var allowHitTarget = beingHit && onaMode === "还击";'), '还击开关判定必须保留');
+  assert.ok(walk.includes('if (!inLockN && !allowHitTarget) return;'), '非名单怪仍须走 allowHitTarget 门（还击路径保留）');
+  assert.ok(walk.includes('if (!hitNear || hpNow < hitNearHp || (hpNow === hitNearHp && d < hitNearD)) { hitNear = e; hitNearD = d; hitNearHp = hpNow; }'), 'hitNear 还击候选收集必须保留');
+  assert.ok(walk.includes('else if (hitNear) { near = hitNear; nearD = hitNearD; nearHp = hitNearHp; }'), 'hitNear 兜底分支必须保留');
+});
+
+test('exp V2.34.4：群殴与解围链路与锁定名单／「打全部怪」完全解耦', () => {
+  const segs = {
+    zGrpCount: expExtract('  function zGrpCount(mobs) {', '  // A3：实体取血量百分比'),
+    zQoaNearCount: expExtract('  function zQoaNearCount(mobs) {', '  function zQoaTry(mobs, ent, now) {'),
+    zQoaTry: expExtract('  function zQoaTry(mobs, ent, now) {', '  // A3：BOSS 三模式判定'),
+    emergencyThreatReason: expExtract('  function emergencyThreatReason(mobs) {', '  function ordinaryCastBlocked() {'),
+  };
+  for (const [name, seg] of Object.entries(segs)) {
+    assert.ok(seg.length > 40, name + ' 段提取失败');
+    for (const bad of ['lockList', 'anyLock', 'inLock', 'dsh-z-allmobs']) {
+      assert.ok(!seg.includes(bad), name + ' 不得引用 ' + bad);
+    }
+  }
+  assert.ok(segs.emergencyThreatReason.includes('dsh-z-grpn'), '群殴自动瞬移仍须在 emergencyThreatReason 里');
+});
+
+test('exp V2.34.4：非选中怪分支必须排除锁定目标本身且与名单/打全部怪解耦', () => {
+  // 反向不变量（3B 回退）：该分支语义为「非选中怪攻击」，锁定怪超射程由 zWalk 追怪 / 内挂靠近处理，
+  //   因此必须排除 zLock.gid；同时该分支不看 zAllMobs、不看 lockList、不受 atkRange 限制。
+  for (const [name, src] of [['stable', source], ['exp', expSource]]) {
+    assert.ok(src.includes('if (gidInt(hk) === gidInt(zLock.gid)) continue; // 排除锁定目标本身'), name + ' 非选中怪分支必须排除锁定目标本身');
+  }
+  const seg = expExtract('      // V2.34.0 A5：非选中怪独立一路判定', '        var hitCandEnt = hitCandGid ? zEntOf(hitCandGid) : null;');
+  assert.ok(seg.includes('if (!target) {'), '!target 分支必须保留');
+  assert.ok(seg.includes('for (var hk in zHitBy) {'), 'zHitBy 扫描必须保留');
+  assert.ok(seg.includes('var hg = gidInt(hk); if (!hg) continue;'), 'gid 归一化行必须仍在原位（排除点之后的判定顺序未变）');
+  const codeOnly = seg.split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+  for (const bad of ['zAllMobs', 'lockList', 'atkRange']) {
+    assert.ok(!codeOnly.includes(bad), '该分支代码不得引用 ' + bad + '（与名单/打全部怪解耦）');
+  }
+});
+

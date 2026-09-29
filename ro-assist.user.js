@@ -758,8 +758,8 @@
       '<div class="row"><label class="switch"><input id="dsh-z-follow" type="checkbox" checked>锁定目标跟随追击</label>' +
       '<label class="switch"><input id="dsh-z-next" type="checkbox" checked>打死换下一个</label></div>' +
       '<div class="sec">目标范围</div>' +
-      '<div class="row"><label class="switch"><input id="dsh-z-allmobs" type="checkbox" checked>打全部怪（不限「本图怪物锁定」名单）</label></div>' +
-      '<div class="row"><span class="st">勾选=攻击距离内所有怪都打（血少优先抢尾刀）；取消=只打锁定名单里的怪。</span></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-z-allmobs" type="checkbox" checked>打全部怪（仅在未设锁定名单时生效）</label></div>' +
+      '<div class="row"><span class="st">名单为空时：勾选=主动攻击全部怪（血少优先抢尾刀），取消=不主动攻击。名单非空时：始终只主动攻击名单内怪物。还击、群殴瞬移、解围技能不受此设置影响。</span></div>' +
       '<details style="margin:6px 0"><summary>战斗诊断（默认关 · 不改行为）</summary>' +
       '<div class="row"><label class="switch"><input id="dsh-bt-diag" type="checkbox">启用诊断日志</label></div>' +
       '<div class="row" style="flex-wrap:wrap;gap:4px"><button class="ghost" id="dsh-bt-snap" style="flex:0 0 auto;padding:0 8px;font-size:11px">快照</button><button class="ghost" id="dsh-bt-mark" style="flex:0 0 auto;padding:0 8px;font-size:11px">标记测试</button></div>' +
@@ -7865,7 +7865,7 @@
             // V2.34.0 A3：尾刀模式未到尾刀线的 BOSS 不追（既不打也不飞）
             if (zBossSkipGid && gidInt(e.GID) === zBossSkipGid) return;
             var mid = e._job != null ? String(e._job) : (e.job != null ? String(e.job) : null);
-            var inLockN = !anyLock || zAllMobsW || (mid && lockList[mid]); // V2.34.0 A5：补 zAllMobs，与 zAttack 口径一致
+            var inLockN = anyLock ? !!(mid && lockList[mid]) : zAllMobsW; // V2.34.4：名单非空→只认名单；名单为空→按「打全部怪」
             if (!inLockN && !allowHitTarget) return;
             if (!ent.position || !e.position) return;
             var d = zRangeDist(e.position, ent.position); // V2.34.3：格子距离口径（与客户端一致）
@@ -8384,7 +8384,7 @@
             // V2.34.0 A3：尾刀模式未到尾刀线的 BOSS 不进候选（既不打也不飞）
             if (zBossSkipGid && gidInt(e.GID) === zBossSkipGid) return;
             var mid = e._job != null ? String(e._job) : (e.job != null ? String(e.job) : (e.mobId != null ? String(e.mobId) : null));
-            var inLock = !anyLock || zAllMobs || (mid && lockList[mid]); // V2.22.0：打全部怪开 → 不看锁定名单
+            var inLock = anyLock ? !!(mid && lockList[mid]) : zAllMobs; // V2.34.4：名单非空→只认名单；名单为空→按「打全部怪」
             if (!ent.position || !e.position) return;
             var d = zRangeDist(e.position, ent.position); // V2.34.3：格子距离口径
             if (inLock) {
@@ -8438,7 +8438,8 @@
       // V2.16.3：还击加保护——zLock.gid 还挂着（正在追/打锁定怪，即使锁定怪当前超射程）→ 被非锁定怪打不还击，
       //   防止还击把 zLock 目标换成非锁定怪导致追怪中断/来回转向（还击只在确无锁定目标时才触发）
       // V2.34.0 A5：非选中怪独立一路判定——候选 = 最近 3 秒内命中过我的怪（zHitBy，运行时观测）
-      //   排除本拍 target 与 zLock.gid；不看 zAllMobs、不看 lockList、不受 atkRange 限制（远程怪必然在 atkRange 外）
+      //   排除本拍 target 与 zLock.gid（本分支语义为「非选中怪攻击」；锁定怪超射程由 zWalk 追怪 / 内挂靠近处理）；
+      //   不看 zAllMobs、不看 lockList、不受 atkRange 限制（远程怪必然在 atkRange 外）
       if (!target) {
         zHitPrune(now);
         var hitCandGid = 0, hitCandDist = -1, hitCandTs = -1;

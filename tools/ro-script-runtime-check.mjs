@@ -924,3 +924,61 @@ test('exp V2.34.4：非选中怪分支必须排除锁定目标本身且与名单
   }
 });
 
+// ================= V2.34.4 守名单门：名单非空时 BOSS 优先攻击/补尾刀只认名单（两文件同步） =================
+test('V2.34.4 守名单门：zBossAllowedByLock 单点定义且 zBossDecide/zAttack 各调用一次', () => {
+  for (const [name, src] of [['stable', source], ['exp', expSource]]) {
+    assert.equal((src.match(/function zBossAllowedByLock\(mid\)/g) || []).length, 1, name + ' helper 必须且只能定义一次');
+    const helperAt = src.indexOf('function zBossAllowedByLock(mid)');
+    const decideAt = src.indexOf('function zBossDecide(mobs) {');
+    const attackAt = src.indexOf('function zAttack() {');
+    assert.ok(helperAt >= 0 && helperAt < decideAt && decideAt < attackAt, name + ' helper 必须定义在两处调用之前');
+    const decideSeg = src.slice(decideAt, src.indexOf('  // A6：早退点不冻结整拍', decideAt));
+    const attackSeg = src.slice(attackAt, src.indexOf('  // 技能行统一序列化', attackAt));
+    assert.equal((decideSeg.match(/zBossAllowedByLock\(/g) || []).length, 1, name + ' zBossDecide 必须恰好调用一次（防漏改）');
+    assert.equal((attackSeg.match(/zBossAllowedByLock\(/g) || []).length, 1, name + ' zAttack 必须恰好调用一次（防漏改）');
+    // zBossDecide 段内无 zLock.gid/sendLockInject：门必须早于产出 want/skip（本函数内「产出」点）
+    const decideGate = decideSeg.indexOf('zBossAllowedByLock(');
+    assert.ok(decideGate >= 0 && decideGate < decideSeg.indexOf('out.want') && decideGate < decideSeg.indexOf('out.skip'), name + ' zBossDecide 名单门必须在产出 want/skip 之前');
+    // zAttack：门必须在写 zLock.gid / sendLockInject 之前
+    const attackGate = attackSeg.indexOf('zBossAllowedByLock(');
+    const gidAt = attackSeg.indexOf('zLock.gid = bgid;'), injectAt = attackSeg.indexOf('sendLockInject(bgid);');
+    assert.ok(attackGate >= 0 && gidAt > attackGate && injectAt > attackGate, name + ' zAttack 名单门必须在写 zLock.gid / sendLockInject 之前');
+    // BOSS mid 推导与 zAttack/zWalk 同口径（优先 rec.mid，其后 _job → job → mobId）
+    assert.ok(decideSeg.includes('rec.mid != null ? rec.mid : (rec._job != null ? rec._job : (rec.job != null ? rec.job : rec.mobId))'), name + ' zBossDecide mid 推导口径');
+    assert.ok(attackSeg.includes('bossRecD.mid != null ? bossRecD.mid : (bossRecD._job != null ? bossRecD._job : (bossRecD.job != null ? bossRecD.job : bossRecD.mobId))'), name + ' zAttack mid 推导口径');
+  }
+});
+
+test('V2.34.4 守名单门：名单有/无 × mid 形态真值表（vm 实跑 zBossAllowedByLock）', () => {
+  const a = source.indexOf('function zBossAllowedByLock(mid) {');
+  const b = source.indexOf('\n', a);
+  const code = source.slice(a, b);
+  assert.ok(code.includes('lockList[String(mid)]'), 'helper 必须用 String(mid) 归一化 lockList 键');
+  const run = (lockList, mid) => {
+    const ctx = { lockList, Object, String };
+    vm.createContext(ctx);
+    vm.runInContext(code + ';this.fn = zBossAllowedByLock', ctx);
+    return ctx.fn(mid);
+  };
+  assert.equal(run({}, null), true, '名单为空 → 恒 true（mid=null）');
+  assert.equal(run({}, 1234), true, '名单为空 → 恒 true（mid 有值）');
+  assert.equal(run({ '1234': { name: 'x' } }, 1234), true, '名单非空且数字 mid 命中');
+  assert.equal(run({ '1234': { name: 'x' } }, '1234'), true, '名单非空且字符串 mid 命中');
+  assert.equal(run({ '1234': { name: 'x' } }, 9999), false, '名单非空且数字 mid 不在名单 → false');
+  assert.equal(run({ '1234': { name: 'x' } }, '9999'), false, '名单非空且字符串 mid 不在名单 → false');
+  assert.equal(run({ '1234': { name: 'x' } }, null), false, 'mid=null 且名单非空 → false');
+  assert.equal(run({ '1234': { name: 'x' } }, undefined), false, 'mid=undefined 且名单非空 → false');
+});
+
+test('V2.34.4 守名单门：打全部怪与 BOSS 模式文案已更新（防回退）', () => {
+  for (const [name, src] of [['stable', source], ['exp', expSource]]) {
+    assert.ok(src.includes('打全部怪（仅在未设锁定名单时生效）'), name + ' 标签必须写明仅在未设名单时生效');
+    assert.ok(src.includes('id="dsh-z-allmobs" type="checkbox" checked'), name + ' id 与默认勾选不得改变');
+    assert.ok(src.includes('内挂/混合模式下内挂自身仍会攻击全部'), name + ' 说明必须点明内挂自身仍会打全部怪');
+    assert.ok(src.includes('BOSS 优先攻击/补尾刀同样只认名单'), name + ' 说明必须点明 BOSS 两模式也守名单');
+    assert.ok(src.includes('取消=助手不主动选目标'), name + ' 说明必须写明取消=助手不主动选目标');
+    assert.ok(src.includes('名单非空时，BOSS 优先攻击/补尾刀只对名单内 BOSS 生效'), name + ' BOSS 模式说明行必须补名单口径');
+  }
+});
+
+

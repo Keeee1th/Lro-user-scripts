@@ -726,7 +726,7 @@
       '<div class="row"><label class="switch"><input id="dsh-z-idlefly" type="checkbox">无目标持续自动瞬移</label>' +
       '<span class="lb" style="min-width:34px">超过</span><input id="dsh-z-idleflysec" type="number" value="10" style="flex:0 0 40px"><span style="color:#5a6b7f">s无锁定怪→瞬移</span></div>' +
       // V2.34.0 A3：BOSS 三模式（默认不处理）+ 尾刀线；瞬移间隔 dsh-z-flyint 保留
-      '<div class="row"><span class="lb">BOSS 出现</span><select id="dsh-z-bossact" style="flex:0 0 130px"><option>瞬移</option><option>优先攻击</option><option>等待残血补尾刀</option><option selected>不处理</option></select><span class="st">锁定则优先攻击</span></div>' +
+      '<div class="row"><span class="lb">BOSS 出现</span><select id="dsh-z-bossact" style="flex:0 0 130px"><option>瞬移</option><option>优先攻击</option><option>等待残血补尾刀</option><option selected>不处理</option></select><span class="st">锁定则优先攻击</span><span class="st" style="font-size:10px">名单非空时，BOSS 优先攻击/补尾刀只对名单内 BOSS 生效</span></div>' +
       '<div class="row"><span class="lb">尾刀线</span><input id="dsh-z-bosshp" type="number" value="30" min="1" max="99" style="flex:0 0 40px"><span style="color:#5a6b7f">%（各职业自填）</span>' +
       '<span class="lb" style="min-width:52px">瞬移间隔</span><input id="dsh-z-flyint" type="number" value="4" style="flex:0 0 40px"><span style="color:#5a6b7f">s</span></div>' +
       '<div class="row"><span class="lb">HP低于</span><input id="dsh-z-hpfly" type="number" value="20" style="flex:0 0 40px"><span style="color:#5a6b7f">%瞬移</span>' +
@@ -762,7 +762,7 @@
       '<label class="switch"><input id="dsh-z-next" type="checkbox" checked>打死换下一个</label></div>' +
       '<div class="sec">目标范围</div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-allmobs" type="checkbox" checked>打全部怪（仅在未设锁定名单时生效）</label></div>' +
-      '<div class="row"><span class="st">名单为空时：勾选=主动攻击全部怪（血少优先抢尾刀），取消=不主动攻击。名单非空时：始终只主动攻击名单内怪物。还击、群殴瞬移、解围技能不受此设置影响。</span></div>' +
+      '<div class="row"><span class="st">名单为空时：勾选=助手主动攻击全部怪；取消=助手不主动选目标（自研直走即不主动攻击；内挂/混合模式下内挂自身仍会攻击全部）。名单非空时：只主动攻击名单内怪物，BOSS 优先攻击/补尾刀同样只认名单。还击、群殴瞬移、解围技能不受此设置影响。</span></div>' +
       '<details style="margin:6px 0"><summary>战斗诊断（默认关 · 不改行为）</summary>' +
       '<div class="row"><label class="switch"><input id="dsh-bt-diag" type="checkbox">启用诊断日志</label></div>' +
       '<div class="row" style="flex-wrap:wrap;gap:4px"><button class="ghost" id="dsh-bt-snap" style="flex:0 0 auto;padding:0 8px;font-size:11px">快照</button><button class="ghost" id="dsh-bt-mark" style="flex:0 0 auto;padding:0 8px;font-size:11px">标记测试</button></div>' +
@@ -6925,6 +6925,8 @@
   // A3：BOSS 三模式判定（瞬移 / 优先攻击 / 等待残血补尾刀 / 不处理）
   var zLastBossAct = "不处理", zLastBossHp = -1, zLastGrpCount = 0, zLastFlyReason = "", zLastFlyReasonAt = 0;
   var zBossSkipGid = 0; // 尾刀模式「未到尾刀线」的 BOSS：既不打也不飞（从候选池剔除，不动用户显式锁定）
+  // V2.34.4 守名单门：名单为空恒放行；名单非空只认名单内 BOSS（zBossDecide / zAttack 两处共用同一口径）
+  function zBossAllowedByLock(mid) { return !(Object.keys(lockList).length > 0) || !!(mid != null && lockList[String(mid)]); }
   function zBossDecide(mobs) {
     try {
       mobs = mobs || scanMobs || lastMobs || [];
@@ -6937,6 +6939,9 @@
       var out = { rec: rec, act: "不处理", fly: false, reason: "", want: 0, hp: -1, skip: 0 };
       zBossSkipGid = 0;
       if (!rec) return out;
+      // V2.34.4 守名单门：名单非空时名单外 BOSS 不做任何特殊处理（不优先/不补尾刀/不跳过/不瞬移）；名单为空恒放行（行为与改动前一致）
+      var bossMidRec = rec.mid != null ? rec.mid : (rec._job != null ? rec._job : (rec.job != null ? rec.job : rec.mobId));
+      if (!zBossAllowedByLock(bossMidRec)) return out;
       var act = ($id("dsh-z-bossact") && $id("dsh-z-bossact").value) || "不处理";
       // 瞬移模式：BOSS 在锁定名单（lockList[mid] 命中，mid=怪物 job id）→ 自动按「优先攻击」处理（不飞）
       if (act === "瞬移" && rec.mid != null && lockList[String(rec.mid)]) act = "优先攻击";
@@ -8326,7 +8331,10 @@
       // V2.34.0 A3：BOSS「优先攻击 / 等待残血补尾刀」→ BOSS 越过锁定目标成为最高优先级（不因 BOSS 存在而飞）
       try {
         var bossWantD = zBossDecide();
-        if (bossWantD && bossWantD.rec && bossWantD.want) {
+        var bossRecD = bossWantD && bossWantD.rec;
+        var bossMidD = bossRecD ? (bossRecD.mid != null ? bossRecD.mid : (bossRecD._job != null ? bossRecD._job : (bossRecD.job != null ? bossRecD.job : bossRecD.mobId))) : null;
+        // V2.34.4 守名单门（双保险）：名单非空且 BOSS mid 不在名单 → 不写 zLock.gid、不 sendLockInject
+        if (bossWantD && bossRecD && zBossAllowedByLock(bossMidD) && bossWantD.want) {
           var bEnt = zEntOf(bossWantD.rec.GID);
           if (bEnt && bEnt.position && ent.position) {
             var bd = zRangeDist(bEnt.position, ent.position); // V2.34.3：格子距离口径

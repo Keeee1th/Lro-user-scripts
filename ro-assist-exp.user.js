@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手 · 实验版）
 // @namespace    dsh.ro-plugin
-// @version      2.34.7
+// @version      2.35.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -100,7 +100,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.34.7"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.35.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
 
   // V2.11.0：仓库+背包读取全局变量
@@ -1875,6 +1875,7 @@
     fwReg("mlock", "攻击名单", function () { return document.getElementById("dsh-fw-mlock"); });
     fwReg("tp", "传送功能", function () { return document.getElementById("dsh-fw-tp"); });
     fwReg("txcap", "数据抓包", txCapEnsureHost);
+    fwReg("challenge", "无限挑战", challengeEnsureHost); // V2.35.0
     fwReg("zhu2", "战斗设置", function () { return document.getElementById("dsh-fw-zhu2"); });
     // V2.34.0：原「助手战斗设置」页内三页签拆成三个一级浮窗，各自独立登记
     fwReg("zskill", "技能设置", function () { return document.getElementById("dsh-fw-zskill"); });
@@ -1939,6 +1940,7 @@
   var RO_MODULES = [
     { id: "menu",  name: "功能菜单快捷键",  kind: "menu", noToggle: true, sec: "常用" },
     { id: "tp",    name: "传送功能",        kind: "fw", sec: "常用" },
+    { id: "challenge", name: "无限挑战", kind: "fw", sec: "常用", defOff: true },
     { id: "np",    name: "内挂自动战斗",    kind: "act", noToggle: true, sec: "常用" },
     { id: "zhu",   name: "助手自动战斗",    kind: "act", noToggle: true, sec: "常用" },
     { id: "mlock", name: "攻击名单",        kind: "fw", sec: "战斗功能" },
@@ -3674,6 +3676,7 @@
       } catch (me) {}
       if (activeProfileKey() === key && lastCharGid === gid) return;
       try { npResetBattleState(); } catch (e0) {} // 换角色：旧角色排队意图绝不能落到新角色
+      try { challengeStop("切换角色，挑战已停止"); } catch (eC) {}
       if (typeof selfSpirits !== "undefined") selfSpirits = { aid: 0, num: 0, map: "" };
       try { captureAll(); } catch (e) {} // 旧档先落盘
       setActiveProfile(key);
@@ -3705,7 +3708,7 @@
   });
   // 自动存储（第2项）：周期 + 切后台 + 关页面前兜底（V2.5.0：后台隐藏时周期自动拉长到 30s，省 CPU；切后台/关页兜底已在下面保留）
   try { setInterval(function () { try { syncRealAtkRange(); } catch (e) {} if (!UI_BG || Date.now() - lastCaptureAt > 30000) { lastCaptureAt = Date.now(); captureAll(); } }, 8000); } catch (e) {}
-  try { window.addEventListener("beforeunload", function () { try { npClearBattleIntent(); } catch (e0) {} captureAll(); }); } catch (e) {}
+  try { window.addEventListener("beforeunload", function () { try { npClearBattleIntent(); } catch (e0) {} try { challengeStop("页面离开，挑战已停止"); } catch (eC) {} captureAll(); }); } catch (e) {}
   try { document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") captureAll(); }); } catch (e) {}
 
   // ---------------- 心跳 PING（V2.2.0 删定时防踢心跳；sendPing 仅保留给手机切后台 burst 连发用） ----------------
@@ -4957,6 +4960,7 @@
   }
   function tickArrow() {
     try {
+      if (challengeOwnsCombat()) return; // V2.35.0 挑战运行时通用换箭让位
       if (!clientReady()) return;
       var en = $id("dsh-arrowen");
       if (!en || !en.checked) { setArrowLog("未启用"); return; }
@@ -7455,6 +7459,7 @@
   }
   function startZhu() {
     if (zRunning) return;
+    if (challengeOwnsCombat()) { setStatus("无限挑战运行中，助手战斗不启动", "warn"); return; }
     zRunning = true;
     $id("dsh-z-state").textContent = "助手运行中…";
     startScan();
@@ -9639,18 +9644,31 @@
   function bagCleanInventory() {var paths=['UI/Components/Inventory/Inventory','UI/Components/BasicInventory/BasicInventory'];for(var i=0;i<paths.length;i++){var m=requireDB(paths[i]);if(m&&Array.isArray(m.list))return m.list;}return null;}
   function bagCleanInt(v,min,max){var n=Number(v);return Number.isInteger(n)&&n>=min&&n<=max?n:null;}
   function bagCleanRuleKey(k){return /^[1-9]\d*(?::u)?$/.test(k)&&Number(k.split(':')[0])<=2147483647;}
+  function bagCleanValidateImport(raw,legacy){
+    if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('规则必须是对象');
+    if(raw.version===2){
+      if(!raw.discardRules||typeof raw.discardRules!=='object'||Array.isArray(raw.discardRules)||!Array.isArray(raw.categoryTypes)||!Array.isArray(raw.protectedIds))throw Error('v2字段不完整');
+      if(Object.keys(raw.discardRules).length>2000)throw Error('discardRules超过2000条');
+      if(raw.categoryTypes.length>64)throw Error('categoryTypes超过64条');
+      if(raw.protectedIds.length>2000)throw Error('protectedIds超过2000条');
+    }else if(legacy){
+      var rules=raw.discardRules&&typeof raw.discardRules==='object'&&!Array.isArray(raw.discardRules)?raw.discardRules:raw;
+      if(Object.keys(rules).length>2000)throw Error('旧版规则超过2000条');
+    }
+    return raw;
+  }
   function bagCleanNormalize(raw, legacy) {
     var out={version:2,discardRules:{},categoryTypes:[],protectedIds:[],armed:false}, src=raw&&typeof raw==='object'&&!Array.isArray(raw)?raw:null;
     var rules=src&&src.version===2?src.discardRules:(legacy&&src?(src.discardRules&&typeof src.discardRules==='object'&&!Array.isArray(src.discardRules)?src.discardRules:src):null);
-    if(rules&&typeof rules==='object'&&!Array.isArray(rules))Object.keys(rules).slice(0,2000).forEach(function(k){var n=bagCleanInt(rules[k],0,1000000000);if(bagCleanRuleKey(k)&&n!==null)out.discardRules[k]=n;});
+    if(rules&&typeof rules==='object'&&!Array.isArray(rules))Object.keys(rules).forEach(function(k){var n=bagCleanInt(rules[k],0,1000000000);if(bagCleanRuleKey(k)&&n!==null)out.discardRules[k]=n;});
     if(src&&src.version===2){
-      if(Array.isArray(src.categoryTypes))src.categoryTypes.slice(0,64).forEach(function(v){var n=bagCleanInt(v,0,255);if(n!==null&&Object.prototype.hasOwnProperty.call(BAG_SAFE_TYPES,String(n))&&out.categoryTypes.indexOf(n)<0)out.categoryTypes.push(n);});
-      if(Array.isArray(src.protectedIds))src.protectedIds.slice(0,2000).forEach(function(v){var n=bagCleanInt(v,1,2147483647);if(n!==null&&out.protectedIds.indexOf(n)<0)out.protectedIds.push(n);});
+      if(Array.isArray(src.categoryTypes))src.categoryTypes.forEach(function(v){var n=bagCleanInt(v,0,255);if(n!==null&&Object.prototype.hasOwnProperty.call(BAG_SAFE_TYPES,String(n))&&out.categoryTypes.indexOf(n)<0)out.categoryTypes.push(n);});
+      if(Array.isArray(src.protectedIds))src.protectedIds.forEach(function(v){var n=bagCleanInt(v,1,2147483647);if(n!==null&&out.protectedIds.indexOf(n)<0)out.protectedIds.push(n);});
       out.armed=src.armed===true;
     }
     return out;
   }
-  function bagCleanLoad(){var raw=null;try{raw=JSON.parse(localStorage.getItem(BAG_CLEAN_KEY)||'null');}catch(ignore){}if(raw&&raw.version===2)return bagCleanNormalize(raw,false);try{raw=JSON.parse(localStorage.getItem(BAG_CLEAN_V1_KEY)||'{}');}catch(ignore2){raw={};}var migrated=bagCleanNormalize(raw,true);try{localStorage.setItem(BAG_CLEAN_KEY,JSON.stringify(migrated));}catch(ignore3){}return migrated;}
+  function bagCleanLoad(){var raw=null,empty=function(){return bagCleanNormalize(null,false);};try{raw=JSON.parse(localStorage.getItem(BAG_CLEAN_KEY)||'null');}catch(ignore){}if(raw&&raw.version===2){try{return bagCleanNormalize(bagCleanValidateImport(raw,false),false);}catch(ignore2){return empty();}}try{raw=JSON.parse(localStorage.getItem(BAG_CLEAN_V1_KEY)||'{}');var migrated=bagCleanNormalize(bagCleanValidateImport(raw,true),true);try{localStorage.setItem(BAG_CLEAN_KEY,JSON.stringify(migrated));}catch(ignore3){}return migrated;}catch(ignore4){return empty();}}
   function bagCleanSave(){localStorage.setItem(BAG_CLEAN_KEY,JSON.stringify(bagClean.config));}
   function bagCleanDisarm(message){bagClean.config.armed=false;bagClean.enabled=false;bagClean.generation++;bagClean.pending=false;bagCleanSave();var en=document.querySelector('#dsh-bag-clean [data-enable]');if(en)en.checked=false;if(message)bagCleanSay(message);}
   function bagCleanTypeNames(){
@@ -9661,16 +9679,18 @@
     Object.keys(BAG_SAFE_TYPES).forEach(function(k){if(!Object.prototype.hasOwnProperty.call(names,k))names[k]=BAG_SAFE_TYPES[k];});return names;
   }
   function bagCleanProtected(it){
-    if(!it)return '数据缺失';if(it.IsEquipped||it.WearState||it.wearState||it.equipped)return '穿戴中';
+    if(!it)return '数据缺失';
     var equipment=[4,5,8,12].indexOf(Number(it.type))>=0;
     if(equipment){
-      if(!(it.IsIdentified===0||it.IsIdentified===false||it.IsIdentified===1||it.IsIdentified===true))return '鉴定状态不明';
-      if(Number(it.RefiningLevel)!==0||Number(it.refiningLevel||0)!==0)return '精炼装备';
-      if(!it.slot||typeof it.slot!=='object')return '插槽字段不明';
-      for(var sk in it.slot)if(Number(it.slot[sk])!==0)return '已插卡或插槽不明';
-      if(Number(it.nRandomOptionCnt||0)!==0)return '随机属性装备';
-      if(it.IsDamaged)return '损坏装备';
-    }
+      var own=Object.prototype.hasOwnProperty,refineKeys=['RefiningLevel','refiningLevel'],randomKeys=['nRandomOptionCnt'],damageKeys=['IsDamaged'],wearKeys=['IsEquipped','WearState','wearState','equipped'];
+      if(!own.call(it,'IsIdentified')||!(it.IsIdentified===0||it.IsIdentified===false||it.IsIdentified===1||it.IsIdentified===true))return '装备保护字段不完整';
+      var present=refineKeys.filter(function(k){return own.call(it,k);});if(!present.length||present.some(function(k){return typeof it[k]!=='number'||it[k]!==0;}))return present.length?'精炼装备':'装备保护字段不完整';
+      if(!it.slot||typeof it.slot!=='object'||['card1','card2','card3','card4'].some(function(k){return !own.call(it.slot,k);}))return '装备保护字段不完整';
+      if(['card1','card2','card3','card4'].some(function(k){return typeof it.slot[k]!=='number'||it.slot[k]!==0;}))return '已插卡或插槽不明';
+      present=randomKeys.filter(function(k){return own.call(it,k);});if(!present.length)return '装备保护字段不完整';if(present.some(function(k){return typeof it[k]!=='number'||it[k]!==0;}))return '随机属性装备';
+      present=damageKeys.filter(function(k){return own.call(it,k);});if(!present.length)return '装备保护字段不完整';if(present.some(function(k){return !(it[k]===false||it[k]===0);}))return '损坏装备';
+      present=wearKeys.filter(function(k){return own.call(it,k);});if(!present.length)return '装备保护字段不完整';if(present.some(function(k){return !(it[k]===false||it[k]===0);}))return '穿戴中';
+    }else if(it.IsEquipped||it.WearState||it.wearState||it.equipped)return '穿戴中';
     return '';
   }
   function bagCleanDescribe(it,cfg,typeNames){
@@ -9724,7 +9744,7 @@
     box.querySelector('[data-stop]').onclick=function(){bagClean.enabled=false;bagClean.generation++;box.querySelector('[data-enable]').checked=false;bagCleanSay('已停止；已发出的丢弃无法撤回');};
     box.querySelector('[data-now]').onclick=function(){if(bagClean.busy)return;if(!clientReady())return bagCleanSay('客户端未就绪');var p=bagCleanPreview();if(!p)return;if(!window.confirm('将立即丢弃以下物品到地面：\n\n'+p.text+'\n\n这是不可逆操作，确认执行？'))return;var limits={};p.plan.forEach(function(r){limits[r.key+'|'+r.source]=r.drop;});bagCleanExecute(function(){},limits);};
     box.querySelector('[data-export]').onclick=function(){box.querySelector('[data-json]').value=JSON.stringify(bagClean.config,null,2);};
-    box.querySelector('[data-import]').onclick=function(){try{var raw=JSON.parse(box.querySelector('[data-json]').value),legacy=raw&&raw.version!==2,cfg=bagCleanNormalize(raw,legacy);if(raw&&raw.version===2&&(!raw.discardRules||!Array.isArray(raw.categoryTypes)||!Array.isArray(raw.protectedIds)))throw Error('v2字段不完整');cfg.armed=false;bagClean.config=cfg;bagCleanDisarm('导入成功：自动已关闭且未授权，请重新预览确认。');render();}catch(e){bagCleanSay('导入失败：'+(e.message||'JSON/键/数量/类型不合法'));}};
+    box.querySelector('[data-import]').onclick=function(){try{var raw=JSON.parse(box.querySelector('[data-json]').value),legacy=raw&&raw.version!==2;bagCleanValidateImport(raw,legacy);var cfg=bagCleanNormalize(raw,legacy);cfg.armed=false;bagClean.config=cfg;bagCleanDisarm('导入成功：自动已关闭且未授权，请重新预览确认。');render();}catch(e){bagCleanSay('导入失败：'+(e.message||'JSON/键/数量/类型不合法'));}};
     render();setInterval(function(){if(!bagClean.enabled||!bagClean.config.armed||bagClean.busy)return;var w=bagCleanWeight(),free=bagCleanFreeSlots();if(bagCleanNeeded(w,free)){bagClean.pending=true;bagCleanExecute(function(){},null);}},2000);
   }
   // ---------------- 拾取页：内挂百分比联动 ----------------
@@ -13777,6 +13797,53 @@
     addPickup: addWl,
     removePickup: removeWl
   };
+
+
+  // ================= V2.35.0 无限挑战（纠正版）=================
+  var CHALLENGE_KEY="dsh-ro-challenge-v1";
+  var challenge={running:false,generation:0,state:"idle",round:0,remaining:null,countdown:null,spawnUntil:0,lastNotice:"",lastNoticeAt:0,manualHold:false,timer:null,rewardTimer:null,contact:null,selectedNpc:null,walking:false,nameReq:{},npLease:"none",arrowPending:null,arrowBlocked:false,noMobAt:0,lastFly:0,lastSkill:0,menuFingerprint:"",menuWarnTimer:null};
+  function challengeDefaults(){return {difficulty:"basic",stop100:true,neutralItid:null,ghostItid:null,bossByMid:{},arrowOn:false,flyOn:false,emergencyFly:false};}
+  function challengePos(v){v=Number(v);return Number.isInteger(v)&&v>0?v:null;}
+  function challengeLoad(){var d=challengeDefaults(),r=null;try{r=JSON.parse(localStorage.getItem(CHALLENGE_KEY)||"null");}catch(e){}if(!r||typeof r!=="object")return d;if(/^(basic|middle|advanced)$/.test(r.difficulty))d.difficulty=r.difficulty;d.stop100=r.stop100!==false;d.arrowOn=r.arrowOn===true;d.flyOn=r.flyOn===true;d.emergencyFly=r.emergencyFly===true;d.neutralItid=challengePos(r.neutralItid);d.ghostItid=challengePos(r.ghostItid);if(r.bossByMid&&typeof r.bossByMid==="object")Object.keys(r.bossByMid).forEach(function(k){var mid=challengePos(k),v=r.bossByMid[k],itid=challengePos(v&&v.itid!=null?v.itid:v);if(mid&&itid)d.bossByMid[mid]=itid;});return d;}
+  var challengeCfg=challengeLoad();
+  function challengeSave(){try{localStorage.setItem(CHALLENGE_KEY,JSON.stringify(challengeCfg));}catch(e){}}
+  function challengeNormalizeText(s){return String(s==null?"":s).replace(/<[^>]*>/g," ").replace(/\^[0-9a-f]{6}/gi,"").replace(/[０-９]/g,function(c){return String.fromCharCode(c.charCodeAt(0)-65248);}).replace(/達/g,"达").replace(/貓/g,"猫").replace(/\s+/g," ").trim();}
+  function challengeParseNotice(raw){var text=challengeNormalizeText(raw),m,round=null,remaining=null,spawn=false,spawnSeconds=null,countdown=null,completed=null;if((m=text.match(/(?:完成|通过)\s*第?\s*(\d+)\s*[轮层波]/))||(m=text.match(/第\s*(\d+)\s*[轮层波]\s*(?:完成|结束|通过)/)))completed=Number(m[1]);if((m=text.match(/第\s*(\d+)\s*[轮层波]/))||(m=text.match(/(?:轮次|当前轮)\s*[:：]?\s*(\d+)/))||(m=text.match(/(^|\D)(\d+)\s*波(?:\D|$)/)))round=Number(m[m.length-1]);if((m=text.match(/(?:怪物|敌人|入侵者)?\s*(?:还剩|剩余)\s*[:：]?\s*(\d+)\s*(?:只|个|名)?/)))remaining=Number(m[1]);if((m=text.match(/(?:入侵者|怪物|首领|Boss|MVP).*?(\d+)\s*秒(?:后)?(?:出现|刷新|到达|生成)/i))){spawn=true;spawnSeconds=Number(m[1]);}else if(/(?:入侵者|怪物|首领|Boss|MVP).*(?:出现|刷新|到达|生成)/i.test(text))spawn=true;if((m=text.match(/(?:倒计时|挑战时间|时间)?\s*(?:还剩|剩余)\s*[:：]?\s*(?:(\d+)\s*分)?\s*(\d+)\s*秒/)))countdown=Number(m[1]||0)*60+Number(m[2]);else if((m=text.match(/(?:倒计时|挑战时间|时间)\s*[:：]?\s*(\d+)\s*秒/)))countdown=Number(m[1]);return {round:round,remaining:remaining,spawn:spawn,spawnSeconds:spawnSeconds,countdown:countdown,completed:completed,text:text};}
+  function challengeArrowDecision(raw,isBoss,mid,cfg){raw=Number(raw);if(!Number.isInteger(raw)||raw<0)return null;cfg=cfg||{};var type=raw%20,level=Math.floor(raw/20),neutral=challengePos(cfg.neutralItid!=null?cfg.neutralItid:cfg.neutralArrow),ghost=challengePos(cfg.ghostItid!=null?cfg.ghostItid:cfg.ghostArrow),v=cfg.bossByMid&&cfg.bossByMid[mid],boss=challengePos(v&&v.itid!=null?v.itid:v);if(type===8&&level===3)return ghost?{kind:"ghost3",itid:ghost}:null;if(isBoss)return boss||neutral?{kind:boss?"boss":"neutral",itid:boss||neutral}:null;if(type===8&&level===4)return ghost?{kind:"ghost4",itid:ghost}:null;return neutral?{kind:"neutral",itid:neutral}:null;}
+  function challengeEntityName(e){return challengeNormalizeText(e&&(e.displayName||e.name||(e.display&&e.display.name))||"").replace(/[【\[].*?[】\]]/g,"").split("#")[0].replace(/\s/g,"");}
+  function challengeNpcAlias(n){return /^(?:喵达人|猫达人|白猫|白猫达人|喵達人|貓達人)$/.test(n);}
+  function challengeRequestNames(es,now){var sent=0;(es||[]).forEach(function(e){var gid=challengePos(e&&e.GID);if(sent>=3||!gid||challengeEntityName(e)||now-(challenge.nameReq[gid]||0)<10000)return;try{var P=CLIENT.PS.CZ.REQNAME||CLIENT.PS.CZ.REQUEST_NAME;if(!P)return;var p=new P();p.GID=gid;CLIENT.NM.sendPacket(p);challenge.nameReq[gid]=now;sent++;}catch(ignore){}});return sent;}
+  function challengePickNpc(es,player){var named=[],near=[],allEmpty=true,p=Array.isArray(player)?player:[99,107];(es||[]).forEach(function(e){if(!e||!e.position||(e.objecttype!=null&&e.objecttype!==6&&e.objecttype!==12))return;var n=challengeEntityName(e);if(n)allEmpty=false;if(challengeNpcAlias(n))named.push(e);if(Math.max(Math.abs(Number(e.position[0])-99),Math.abs(Number(e.position[1])-107))<=5)near.push(e);});return named.length===1?named[0]:(named.length===0&&allEmpty&&near.length===1?near[0]:null);}
+  function challengeUniqueOption(items,matcher){var rx=matcher instanceof RegExp?matcher:null,h=[];try{if(!rx)rx=new RegExp(matcher);}catch(e){return null;}(items||[]).forEach(function(v,i){rx.lastIndex=0;if(rx.test(challengeNormalizeText(v).replace(/\s/g,"")))h.push(i);});return h.length===1?{index:h[0],text:items[h[0]]}:null;}
+  function challengeEntities(){var a=[];try{var em=CLIENT.EM||(window.require&&window.require("Renderer/EntityManager"));if(em&&em.forEach)em.forEach(function(e){a.push(e);});}catch(e){}return a;}
+  function challengeRender(){var e=$id("dsh-challenge-state"),a=$id("dsh-challenge-start"),b=$id("dsh-challenge-stop"),d=$id("dsh-challenge-difficulty");if(e)e.textContent="状态："+challenge.state+"\n轮次："+(challenge.round||"—")+"　剩余怪："+(challenge.remaining==null?"—":challenge.remaining)+"　倒计时："+(challenge.countdown==null?"—":challenge.countdown+"秒");if(a)a.disabled=challenge.running;if(b)b.disabled=!challenge.running;if(d)d.disabled=challenge.running;}
+  function challengeSay(s){challenge.state=s;var e=$id("dsh-challenge-status");if(e)e.textContent=s;challengeRender();}
+  function challengeActive(){return !!challenge.running;}
+  function challengeOwnsCombat(){return challengeActive();}
+  function challengeDialogOpen(){try{var b=requireDB("UI/Components/NpcBox/NpcBox"),m=requireDB("UI/Components/NpcMenu/NpcMenu");return !!((b&&b.ui&&b.ui.is(":visible"))||(m&&m.ui&&m.ui.is(":visible")));}catch(e){return false;}}
+  function challengeCancelNpIntent(){if(npBattleExplicit&&/^challenge-/.test(npBattleExplicit.source||"")){if(npBattleExplicitTimer)clearTimeout(npBattleExplicitTimer);npBattleExplicitTimer=null;npBattleExplicit=null;}if(npBattleCandidate&&/^challenge-/.test(npBattleCandidate.source||""))npBattleCandidate=null;}
+  function challengeBattleOn(){var before=npBattleState();if(challenge.npLease!=="none")return "pending";if(before!==false)return before===true?"already":"unknown";var r=npRequestBattle(true,"challenge-start",true);if(r==="sent"||r==="queued")challenge.npLease="pending";return r;}
+  function challengeBattleConfirm(){if(challenge.npLease==="pending"&&npBattleState()===true)challenge.npLease="owned";}
+  function challengeBattleOff(){challengeCancelNpIntent();var owned=challenge.npLease==="owned";challenge.npLease="none";return owned&&npBattleState()===true?npRequestBattle(false,"challenge-stop",true):"unowned";}
+  function challengeStop(reason){var was=challenge.running;challenge.running=false;challenge.generation++;challenge.manualHold=false;challenge.contact=null;challenge.selectedNpc=null;challenge.arrowPending=null;challenge.arrowBlocked=false;if(challenge.timer){clearInterval(challenge.timer);challenge.timer=null;}if(challenge.rewardTimer){clearTimeout(challenge.rewardTimer);challenge.rewardTimer=null;}if(challenge.menuWarnTimer){clearTimeout(challenge.menuWarnTimer);challenge.menuWarnTimer=null;}if(challenge.walking){try{stopWalkXY();}catch(e){}challenge.walking=false;}challengeCancelNpIntent();if(was||challenge.npLease!=="none")challengeBattleOff();challengeSay(reason||"已停止");}
+  function challengePause100(round){challenge.running=false;challenge.generation++;challenge.manualHold=true;if(challenge.timer){clearInterval(challenge.timer);challenge.timer=null;}challenge.state="paused";challengeBattleOff();var e=$id("dsh-challenge-status");if(e)e.textContent="第"+round+"轮完成，领奖前暂停";challengeRender();}
+  function challengeContact(n){try{var p=new CLIENT.PS.CZ.CONTACTNPC();p.NAID=n.GID;p.type=1;CLIENT.NM.sendPacket(p);lastTalkNpc={GID:n.GID,name:challengeEntityName(n),pos:[n.position[0],n.position[1]]};challenge.selectedNpc=n.GID;challenge.contact={gid:n.GID,firstAt:challenge.contact&&challenge.contact.firstAt||Date.now(),lastAt:Date.now(),retries:0,nextAt:0};challengeSay("已远程联系喵达人，等待对话");return true;}catch(e){return false;}}
+  function challengeNpcTick(now){var me=CLIENT.SS&&CLIENT.SS.Entity,es=challengeEntities(),n=challengePickNpc(es,me&&me.position),c=challenge.contact;challengeRequestNames(es,now);if(n&&(!c||c.gid!==n.GID))return challengeContact(n);if(challengeDialogOpen())return false;if(!c){challenge.manualHold=true;challengeSay("NPC 缺失或名称不唯一，手动 hold（不发包、不巡逻）");return false;}if(now-c.firstAt>=30000){challengeStop("30秒无对话，已停止");return false;}if(now-c.firstAt<8000||now<c.nextAt)return false;var pos=me&&me.position,dist=pos?Math.max(Math.abs(Number(pos[0])-99),Math.abs(Number(pos[1])-107)):99;if(dist<=2||c.retries>=3)return false;if(!challenge.walking){var g=challenge.generation;c.retries++;c.nextAt=now+(c.retries===1?1000:3000);challenge.walking=!!walkToXY(99,107,function(){challenge.walking=false;if(challenge.running&&g===challenge.generation)challengeNpcTick(Date.now());},"dsh-challenge-status");challengeSay("8秒无对话，走近重试 "+c.retries+"/3（30秒止损）");return challenge.walking;}return false;}
+  function challengeMenuChoice(items){var rules=[{basic:/^(?:初级|简单)(?:挑战)?$/,middle:/^(?:中级|普通)(?:挑战)?$/,advanced:/^(?:高级|困难)(?:挑战)?$/}[challengeCfg.difficulty],/^继续挑战$/, /^开始挑战$/, /^领取奖励$/, /^(?:确认|确定|是|好的)$/];for(var i=0;i<rules.length;i++){var hit=challengeUniqueOption(items,rules[i]),count=0;if(hit)return hit;(items||[]).forEach(function(v){rules[i].lastIndex=0;if(rules[i].test(challengeNormalizeText(v).replace(/\s/g,"")))count++;});if(count>1)return {ambiguous:true};}return null;}
+  function challengeChooseMenu(r){if(!challenge.running||challenge.manualHold||!r||!Array.isArray(r.items))return false;var naid=challengePos(r.NAID),fp=naid+"|"+r.items.map(challengeNormalizeText).join("\u001f");if(!naid||naid!==challengePos(challenge.selectedNpc)){challenge.manualHold=true;challengeSay("菜单 NPC 不匹配，等待手动选择");return false;}if(fp===challenge.menuFingerprint)return false;var x=challengeMenuChoice(r.items);if(!x||x.ambiguous){challenge.manualHold=true;challengeSay(x?"菜单匹配不唯一，等待手动选择":"未知菜单，等待手动选择");return false;}if(challengeCfg.stop100&&challenge.round>=100&&/领取奖励/.test(x.text)){challengePause100(challenge.round);return false;}challenge.menuFingerprint=fp;try{var p=new CLIENT.PS.CZ.CHOOSE_MENU();p.NAID=naid;p.num=x.index+1;CLIENT.NM.sendPacket(p);if(challenge.menuWarnTimer)clearTimeout(challenge.menuWarnTimer);var g=challenge.generation;challenge.menuWarnTimer=setTimeout(function(){if(challenge.running&&g===challenge.generation&&challenge.menuFingerprint===fp)challengeSay("菜单提交8秒无进展，请人工确认（不重发）");},8000);challengeSay("已选择："+x.text+"；等待服务器开战信号");return true;}catch(e){challenge.manualHold=true;return false;}}
+  function challengeStart(){if(zRunning||(bagClean&&bagClean.busy)){challengeSay("助手战斗运行中，拒绝启动");return false;}if(!clientReady()){challengeSay("客户端未就绪");return false;}challengeStop("准备启动");challenge.running=true;challenge.generation++;challenge.round=0;challenge.remaining=null;challenge.countdown=null;challenge.lastNotice="";challenge.npLease="none";challenge.noMobAt=0;challenge.menuFingerprint="";challenge.selectedNpc=null;var g=challenge.generation;challenge.timer=setInterval(function(){if(challenge.running&&challenge.generation===g)challengeTick();},250);challengeNpcTick(Date.now());return true;}
+  function challengeOnAnnouncement(text,now){if(!challenge.running)return false;var ev=challengeParseNotice(text);now=now||Date.now();if(!ev.text||ev.text===challenge.lastNotice&&now-challenge.lastNoticeAt<2500)return false;if(ev.round==null&&ev.remaining==null&&!ev.spawn&&ev.countdown==null&&ev.completed==null&&!/挑战/.test(ev.text))return false;var er=ev.completed!=null?ev.completed:ev.round;if(er!=null&&challenge.round&&er<challenge.round)return false;challenge.lastNotice=ev.text;challenge.lastNoticeAt=now;if(ev.round!=null)challenge.round=ev.round;if(ev.remaining!=null)challenge.remaining=ev.remaining;if(ev.countdown!=null)challenge.countdown=ev.countdown;if(ev.spawn)challenge.spawnUntil=now+(ev.spawnSeconds||0)*1000;if(ev.completed!=null){challenge.round=ev.completed;challenge.remaining=0;challengeBattleOff();if(challengeCfg.stop100&&ev.completed>=100){challengePause100(ev.completed);return true;}var g=challenge.generation;if(challenge.rewardTimer)clearTimeout(challenge.rewardTimer);challenge.rewardTimer=setTimeout(function(){if(challenge.running&&g===challenge.generation){challenge.contact=null;challenge.selectedNpc=null;challengeNpcTick(Date.now());}},1000);challengeSay("第"+ev.completed+"轮完成，1秒后联系喵达人");return true;}if(ev.round!=null||ev.remaining!=null||ev.spawn||/挑战.*(?:开始|进行)|(?:开始|进入).*挑战/.test(ev.text)){challengeBattleOn();challenge.state="battle";}challengeRender();return true;}
+  function chOnAnnouncement(text){return challengeOnAnnouncement(text);}
+  function challengeTarget(){var all=challengeEntities(),me=CLIENT.SS&&CLIENT.SS.Entity,lock=zLock&&gidInt(zLock.gid),best=null,bd=1e9;all.forEach(function(e){if(!e||e.objecttype!==5||e.isDeath||e.remove_tick||(e.ACTION&&e.action===e.ACTION.DIE))return;var d=me&&me.position&&e.position?Math.max(Math.abs(e.position[0]-me.position[0]),Math.abs(e.position[1]-me.position[1])):1e9;if(lock&&gidInt(e.GID)===lock){best=e;bd=-1;}else if(bd>=0&&d<bd){best=e;bd=d;}});if(!best)return null;var mid=Number(best._job!=null?best._job:(best.job!=null?best.job:best.mobId));return Number.isFinite(mid)?{entity:best,gid:best.GID,mid:mid,dist:bd}:null;}
+  function challengeArrowTick(t,now){challenge.arrowBlocked=false;if(!challenge.running||challengeCfg.difficulty==="basic"||!challengeCfg.arrowOn||!t)return false;var db=getMobDb(),m=db&&db[t.mid];if(!m){challenge.arrowBlocked=true;challengeSay("箭矢延后：目标属性未知");return true;}var d=challengeArrowDecision(m.Element!=null?m.Element:m.element,Number(m.MvpDropsNum)>0,t.mid,challengeCfg);if(!d||!d.itid){challenge.arrowBlocked=true;challengeSay("箭矢延后：所需箭矢未配置");return true;}var ammo=readEquippedAmmo();if(ammo&&Number(ammo.itid)===d.itid){challenge.arrowPending=null;return false;}var p=challenge.arrowPending,row=readBagArrows().filter(function(x){return Number(x.itid)===d.itid;})[0];if(!row){challenge.arrowBlocked=true;challengeSay("箭矢延后：背包缺少 #"+d.itid);return true;}if(p&&p.itid===d.itid){if(now<p.confirmUntil)return true;if(!p.retryAt){p.retryAt=now+3000;challenge.arrowBlocked=true;challengeSay("箭矢确认超时，3秒后重试");return true;}if(now<p.retryAt)return true;if(equipArrow(row.index)){challenge.arrowPending={itid:d.itid,confirmUntil:now+5000,retryAt:0};return true;}challenge.arrowBlocked=true;return true;}if(equipArrow(row.index)){challenge.arrowPending={itid:d.itid,confirmUntil:now+5000,retryAt:0};return true;}challenge.arrowBlocked=true;return true;}
+  function challengeTick(){if(!challenge.running)return;var now=Date.now(),live=(scanMobs||[]).filter(function(m){return m&&!m.dead&&!m.isDeath&&!m.remove_tick;}),me=CLIENT.SS&&CLIENT.SS.Entity,hp=me&&me.life&&Number(me.life.hp),max=me&&me.life&&Number(me.life.hp_max);if(challenge.manualHold)return;if(challengeCfg.emergencyFly&&challenge.state==="battle"&&challenge.remaining>0&&max>0&&hp/max<.7&&now-challenge.lastFly>=1000){challenge.lastFly=now;doFly();return;}var t=challengeTarget();if(challengeArrowTick(t,now)||challenge.arrowBlocked)return;if(!live.length){if(!challenge.noMobAt)challenge.noMobAt=now;if(challengeCfg.flyOn&&challenge.state==="battle"&&challenge.remaining>0&&now-challenge.noMobAt>=3000&&now-challenge.lastFly>=1000){challenge.lastFly=now;doFly();return;}}else challenge.noMobAt=0;if(challenge.state!=="battle")challengeNpcTick(now);challengeRender();}
+  function challengeFillArrows(s){if(!s)return;var old=s.value;s.innerHTML='<option value="">选择背包 type10 箭矢</option>';readBagArrows().forEach(function(x){var o=document.createElement("option");o.value=x.itid;o.textContent=(getItemName(x.itid)||("ITID "+x.itid))+" #"+x.itid+" ×"+x.count;s.appendChild(o);});s.value=old;}
+  function challengeFillBosses(s){if(!s)return;var old=s.value,db=getMobDb()||{};s.innerHTML='<option value="">选择 Boss</option>';Object.keys(db).filter(function(k){return db[k]&&Number(db[k].MvpDropsNum)>0;}).forEach(function(k){var o=document.createElement("option");o.value=k;o.textContent=(db[k].name||db[k].Name||"Boss")+" #"+k;s.appendChild(o);});s.value=old;}
+  function challengeEnsureHost(){var h=$id("dsh-fw-challenge");if(h){challengeFillArrows($id("dsh-challenge-arrow"));return h;}var dock=$id("dsh-challenge-dock");if(!dock){dock=document.createElement("div");dock.id="dsh-challenge-dock";dock.style.display="none";document.documentElement.appendChild(dock);}h=document.createElement("div");h.id="dsh-fw-challenge";h.innerHTML='<div class="sec">无限挑战</div><div class="row"><select id="dsh-challenge-difficulty"><option value="basic">初级</option><option value="middle">中级</option><option value="advanced">高级</option></select><button id="dsh-challenge-start">开始</button><button id="dsh-challenge-stop">停止</button></div><div id="dsh-challenge-state" class="log"></div><div id="dsh-challenge-status" class="st"></div><label><input id="dsh-challenge-stop100" type="checkbox">100轮领奖前暂停</label><br><label><input id="dsh-challenge-arrowon" type="checkbox">自动换箭</label><br><span class="st">技能施放已禁用：安全前置条件无法全部证实</span><br><label><input id="dsh-challenge-fly" type="checkbox">战斗中剩余怪>0且无怪延迟飞</label><input id="dsh-challenge-flyms" type="number"><br><label><input id="dsh-challenge-emergency" type="checkbox">紧急逃生（HP&lt;70%，默认关闭）</label><div class="row"><select id="dsh-challenge-arrow"></select><button id="dsh-challenge-neutral">设无属性</button><button id="dsh-challenge-ghost">设念属性</button></div><div class="row"><select id="dsh-challenge-boss"></select><button id="dsh-challenge-bosssave">保存Boss箭</button></div><div class="log">明确排除：邮件、push、自动清包、巡逻。</div>';dock.appendChild(h);var d=$id("dsh-challenge-difficulty"),a=$id("dsh-challenge-arrow"),b=$id("dsh-challenge-boss");d.value=challengeCfg.difficulty;$id("dsh-challenge-stop100").checked=challengeCfg.stop100;$id("dsh-challenge-arrowon").checked=challengeCfg.arrowOn;$id("dsh-challenge-fly").checked=challengeCfg.flyOn;$id("dsh-challenge-emergency").checked=challengeCfg.emergencyFly;challengeFillArrows(a);challengeFillBosses(b);function save(){challengeCfg.difficulty=d.value;challengeCfg.stop100=$id("dsh-challenge-stop100").checked;challengeCfg.arrowOn=$id("dsh-challenge-arrowon").checked;challengeCfg.flyOn=$id("dsh-challenge-fly").checked;challengeCfg.emergencyFly=$id("dsh-challenge-emergency").checked;challengeSave();}h.querySelectorAll("input,select").forEach(function(x){x.addEventListener("change",save);});$id("dsh-challenge-start").onclick=function(){save();challengeStart();};$id("dsh-challenge-stop").onclick=function(){challengeStop("用户停止");};$id("dsh-challenge-neutral").onclick=function(){challengeCfg.neutralItid=challengePos(a.value);challengeSave();};$id("dsh-challenge-ghost").onclick=function(){challengeCfg.ghostItid=challengePos(a.value);challengeSave();};$id("dsh-challenge-bosssave").onclick=function(){var mid=challengePos(b.value),itid=challengePos(a.value);if(mid&&itid){challengeCfg.bossByMid[mid]=itid;challengeSave();}};challengeRender();return h;}
+  function challengeInstallNotices(){if(challengeInstallNotices.done)return;challengeInstallNotices.done=true;try{window.chOnAnnouncement=chOnAnnouncement;}catch(e){}if(typeof MutationObserver!=="function")return;var sel='[id*="Chat"],[class*="Chat"],[id*="chat"],[class*="chat"],[id*="Announce"],[class*="Announce"],[id*="announce"],[class*="announce"]',o=new MutationObserver(function(ms){ms.forEach(function(mu){Array.prototype.forEach.call(mu.addedNodes||[],function(n){if(n&&n.textContent)chOnAnnouncement(n.textContent);});});});Array.prototype.forEach.call(document.querySelectorAll(sel),function(el){if(!el.closest||!el.closest("#dsh-assistant"))o.observe(el,{childList:true,subtree:true});});}
+  var challengeOrigMenuList=onMenuList;onMenuList=function(bytes){challengeOrigMenuList(bytes);try{if(challenge.running&&menuRecon&&menuRecon.items)challengeChooseMenu(menuRecon);}catch(e){challenge.manualHold=true;challengeSay("菜单异常，等待手动处理");}};
+  challengeInstallNotices();window.addEventListener("pagehide",function(){challengeStop("页面离开，挑战已停止");});window.addEventListener("beforeunload",function(){challengeStop("页面离开，挑战已停止");});window.__dshChallenge={start:challengeStart,stop:challengeStop,active:challengeActive,state:function(){return JSON.parse(JSON.stringify(challenge));},observe:chOnAnnouncement};
+  // V2.35.0 changelog：重建无限挑战；邮件/push/清包/巡逻排除。
 
 // MVP_TIMER_START: 公告栏剩余时间以接收时刻为基准，关闭窗口不停止计时。
   var mvpStoreKey = "dsh_mvp_timer_v1_cv_" + pickCv();

@@ -569,7 +569,7 @@ test('exp 功能菜单五栏顺序与条目齐全', () => {
   const ctx = {}; vm.createContext(ctx);
   vm.runInContext(code + ';this.secs=[];this.bySec={};for(var i=0;i<RO_MODULES.length;i++){var m=RO_MODULES[i];if(this.secs[this.secs.length-1]!==m.sec)this.secs.push(m.sec);(this.bySec[m.sec]=this.bySec[m.sec]||[]).push(m.id);}', ctx);
   assert.deepEqual(Array.from(ctx.secs), ['常用', '战斗功能', '战斗辅助', '提示', '其他'], 'sec 顺序即菜单显示顺序');
-  assert.deepEqual(Array.from(ctx.bySec['常用']), ['menu', 'tp', 'np', 'zhu']);
+  assert.deepEqual(Array.from(ctx.bySec['常用']), ['menu', 'tp', 'challenge', 'np', 'zhu']);
   assert.deepEqual(Array.from(ctx.bySec['战斗功能']), ['mlock', 'zhu2', 'zskill']);
   assert.deepEqual(Array.from(ctx.bySec['战斗辅助']), ['aid', 'party', 'dps', 'boss', 'askcombo', 'item']);
   assert.deepEqual(Array.from(ctx.bySec['提示']), ['zhud', 'ztip', 'tgt', 'znear']);
@@ -717,11 +717,11 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
   // 1) 版本号：稳定版与实验版都必须是 2.34.5（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.34.7', name + ' @version 必须是 2.34.7');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.34.7', name + ' 运行时常量 VER 必须是 2.34.7');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.35.0', name + ' @version 必须是 2.35.0');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.35.0', name + ' 运行时常量 VER 必须是 2.35.0');
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
-  const stripHead = (s) => s.split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
+  const stripHead = (s) => s.replace(/\r\n/g,'\n').split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
   assert.equal(stripHead(source), stripHead(expSource), '两文件除 3 行头部外必须完全一致');
   assert.ok(expSource.includes('// @name         仙境传说 · 原站插件模式（游戏助手 · 实验版）'));
   assert.ok(expSource.includes('main/ro-assist-exp.user.js'));
@@ -1076,8 +1076,8 @@ test('V2.34.5 战斗诊断快照 prof 字段已就位（不改既有字段）', 
 // ================= V2.34.5：配置自动备份（两代）/ 黄金副本找回（纯函数真值表 / 按钮 / 键隔离）=================
 test('V2.34.5 版本号升到 2.34.5（@version 与运行时常量一致，两文件同步）', () => {
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.34.7', name + ' @version 必须是 2.34.7');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.34.7', name + ' 运行时常量 VER 必须是 2.34.7');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.35.0', name + ' @version 必须是 2.35.0');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.35.0', name + ' 运行时常量 VER 必须是 2.35.0');
   }
 });
 
@@ -1223,10 +1223,11 @@ function bagCleanVm(storeInit={},typeDb=null){
   const code=extract("  var BAG_CLEAN_KEY = 'dsh-bag-clean-v2'",'  function bagCleanUnitWeight(id)');
   const ctx={Number,String,Object,Array,JSON,Math,isFinite,document:{querySelector:()=>null},requireDB:n=>n==='DB/Items/ItemType'?typeDb:null,require:()=>null,
     localStorage:{getItem:k=>store.has(k)?store.get(k):null,setItem:(k,v)=>store.set(k,String(v))},bagCleanSay(){}};
-  vm.createContext(ctx);vm.runInContext(code+';this.load=bagCleanLoad;this.norm=bagCleanNormalize;this.describe=bagCleanDescribe;this.typeNames=bagCleanTypeNames;this.disarm=bagCleanDisarm',ctx);
+  vm.createContext(ctx);vm.runInContext(code+';this.load=bagCleanLoad;this.validate=bagCleanValidateImport;this.norm=bagCleanNormalize;this.describe=bagCleanDescribe;this.typeNames=bagCleanTypeNames;this.disarm=bagCleanDisarm',ctx);
   return {ctx,store};
 }
-function safeGear(extra={}){return Object.assign({ITID:1201,index:7,type:4,count:1,IsIdentified:1,RefiningLevel:0,refiningLevel:0,slot:{card1:0,card2:0,card3:0,card4:0},nRandomOptionCnt:0,IsDamaged:false},extra)}
+function safeGear(extra={}){return Object.assign({ITID:1201,index:7,type:4,count:1,IsIdentified:1,RefiningLevel:0,slot:{card1:0,card2:0,card3:0,card4:0},nRandomOptionCnt:0,IsDamaged:0,IsEquipped:0},extra)}
+function withoutGear(...keys){const item=safeGear();for(const key of keys)delete item[key];return item}
 
 test('bagClean v2 migration copies simple v1 rules without deleting old key',()=>{
   const old=JSON.stringify({'501':4,'1201:u':0}),h=bagCleanVm({'dsh-bag-clean-rules-v1':old});const cfg=h.ctx.load();
@@ -1239,16 +1240,32 @@ test('bagClean v2 migration accepts legacy wrapper discardRules and starts disab
 });
 
 test('bagClean v2 normalization validates rules categories protected IDs and forces legacy unarmed',()=>{
-  const h=bagCleanVm(),cfg=h.ctx.norm({version:2,discardRules:{'501':2,bad:3},categoryTypes:[3,3,999],protectedIds:[501,501,-1],armed:true},false);
-  assert.equal(JSON.stringify(cfg.discardRules),JSON.stringify({'501':2}));assert.deepEqual(Array.from(cfg.categoryTypes),[3]);assert.deepEqual(Array.from(cfg.protectedIds),[501]);assert.equal(cfg.armed,true);
+  const h=bagCleanVm(),cfg=h.ctx.norm({version:2,discardRules:{'501':2,bad:3},categoryTypes:[0,2,99,4,10],protectedIds:[501,501,-1],armed:true},false);
+  assert.equal(JSON.stringify(cfg.discardRules),JSON.stringify({'501':2}));assert.deepEqual(Array.from(cfg.categoryTypes),[0,2,10]);assert.deepEqual(Array.from(cfg.protectedIds),[501]);assert.equal(cfg.armed,true);
   assert.equal(h.ctx.norm({'501':2},true).armed,false);
+});
+
+test('bagClean import limits reject rather than truncate and localStorage fails closed',()=>{
+  const rules=n=>Object.fromEntries(Array.from({length:n},(_,i)=>[String(i+1),0])),v2=(r=rules(1),categoryTypes=[],protectedIds=[])=>({version:2,discardRules:r,categoryTypes,protectedIds,armed:true}),h=bagCleanVm();
+  assert.doesNotThrow(()=>h.ctx.validate(v2(rules(2000)),false));assert.throws(()=>h.ctx.validate(v2(rules(2001)),false),/2000/);
+  assert.doesNotThrow(()=>h.ctx.validate(v2(rules(1),Array(64).fill(0)),false));assert.throws(()=>h.ctx.validate(v2(rules(1),Array(65).fill(0)),false),/64/);
+  assert.doesNotThrow(()=>h.ctx.validate(v2(rules(1),[],Array(2000).fill(1)),false));assert.throws(()=>h.ctx.validate(v2(rules(1),[],Array(2001).fill(1)),false),/2000/);
+  assert.doesNotThrow(()=>h.ctx.validate(rules(2000),true));assert.throws(()=>h.ctx.validate(rules(2001),true),/2000/);
+  const inherited=Object.create(rules(2001));inherited['501']=0;assert.doesNotThrow(()=>h.ctx.validate(inherited,true));assert.equal(h.ctx.norm(h.ctx.validate(inherited,true),true).discardRules['501'],0);
+  for(const bad of[v2(rules(2001)),v2(rules(1),Array(65).fill(0)),v2(rules(1),[],Array(2001).fill(1))]){const x=bagCleanVm({'dsh-bag-clean-v2':JSON.stringify(bad)});let cfg;assert.doesNotThrow(()=>{cfg=x.ctx.load()});assert.equal(JSON.stringify(cfg.discardRules),'{}');assert.deepEqual(Array.from(cfg.categoryTypes),[]);assert.deepEqual(Array.from(cfg.protectedIds),[]);assert.equal(cfg.armed,false);}
+});
+
+test('bagClean UI validates imports before normalization and reports failure',()=>{
+  for(const [name,src] of [['stable',source],['exp',expSource]]){const ui=src.slice(src.indexOf('  function bagCleanInit()'),src.indexOf('  // ---------------- 拾取页：内挂百分比联动'));const handler=ui.slice(ui.indexOf("box.querySelector('[data-import]')"));assert.ok(handler.indexOf('bagCleanValidateImport(raw,legacy)')>=0,name+' import must validate');assert.ok(handler.indexOf('bagCleanValidateImport(raw,legacy)')<handler.indexOf('bagCleanNormalize('),name+' validation must precede normalization');assert.ok(handler.includes("bagCleanSay('导入失败："),name+' import must show failure');}
 });
 
 test('bagClean type names reverse runtime ItemType mappings and retain safe generic names',()=>{
   const h=bagCleanVm({}, {Healing:0,Material:3}),names=h.ctx.typeNames();assert.equal(names[0],'Healing');assert.equal(names[3],'Material');assert.equal(names[2],'消耗');assert.equal(names[11],'技能消耗');
 });
 
-test('bagClean conflicting runtime type names are not batch selectable',()=>{
+test('bagClean runtime-named unsafe and conflicting types are not batch selectable',()=>{
+  const unsafe=bagCleanVm({}, {SEARCH:99}),unsafeNames=unsafe.ctx.typeNames();
+  assert.equal(unsafeNames[99],'SEARCH');assert.equal(unsafe.ctx.describe({ITID:501,index:1,type:99,count:2},{discardRules:{},categoryTypes:[99],protectedIds:[]},unsafeNames).ok,false);
   const h=bagCleanVm({}, {Material:3,Etc:3}),names=h.ctx.typeNames();assert.equal(names[3],false);
   const cfg={discardRules:{},categoryTypes:[3],protectedIds:[]};assert.equal(h.ctx.describe({ITID:501,index:1,type:3,count:2},cfg,names).ok,false);
 });
@@ -1274,9 +1291,13 @@ test('bagClean unidentified equipment requires explicit :u rule and never catego
   assert.equal(byCategory.ok,false);assert.match(byCategory.reason,/:u/);assert.equal(explicit.ok,true);assert.equal(explicit.key,'1201:u');
 });
 
-test('bagClean equipment refinement cards random options wear and incomplete fields stay protected',()=>{
-  const h=bagCleanVm(),names=Object.assign(h.ctx.typeNames(),{4:'武器'}),cfg={discardRules:{'1201':0},categoryTypes:[],protectedIds:[]};
-  for(const item of [safeGear({RefiningLevel:1}),safeGear({slot:{card1:4001}}),safeGear({nRandomOptionCnt:1}),safeGear({IsEquipped:true}),safeGear({slot:null}),safeGear({IsIdentified:undefined})])assert.equal(h.ctx.describe(item,cfg,names).ok,false);
+test('bagClean equipment protection fields fail closed and complete zero gear remains eligible',()=>{
+  const h=bagCleanVm(),names=Object.assign(h.ctx.typeNames(),{4:'武器',5:'防具',8:'影子装备',12:'服饰'}),cfg={discardRules:{'1201':0},categoryTypes:[],protectedIds:[]};
+  for(const type of [4,5,8,12])assert.equal(h.ctx.describe(safeGear({type}),cfg,names).ok,true);
+  const incomplete=[withoutGear('IsIdentified'),withoutGear('RefiningLevel','refiningLevel'),safeGear({slot:null}),safeGear({slot:{card2:0,card3:0,card4:0}}),safeGear({slot:{card1:0,card3:0,card4:0}}),safeGear({slot:{card1:0,card2:0,card4:0}}),safeGear({slot:{card1:0,card2:0,card3:0}}),withoutGear('nRandomOptionCnt'),withoutGear('IsDamaged'),withoutGear('IsEquipped','WearState','wearState','equipped')];
+  for(const item of incomplete){const d=h.ctx.describe(item,cfg,names);assert.equal(d.ok,false);assert.equal(d.reason,'装备保护字段不完整')}
+  const unsafe=[safeGear({RefiningLevel:1}),safeGear({refiningLevel:1}),...['card1','card2','card3','card4'].map(key=>safeGear({slot:Object.assign({card1:0,card2:0,card3:0,card4:0},{[key]:4001})})),safeGear({nRandomOptionCnt:1}),safeGear({IsDamaged:true}),...['IsEquipped','WearState','wearState','equipped'].map(key=>safeGear({[key]:1}))];
+  for(const item of unsafe)assert.equal(h.ctx.describe(item,cfg,names).ok,false);
 });
 
 test('bagClean preview and ITEM_THROW paths contain fresh index identity type quantity and rule checks',()=>{
@@ -1292,7 +1313,24 @@ test('bagClean rule changes disarm automation and initial automatic enable requi
 });
 
 test('bagClean v2 UI and storage contract is lockstep and documents unsupported boss-source filtering',()=>{
-  for(const [name,src] of [['stable',source],['exp',expSource]]){assert.ok(src.includes("'dsh-bag-clean-v2'"));assert.ok(src.includes("'dsh-bag-clean-rules-v1'"));assert.ok(src.includes('丢弃黑名单（勾选=要丢'));assert.ok(src.includes('类别保护例外（永不丢）'));assert.ok(src.includes('协议不含掉落怪来源，无法安全区分BOSS掉落，故不提供该规则。'));assert.ok(src.includes('导出v2'));}
-  const a=source.slice(source.indexOf('  // ---------------- 背包安全清理 v2'),source.indexOf('  // ---------------- 拾取页：内挂百分比联动'));
-  const b=expSource.slice(expSource.indexOf('  // ---------------- 背包安全清理 v2'),expSource.indexOf('  // ---------------- 拾取页：内挂百分比联动'));assert.equal(a,b);
+  for(const [name,src] of [['stable',source],['exp',expSource]]){assert.ok(src.includes("'dsh-bag-clean-v2'"));assert.ok(src.includes("'dsh-bag-clean-rules-v1'"));assert.ok(src.includes('丢弃黑名单（勾选=要丢'));assert.ok(src.includes('类别保护例外（永不丢）'));assert.ok(src.includes('协议不含掉落怪来源，无法安全区分BOSS掉落，故不提供该规则。'));assert.ok(src.includes('导出v2'));const ui=src.slice(src.indexOf('  function bagCleanInit()'),src.indexOf('  // ---------------- 拾取页：内挂百分比联动'));assert.ok(ui.includes('Object.keys(BAG_SAFE_TYPES).map(Number)'),name+' UI must enumerate only safe types');assert.ok(ui.includes("ch.setAttribute('data-type',String(type))"),name+' UI category checkbox needs safe type marker');assert.ok(!ui.includes('presentTypes'),name+' UI must not derive category choices from runtime type 99');assert.ok(!ui.includes('data-type=99'),name+' UI must not generate data-type=99');}
+  const a=source.slice(source.indexOf('  // ---------------- 背包安全清理 v2'),source.indexOf('  // ---------------- 拾取页：内挂百分比联动')).replace(/\r\n/g,'\n');
+  const b=expSource.slice(expSource.indexOf('  // ---------------- 背包安全清理 v2'),expSource.indexOf('  // ---------------- 拾取页：内挂百分比联动')).replace(/\r\n/g,'\n');assert.equal(a,b);
 });
+
+
+// ================= V2.35.0 无限挑战 =================
+const chSources=[['stable',source],['exp',expSource]];
+function chBlock(src){const a=src.indexOf('  // ================= V2.35.0 无限挑战（纠正版）'),b=src.indexOf('// MVP_TIMER_START:',a);assert.ok(a>=0&&b>a);return src.slice(a,b).replace(/\r\n/g,'\n')}
+function chPure(){const b=chBlock(source),a=b.indexOf('  function challengeDefaults'),z=b.indexOf('  function challengeEntities');const ctx={String,Number,Math,Object,Array,RegExp,JSON,isFinite,localStorage:{getItem:()=>null,setItem(){}}};vm.createContext(ctx);vm.runInContext(b.slice(a,z)+';this.norm=challengeNormalizeText;this.parse=challengeParseNotice;this.arrow=challengeArrowDecision;this.pick=challengePickNpc;this.option=challengeUniqueOption;this.defaults=challengeDefaults',ctx);return ctx;}
+test('V2.35.0 challenge metadata registration and scripts stay synchronized',()=>{for(const[,s]of chSources){assert.match(s,/@version\s+2\.35\.0/);assert.ok(s.includes('fwReg("challenge", "无限挑战", challengeEnsureHost)'));assert.ok(s.includes('id: "challenge", name: "无限挑战", kind: "fw"'))}assert.equal(chBlock(source),chBlock(expSource))});
+test('V2.35.0 challenge parser decisions and NPC selection stay deterministic',()=>{const h=chPure(),a={GID:1,objecttype:6,displayName:'白猫',position:[5,5]},b={GID:2,objecttype:6,displayName:'喵达人',position:[2,2]};assert.equal(h.pick([a]).GID,1);assert.equal(h.pick([a,b],[1,1]),null);assert.equal(h.norm('^FF0000 第 ５ 轮 '),'第 5 轮');assert.equal(h.parse('完成第100轮，怪物剩余 0 只').completed,100);assert.deepEqual(JSON.parse(JSON.stringify(h.arrow(68,false,1,{ghostItid:2}))),{kind:'ghost3',itid:2});assert.equal(h.option(['挑战','开始挑战'],/挑战/),null)});
+test('V2.35.0 challenge owns combat and releases only its confirmed battle lease',()=>{for(const[name,s]of chSources){const b=chBlock(s),own=b.slice(b.indexOf('  function challengeActive()'),b.indexOf('  function challengeDialogOpen()')),lease=b.slice(b.indexOf('  function challengeBattleOn()'),b.indexOf('  function challengeStop('));let state=false,calls=[];const ctx={challenge:{running:true,npLease:'none'},challengeCfg:{difficulty:'advanced'},npBattleState:()=>state,npRequestBattle:(on,source,explicit)=>{calls.push([on,source,explicit]);return 'sent'},challengeCancelNpIntent(){}};vm.createContext(ctx);vm.runInContext(own+lease+';this.owns=challengeOwnsCombat;this.on=challengeBattleOn;this.confirm=challengeBattleConfirm;this.off=challengeBattleOff',ctx);
+    assert.equal(ctx.owns(),true,name+' active challenge owns combat in every difficulty');state=true;assert.equal(ctx.on(),'already');assert.equal(ctx.challenge.npLease,'none');assert.deepEqual(calls,[],name+' must not claim pre-existing battle');state=false;assert.equal(ctx.on(),'sent');assert.equal(ctx.challenge.npLease,'pending');state=true;ctx.confirm();assert.equal(ctx.challenge.npLease,'owned');assert.equal(ctx.off(),'sent');assert.deepEqual(calls,[[true,'challenge-start',true],[false,'challenge-stop',true]],name+' may stop only battle it started')}});
+test('V2.35.0 arrow timeout blocks then retries only at retryAt',()=>{for(const[,s]of chSources){const b=chBlock(s);assert.ok(b.includes('if(!p.retryAt){p.retryAt=now+3000'));assert.ok(b.includes('if(now<p.retryAt)return true;if(equipArrow(row.index))'));assert.ok(b.includes('challenge.arrowBlocked=true'));assert.ok(b.includes('if(challengeArrowTick(t,now)||challenge.arrowBlocked)return;'))}});
+test('V2.35.0 fly is battle-only with positive remaining count',()=>{for(const[,s]of chSources){const b=chBlock(s);assert.ok(b.includes('emergencyFly&&challenge.state==="battle"&&challenge.remaining>0'));assert.ok(b.includes('flyOn&&challenge.state==="battle"&&challenge.remaining>0'))}});
+test('V2.35.0 NPC deadline persists and walking requires distance above two',()=>{for(const[,s]of chSources){const b=chBlock(s);assert.ok(b.includes('firstAt:challenge.contact&&challenge.contact.firstAt||Date.now()'));assert.ok(b.includes('if(now-c.firstAt>=30000)'));assert.ok(b.includes('if(dist<=2||c.retries>=3)return false'))}});
+test('V2.35.0 menu fingerprint is reserved before submission',()=>{for(const[,s]of chSources){const b=chBlock(s),reserve=b.indexOf('challenge.menuFingerprint=fp;try{'),send=b.indexOf('CLIENT.NM.sendPacket(p);',reserve);assert.ok(reserve>=0&&send>reserve);assert.ok(b.includes('if(fp===challenge.menuFingerprint)return false'))}});
+test('V2.35.0 announcement observer watches chat and announce containers only',()=>{for(const[,s]of chSources){const b=chBlock(s);assert.ok(b.includes('document.querySelectorAll(sel)'));assert.ok(b.includes('[id*="Chat"]'));assert.ok(b.includes('[class*="Announce"]'));assert.doesNotMatch(b,/observe\(document\.body/);assert.ok(b.includes('!el.closest("#dsh-assistant")'))}});
+test('V2.35.0 stop100 clears interval and marks paused before reward path',()=>{for(const[,s]of chSources){const b=chBlock(s),fn=b.slice(b.indexOf('function challengePause100'),b.indexOf('function challengeContact'));assert.ok(fn.indexOf('clearInterval(challenge.timer)')<fn.indexOf('challenge.state="paused"'));assert.ok(fn.includes('challenge.state="paused"'));assert.ok(b.includes('challengeCfg.stop100&&ev.completed>=100'))}});
+test('V2.35.0 generic arrow tick yields during every challenge mode',()=>{for(const[,s]of chSources)assert.ok(s.includes('if (challengeOwnsCombat()) return; // V2.35.0'))});

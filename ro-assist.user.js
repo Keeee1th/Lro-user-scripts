@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.36.2
+// @version      2.36.3
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -95,6 +95,9 @@
 // 1. 无限道馆移出主脚本菜单，改由「脚本执行」浮窗承载：新增 dojoStart / dojoWait / dojoStop 三个脚本动作，道馆参数（难度/100轮暂停/飞行/紧急飞行）放脚本条目 params，一键「导入道馆脚本」模板；移除内置道馆窗口与独立脚本 ro-infinite-dojo.user.js（停止发布并从仓库移除），API 门面 scopes 保持不变。
 // 2. 脚本系统升级：顶层新增 type/priority/order/loop 字段；串行调度（priority 降序、order 升序、运行态互斥、完成接续）；循环三选一（count 次数 / duration 时长 / until 条件）；新「脚本执行」一级浮窗（导入 + 列表 + 运行/停止 + pushplus token）。
 // 3. 100 轮领奖前暂停改为可选 pushplus 推送；token / 启用开关迁入「脚本执行」窗口，仍落全局键 dsh_ro_plugin_v1。
+// ---------------- V2.36.3 变更摘要 ----------------
+// 1. 索敌优先级修正：锁定名单内先打正在攻击你的怪（打死为止），再打身侧相邻怪，最后才按血少/距离选——避免多只锁定怪时被远处低血怪抢走目标、忽视贴脸攻击你的怪（修复「怪在脸上不攻击」）。
+// 2. 追怪候选同口径：锁定怪追怪池同样按「已攻击 > 身侧 > 血少 > 距离」排序，与索敌一致。
 
 
 
@@ -122,7 +125,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.36.2"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.36.3"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -8010,7 +8013,7 @@
       // V2.16.3：追怪候选分两池——锁定怪候选（lockNear）永远优先；还击候选（hitNear）仅当没有任何锁定怪候选时才兜底。
       //   旧实现把还击怪混入同一候选并按「血少优先」排序，快死的非锁定怪会抢走锁定怪目标（来回转向/追怪中断）。
       var near = null, nearD = 1e9, nearHp = 1e18; // V2.15.25：nearHp=最近候选绝对剩余HP（血少优先抢尾刀）
-      var lockNear = null, lockNearD = 1e9, lockNearHp = 1e18; // 锁定怪候选（优先）
+      var lockNear = null, lockNearD = 1e9, lockNearHp = 1e18, lockNearTier = -1; // 锁定怪候选（优先）
       var hitNear = null, hitNearD = 1e9, hitNearHp = 1e18;    // 还击候选（兜底）
       var zReactiveGid = zLock.reactive ? gidInt(zLock.gid) : 0; // V2.34.4：还击锁定的攻击者必须被追击（与 zAttack 同锚点）
       if (EM && EM.forEach) {
@@ -8028,10 +8031,12 @@
             if (!inLockN && !allowHitTarget) return;
             if (!ent.position || !e.position) return;
             var d = zRangeDist(e.position, ent.position); // V2.34.3：格子距离口径（与客户端一致）
-            // V2.15.25：血少优先（绝对剩余HP）→ 血量相同按距离近优先；读不到血量按极大排最后
+            // V2.36.3：索敌优先级——已攻击我的锁定怪（打死为止）> 身侧(相邻 d<=1) > 血少 > 距离
             var hpNow = (e.life && e.life.hp != null) ? e.life.hp : 1e18;
             if (inLockN) {
-              if (!lockNear || hpNow < lockNearHp || (hpNow === lockNearHp && d < lockNearD)) { lockNear = e; lockNearD = d; lockNearHp = hpNow; }
+              var gidK = gidInt(e.GID);
+              var tier = (zHitBy[gidK] && (now - zHitBy[gidK].ts) < zHitKeepMs) ? 2 : (d <= 1 ? 1 : 0);
+              if (!lockNear || tier > lockNearTier || (tier === lockNearTier && (hpNow < lockNearHp || (hpNow === lockNearHp && d < lockNearD)))) { lockNear = e; lockNearD = d; lockNearHp = hpNow; lockNearTier = tier; }
             } else {
               if (!hitNear || hpNow < hitNearHp || (hpNow === hitNearHp && d < hitNearD)) { hitNear = e; hitNearD = d; hitNearHp = hpNow; }
             }
@@ -8473,7 +8478,7 @@
       var zFollow = !$id("dsh-z-follow") || $id("dsh-z-follow").checked; // 锁定目标跟随追击
       var zNext = !$id("dsh-z-next") || $id("dsh-z-next").checked;       // 打死换下一个
       var zAllMobs = !$id("dsh-z-allmobs") || $id("dsh-z-allmobs").checked; // V2.34.4：仅在未设锁定名单时生效（名单非空时只打名单）
-      var target = null, best = 1e9, bestHp = 1e18; // V2.15.25：bestHp=当前选中怪的绝对剩余HP（血少优先抢尾刀）
+      var target = null, best = 1e9, bestHp = 1e18, bestTier = -1; // V2.15.25：bestHp=当前选中怪的绝对剩余HP（血少优先抢尾刀）；V2.36.3：bestTier=索敌优先级（已攻击>身侧>血少>距离）
       var hitTarget = null, hitBest = 1e9;
       // 锁定模式：已锁定目标 → 只认锁定目标（固定 GID 持续攻击，防目标漂移），不重新扫描选最近
       var lockAliveOutside = false; // V2.7.2：锁定怪仍在但超攻击距离（np 模式下不解锁）
@@ -8551,10 +8556,12 @@
             var d = zRangeDist(e.position, ent.position); // V2.34.3：格子距离口径
             if (inLock) {
               // 锁定怪：攻击距离内直接打（atkRange）；超出但寻怪范围内 → 由 zWalk 追击
-              // V2.15.25：血少优先（绝对剩余HP，抢尾刀）→ 血量相同按距离近优先；读不到血量按极大排最后
+              // V2.36.3：索敌优先级——已攻击我的锁定怪（打死为止）> 身侧(相邻 d<=1) > 血少 > 距离
               if (d <= (npMode ? npThD : atkRange)) {
                 var hpNow = (e.life && e.life.hp != null) ? e.life.hp : 1e18;
-                if (!target || hpNow < bestHp || (hpNow === bestHp && d < best)) { target = e; best = d; bestHp = hpNow; }
+                var gidK = gidInt(e.GID);
+                var tier = (zHitBy[gidK] && (now - zHitBy[gidK].ts) < zHitKeepMs) ? 2 : (d <= 1 ? 1 : 0);
+                if (!target || tier > bestTier || (tier === bestTier && (hpNow < bestHp || (hpNow === bestHp && d < best)))) { target = e; best = d; bestHp = hpNow; bestTier = tier; }
               }
             } else {
               // 非锁定怪：仅用于「还击」候选（攻击距离内最近的）

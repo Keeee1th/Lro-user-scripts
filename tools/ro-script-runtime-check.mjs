@@ -719,8 +719,8 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
   // 1) 版本号：稳定版与实验版都必须是 2.36.1（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.2', name + ' @version 必须是 2.36.2');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.2', name + ' 运行时常量 VER 必须是 2.36.2');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.3', name + ' @version 必须是 2.36.3');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.3', name + ' 运行时常量 VER 必须是 2.36.3');
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
   const stripHead = (s) => s.replace(/\r\n/g,'\n').split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
@@ -1092,8 +1092,8 @@ test('V2.34.5 战斗诊断快照 prof 字段已就位（不改既有字段）', 
 // ================= V2.34.5：配置自动备份（两代）/ 黄金副本找回（纯函数真值表 / 按钮 / 键隔离）=================
 test('V2.34.5 版本号升到 2.34.5（@version 与运行时常量一致，两文件同步）', () => {
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.2', name + ' @version 必须是 2.36.2');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.2', name + ' 运行时常量 VER 必须是 2.36.2');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.3', name + ' @version 必须是 2.36.3');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.3', name + ' 运行时常量 VER 必须是 2.36.3');
   }
 });
 
@@ -1337,7 +1337,7 @@ test('bagClean v2 UI and storage contract is lockstep and documents unsupported 
 
 // ================= V2.35.1 assistant API + standalone dojo =================
 const splitSources=[['stable',source],['exp',expSource]];
-test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.36\.2/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
+test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.36\.3/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
 test('V2.35.1 public API uses owner-only external signatures and validates the current lease owner',()=>{for(const[,s]of splitSources){assert.ok(s.includes('/^[A-Za-z0-9_.:-]{8,128}$/'));assert.ok(s.includes('dojo:1,battle:1,movement:1,dialog:1,arrow:1,fly:1'));assert.ok(s.includes('if(apiLease&&apiLease.owner!==owner)'));for(const sig of ['apiHas(owner,scope)','apiSnapshot(owner)','apiRelease(owner)','apiContact(owner,gid)','apiWalk(owner,payload)','apiChoose(owner,payload)','apiBattle(owner,on)','apiSetArrow(owner,target)','apiClearArrow(owner)','apiFly(owner,payload)'])assert.ok(s.includes('function '+sig),sig);assert.ok(s.includes('apiLease.generation===generation'));assert.ok(!s.includes('apiHas(owner,generation'));}});
 test('V2.35.1 snapshot and battle/menu ownership contracts are explicit',()=>{for(const[,s]of splitSources){for(const key of ['ready:','map:','player:','mobs:','npcs:','target:','inDojoMap:','dialogOpen:','menu:','battleState:','busy:','arrow:'])assert.ok(s.includes(key),key);assert.ok(s.includes('if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"}'));assert.ok(s.includes('b.state="pending-on"'));assert.ok(s.includes('if(b.state!=="owned")return {ok:true,result:"not-owned"}'));assert.ok(s.includes('l.battle.state==="owned"||l.battle.state==="pending-off"'));assert.ok(s.includes('if(s!==false)return {ok:true,result:s===true?"preexisting":"unknown"}'));}});
 test('V2.35.1 arrow decision priority and confirmation retry remain assistant-owned',()=>{for(const[,s]of splitSources){assert.ok(s.includes('if(type===8&&level===3)'));assert.ok(s.includes('if(isBoss)return boss||neutral'));assert.ok(s.includes('if(type===8&&level===4)'));assert.ok(s.includes('confirmUntil:now+5000'));assert.ok(s.includes('p.retryAt=now+3000'));}});
@@ -1818,4 +1818,17 @@ test('v2.36.2 dojoWait 语义：已停/轮次/条件', () => {
   assert.equal(run({ on: true, round: 1 }, {}), false, '无轮次无条件等到道馆停止');
   assert.equal(run({ on: true, round: 1 }, { until: { item: 1 } }, () => false), false, '条件未达继续等');
   assert.equal(run({ on: true, round: 1 }, { until: { item: 1 } }, () => true), true, '条件达成完成');
+});
+
+// ================= V2.36.3：索敌优先级（已攻击 > 身侧 > 血少 > 距离） =================
+test('v2.36.3 索敌优先级：已攻击 > 身侧 > 血少 > 距离', () => {
+  for (const [name, s] of splitSources) {
+    assert.ok(s.includes('var target = null, best = 1e9, bestHp = 1e18, bestTier = -1'), name + ' zAttack 声明 bestTier');
+    assert.ok(s.includes('tier > bestTier'), name + ' zAttack 按 tier 优先');
+    assert.ok(s.includes('lockNearTier = -1'), name + ' zWalk 声明 lockNearTier');
+    assert.ok(s.includes('tier > lockNearTier'), name + ' zWalk 按 tier 优先');
+    const tierExpr = '(zHitBy[gidK] && (now - zHitBy[gidK].ts) < zHitKeepMs) ? 2 : (d <= 1 ? 1 : 0)';
+    assert.ok(s.includes(tierExpr), name + ' tier 判定：已攻击(2) > 身侧(1) > 其他(0)');
+    assert.ok(s.includes('tier === bestTier && (hpNow < bestHp || (hpNow === bestHp && d < best))'), name + ' 同 tier 才比血少→距离');
+  }
 });

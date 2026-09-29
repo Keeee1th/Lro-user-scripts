@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手 · 实验版）
 // @namespace    dsh.ro-plugin
-// @version      2.34.5
+// @version      2.34.6
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -71,6 +71,8 @@
 // 1. 修复角色设置回默认（根因）：界面未按当前档填充前禁止把界面值落盘（此前页面一打开就用 HTML 默认值覆盖档案）；落盘改为合并写入；锁定名单写回加归属校验（防被错档名单反写覆盖）；补齐此前漏登记的 9 个设置控件（含「打全部怪」）。
 // 2. 新增配置自动备份：每次页面加载首次落盘前把 dsh_ro_profiles_v2 轮转两代（.bak / .bak2）留底。
 // 3. 新增黄金副本：经本机 8899 保存/读取恢复副本，启动时自动补齐缺失的档与键（只补不覆盖）；功能菜单「导出配置/导入配置」同一行新增「保存为恢复副本」「恢复上次配置」两个按钮。
+// ---------------- V2.34.6 变更摘要 ----------------
+// 修复旧面板/旧聊天回执覆盖本地态导致无限 toggle：新增聊天回执增量观察、自动意图 800ms 稳定防抖、显式动作 350ms latest-wins 排队。
 
 (function () {
   "use strict";
@@ -96,7 +98,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.34.5"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.34.6"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
 
   // V2.11.0：仓库+背包读取全局变量
@@ -2497,7 +2499,6 @@
     try {
       var bn = $id("dsh-qs-nei"), bz = $id("dsh-qs-zhu");
       var neiOn = npBattleState();
-      if (neiOn !== null) { npHuntOn = neiOn; npBattleKnown = true; }
       if (bn) { bn.className = "qs" + (neiOn === true ? " on" : (neiOn === null ? " unknown" : "")); bn.title = "内挂自动战斗：" + (neiOn === null ? "状态未知（点击切换一次）" : (neiOn ? "已开（点击关闭）" : "已关（点击开启）")); }
       if (bz) { bz.className = "qs" + (zRunning ? " on" : ""); bz.title = "助手自动战斗：" + (zRunning ? "已开（点击停止）" : "已关（点击启动）"); }
     } catch (e) {}
@@ -2506,7 +2507,7 @@
     var qswNei = $id("dsh-qs-nei"), qswZhu = $id("dsh-qs-zhu");
     if (qswNei) qswNei.addEventListener("click", function (ev) {
       ev.stopPropagation(); ev.preventDefault();
-      try { var state = npBattleState(); setBattle(state === null ? !npHuntOn : !state); } catch (e) {}
+      try { setBattle(!npHuntOn); } catch (e) {}
       qswPaint();
     });
     if (qswZhu) qswZhu.addEventListener("click", function (ev) {
@@ -2623,14 +2624,13 @@
       else { saved.collapsed = true; saveSaved(saved); applyCollapse(true); }
     } catch (e) {}
   }
-  // 内挂自动战斗快捷键：校准后 toggle 发包一次（无需开面板），本地 npHuntOn 跟随本次按下翻转
+  // 内挂自动战斗快捷键：基于事务目标态走共用接口，不裸发 toggle/本地翻转
   function npToggleFight() {
     try {
-      npCalibrate();
-      if (!npToggleHunt()) return;
-      npHuntOn = !npHuntOn; npBattleKnown = true;
-      setStatus("内挂自动战斗：快捷键切换（toggle 一次）", "ok");
-      tlog("hk np-toggle");
+      var want = !npHuntOn;
+      var result = npRequestBattle(want, "hotkey", true);
+      setStatus(result === "sent" ? "内挂自动战斗：快捷键已请求切换一次" : "内挂自动战斗状态未确认，未重复切换", result === "sent" ? "ok" : "warn");
+      tlog("hk np-toggle target=" + want + " result=" + result);
     } catch (e) {}
   }
   // 助手自动战斗快捷键：运行中→停止，否则→开始
@@ -3658,6 +3658,7 @@
         }
       } catch (me) {}
       if (activeProfileKey() === key && lastCharGid === gid) return;
+      try { npResetBattleState(); } catch (e0) {} // 换角色：旧角色排队意图绝不能落到新角色
       if (typeof selfSpirits !== "undefined") selfSpirits = { aid: 0, num: 0, map: "" };
       try { captureAll(); } catch (e) {} // 旧档先落盘
       setActiveProfile(key);
@@ -3689,7 +3690,7 @@
   });
   // 自动存储（第2项）：周期 + 切后台 + 关页面前兜底（V2.5.0：后台隐藏时周期自动拉长到 30s，省 CPU；切后台/关页兜底已在下面保留）
   try { setInterval(function () { try { syncRealAtkRange(); } catch (e) {} if (!UI_BG || Date.now() - lastCaptureAt > 30000) { lastCaptureAt = Date.now(); captureAll(); } }, 8000); } catch (e) {}
-  try { window.addEventListener("beforeunload", function () { captureAll(); }); } catch (e) {}
+  try { window.addEventListener("beforeunload", function () { try { npClearBattleIntent(); } catch (e0) {} captureAll(); }); } catch (e) {}
   try { document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") captureAll(); }); } catch (e) {}
 
   // ---------------- 心跳 PING（V2.2.0 删定时防踢心跳；sendPing 仅保留给手机切后台 burst 连发用） ----------------
@@ -5951,26 +5952,59 @@
     try { alert(sent ? "探查完成：已发送 " + items.length + " 个控件到本地服务，弹窗内容已全选可复制备用。" : "发送失败（请先启动中心服务 8899）。弹窗内容已全选，请 Ctrl+C 复制发我。"); } catch (e) {}
   }
   $id("dsh-probe-neidom").addEventListener("click", function () { neiProbe(); });
-  // 内挂开关真实状态：读聊天窗绿色系统字（服务器回执「开启自动战斗/关闭自动战斗」）。
-  // 内挂开关是单一 toggle（点一次翻转一次），点击前必须判断真实状态，否则把已开翻成关。
+  // 自动战斗状态只由启动首次面板校准、玩家真实 change、新增聊天回执和助手成功发包更新。
+  var npHuntOn = false, npBattleKnown = false, npBattleLastSentAt = -Infinity, npBattleConfirmedAt = 0;
+  var npBattleCandidate = null, npBattleExplicit = null, npBattleExplicitTimer = null;
   var CHAT_BATTLE_SELS = ['#chatbox .containers .border', '#chatbox .containers', '#chatbox .border', '#chatbox', '.chatbox .containers .border', '.chatbox .border', '.chatbox'];
-  function readChatBattle() {
+  var npChatObserver = null, npChatSeen = typeof WeakSet === "function" ? new WeakSet() : null;
+  function npApplyBattleState(on, source) {
+    npHuntOn = !!on; npBattleKnown = true; npBattleConfirmedAt = Date.now(); npBattleCandidate = null;
+    try { qswPaint(); } catch (e) {}
+    try { tlog("np-state " + npHuntOn + " source=" + source); } catch (e2) {}
+  }
+  function npChatStateOf(p) {
+    var text = String(p && p.textContent || "").trim();
+    if (/开启自动战斗/.test(text)) return true;
+    if (/关闭自动战斗/.test(text)) return false;
+    return null;
+  }
+  function npChatContainer(p) {
     try {
       for (var i = 0; i < CHAT_BATTLE_SELS.length; i++) {
-        var el = document.querySelector(CHAT_BATTLE_SELS[i]);
-        if (!el) continue;
-        var ps = el.querySelectorAll('p');
-        var st = null;
-        for (var j = 0; j < ps.length; j++) {
-          var t = String(ps[j].textContent || '').trim();
-          if (/开启自动战斗/.test(t)) st = true;
-          else if (/关闭自动战斗/.test(t)) st = false;
-        }
-        if (st !== null) return st; // 返回最后一条开关回执
+        var box = document.querySelector(CHAT_BATTLE_SELS[i]);
+        if (box && (box === p || (box.contains && box.contains(p)))) return true;
       }
     } catch (e) {}
-    return null; // 聊天框没读到开关回执（未知）
+    return false;
   }
+  function npObserveChatNode(node) {
+    if (!node || node.nodeType !== 1) return;
+    var rows = node.tagName && String(node.tagName).toLowerCase() === "p" ? [node] : Array.prototype.slice.call(node.querySelectorAll ? node.querySelectorAll("p") : []);
+    for (var i = 0; i < rows.length; i++) {
+      var p = rows[i];
+      if (npChatSeen && npChatSeen.has(p)) continue;
+      if (npChatSeen) npChatSeen.add(p);
+      if (!npChatContainer(p)) continue;
+      var state = npChatStateOf(p);
+      if (state !== null) npApplyBattleState(state, "chat-new");
+    }
+  }
+  function npWatchBattleChat() {
+    if (npChatObserver || typeof MutationObserver !== "function" || !document.body) return;
+    try {
+      for (var i = 0; i < CHAT_BATTLE_SELS.length; i++) {
+        var box = document.querySelector(CHAT_BATTLE_SELS[i]);
+        if (!box) continue;
+        var old = box.querySelectorAll("p");
+        for (var j = 0; j < old.length; j++) if (npChatSeen) npChatSeen.add(old[j]);
+      }
+      npChatObserver = new MutationObserver(function (records) {
+        for (var r = 0; r < records.length; r++) for (var n = 0; n < records[r].addedNodes.length; n++) npObserveChatNode(records[r].addedNodes[n]);
+      });
+      npChatObserver.observe(document.body, { childList: true, subtree: true });
+    } catch (e) { npChatObserver = null; }
+  }
+  npWatchBattleChat();
   // 登录角色后自动读取内挂配置（一次性 + 读不到重试几次，等内挂窗口渲染）
   var autoReadBotDone = false, autoReadBotTries = 0;
   function autoReadBotOnce() {
@@ -5982,33 +6016,56 @@
       }
     } catch (e) {}
   }
-  function npBattleState() {
-    var panelState = npReadPanelState();
-    if (panelState !== null) return panelState;
-    var chatState = readChatBattle();
-    if (chatState !== null) return chatState;
-    return npBattleKnown ? !!npHuntOn : null;
+  function npBattleState() { return npBattleKnown ? !!npHuntOn : null; }
+  function npSyncBattleCheckbox(want) {
+    try { var el = document.querySelector("#vbk input.openattack"); if (el) el.checked = !!want; } catch (e) {}
+  }
+  function npSendBattle(want, source, beforeToggle) {
+    if (npBattleKnown && npHuntOn === want) return "already";
+    if (beforeToggle) beforeToggle();
+    if (!npToggleHunt()) return "failed";
+    npHuntOn = !!want; npBattleKnown = true; npBattleLastSentAt = Date.now(); npBattleCandidate = null;
+    npSyncBattleCheckbox(want);
+    try { tlog("np-toggle want=" + want + " source=" + source); } catch (e) {}
+    return "sent";
+  }
+  function npClearBattleIntent() {
+    if (npBattleExplicitTimer) clearTimeout(npBattleExplicitTimer);
+    npBattleExplicitTimer = null; npBattleExplicit = null; npBattleCandidate = null;
+  }
+  function npResetBattleState() {
+    npClearBattleIntent(); npBattleKnown = false; npHuntOn = false; npBattleLastSentAt = -Infinity; npBattleConfirmedAt = 0;
+  }
+  function npRunExplicit() {
+    npBattleExplicitTimer = null;
+    var req = npBattleExplicit; npBattleExplicit = null;
+    if (req) npRequestBattle(req.want, req.source, true, req.beforeToggle);
+  }
+  function npRequestBattle(want, source, immediate, beforeToggle) {
+    want = !!want; source = source || "unknown";
+    var now = Date.now();
+    if (immediate) {
+      // 每个显式请求都先撤销旧排队；即使本地已是目标态，最新意图也必须取消相反旧请求。
+      npClearBattleIntent();
+      if (npBattleKnown && npHuntOn === want) return "already";
+      if (now - npBattleLastSentAt >= 350) return npSendBattle(want, source, beforeToggle);
+      npBattleExplicit = { want: want, source: source, beforeToggle: beforeToggle };
+      npBattleExplicitTimer = setTimeout(npRunExplicit, Math.max(0, 350 - (now - npBattleLastSentAt)));
+      return "queued";
+    }
+    if (npBattleKnown && npHuntOn === want) { npBattleCandidate = null; return "already"; }
+    if (!npBattleCandidate || npBattleCandidate.want !== want || npBattleCandidate.source !== source) {
+      npBattleCandidate = { want: want, source: source, since: now, beforeToggle: beforeToggle };
+      return "debouncing";
+    }
+    if (now - npBattleCandidate.since < 800 || now - npBattleLastSentAt < 350) return "debouncing";
+    return npSendBattle(want, source, npBattleCandidate.beforeToggle);
   }
   function setBattle(on) {
-    // 当前 checkbox 是权威状态；聊天回执只在面板不可读时兜底。
-    var real = npBattleState();
-    dshDiag("set-battle", { on: on, real: real, panel: npReadPanelState(), chat: readChatBattle() });
-    if (real === !!on) {
-      npHuntOn = !!on;
-      setStatus("内挂自动战斗已处于" + (on ? "开启" : "关闭") + "状态，无需重复操作", "ok");
-      return;
-    }
-    // 面板未打开也直接复用内挂的 toggle 协议；一次操作只发一次，绝不自动重试反相。
-    if (!npToggleHunt()) { setStatus("内挂开关发送失败：客户端未就绪", "err"); return; }
-    npHuntOn = !!on; npBattleKnown = true;
-    setStatus("已请求" + (on ? "开启" : "关闭") + "内挂自动战斗，正在校准", "ok");
-    setTimeout(function () {
-      var actual = npBattleState();
-      if (actual !== null) { npHuntOn = actual; npBattleKnown = true; }
-      qswPaint();
-      setStatus(actual === null ? "内挂自动战斗：等待状态回执" : ("内挂自动战斗：" + (actual ? "已开启" : "已关闭") + (actual === !!on ? "" : "（未切换到目标状态）")), actual === null ? "warn" : (actual === !!on ? "ok" : "warn"));
-    }, 350);
-    tlog("setBattle on=" + on + " real=" + real);
+    var result = npRequestBattle(on, "setBattle", true);
+    dshDiag("set-battle", { on: !!on, result: result });
+    setStatus(result === "failed" ? "内挂开关发送失败：客户端未就绪" : (result === "already" ? "内挂自动战斗已处于目标状态" : (result === "queued" ? "内挂自动战斗请求已排队" : "内挂自动战斗请求已发送")), result === "failed" ? "err" : "ok");
+    tlog("setBattle on=" + on + " result=" + result);
   }
   $id("dsh-battleon").addEventListener("click", function () { setBattle(true); });
   $id("dsh-battleoff").addEventListener("click", function () { setBattle(false); });
@@ -6048,11 +6105,7 @@
     setStatus("已发送模拟内挂指令：" + label, "ok");
     tlog("np-cmd " + label + " cv=" + DEFAULTS.ClientVer);
   }
-  $id("dsh-np-atk").addEventListener("click", function () {
-    npCmd("开自动战斗(移动寻怪)", "NPC:setautoattack", 34, 1);
-    // 三转开自动战斗后也清掉客户端导航目标（同 vbk z.removeDestination()）
-    try { var MM = window.require && window.require("UI/Components/MiniMap/MiniMap"); if (MM && MM.removeDestination) MM.removeDestination(); } catch (e) {}
-  });
+  $id("dsh-np-atk").addEventListener("click", function () { setBattle(true); });
   $id("dsh-np-pick").addEventListener("click", function () { npCmd("开自动拾取", "NPC:setautopick", 35, 1); });
   $id("dsh-np-eat").addEventListener("click", function () { npCmd("开自动吃药", "NPC:setautoeat", 36, 1); });
   $id("dsh-np-hunt").addEventListener("click", function () {
@@ -6073,7 +6126,6 @@
   //    .openattack 勾选/取消都发同一包（二转 id=34 value=1、三转 WHISPER msg="0"），服务器收到就翻转一次。
   //    客户端从不发 value=0；因此「关闭」=再发一次同一包（toggle 回来），绝不能周期重发（否则每 1.5s 开关一次）。
   // 通过 NOTIFY_ONLYTARGET 同步锁定目录 → 服务器寻怪只追锁定怪
-  var npHuntOn = false, npBattleKnown = false; // 三态：未知时不冒充关闭；成功读到状态或发出一次 toggle 后才可信
   function npHuntMode() {
     var el = $id("dsh-z-huntmode");
     return el ? el.value : "self";
@@ -6145,37 +6197,28 @@
       else removeLock(mid);
     });
   } catch (e) {}
+  // 玩家真实操作内挂开关才更新本地态；程序直接写 checked 不会触发 change。
+  try {
+    document.addEventListener("change", function (e) {
+      var t = e.target;
+      if (!t || !t.matches || !t.matches("#vbk input.openattack")) return;
+      npApplyBattleState(!!t.checked, "panel-change");
+    });
+  } catch (e) {}
   // toggle 一次自动战斗（发同一包：二转 id=34 value=1 / 三转 WHISPER msg="0"）
   function npToggleHunt() {
     return npIsThree() ? npSendWhisper("NPC:setautoattack") : npSendUpdate(34, 1);
   }
   function npEnsureHunt() {
-    // 需要开启内挂寻怪：本地认为已开 → 不再发包（避免 toggle 多翻一次变关）；未开 → toggle 一次
-    // V2.34.3：先问权威状态（内挂面板/聊天回执，读不到才回退本地标记）——权威说已开则绝不发包；一次调用最多发一次 toggle
     try {
-      var real = npBattleState();
-      if (real === true) { npHuntOn = true; npBattleKnown = true; return; }
-      if (real === null && npHuntOn) return; // 未知：保持原逻辑（本地认为已开 → 不发包）
-      if (npIsThree()) {
-        npToggleHunt();
-      } else {
-        npSendUpdate(38, 0); // 0=移动寻怪（设置型，可重复）
-        npToggleHunt();      // toggle 开自动战斗
-      }
-      npHuntOn = true;
-      tlog("np-hunt-on (toggle) cv=" + DEFAULTS.ClientVer + " real=" + real);
+      var result = npRequestBattle(true, "npEnsureHunt", false, npIsThree() ? null : function () { npSendUpdate(38, 0); });
+      tlog("np-hunt-on result=" + result + " cv=" + DEFAULTS.ClientVer);
     } catch (e) {}
   }
-  function npHuntStop() {
-    // 停止助手时关闭内挂自动战斗：本地认为已开 → toggle 一次关掉；已关 → 不发
-    // V2.34.3：同样先问权威状态——权威说已关 → 绝不再发包（防本地标记过期时反向 toggle 把内挂打开）；一次调用最多发一次 toggle
+  function npHuntStop(source, immediate) {
     try {
-      var real = npBattleState();
-      if (real === false) { npHuntOn = false; npBattleKnown = true; return; }
-      if (real === null && !npHuntOn) return; // 未知：保持原逻辑
-      if (clientReady()) npToggleHunt();
-      npHuntOn = false;
-      tlog("np-hunt-off (toggle) real=" + real);
+      var result = npRequestBattle(false, source || "npHuntStop", !!immediate);
+      tlog("np-hunt-off result=" + result + " source=" + (source || "npHuntStop"));
     } catch (e) {}
   }
   // 寻怪方式下拉 change：切到「内挂机制」→ 仅校准面板状态 + 同步锁定目录，不发 toggle（等点开自动战斗后由 zWalk 状态机自动发第一次）；
@@ -6183,12 +6226,12 @@
   try {
     $id("dsh-z-huntmode").addEventListener("change", function () {
       if (this.value === "np" || this.value === "hybrid") {
-        npCalibrate();               // 对齐服务器实际状态（面板=服务器，不发包）
+        npCalibrate();               // 仅首次未知态校准，不周期覆盖
         npSyncTargets();             // 锁定目录同步给内挂（只追锁定怪）
         setStatus(this.value === "hybrid" ? "已切到混合寻怪（内挂长距离寻怪，锁定怪≤接管距离才由助手接管）" : "已切到内挂机制寻怪（点开自动战斗后由助手状态机自动发包寻怪）", "ok");
         tlog("huntmode->" + this.value + " (no toggle until start)");
       } else {
-        npHuntStop();
+        npHuntStop("mode-change", true);
         setStatus("已切到自研直走寻怪", "st");
         tlog("huntmode->self");
       }
@@ -7384,16 +7427,15 @@
     } catch (e) {}
     return null; // 面板不可读（未知）
   }
-  // 校准本地 npHuntOn 与内挂面板实际状态一致（防用户误操作导致 toggle 反相）
+  // 只在尚无已知状态且助手近期未发包时做一次启动校准；之后旧 checked 不再有权威性。
   function npCalibrate() {
     try {
+      if (npBattleKnown || Date.now() - npBattleLastSentAt < 2000) return;
       var panel = npReadPanelState();
-      if (panel === null) return; // 读不到就不动（保持本地跟踪）
-      if (panel !== npHuntOn) {
-        dshDiag("np-calibrate", { panel: panel, local: npHuntOn });
-        tlog("np-calibrate panel=" + panel + " local=" + npHuntOn + " → 同步");
-        npHuntOn = panel; // 与服务器实际状态对齐
-      }
+      if (panel === null) return;
+      npHuntOn = panel; npBattleKnown = true;
+      dshDiag("np-calibrate", { panel: panel });
+      tlog("np-calibrate panel=" + panel);
     } catch (e) {}
   }
   function startZhu() {
@@ -7430,7 +7472,7 @@
     stopScan();
     if (zAttTimer) { clearInterval(zAttTimer); zAttTimer = null; }
     // 内挂机制寻怪：停止时关闭内挂自动战斗
-    npHuntStop();
+    npHuntStop("stopZhu", true);
     zLock.gid = null; zLock.done = false; // 解除锁定/停手状态
     zUseCounts = {}; // V1.7.0 重置本轮技能释放次数（maxUses）
     zLockCounts = {}; // V1.7.5 重置锁定次数（开/停自动战斗清空）
@@ -7452,7 +7494,7 @@
   function walkToXY(tx, ty, onArrive, logId) {
     try {
       // V2.15.12：内挂自动战斗开着时角色移动由服务器控制，客户端走路包会被覆盖 → 先关内挂再走（走完不自动恢复，用户可再开）
-      try { if (npHuntOn) npHuntStop(); } catch (e) {}
+      try { if (npHuntOn) npHuntStop("walkToXY", true); } catch (e) {}
       if (!clientReady()) { mvLog("客户端未就绪"); return false; }
       var ent = CLIENT.SS.Entity;
       if (!ent || !ent.position) { mvLog("未获取到角色坐标"); return false; }
@@ -12633,13 +12675,13 @@
           renderZTip(); // V1.7.6 悬浮动作提示（镜像 setStatus + 动作 + 停顿秒数）
           renderMapMobs();
         }
-        // nei 内挂自动战斗实时状态（面板 .openattack 勾选 = 服务器内挂实际开关）——V2.5.0 后台隐藏跳过
+        // nei 内挂自动战斗显示以本地预测/增量回执态为准；旧面板 checked 仅作观测提示，不反写状态。
         if (!UI_BG) {
           try {
             var bsEl = $id("dsh-battlestate");
             if (bsEl) {
-              var bsPanel = npReadPanelState();
-              bsEl.textContent = "内挂状态: " + (bsPanel === null ? "未读取（打开内挂窗口）" : (bsPanel ? "已开启" : "已停止"));
+              var bsLocal = npBattleState(), bsPanel = npReadPanelState();
+              bsEl.textContent = "内挂状态: " + (bsLocal === null ? "未知" : (bsLocal ? "已开启" : "已停止")) + (bsPanel !== null && bsPanel !== bsLocal ? "（旧面板观测: " + (bsPanel ? "开" : "关") + "）" : "");
             }
           } catch (e6) {}
           // 宠物状态自动刷新（客户端就绪后即读，2s 周期；含实体兜底）
@@ -12661,7 +12703,7 @@
             try {
               npCalibrate();                     // 对齐服务器实际状态（面板=服务器）
               if (zRunning) { stopZhu(); }       // 助手运行中 → 完整停止（内含内挂关闭）
-              else if (npHuntOn) { npHuntStop(); } // 纯内挂模式 → 关服务器自动战斗
+              else if (npHuntOn) { npHuntStop("map-change", true); } // 纯内挂模式 → 立即关服务器自动战斗
               setStatus("换图：自动战斗已停止", "st");
               tlog("map-changed: battle stopped");
             } catch (e7) {}

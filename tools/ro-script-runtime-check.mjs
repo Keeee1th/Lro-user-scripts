@@ -58,10 +58,10 @@ test('default shortcut opens menu and migrates old panel binding',()=>{
   assert.ok(source.includes('if (id === "menu") { roMenuToggle(); return; }'));
 });
 
-test('in-game battle checkbox overrides stale chat state',()=>{
-  const code=extract('  function npBattleState() {','  function setBattle(on)');
-  const ctx={npReadPanelState:()=>false,readChatBattle:()=>true,npHuntOn:true};vm.createContext(ctx);vm.runInContext(code+';this.fn=npBattleState',ctx);
-  assert.equal(ctx.fn(),false);ctx.npReadPanelState=()=>null;assert.equal(ctx.fn(),true);ctx.readChatBattle=()=>null;ctx.npBattleKnown=false;assert.equal(ctx.fn(),null);ctx.npBattleKnown=true;ctx.npHuntOn=false;assert.equal(ctx.fn(),false);
+test('battle state prefers local prediction over stale panel and chat',()=>{
+  const code=extract('  function npBattleState() {','  function npSyncBattleCheckbox');
+  const ctx={npHuntOn:true,npBattleKnown:true};vm.createContext(ctx);vm.runInContext(code+';this.fn=npBattleState',ctx);
+  assert.equal(ctx.fn(),true);ctx.npBattleKnown=false;assert.equal(ctx.fn(),null);ctx.npBattleKnown=true;ctx.npHuntOn=false;assert.equal(ctx.fn(),false);
 });
 
 test('DPS classifies skill fields and keeps normal attacks separate',()=>{
@@ -717,8 +717,8 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
   // 1) 版本号：稳定版与实验版都必须是 2.34.5（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.34.5', name + ' @version 必须是 2.34.5');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.34.5', name + ' 运行时常量 VER 必须是 2.34.5');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.34.6', name + ' @version 必须是 2.34.6');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.34.6', name + ' 运行时常量 VER 必须是 2.34.6');
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
   const stripHead = (s) => s.split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
@@ -743,35 +743,17 @@ test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、�
   const snap = expExtract('  function zDiagSnapNow() {', '  function zDiagTick() {');
   assert.match(snap, /mobSnap\.push\([\s\S]*?String\(md\.name \|\| ""\), Math\.round\(md\.dist\), mdGrid\]\)/, 'mobSnap 末尾必须追加两列');
   assert.ok(snap.includes('sitWhy: zSitWhy') && snap.includes('atkWhy: zAtkWhy'), '快照必须含 sitWhy/atkWhy');
-  // 4) 内挂状态校准 + 混合接管兜底：权威状态优先，一次调用最多一个 toggle（运行时验证）
+  // 4) 内挂接管兜底保留；状态切换统一委托新事务接口。
   assert.ok(source.includes('hyTakeoverUntil'), '必须有混合接管兜底字段');
   assert.ok(source.includes('zWalkState.hyTakeoverUntil = hyNow + 12000'), '接管窗口必须是 12 秒');
   assert.ok(source.includes('内挂未接管（'), '必须提示「内挂未接管」');
-  const ensSrc = expExtract('  function npEnsureHunt() {', '  function npHuntStop() {');
-  const stopSrc = expExtract('  function npHuntStop() {', '  // 寻怪方式下拉 change');
-  const runHunt = (src, fnName, real, startOn) => {
-    const calls = [];
-    const ctx = { npBattleState: () => real, npIsThree: () => false, clientReady: () => true, tlog: () => {},
-      npToggleHunt: () => { calls.push('toggle'); return true; }, npSendUpdate: () => { calls.push('update'); return true; },
-      DEFAULTS: { ClientVer: 5 }, npHuntOn: startOn, npBattleKnown: false };
-    vm.createContext(ctx); vm.runInContext(src + ';this.fn = ' + fnName, ctx);
-    ctx.fn();
-    return { ctx, toggles: calls.filter((c) => c === 'toggle').length, sends: calls.length };
-  };
-  let r = runHunt(ensSrc, 'npEnsureHunt', true, false);
-  assert.equal(r.sends, 0, '权威说已开 → npEnsureHunt 绝不再发包');
-  assert.equal(r.ctx.npHuntOn, true); assert.equal(r.ctx.npBattleKnown, true);
-  r = runHunt(ensSrc, 'npEnsureHunt', false, true);
-  assert.equal(r.toggles, 1, '权威说已关 → 只发一次 toggle 打开');
-  r = runHunt(ensSrc, 'npEnsureHunt', null, true);
-  assert.equal(r.sends, 0, '状态未知且本地认为已开 → 保持原逻辑不发包');
-  r = runHunt(stopSrc, 'npHuntStop', false, true);
-  assert.equal(r.sends, 0, '权威说已关 → npHuntStop 绝不再发包');
-  assert.equal(r.ctx.npHuntOn, false); assert.equal(r.ctx.npBattleKnown, true);
-  r = runHunt(stopSrc, 'npHuntStop', true, false);
-  assert.equal(r.toggles, 1, '权威说已开 → 只发一次 toggle 关闭');
-  r = runHunt(stopSrc, 'npHuntStop', null, false);
-  assert.equal(r.sends, 0, '状态未知且本地认为已关 → 保持原逻辑不发包');
+  const ensSrc = extract('  function npEnsureHunt() {', '  function npHuntStop(');
+  const stopSrc = extract('  function npHuntStop(', '  // 寻怪方式下拉 change');
+  const calls=[]; const ctx={npRequestBattle:(...x)=>{calls.push(x);return 'debouncing'},npIsThree:()=>false,npSendUpdate(){},tlog(){},DEFAULTS:{ClientVer:5}};
+  vm.createContext(ctx); vm.runInContext(ensSrc+stopSrc+';this.ensure=npEnsureHunt;this.stop=npHuntStop',ctx);
+  ctx.ensure();ctx.stop('test-stop',true);
+  assert.equal(calls.length,2);assert.equal(calls[0][0],true);assert.equal(calls[0][2],false);
+  assert.equal(calls[1][0],false);assert.equal(calls[1][1],'test-stop');assert.equal(calls[1][2],true);
   // 5) 坐下 gate 已放宽 + 诊断原因齐全
   const sitSeg = expExtract('  function doSitCycle(mobs) {', '  // V2.15.23：逃脱=直接移动避开怪');
   assert.doesNotMatch(sitSeg, /if \(zLock\.gid\) return;/, '不得保留无条件「有锁定目标就不坐下」');
@@ -1094,8 +1076,8 @@ test('V2.34.5 战斗诊断快照 prof 字段已就位（不改既有字段）', 
 // ================= V2.34.5：配置自动备份（两代）/ 黄金副本找回（纯函数真值表 / 按钮 / 键隔离）=================
 test('V2.34.5 版本号升到 2.34.5（@version 与运行时常量一致，两文件同步）', () => {
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.34.5', name + ' @version 必须是 2.34.5');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.34.5', name + ' 运行时常量 VER 必须是 2.34.5');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.34.6', name + ' @version 必须是 2.34.6');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.34.6', name + ' 运行时常量 VER 必须是 2.34.6');
   }
 });
 
@@ -1209,3 +1191,13 @@ test('V2.34.5 备份轮转：首轮写 .bak/.bak2、同一次加载第二次不�
   }
   assert.ok(source.includes('var profBackupDone = false; // V2.34.5'), '必须有内存标志 profBackupDone');
 });
+
+function battleVm(){let now=0,id=1;const timers=new Map(),packets=[];const code=extract('  function npBattleState() {','  $id("dsh-battleon")');const ctx={Math,Date:{now:()=>now},npBattleKnown:false,npHuntOn:false,npBattleLastSentAt:-Infinity,npBattleConfirmedAt:0,npBattleCandidate:null,npBattleExplicit:null,npBattleExplicitTimer:null,setTimeout(fn,ms){const n=id++;timers.set(n,{fn,at:now+ms});return n},clearTimeout(n){timers.delete(n)},npToggleHunt(){packets.push(ctx.want);return ctx.send!==false},npSyncBattleCheckbox(){},tlog(){}};vm.createContext(ctx);vm.runInContext(code+';this.req=npRequestBattle;this.reset=npResetBattleState',ctx);return{ctx,packets,req(w,s,i){ctx.want=w;return ctx.req(w,s,i)},tick(ms){now+=ms;for(const[n,t]of[...timers])if(t.at<=now){timers.delete(n);t.fn()}},pending:()=>timers.size}}
+test('V2.34.6 VM auto debounce stability oscillation and liveness',()=>{let h=battleVm();h.req(true,'auto',false);h.tick(800);h.req(true,'auto',false);for(let i=0;i<20;i++){h.tick(250);h.req(true,'auto',false)}assert.deepEqual(h.packets,[true]);h=battleVm();for(let i=0;i<40;i++){h.req(i%2===0,'auto',false);h.tick(250)}assert.equal(h.packets.length,0);h=battleVm();h.req(true,'auto',false);h.tick(800);h.req(true,'auto',false);h.req(false,'auto',false);h.tick(800);h.req(false,'auto',false);assert.deepEqual(h.packets,[true,false])});
+test('V2.34.6 VM explicit latest wins finite queue failure and reset',()=>{let h=battleVm();h.req(true,'click',true);h.tick(100);h.req(false,'click',true);h.tick(100);assert.equal(h.req(true,'click',true),'already');h.tick(500);assert.deepEqual(h.packets,[true]);assert.equal(h.pending(),0);h=battleVm();h.ctx.send=false;assert.equal(h.req(true,'click',true),'failed');assert.equal(h.ctx.npBattleKnown,false);assert.equal(h.ctx.npBattleLastSentAt,-Infinity);h=battleVm();h.req(true,'click',true);h.tick(100);h.req(false,'click',true);h.ctx.reset();h.tick(1000);assert.deepEqual(h.packets,[true]);assert.equal(h.pending(),0)});
+test('V2.34.6 structure guards shared entry points incremental receipt and local display',()=>{for(const src of[source,expSource]){const btn=src.slice(src.indexOf('$id("dsh-np-atk")'),src.indexOf('$id("dsh-np-pick")'));assert.ok(btn.includes('setBattle(true)'));assert.doesNotMatch(btn,/npCmd|npToggleHunt/);const hk=src.slice(src.indexOf('  function npToggleFight()'),src.indexOf('  // 助手自动战斗快捷键'));assert.ok(hk.includes('npRequestBattle(want, "hotkey", true)'));assert.equal((src.match(/npToggleHunt\(\)/g)||[]).length,2);const paint=src.slice(src.indexOf('  function qswPaint()'),src.indexOf('  try {',src.indexOf('  function qswPaint()')+10));assert.doesNotMatch(paint,/npReadPanelState|npHuntOn\s*=/);assert.ok(src.includes('npResetBattleState(); } catch (e0) {} // 换角色'));assert.ok(src.includes('npChatSeen.has(p)'));assert.ok(src.includes('var bsLocal = npBattleState(), bsPanel = npReadPanelState()'))}});
+
+test('V2.34.6 explicit OFF after ON waits remainder then sends once',()=>{const h=battleVm();h.req(true,'on',true);h.tick(100);assert.equal(h.req(false,'off',true),'queued');h.tick(249);assert.deepEqual(h.packets,[true]);h.tick(1);assert.deepEqual(h.packets,[true,false]);assert.equal(h.pending(),0)});
+test('V2.34.6 failed explicit timer clears without periodic retry',()=>{const h=battleVm();h.req(true,'on',true);h.tick(100);h.ctx.send=false;h.req(false,'off',true);h.tick(250);assert.equal(h.pending(),0);assert.equal(h.ctx.npBattleExplicit,null);h.tick(30000);assert.equal(h.packets.length,2)});
+test('V2.34.6 automatic twenty rounds do not resend after prediction',()=>{const h=battleVm();h.req(true,'auto',false);h.tick(800);h.req(true,'auto',false);for(let i=0;i<20;i++){h.tick(800);h.req(true,'auto',false)}assert.equal(h.packets.length,1);assert.equal(h.ctx.npHuntOn,true)});
+test('V2.34.6 state declarations precede observer installation',()=>{for(const src of[source,expSource])assert.ok(src.indexOf('var npHuntOn = false')<src.indexOf('npWatchBattleChat();'))});

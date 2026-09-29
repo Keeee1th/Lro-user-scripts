@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.35.0
+// @version      2.36.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -75,6 +75,21 @@
 // 修复旧面板/旧聊天回执覆盖本地态导致无限 toggle：新增聊天回执增量观察、自动意图 800ms 稳定防抖、显式动作 350ms latest-wins 排队。
 // ---------------- V2.34.7 变更摘要 ----------------
 // 数据抓包迁入悬浮球功能菜单，改为复用标准 fwMakeWin 独立浮窗；不再依赖已弃用的旧设置面板或“传送”页 DOM。
+// ---------------- V2.35.2 变更摘要 ----------------
+// 1. 修复紧急脱战：翅膀脱战确认移动、死亡/换图复位逃生与瞬移状态；「非选中怪攻击=瞬移」最近受击分支保留，瞬移确认后重置受击窗口重新计数（防同一记受击反复触发紧急脱战）。
+// 2. 修复换角色串号：解围技能下拉改读客户端 SkillList 真实已学技能（弃用无 level 字段的静态技能库 DB.getAllSkillInfo）；角色名读取补 ent.character.name 兜底，切档键更稳定。
+// ---------------- V2.35.3 变更摘要 ----------------
+// 1. 目标锁定条种族信息恢复：Lv/种族/属性/形体 优先读客户端 DB.getmobData(mid)，getMobDb 兜底，修复「仅有距离、种族丢失」。
+// 2. 目标锁定条移除「数量/资料」外链（用户要求，仅保留状态行）。
+// 3. 内挂寻怪诊断增强：btDiagOn 日志新增锁定名单键与侦查采样 mid@dist，便于定位「未侦测到锁定怪」。
+// ---------------- V2.35.4 变更摘要 ----------------
+// 1. 统一采集器注册表 dsh-collect v1：新增 DSHCollect 内部命名空间（register/sample/query/refresh/release 五方法 + ringPush/ringUnshift/post 三助手），6 处环形缓冲与 3 处 fetch 上报收敛到统一入口，不新增 window 全局、不改外部可观测行为。
+// 2. 旧探针与对外契约全部保留：btLog/btSnap/btMarkTarget/hkProbe/neiProbe/ingest/probeCollect 及 window.__dsh* 事件环名与载荷不变，仅替换内部实现；__DSH_RO_ASSIST_API__ 所有权契约不受影响。
+// ---------------- V2.36.0 变更摘要 ----------------
+// 1. 独立「无限道场」并入主脚本：走助手公共 API 与同一租约；功能菜单「战斗功能」新增入口（arrowrules 之后）。
+// 2. pushplus 推送补 UI：内置道场窗口内联 token /「保存推送」/「启用推送」，落全局键 dsh_ro_plugin_v1 的 pushplusToken 与 pushplusEnabled。
+// 3. 不可丢或状态未知的物品只允许「邮件发送」「背包丢弃」两个出口，其它出口一律拒绝。
+
 
 (function () {
   "use strict";
@@ -100,8 +115,47 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.35.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.36.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
+  // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
+  // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
+  // 附加：ringPush 追加式环形（保留最新 N）/ ringUnshift 前插式环形 / post 统一 JSON 上报传输
+  var DSHCollect = (function () {
+    var NS = "dsh-collect";
+    var VERSION = 1;
+    var registry = {};
+    function ringPush(ring, item, max) { ring.push(item); if (max > 0 && ring.length > max) ring.splice(0, ring.length - max); return item; }
+    function ringUnshift(ring, item, max) { ring.unshift(item); if (max > 0 && ring.length > max) ring.length = max; return item; }
+    function post(url, body, cb) {
+      try {
+        if (typeof fetch !== "function") { if (cb) cb(false); return; }
+        fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+          .then(function (r) { if (cb) cb(!!(r && r.ok)); })
+          .catch(function () { if (cb) cb(false); });
+      } catch (e) { if (cb) cb(false); }
+    }
+    function register(name, opts) {
+      opts = opts || {};
+      if (registry[name]) release(name);
+      var c = { name: name, sample: (typeof opts.sample === "function") ? opts.sample : null, throttleMs: Number(opts.throttleMs) || 0, ringMax: Number(opts.ringMax) || 0, ring: opts.ring || (opts.ringMax > 0 ? [] : null), sink: (typeof opts.sink === "function") ? opts.sink : null, lastAt: 0 };
+      registry[name] = c;
+      return c;
+    }
+    function sample(name) {
+      var c = registry[name];
+      if (!c || !c.sample) return null;
+      var item = c.sample.apply(null, Array.prototype.slice.call(arguments, 1));
+      if (item == null) return item;
+      if (c.ring) ringPush(c.ring, item, c.ringMax);
+      if (c.sink) { var now = Date.now(); if (c.throttleMs <= 0 || now - c.lastAt >= c.throttleMs) { if (c.throttleMs > 0) c.lastAt = now; try { c.sink(item, c); } catch (e) {} } }
+      return item;
+    }
+    function query(name) { var c = registry[name]; return c ? c.ring : null; }
+    function refresh(name) { var c = registry[name]; if (!c) return null; c.lastAt = 0; return c.ring; }
+    function release(name) { if (!registry[name]) return false; delete registry[name]; return true; }
+    return { NS: NS, VERSION: VERSION, register: register, sample: sample, query: query, refresh: refresh, release: release, ringPush: ringPush, ringUnshift: ringUnshift, post: post };
+  })();
+
 
   // V2.11.0：仓库+背包读取全局变量
   var inventoryReadTimer = null; // 仓库读取定时器
@@ -152,7 +206,7 @@
   // 这里统一取整（Math.floor），非法/非正数返回 0，避免每秒拼出 name_GID.<小数> 的新档键。
   function gidInt(v) { var n = Math.floor(Number(v)); return (isFinite(n) && n > 0) ? n : 0; }
   // V2.32.2 角色名读取统一（换角色双检测：游戏内切角色 GID 可能不变，加角色名比对）
-  function charNameOf(ent) { try { return ((ent && ent.display && ent.display.name) || (ent && ent.displayName) || (ent && ent.name) || "") || ""; } catch (e) { return ""; } }
+  function charNameOf(ent) { try { return ((ent && ent.display && ent.display.name) || (ent && ent.displayName) || (ent && ent.name) || (ent && ent.character && ent.character.name) || "") || ""; } catch (e) { return ""; } }
   // V2.8.9：归并历史小数垃圾键（角色_2007018.9392906795 → 角色_2007018），同一基键只留 lastAt 最新的一份。
   function pruneProfiles() {
     try {
@@ -222,7 +276,8 @@
     plugins: { IntroMessagePc: {}, LoadingDonate: {} },
     charBlockSize: 0,
     BGMFileExtension: ["mp3"],
-    ClientVer: pickCv()
+    ClientVer: pickCv(),
+    pushplusToken: null // V2.36.0：全局键 dsh_ro_plugin_v1 的新字段（pushplus 推送 token，空=未配置）
   };
   var LOCAL_DATA = "http://127.0.0.1:8973/ro/client_re/"; // 本地镜像（毫秒级，避免原站数据卡死）
   var REMOTE_DATA = "/ro/client_re/";                        // 原站数据
@@ -300,6 +355,7 @@
     for (k in DEFAULTS) cfg[k] = DEFAULTS[k];
     cfg.version = version;
     cfg.remoteClient = useLocalData ? LOCAL_DATA : REMOTE_DATA;
+    cfg.pushplusToken = notifyLoadToken(); // V2.36.0：沿用 DEFAULTS/buildConfig 约定，token 读自全局键
     if (window.__dshRunAcct && window.__dshRunPwd) {
       // 兼容旧多开窗口注入（V1.6.18 已取消多账号 UI，此处保留旧窗口兜底；V1.7.0 起设置按角色分档）
       cfg.autoLogin = [window.__dshRunAcct, window.__dshRunPwd];
@@ -1875,7 +1931,7 @@
     fwReg("mlock", "攻击名单", function () { return document.getElementById("dsh-fw-mlock"); });
     fwReg("tp", "传送功能", function () { return document.getElementById("dsh-fw-tp"); });
     fwReg("txcap", "数据抓包", txCapEnsureHost);
-    fwReg("challenge", "无限挑战", challengeEnsureHost); // V2.35.0
+    fwReg("arrowrules", "换箭设置", arrowEnsureHost); // V2.35.1
     fwReg("zhu2", "战斗设置", function () { return document.getElementById("dsh-fw-zhu2"); });
     // V2.34.0：原「助手战斗设置」页内三页签拆成三个一级浮窗，各自独立登记
     fwReg("zskill", "技能设置", function () { return document.getElementById("dsh-fw-zskill"); });
@@ -1940,9 +1996,10 @@
   var RO_MODULES = [
     { id: "menu",  name: "功能菜单快捷键",  kind: "menu", noToggle: true, sec: "常用" },
     { id: "tp",    name: "传送功能",        kind: "fw", sec: "常用" },
-    { id: "challenge", name: "无限挑战", kind: "fw", sec: "常用", defOff: true },
     { id: "np",    name: "内挂自动战斗",    kind: "act", noToggle: true, sec: "常用" },
     { id: "zhu",   name: "助手自动战斗",    kind: "act", noToggle: true, sec: "常用" },
+    { id: "arrowrules", name: "换箭设置", kind: "fw", sec: "战斗功能" },
+    { id: "dojo",  name: "无限道场",        kind: "fw", sec: "战斗功能" },
     { id: "mlock", name: "攻击名单",        kind: "fw", sec: "战斗功能" },
     { id: "zhu2",  name: "战斗设置",        kind: "fw", sec: "战斗功能" },
     { id: "zskill", name: "技能设置",       kind: "fw", sec: "战斗功能" },
@@ -2739,8 +2796,7 @@
       if (e.shiftKey) s += " +Shift";
       if (e.metaKey) s += " +Win";
       s += hitId ? (" → 命中「" + hkName(hitId) + "」") : " → 未绑定";
-      hkProbeLog.unshift(s);
-      if (hkProbeLog.length > 3) hkProbeLog.length = 3;
+      DSHCollect.ringUnshift(hkProbeLog, s, 3);
       renderHkProbe();
     } catch (e2) {}
   }
@@ -3376,7 +3432,7 @@
   function btLog(tag, msg) {
     try {
       var line = '[' + tag + '] ' + msg;
-      btRing.push(line); if (btRing.length > 60) btRing.splice(0, btRing.length - 60);
+      DSHCollect.ringPush(btRing, line, 60);
       var el = $id('dsh-bt-log');
       if (el) {
         el.textContent = btRing.join('\n');
@@ -3490,8 +3546,7 @@
     try {
       var e = { t: Date.now(), ev: ev };
       if (obj) for (var k in obj) if (obj[k] !== undefined) e[k] = obj[k];
-      window.__dshDiag.push(e);
-      if (window.__dshDiag.length > 80) window.__dshDiag.splice(0, window.__dshDiag.length - 80);
+      DSHCollect.ringPush(window.__dshDiag, e, 80);
     } catch (e2) {}
   }
   function dshCastMark(skid, lv, target, src) {
@@ -3676,7 +3731,7 @@
       } catch (me) {}
       if (activeProfileKey() === key && lastCharGid === gid) return;
       try { npResetBattleState(); } catch (e0) {} // 换角色：旧角色排队意图绝不能落到新角色
-      try { challengeStop("切换角色，挑战已停止"); } catch (eC) {}
+      try { dojoStop("换角色"); } catch (e5) {} // V2.36.0：换角色立即停止内置道馆并释放租约
       if (typeof selfSpirits !== "undefined") selfSpirits = { aid: 0, num: 0, map: "" };
       try { captureAll(); } catch (e) {} // 旧档先落盘
       setActiveProfile(key);
@@ -3708,7 +3763,7 @@
   });
   // 自动存储（第2项）：周期 + 切后台 + 关页面前兜底（V2.5.0：后台隐藏时周期自动拉长到 30s，省 CPU；切后台/关页兜底已在下面保留）
   try { setInterval(function () { try { syncRealAtkRange(); } catch (e) {} if (!UI_BG || Date.now() - lastCaptureAt > 30000) { lastCaptureAt = Date.now(); captureAll(); } }, 8000); } catch (e) {}
-  try { window.addEventListener("beforeunload", function () { try { npClearBattleIntent(); } catch (e0) {} try { challengeStop("页面离开，挑战已停止"); } catch (eC) {} captureAll(); }); } catch (e) {}
+  try { window.addEventListener("beforeunload", function () { try { npClearBattleIntent(); } catch (e0) {} captureAll(); }); } catch (e) {}
   try { document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") captureAll(); }); } catch (e) {}
 
   // ---------------- 心跳 PING（V2.2.0 删定时防踢心跳；sendPing 仅保留给手机切后台 burst 连发用） ----------------
@@ -4960,7 +5015,7 @@
   }
   function tickArrow() {
     try {
-      if (challengeOwnsCombat()) return; // V2.35.0 挑战运行时通用换箭让位
+      if (externalAutomationOwns("arrow") || arrowTarget) return; // V2.35.1 外部目标换箭让通用耗尽换箭让位
       if (!clientReady()) return;
       var en = $id("dsh-arrowen");
       if (!en || !en.checked) { setArrowLog("未启用"); return; }
@@ -5018,9 +5073,7 @@
       var bag = ch.bag || null, sto = acc.storage || null;
       if (!bag && !sto) return;
       if (typeof fetch !== "function") return;
-      fetch(INGEST_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "invshot", account: account, charName: charName, bag: bag, storage: sto, ts: new Date().toISOString() }) })
-        .then(function (r) { if (r && r.ok) invShotSent++; else invShotFail++; renderInvShot(); })
-        .catch(function () { invShotFail++; renderInvShot(); });
+      DSHCollect.post(INGEST_URL, { type: "invshot", account: account, charName: charName, bag: bag, storage: sto, ts: new Date().toISOString() }, function (ok) { if (ok) invShotSent++; else invShotFail++; renderInvShot(); });
     } catch (e) {}
   }
   masterTickReg(function () { try { tickInvShot(); } catch (e) {} });
@@ -5570,28 +5623,20 @@
     try {
       var sel = $id("dsh-z-qoaskill");
       if (!sel) return;
-      var DB = CLIENT.DB;
-      if (!DB) { CLIENT.DB = window.require && window.require("DB/DBManager"); DB = CLIENT.DB; }
-      if (!DB || typeof DB.getAllSkillInfo !== "function") return;
-      var info = DB.getAllSkillInfo();
-      if (!info) return;
-      var learned = {};
-      Object.keys(info).forEach(function (k) {
-        var s = info[k];
-        if (s && s.level > 0 && !isPassiveSkill(s.SKID != null ? s.SKID : k)) learned[s.SKID != null ? s.SKID : k] = s;
-      });
-      var ids = Object.keys(learned);
-      if (!ids.length) return;
+      // V2.35.2：改读 learnedActiveSkills()（优先客户端 SkillList 组件，真实已学主动技能、随换角色刷新），
+      //   弃用 DB.getAllSkillInfo()（静态技能库无 level 字段 → 列表永远为空/残留上个角色技能）。
+      var skills = learnedActiveSkills();
       var cur = sel.value;
       var html = '<option value="">- 请选择 -</option>';
-      for (var i = 0; i < ids.length; i++) {
-        var nm = getSkillNameById(ids[i]) || (learned[ids[i]] && (learned[ids[i]].name || learned[ids[i]].SkillName)) || ids[i];
-        html += '<option value="' + ids[i] + '">' + nm + ' Lv' + (learned[ids[i]].level || "?") + '</option>';
+      for (var i = 0; i < skills.length; i++) {
+        var sk = skills[i];
+        var nm = sk.name || getSkillNameById(sk.skid) || String(sk.skid);
+        html += '<option value="' + sk.skid + '">' + nm + ' Lv' + (sk.lv || "?") + '</option>';
       }
       sel.innerHTML = html;
-      // V2.16.7：换角色后已选技能不在新角色已学列表 → 清空（防读成上个角色的技能）
-      if (cur && learned[cur]) sel.value = cur;
-      else sel.value = "";
+      var keep = false;
+      for (var j = 0; j < skills.length; j++) if (String(skills[j].skid) === String(cur)) { keep = true; break; }
+      sel.value = keep ? cur : "";
     } catch (e) {}
   }
   // V2.16.5 周期兜底：解围下拉仍是空（未点「读取内挂」）且客户端 DB 就绪 → 自动填充；每 ~8s 检查一次，填上即停
@@ -6041,7 +6086,7 @@
   }
   function npSendBattle(want, source, beforeToggle) {
     if (npBattleKnown && npHuntOn === want) return "already";
-    if (beforeToggle) beforeToggle();
+    if (beforeToggle && beforeToggle() === false) return "failed";
     if (!npToggleHunt()) return "failed";
     npHuntOn = !!want; npBattleKnown = true; npBattleLastSentAt = Date.now(); npBattleCandidate = null;
     npSyncBattleCheckbox(want);
@@ -6828,6 +6873,7 @@
     if (useWingFirst) {
       try { wf = findFlyWing(); } catch (e0) { wf = null; }
       if (wf && useItemByIndex(wf.index)) {
+        escapeState.ackAt = now;
         zWalkState.dir = Math.floor(Math.random() * 8);
         zWalkState.lastPos = null; zWalkState.stuckCnt = 0; zWalkState.tried = 0;
         tlog("escape-wing-" + wf.itid);
@@ -6839,6 +6885,7 @@
     if (!useWingFirst) {
       try { wf = findFlyWing(); } catch (e1) { wf = null; }
       if (wf && useItemByIndex(wf.index)) {
+        escapeState.ackAt = now;
         zWalkState.dir = Math.floor(Math.random() * 8);
         zWalkState.lastPos = null; zWalkState.stuckCnt = 0; zWalkState.tried = 0;
         tlog("escape-wing-" + wf.itid);
@@ -6855,7 +6902,9 @@
     var moved = !!(p.map && escapeState.map && p.map !== escapeState.map) ||
       (p.x != null && p.y != null && escapeState.x != null && escapeState.y != null && Math.abs(p.x - escapeState.x) + Math.abs(p.y - escapeState.y) >= 8);
     if (escapeState.ackAt >= escapeState.lastCast && escapeState.lastCast > 0 && moved) {
-      resetEmergencyEscape(0); tlog("escape-confirmed " + p.map + " " + p.x + "," + p.y); return false;
+      resetEmergencyEscape(0);
+      zHpWatch.lastHitAt = 0; zHitBy = {}; // V2.35.2：瞬移确认后重置「最近受击/命中」3 秒窗口，重新计数，防同一记受击反复触发紧急脱战
+      tlog("escape-confirmed " + p.map + " " + p.x + "," + p.y); return false;
     }
     if (escapeState.deadline && now >= escapeState.deadline) {
       if (escapeState.attempts >= ESCAPE_MAX_ATTEMPTS) { resetEmergencyEscape(5000); tlog("escape-timeout-final"); return false; }
@@ -6889,6 +6938,8 @@
       var gn = zGrpCount(mobs).n;
       var mobbing = group > 0 && gn >= group && $id("dsh-z-flygrp") && $id("dsh-z-flygrp").checked;
       if (mobbing) return "群殴(" + gn + "只)";
+      // V2.35.2：恢复「非选中怪攻击=瞬移」最近受击分支——最近 3 秒掉过血且选项=瞬移 → 挡普通攻击技能并紧急脱战
+      //   （瞬移确认后由 escape-confirmed 重置 lastHitAt/zHitBy，重新计数，防同一记受击反复触发）
       var recentHit = Date.now() - zHpWatch.lastHitAt < 3000;
       if (recentHit && $id("dsh-z-ona") && $id("dsh-z-ona").value === "瞬移") return "最近受击";
     } catch (e) {}
@@ -7091,11 +7142,7 @@
       try {
         cfgP = { flymode: $id("dsh-z-flymode") ? $id("dsh-z-flymode").value : "", flyint: $id("dsh-z-flyint") ? $id("dsh-z-flyint").value : "", flygrp: $id("dsh-z-flygrp") ? !!$id("dsh-z-flygrp").checked : null, grpn: $id("dsh-z-grpn") ? $id("dsh-z-grpn").value : "", hpfly: $id("dsh-z-hpfly") ? $id("dsh-z-hpfly").value : "", flystuck: $id("dsh-z-flystuck") ? !!$id("dsh-z-flystuck").checked : null, flykill: $id("dsh-z-flykill") ? !!$id("dsh-z-flykill").checked : null, ona: $id("dsh-z-ona") ? $id("dsh-z-ona").value : "" };
       } catch (eC) {}
-      fetch("http://127.0.0.1:8899/api/probe-collect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ t: tag || "zdiag", ver: VER, who: whoP, at: Date.now(), cfg: cfgP, arr: arrP.slice(-200) })
-      }).catch(function () {});
+      DSHCollect.post("http://127.0.0.1:8899/api/probe-collect", { t: tag || "zdiag", ver: VER, who: whoP, at: Date.now(), cfg: cfgP, arr: arrP.slice(-200) });
     } catch (e) {}
   }
   function zDiagSnapNow() {
@@ -7164,8 +7211,7 @@
       zDiagAt = nowD;
       var s = zDiagSnapNow();
       var arr = window.__dshZDiag || (window.__dshZDiag = []);
-      arr.push(s);
-      if (arr.length > 200) arr.splice(0, arr.length - 200);
+      DSHCollect.ringPush(arr, s, 200);
       if ((s.hp === 0 || s.dead) && !zDiagDead) { zDiagDead = 1; zDiagPost("zdiag-death"); }
       else if (s.hp > 0 && !s.dead && zDiagDead) { zDiagDead = 0; }
       try { if (btDiagOn) btLog('zdiag', JSON.stringify(s)); } catch (e1) {}
@@ -7216,6 +7262,10 @@
       var cMap = getCurrentMapInfo();
       var isCombatMap = defSnap.isCombatMap;
       if (!clientReady()) return;
+      // V2.35.2：死亡守卫——角色阵亡(HP=0)时清空瞬移/脱战残留（瞬移术/翅膀对尸体无效），
+      //   否则死后 checkDefense 仍按 HP=0 判低血→瞬移，复活换图后残留 escapeState 继续乱飞。
+      var _deadEnt0 = CLIENT.SS && CLIENT.SS.Entity, _deadLife0 = _deadEnt0 && _deadEnt0.life;
+      if (_deadLife0 && _deadLife0.hp != null && Number(_deadLife0.hp) <= 0) { resetEmergencyEscape(0); escapeBackoffUntil = 0; flyFailCount = 0; flyFailUntil = 0; lastFly = 0; return; }
       var now = Date.now();
       zDefTickAt = now;
       // V2.34.0 A2：此处不再按「紧急原因」提前 return——判定顺序固定：
@@ -7459,7 +7509,7 @@
   }
   function startZhu() {
     if (zRunning) return;
-    if (challengeOwnsCombat()) { setStatus("无限挑战运行中，助手战斗不启动", "warn"); return; }
+    if (externalAutomationOwns("battle")) { setStatus("外部自动化持有战斗租约，助手战斗不启动", "warn"); return; }
     zRunning = true;
     $id("dsh-z-state").textContent = "助手运行中…";
     startScan();
@@ -7740,8 +7790,7 @@
   var __dshSphereLog = []; // V2.32.2 气弹自采集诊断环形缓冲（自动采集，无需手动开关）
   function dshSphereLog(msg) {
     try {
-      __dshSphereLog.push({ t: Date.now(), m: msg });
-      if (__dshSphereLog.length > 400) __dshSphereLog.splice(0, __dshSphereLog.length - 400);
+      DSHCollect.ringPush(__dshSphereLog, { t: Date.now(), m: msg }, 400);
       try { window.__dshSphereLog = __dshSphereLog; } catch (e) {}
     } catch (e) {}
   }
@@ -7750,8 +7799,7 @@
   var __dshCastTrace = [];
   function dshCastLog(msg) {
     try {
-      __dshCastTrace.push({ t: Date.now(), m: msg });
-      if (__dshCastTrace.length > 400) __dshCastTrace.splice(0, __dshCastTrace.length - 400);
+      DSHCollect.ringPush(__dshCastTrace, { t: Date.now(), m: msg }, 400);
       try { window.__dshCastTrace = __dshCastTrace; } catch (e) {}
       if (!dshCastLog._at || Date.now() - dshCastLog._at > 2000) {
         dshCastLog._at = Date.now();
@@ -8121,7 +8169,7 @@
       //   - 侦查没扫到怪 / 附近只有「超出」的锁定怪 → 持续发包让服务器自动寻怪（内挂移动靠近）
       if (npHuntMode() === "np" || isHybrid()) {
         var npThD = isHybrid() ? takeoverDist() : calcAtkRange();
-        if (btDiagOn) { try { var aR0 = calcAtkRange(); btLog('zWalk-np', 'mode=' + (isHybrid() ? "hybrid" : "np") + ' scanMobs=' + scanMobs.length + ' hasAttackable=' + scanHasAttackableLockedMob(npThD) + ' hasOutOfRange=' + scanHasOutOfRangeLockedMob(npThD) + ' thD=' + npThD + ' scanSt=' + ($id('dsh-scanst') ? $id('dsh-scanst').textContent : '?')); } catch (e) {} }
+        if (btDiagOn) { try { var aR0 = calcAtkRange(); var _lk = Object.keys(lockList).slice(0,20).join(","); var _sm = scanMobs.slice(0,10).map(function (x) { return x.mid + "@" + x.dist; }).join(" "); btLog('zWalk-np', 'mode=' + (isHybrid() ? "hybrid" : "np") + ' scanMobs=' + scanMobs.length + ' hasAttackable=' + scanHasAttackableLockedMob(npThD) + ' hasOutOfRange=' + scanHasOutOfRangeLockedMob(npThD) + ' thD=' + npThD + ' scanSt=' + ($id('dsh-scanst') ? $id('dsh-scanst').textContent : '?') + ' lock=[' + _lk + '] mids=[' + _sm + ']'); } catch (e) {} }
         if (!scanHasAttackableLockedMob(npThD)) {
           npEnsureHunt();
           if (scanHasOutOfRangeLockedMob(npThD)) {
@@ -10082,7 +10130,7 @@
     if (!logs) { el.innerHTML = '<div class="st">书本数据未就绪（客户端加载后重试）</div>'; return; }
     var cv = DEFAULTS.ClientVer;
     var tbl = logs[cv] || logs[5] || {};
-    var catMap = { "bk-npc": "guide", "bk-train": "train", "bk-money": "makeMonzy", "bk-chg": "challenge", "bk-dun": "dungeons", "bk-mvp": "mvp" };
+    var catMap = { "bk-npc": "guide", "bk-train": "train", "bk-money": "makeMonzy", "bk-dun": "dungeons", "bk-mvp": "mvp" };
     var active = "";
     var subs = el.closest(".page").querySelectorAll(".sub-tab");
     for (var i = 0; i < subs.length; i++) if (subs[i].classList.contains("active")) active = subs[i].getAttribute("data-sub");
@@ -10108,7 +10156,7 @@
       var logs = requireDB("DB/logsTable");
       var cv = DEFAULTS.ClientVer;
       var tbl = logs[cv] || logs[5] || {};
-      var catMap = { "bk-npc": "guide", "bk-train": "train", "bk-money": "makeMonzy", "bk-chg": "challenge", "bk-dun": "dungeons", "bk-mvp": "mvp" };
+      var catMap = { "bk-npc": "guide", "bk-train": "train", "bk-money": "makeMonzy", "bk-dun": "dungeons", "bk-mvp": "mvp" };
       var subs = $id("dsh-book").closest(".page").querySelectorAll(".sub-tab");
       var active = "bk-npc";
       for (var i = 0; i < subs.length; i++) if (subs[i].classList.contains("active")) active = subs[i].getAttribute("data-sub");
@@ -10667,7 +10715,7 @@
       if (!clientReady()) throw new Error("客户端未就绪");
       var inv = findInventory();
       if (!inv) { $id("dsh-cleanlog").textContent = "未定位到背包（自动探测中…）。请先在游戏内打开背包"; return; }
-      var sellList = [];
+      var sellList = [], locked = 0; // V2.36.0：不可丢/状态未知物品只允许 mail/bag 两个出口
       for (var j = 0; j < inv.length; j++) {
         var it = inv[j] || {};
         if (it.ITID != null && (it.type === 4 || it.type === 5 || it.itemType === 4 || it.itemType === 5)) {
@@ -10675,19 +10723,20 @@
           var refined = Number(it.RefiningLevel || it.refiningLevel || it.refine || 0) > 0;
           var slotted = false; try { if (it.slot) for (var sk in it.slot) { if (Number(it.slot[sk]) > 0) { slotted = true; break; } } } catch (e2) {}
           var special = slotted || Number(it.nRandomOptionCnt || 0) > 0 || Number(it.enchantgrade || 0) > 0;
-          if (!equipped && !refined && !special) sellList.push({ index: it.index != null ? it.index : j, amount: it.amount || it.count || 1, ITID: it.ITID });
+          // V2.36.0：出售属于“其它出口”，不可丢或状态未知一律拒绝
+          if (!equipped && !refined && !special) { if (itemOutletAllowed(it.ITID, "sell").ok) sellList.push({ index: it.index != null ? it.index : j, amount: it.amount || it.count || 1, ITID: it.ITID }); else locked++; }
         }
       }
-      if (!sellList.length) { $id("dsh-cleanlog").textContent = "背包里没有可卖的装备类物品"; return; }
+      if (!sellList.length) { $id("dsh-cleanlog").textContent = locked ? ("有 " + locked + " 件装备不可丢或状态未知，仅允许邮件/背包出口，已拒绝出售。") : "背包里没有可卖的装备类物品"; return; }
       var sp = new CLIENT.PS.CZ.PC_SELL_ITEMLIST();
       sp.itemList = sellList;
       CLIENT.NM.sendPacket(sp);
-      $id("dsh-cleanlog").textContent = "已发送卖单 " + sellList.length + " 件装备";
+      $id("dsh-cleanlog").textContent = "已发送卖单 " + sellList.length + " 件装备" + (locked ? "（按不可丢策略拒绝 " + locked + " 件）" : "");
     } catch (e) { $id("dsh-cleanlog").textContent = "卖装备异常: " + e.message; }
   });
 
   // ---------------- 菜单侦察（对话采集 · 阶段1） ----------------
-  var menuRecon = { NAID: 0, msg: "", items: [], map: "", npcName: "", pos: null, time: 0 };
+  var menuReconGeneration = 0, menuRecon = { NAID: 0, msg: "", items: [], map: "", npcName: "", pos: null, time: 0, generation: 0 };
   var lastTalkNpc = null; // 点「点NPC对话」时记录的目标实体（真实 GID/name/pos，用于菜单反查）
   function decodeMenuMsg(bytes) {
     var end = bytes.length;
@@ -10740,12 +10789,7 @@
   function ingest(payload) {
     try {
       if (typeof fetch !== "function") { ingestFail++; renderIngest(); return; }
-      fetch(INGEST_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      }).then(function (r) { if (r && r.ok) ingestOk++; else ingestFail++; renderIngest(); })
-        .catch(function () { ingestFail++; renderIngest(); });
+      DSHCollect.post(INGEST_URL, payload, function (ok) { if (ok) ingestOk++; else ingestFail++; renderIngest(); });
     } catch (e) { ingestFail++; }
   }
   // V2.15.27：采集服务心跳（20s 探测，维持服务活跃并显示在线状态）
@@ -10798,7 +10842,7 @@
         }
       } catch (e2) {}
       var items = splitMenu(msg);
-      menuRecon = { NAID: NAID, msg: msg, items: items, map: getMapName(), npcName: npcName, pos: pos, time: Date.now() };
+      menuRecon = { NAID: NAID, msg: msg, items: items, map: getMapName(), npcName: npcName, pos: pos, time: Date.now(), generation: ++menuReconGeneration };
       renderMenuRecon();
       pushStep("menu", msg, items, menuRecon.map, npcName, (lastTalkNpc && lastTalkNpc.GID != null) ? lastTalkNpc.GID : NAID, pos);
     } catch (e) {}
@@ -11771,10 +11815,14 @@
       var pct = hm > 0 ? Math.max(0, Math.min(100, Math.round(h / hm * 100))) : 0;
       if (fill) fill.style.width = pct + "%";
       if (hpEl) hpEl.textContent = ent ? (hm > 0 ? ("HP " + fmtK(h) + " / " + fmtK(hm)) : "血量未知") : "";
-      // 信息行：Lv / 种族 / 属性 / 形体 / 距离（暂无数据 → --）+ 按怪物ID的外链
+      // 信息行：Lv / 种族 / 属性 / 形体 / 距离（暂无数据 → --）
       if (info) {
-        var mobDB = null; try { mobDB = getMobDb(); } catch (e2) {}
-        var m = mobDB && mid ? mobDB[mid] : null;
+        var m = null;
+        try {
+          var DBR = CLIENT.DB || requireDB("DB/DBManager");
+          if (DBR && typeof DBR.getmobData === "function" && mid) m = DBR.getmobData(mid);
+        } catch (e2) {}
+        if (!m) { try { var mobDB = getMobDb(); m = mobDB && mid ? mobDB[mid] : null; } catch (e2b) {} }
         var fv = function (v) { return (v != null && String(v) !== "") ? roEscTxt(v) : "--"; };
         var lv = m && m.LV != null ? m.LV : (ent && ent.level != null ? ent.level : null);
         var race = m ? (m.Race != null ? m.Race : m.race) : null;
@@ -11786,10 +11834,7 @@
           if (ent && ent.position && selfE && selfE.position) dist = Math.round(Math.sqrt(Math.pow(ent.position[0] - selfE.position[0], 2) + Math.pow(ent.position[1] - selfE.position[1], 2)) * 10) / 10;
           else if (gid && zLock.dist != null) dist = zLock.dist;
         } catch (e3) {}
-        var du = mobRefUrl("dvg", mid), ru = mobRefUrl("ro321", mid);
-        info.innerHTML = "Lv <b>" + fv(lv) + "</b> · 种族 <b>" + fv(race) + "</b> · 属性 <b>" + fv(elem) + "</b> · 形体 <b>" + fv(scale) + "</b> · 距离 <b>" + (dist != null ? dist + "m" : "--") + "</b>" +
-          (ru ? ' · <a href="' + ru + '" target="_blank" rel="noopener noreferrer">数量</a>' : "") +
-          (du ? ' <a href="' + du + '" target="_blank" rel="noopener noreferrer">资料</a>' : "");
+        info.innerHTML = "Lv <b>" + fv(lv) + "</b> · 种族 <b>" + fv(race) + "</b> · 属性 <b>" + fv(elem) + "</b> · 形体 <b>" + fv(scale) + "</b> · 距离 <b>" + (dist != null ? dist + "m" : "--") + "</b>";
       }
     } catch (e) { try { dshDiag("target-render-error", { message: e.message || String(e) }); } catch (e2) {} }
   }
@@ -12604,6 +12649,9 @@
               else if (npHuntOn) { npHuntStop("map-change", true); } // 纯内挂模式 → 立即关服务器自动战斗
               setStatus("换图：自动战斗已停止", "st");
               tlog("map-changed: battle stopped");
+              // V2.35.2：换图清空瞬移/脱战/卡死残留，避免死后换图继续乱飞
+              resetEmergencyEscape(0); escapeBackoffUntil = 0; flyFailCount = 0; flyFailUntil = 0; lastFly = 0;
+              zStuckSince = null; zLastPos = null;
             } catch (e7) {}
             try { refreshPickMap(); renderMapLock($id("dsh-z-maplock")); } catch (e3) {}
           }
@@ -13490,6 +13538,7 @@
         var id = scrInvId(inv[i]); if (id == null) continue;
         var hit = (p.item != null && id === parseInt(p.item, 10)) || (specs && specs.indexOf(id) >= 0) || (Array.isArray(p.range) && id >= p.range[0] && id <= p.range[1]) || (clsDef && id >= clsDef.lo && id <= clsDef.hi) || (p.keyword && scrItemName(id).indexOf(String(p.keyword)) >= 0);
         if (!hit) continue;
+        if (!itemOutletAllowed(id, "store").ok) { scrLogLine("store: #" + id + " 不可丢或状态未知，仅允许邮件/背包出口，拒绝存仓"); continue; }
         var idx = scrInvIdx(inv[i]); if (idx == null) continue;
         queue.push({ index: idx, id: id, count: p.count != null ? Math.min(parseInt(p.count, 10), scrInvQty(inv[i])) : scrInvQty(inv[i]) });
         if (p.max != null && queue.length >= parseInt(p.max, 10)) break;
@@ -13799,51 +13848,332 @@
   };
 
 
-  // ================= V2.35.0 无限挑战（纠正版）=================
+  // ================= V2.35.1 公共自动化 API + 助手换箭 =================
+  var ARROW_RULES_KEY="dsh-ro-arrow-rules-v1";
+  function arrowPos(v){v=Number(v);return Number.isInteger(v)&&v>0?v:null;}
+  // V2.36.0：旧挑战/道场迁移键（arrowLoad 与内置道馆 dojoLoad 共用，保证字面量只有一处）
   var CHALLENGE_KEY="dsh-ro-challenge-v1";
-  var challenge={running:false,generation:0,state:"idle",round:0,remaining:null,countdown:null,spawnUntil:0,lastNotice:"",lastNoticeAt:0,manualHold:false,timer:null,rewardTimer:null,contact:null,selectedNpc:null,walking:false,nameReq:{},npLease:"none",arrowPending:null,arrowBlocked:false,noMobAt:0,lastFly:0,lastSkill:0,menuFingerprint:"",menuWarnTimer:null};
-  function challengeDefaults(){return {difficulty:"basic",stop100:true,neutralItid:null,ghostItid:null,bossByMid:{},arrowOn:false,flyOn:false,emergencyFly:false};}
-  function challengePos(v){v=Number(v);return Number.isInteger(v)&&v>0?v:null;}
-  function challengeLoad(){var d=challengeDefaults(),r=null;try{r=JSON.parse(localStorage.getItem(CHALLENGE_KEY)||"null");}catch(e){}if(!r||typeof r!=="object")return d;if(/^(basic|middle|advanced)$/.test(r.difficulty))d.difficulty=r.difficulty;d.stop100=r.stop100!==false;d.arrowOn=r.arrowOn===true;d.flyOn=r.flyOn===true;d.emergencyFly=r.emergencyFly===true;d.neutralItid=challengePos(r.neutralItid);d.ghostItid=challengePos(r.ghostItid);if(r.bossByMid&&typeof r.bossByMid==="object")Object.keys(r.bossByMid).forEach(function(k){var mid=challengePos(k),v=r.bossByMid[k],itid=challengePos(v&&v.itid!=null?v.itid:v);if(mid&&itid)d.bossByMid[mid]=itid;});return d;}
-  var challengeCfg=challengeLoad();
-  function challengeSave(){try{localStorage.setItem(CHALLENGE_KEY,JSON.stringify(challengeCfg));}catch(e){}}
-  function challengeNormalizeText(s){return String(s==null?"":s).replace(/<[^>]*>/g," ").replace(/\^[0-9a-f]{6}/gi,"").replace(/[０-９]/g,function(c){return String.fromCharCode(c.charCodeAt(0)-65248);}).replace(/達/g,"达").replace(/貓/g,"猫").replace(/\s+/g," ").trim();}
-  function challengeParseNotice(raw){var text=challengeNormalizeText(raw),m,round=null,remaining=null,spawn=false,spawnSeconds=null,countdown=null,completed=null;if((m=text.match(/(?:完成|通过)\s*第?\s*(\d+)\s*[轮层波]/))||(m=text.match(/第\s*(\d+)\s*[轮层波]\s*(?:完成|结束|通过)/)))completed=Number(m[1]);if((m=text.match(/第\s*(\d+)\s*[轮层波]/))||(m=text.match(/(?:轮次|当前轮)\s*[:：]?\s*(\d+)/))||(m=text.match(/(^|\D)(\d+)\s*波(?:\D|$)/)))round=Number(m[m.length-1]);if((m=text.match(/(?:怪物|敌人|入侵者)?\s*(?:还剩|剩余)\s*[:：]?\s*(\d+)\s*(?:只|个|名)?/)))remaining=Number(m[1]);if((m=text.match(/(?:入侵者|怪物|首领|Boss|MVP).*?(\d+)\s*秒(?:后)?(?:出现|刷新|到达|生成)/i))){spawn=true;spawnSeconds=Number(m[1]);}else if(/(?:入侵者|怪物|首领|Boss|MVP).*(?:出现|刷新|到达|生成)/i.test(text))spawn=true;if((m=text.match(/(?:倒计时|挑战时间|时间)?\s*(?:还剩|剩余)\s*[:：]?\s*(?:(\d+)\s*分)?\s*(\d+)\s*秒/)))countdown=Number(m[1]||0)*60+Number(m[2]);else if((m=text.match(/(?:倒计时|挑战时间|时间)\s*[:：]?\s*(\d+)\s*秒/)))countdown=Number(m[1]);return {round:round,remaining:remaining,spawn:spawn,spawnSeconds:spawnSeconds,countdown:countdown,completed:completed,text:text};}
-  function challengeArrowDecision(raw,isBoss,mid,cfg){raw=Number(raw);if(!Number.isInteger(raw)||raw<0)return null;cfg=cfg||{};var type=raw%20,level=Math.floor(raw/20),neutral=challengePos(cfg.neutralItid!=null?cfg.neutralItid:cfg.neutralArrow),ghost=challengePos(cfg.ghostItid!=null?cfg.ghostItid:cfg.ghostArrow),v=cfg.bossByMid&&cfg.bossByMid[mid],boss=challengePos(v&&v.itid!=null?v.itid:v);if(type===8&&level===3)return ghost?{kind:"ghost3",itid:ghost}:null;if(isBoss)return boss||neutral?{kind:boss?"boss":"neutral",itid:boss||neutral}:null;if(type===8&&level===4)return ghost?{kind:"ghost4",itid:ghost}:null;return neutral?{kind:"neutral",itid:neutral}:null;}
-  function challengeEntityName(e){return challengeNormalizeText(e&&(e.displayName||e.name||(e.display&&e.display.name))||"").replace(/[【\[].*?[】\]]/g,"").split("#")[0].replace(/\s/g,"");}
-  function challengeNpcAlias(n){return /^(?:喵达人|猫达人|白猫|白猫达人|喵達人|貓達人)$/.test(n);}
-  function challengeRequestNames(es,now){var sent=0;(es||[]).forEach(function(e){var gid=challengePos(e&&e.GID);if(sent>=3||!gid||challengeEntityName(e)||now-(challenge.nameReq[gid]||0)<10000)return;try{var P=CLIENT.PS.CZ.REQNAME||CLIENT.PS.CZ.REQUEST_NAME;if(!P)return;var p=new P();p.GID=gid;CLIENT.NM.sendPacket(p);challenge.nameReq[gid]=now;sent++;}catch(ignore){}});return sent;}
-  function challengePickNpc(es,player){var named=[],near=[],allEmpty=true,p=Array.isArray(player)?player:[99,107];(es||[]).forEach(function(e){if(!e||!e.position||(e.objecttype!=null&&e.objecttype!==6&&e.objecttype!==12))return;var n=challengeEntityName(e);if(n)allEmpty=false;if(challengeNpcAlias(n))named.push(e);if(Math.max(Math.abs(Number(e.position[0])-99),Math.abs(Number(e.position[1])-107))<=5)near.push(e);});return named.length===1?named[0]:(named.length===0&&allEmpty&&near.length===1?near[0]:null);}
-  function challengeUniqueOption(items,matcher){var rx=matcher instanceof RegExp?matcher:null,h=[];try{if(!rx)rx=new RegExp(matcher);}catch(e){return null;}(items||[]).forEach(function(v,i){rx.lastIndex=0;if(rx.test(challengeNormalizeText(v).replace(/\s/g,"")))h.push(i);});return h.length===1?{index:h[0],text:items[h[0]]}:null;}
-  function challengeEntities(){var a=[];try{var em=CLIENT.EM||(window.require&&window.require("Renderer/EntityManager"));if(em&&em.forEach)em.forEach(function(e){a.push(e);});}catch(e){}return a;}
-  function challengeRender(){var e=$id("dsh-challenge-state"),a=$id("dsh-challenge-start"),b=$id("dsh-challenge-stop"),d=$id("dsh-challenge-difficulty");if(e)e.textContent="状态："+challenge.state+"\n轮次："+(challenge.round||"—")+"　剩余怪："+(challenge.remaining==null?"—":challenge.remaining)+"　倒计时："+(challenge.countdown==null?"—":challenge.countdown+"秒");if(a)a.disabled=challenge.running;if(b)b.disabled=!challenge.running;if(d)d.disabled=challenge.running;}
-  function challengeSay(s){challenge.state=s;var e=$id("dsh-challenge-status");if(e)e.textContent=s;challengeRender();}
-  function challengeActive(){return !!challenge.running;}
-  function challengeOwnsCombat(){return challengeActive();}
-  function challengeDialogOpen(){try{var b=requireDB("UI/Components/NpcBox/NpcBox"),m=requireDB("UI/Components/NpcMenu/NpcMenu");return !!((b&&b.ui&&b.ui.is(":visible"))||(m&&m.ui&&m.ui.is(":visible")));}catch(e){return false;}}
-  function challengeCancelNpIntent(){if(npBattleExplicit&&/^challenge-/.test(npBattleExplicit.source||"")){if(npBattleExplicitTimer)clearTimeout(npBattleExplicitTimer);npBattleExplicitTimer=null;npBattleExplicit=null;}if(npBattleCandidate&&/^challenge-/.test(npBattleCandidate.source||""))npBattleCandidate=null;}
-  function challengeBattleOn(){var before=npBattleState();if(challenge.npLease!=="none")return "pending";if(before!==false)return before===true?"already":"unknown";var r=npRequestBattle(true,"challenge-start",true);if(r==="sent"||r==="queued")challenge.npLease="pending";return r;}
-  function challengeBattleConfirm(){if(challenge.npLease==="pending"&&npBattleState()===true)challenge.npLease="owned";}
-  function challengeBattleOff(){challengeCancelNpIntent();var owned=challenge.npLease==="owned";challenge.npLease="none";return owned&&npBattleState()===true?npRequestBattle(false,"challenge-stop",true):"unowned";}
-  function challengeStop(reason){var was=challenge.running;challenge.running=false;challenge.generation++;challenge.manualHold=false;challenge.contact=null;challenge.selectedNpc=null;challenge.arrowPending=null;challenge.arrowBlocked=false;if(challenge.timer){clearInterval(challenge.timer);challenge.timer=null;}if(challenge.rewardTimer){clearTimeout(challenge.rewardTimer);challenge.rewardTimer=null;}if(challenge.menuWarnTimer){clearTimeout(challenge.menuWarnTimer);challenge.menuWarnTimer=null;}if(challenge.walking){try{stopWalkXY();}catch(e){}challenge.walking=false;}challengeCancelNpIntent();if(was||challenge.npLease!=="none")challengeBattleOff();challengeSay(reason||"已停止");}
-  function challengePause100(round){challenge.running=false;challenge.generation++;challenge.manualHold=true;if(challenge.timer){clearInterval(challenge.timer);challenge.timer=null;}challenge.state="paused";challengeBattleOff();var e=$id("dsh-challenge-status");if(e)e.textContent="第"+round+"轮完成，领奖前暂停";challengeRender();}
-  function challengeContact(n){try{var p=new CLIENT.PS.CZ.CONTACTNPC();p.NAID=n.GID;p.type=1;CLIENT.NM.sendPacket(p);lastTalkNpc={GID:n.GID,name:challengeEntityName(n),pos:[n.position[0],n.position[1]]};challenge.selectedNpc=n.GID;challenge.contact={gid:n.GID,firstAt:challenge.contact&&challenge.contact.firstAt||Date.now(),lastAt:Date.now(),retries:0,nextAt:0};challengeSay("已远程联系喵达人，等待对话");return true;}catch(e){return false;}}
-  function challengeNpcTick(now){var me=CLIENT.SS&&CLIENT.SS.Entity,es=challengeEntities(),n=challengePickNpc(es,me&&me.position),c=challenge.contact;challengeRequestNames(es,now);if(n&&(!c||c.gid!==n.GID))return challengeContact(n);if(challengeDialogOpen())return false;if(!c){challenge.manualHold=true;challengeSay("NPC 缺失或名称不唯一，手动 hold（不发包、不巡逻）");return false;}if(now-c.firstAt>=30000){challengeStop("30秒无对话，已停止");return false;}if(now-c.firstAt<8000||now<c.nextAt)return false;var pos=me&&me.position,dist=pos?Math.max(Math.abs(Number(pos[0])-99),Math.abs(Number(pos[1])-107)):99;if(dist<=2||c.retries>=3)return false;if(!challenge.walking){var g=challenge.generation;c.retries++;c.nextAt=now+(c.retries===1?1000:3000);challenge.walking=!!walkToXY(99,107,function(){challenge.walking=false;if(challenge.running&&g===challenge.generation)challengeNpcTick(Date.now());},"dsh-challenge-status");challengeSay("8秒无对话，走近重试 "+c.retries+"/3（30秒止损）");return challenge.walking;}return false;}
-  function challengeMenuChoice(items){var rules=[{basic:/^(?:初级|简单)(?:挑战)?$/,middle:/^(?:中级|普通)(?:挑战)?$/,advanced:/^(?:高级|困难)(?:挑战)?$/}[challengeCfg.difficulty],/^继续挑战$/, /^开始挑战$/, /^领取奖励$/, /^(?:确认|确定|是|好的)$/];for(var i=0;i<rules.length;i++){var hit=challengeUniqueOption(items,rules[i]),count=0;if(hit)return hit;(items||[]).forEach(function(v){rules[i].lastIndex=0;if(rules[i].test(challengeNormalizeText(v).replace(/\s/g,"")))count++;});if(count>1)return {ambiguous:true};}return null;}
-  function challengeChooseMenu(r){if(!challenge.running||challenge.manualHold||!r||!Array.isArray(r.items))return false;var naid=challengePos(r.NAID),fp=naid+"|"+r.items.map(challengeNormalizeText).join("\u001f");if(!naid||naid!==challengePos(challenge.selectedNpc)){challenge.manualHold=true;challengeSay("菜单 NPC 不匹配，等待手动选择");return false;}if(fp===challenge.menuFingerprint)return false;var x=challengeMenuChoice(r.items);if(!x||x.ambiguous){challenge.manualHold=true;challengeSay(x?"菜单匹配不唯一，等待手动选择":"未知菜单，等待手动选择");return false;}if(challengeCfg.stop100&&challenge.round>=100&&/领取奖励/.test(x.text)){challengePause100(challenge.round);return false;}challenge.menuFingerprint=fp;try{var p=new CLIENT.PS.CZ.CHOOSE_MENU();p.NAID=naid;p.num=x.index+1;CLIENT.NM.sendPacket(p);if(challenge.menuWarnTimer)clearTimeout(challenge.menuWarnTimer);var g=challenge.generation;challenge.menuWarnTimer=setTimeout(function(){if(challenge.running&&g===challenge.generation&&challenge.menuFingerprint===fp)challengeSay("菜单提交8秒无进展，请人工确认（不重发）");},8000);challengeSay("已选择："+x.text+"；等待服务器开战信号");return true;}catch(e){challenge.manualHold=true;return false;}}
-  function challengeStart(){if(zRunning||(bagClean&&bagClean.busy)){challengeSay("助手战斗运行中，拒绝启动");return false;}if(!clientReady()){challengeSay("客户端未就绪");return false;}challengeStop("准备启动");challenge.running=true;challenge.generation++;challenge.round=0;challenge.remaining=null;challenge.countdown=null;challenge.lastNotice="";challenge.npLease="none";challenge.noMobAt=0;challenge.menuFingerprint="";challenge.selectedNpc=null;var g=challenge.generation;challenge.timer=setInterval(function(){if(challenge.running&&challenge.generation===g)challengeTick();},250);challengeNpcTick(Date.now());return true;}
-  function challengeOnAnnouncement(text,now){if(!challenge.running)return false;var ev=challengeParseNotice(text);now=now||Date.now();if(!ev.text||ev.text===challenge.lastNotice&&now-challenge.lastNoticeAt<2500)return false;if(ev.round==null&&ev.remaining==null&&!ev.spawn&&ev.countdown==null&&ev.completed==null&&!/挑战/.test(ev.text))return false;var er=ev.completed!=null?ev.completed:ev.round;if(er!=null&&challenge.round&&er<challenge.round)return false;challenge.lastNotice=ev.text;challenge.lastNoticeAt=now;if(ev.round!=null)challenge.round=ev.round;if(ev.remaining!=null)challenge.remaining=ev.remaining;if(ev.countdown!=null)challenge.countdown=ev.countdown;if(ev.spawn)challenge.spawnUntil=now+(ev.spawnSeconds||0)*1000;if(ev.completed!=null){challenge.round=ev.completed;challenge.remaining=0;challengeBattleOff();if(challengeCfg.stop100&&ev.completed>=100){challengePause100(ev.completed);return true;}var g=challenge.generation;if(challenge.rewardTimer)clearTimeout(challenge.rewardTimer);challenge.rewardTimer=setTimeout(function(){if(challenge.running&&g===challenge.generation){challenge.contact=null;challenge.selectedNpc=null;challengeNpcTick(Date.now());}},1000);challengeSay("第"+ev.completed+"轮完成，1秒后联系喵达人");return true;}if(ev.round!=null||ev.remaining!=null||ev.spawn||/挑战.*(?:开始|进行)|(?:开始|进入).*挑战/.test(ev.text)){challengeBattleOn();challenge.state="battle";}challengeRender();return true;}
-  function chOnAnnouncement(text){return challengeOnAnnouncement(text);}
-  function challengeTarget(){var all=challengeEntities(),me=CLIENT.SS&&CLIENT.SS.Entity,lock=zLock&&gidInt(zLock.gid),best=null,bd=1e9;all.forEach(function(e){if(!e||e.objecttype!==5||e.isDeath||e.remove_tick||(e.ACTION&&e.action===e.ACTION.DIE))return;var d=me&&me.position&&e.position?Math.max(Math.abs(e.position[0]-me.position[0]),Math.abs(e.position[1]-me.position[1])):1e9;if(lock&&gidInt(e.GID)===lock){best=e;bd=-1;}else if(bd>=0&&d<bd){best=e;bd=d;}});if(!best)return null;var mid=Number(best._job!=null?best._job:(best.job!=null?best.job:best.mobId));return Number.isFinite(mid)?{entity:best,gid:best.GID,mid:mid,dist:bd}:null;}
-  function challengeArrowTick(t,now){challenge.arrowBlocked=false;if(!challenge.running||challengeCfg.difficulty==="basic"||!challengeCfg.arrowOn||!t)return false;var db=getMobDb(),m=db&&db[t.mid];if(!m){challenge.arrowBlocked=true;challengeSay("箭矢延后：目标属性未知");return true;}var d=challengeArrowDecision(m.Element!=null?m.Element:m.element,Number(m.MvpDropsNum)>0,t.mid,challengeCfg);if(!d||!d.itid){challenge.arrowBlocked=true;challengeSay("箭矢延后：所需箭矢未配置");return true;}var ammo=readEquippedAmmo();if(ammo&&Number(ammo.itid)===d.itid){challenge.arrowPending=null;return false;}var p=challenge.arrowPending,row=readBagArrows().filter(function(x){return Number(x.itid)===d.itid;})[0];if(!row){challenge.arrowBlocked=true;challengeSay("箭矢延后：背包缺少 #"+d.itid);return true;}if(p&&p.itid===d.itid){if(now<p.confirmUntil)return true;if(!p.retryAt){p.retryAt=now+3000;challenge.arrowBlocked=true;challengeSay("箭矢确认超时，3秒后重试");return true;}if(now<p.retryAt)return true;if(equipArrow(row.index)){challenge.arrowPending={itid:d.itid,confirmUntil:now+5000,retryAt:0};return true;}challenge.arrowBlocked=true;return true;}if(equipArrow(row.index)){challenge.arrowPending={itid:d.itid,confirmUntil:now+5000,retryAt:0};return true;}challenge.arrowBlocked=true;return true;}
-  function challengeTick(){if(!challenge.running)return;var now=Date.now(),live=(scanMobs||[]).filter(function(m){return m&&!m.dead&&!m.isDeath&&!m.remove_tick;}),me=CLIENT.SS&&CLIENT.SS.Entity,hp=me&&me.life&&Number(me.life.hp),max=me&&me.life&&Number(me.life.hp_max);if(challenge.manualHold)return;if(challengeCfg.emergencyFly&&challenge.state==="battle"&&challenge.remaining>0&&max>0&&hp/max<.7&&now-challenge.lastFly>=1000){challenge.lastFly=now;doFly();return;}var t=challengeTarget();if(challengeArrowTick(t,now)||challenge.arrowBlocked)return;if(!live.length){if(!challenge.noMobAt)challenge.noMobAt=now;if(challengeCfg.flyOn&&challenge.state==="battle"&&challenge.remaining>0&&now-challenge.noMobAt>=3000&&now-challenge.lastFly>=1000){challenge.lastFly=now;doFly();return;}}else challenge.noMobAt=0;if(challenge.state!=="battle")challengeNpcTick(now);challengeRender();}
-  function challengeFillArrows(s){if(!s)return;var old=s.value;s.innerHTML='<option value="">选择背包 type10 箭矢</option>';readBagArrows().forEach(function(x){var o=document.createElement("option");o.value=x.itid;o.textContent=(getItemName(x.itid)||("ITID "+x.itid))+" #"+x.itid+" ×"+x.count;s.appendChild(o);});s.value=old;}
-  function challengeFillBosses(s){if(!s)return;var old=s.value,db=getMobDb()||{};s.innerHTML='<option value="">选择 Boss</option>';Object.keys(db).filter(function(k){return db[k]&&Number(db[k].MvpDropsNum)>0;}).forEach(function(k){var o=document.createElement("option");o.value=k;o.textContent=(db[k].name||db[k].Name||"Boss")+" #"+k;s.appendChild(o);});s.value=old;}
-  function challengeEnsureHost(){var h=$id("dsh-fw-challenge");if(h){challengeFillArrows($id("dsh-challenge-arrow"));return h;}var dock=$id("dsh-challenge-dock");if(!dock){dock=document.createElement("div");dock.id="dsh-challenge-dock";dock.style.display="none";document.documentElement.appendChild(dock);}h=document.createElement("div");h.id="dsh-fw-challenge";h.innerHTML='<div class="sec">无限挑战</div><div class="row"><select id="dsh-challenge-difficulty"><option value="basic">初级</option><option value="middle">中级</option><option value="advanced">高级</option></select><button id="dsh-challenge-start">开始</button><button id="dsh-challenge-stop">停止</button></div><div id="dsh-challenge-state" class="log"></div><div id="dsh-challenge-status" class="st"></div><label><input id="dsh-challenge-stop100" type="checkbox">100轮领奖前暂停</label><br><label><input id="dsh-challenge-arrowon" type="checkbox">自动换箭</label><br><span class="st">技能施放已禁用：安全前置条件无法全部证实</span><br><label><input id="dsh-challenge-fly" type="checkbox">战斗中剩余怪>0且无怪延迟飞</label><input id="dsh-challenge-flyms" type="number"><br><label><input id="dsh-challenge-emergency" type="checkbox">紧急逃生（HP&lt;70%，默认关闭）</label><div class="row"><select id="dsh-challenge-arrow"></select><button id="dsh-challenge-neutral">设无属性</button><button id="dsh-challenge-ghost">设念属性</button></div><div class="row"><select id="dsh-challenge-boss"></select><button id="dsh-challenge-bosssave">保存Boss箭</button></div><div class="log">明确排除：邮件、push、自动清包、巡逻。</div>';dock.appendChild(h);var d=$id("dsh-challenge-difficulty"),a=$id("dsh-challenge-arrow"),b=$id("dsh-challenge-boss");d.value=challengeCfg.difficulty;$id("dsh-challenge-stop100").checked=challengeCfg.stop100;$id("dsh-challenge-arrowon").checked=challengeCfg.arrowOn;$id("dsh-challenge-fly").checked=challengeCfg.flyOn;$id("dsh-challenge-emergency").checked=challengeCfg.emergencyFly;challengeFillArrows(a);challengeFillBosses(b);function save(){challengeCfg.difficulty=d.value;challengeCfg.stop100=$id("dsh-challenge-stop100").checked;challengeCfg.arrowOn=$id("dsh-challenge-arrowon").checked;challengeCfg.flyOn=$id("dsh-challenge-fly").checked;challengeCfg.emergencyFly=$id("dsh-challenge-emergency").checked;challengeSave();}h.querySelectorAll("input,select").forEach(function(x){x.addEventListener("change",save);});$id("dsh-challenge-start").onclick=function(){save();challengeStart();};$id("dsh-challenge-stop").onclick=function(){challengeStop("用户停止");};$id("dsh-challenge-neutral").onclick=function(){challengeCfg.neutralItid=challengePos(a.value);challengeSave();};$id("dsh-challenge-ghost").onclick=function(){challengeCfg.ghostItid=challengePos(a.value);challengeSave();};$id("dsh-challenge-bosssave").onclick=function(){var mid=challengePos(b.value),itid=challengePos(a.value);if(mid&&itid){challengeCfg.bossByMid[mid]=itid;challengeSave();}};challengeRender();return h;}
-  function challengeInstallNotices(){if(challengeInstallNotices.done)return;challengeInstallNotices.done=true;try{window.chOnAnnouncement=chOnAnnouncement;}catch(e){}if(typeof MutationObserver!=="function")return;var sel='[id*="Chat"],[class*="Chat"],[id*="chat"],[class*="chat"],[id*="Announce"],[class*="Announce"],[id*="announce"],[class*="announce"]',o=new MutationObserver(function(ms){ms.forEach(function(mu){Array.prototype.forEach.call(mu.addedNodes||[],function(n){if(n&&n.textContent)chOnAnnouncement(n.textContent);});});});Array.prototype.forEach.call(document.querySelectorAll(sel),function(el){if(!el.closest||!el.closest("#dsh-assistant"))o.observe(el,{childList:true,subtree:true});});}
-  var challengeOrigMenuList=onMenuList;onMenuList=function(bytes){challengeOrigMenuList(bytes);try{if(challenge.running&&menuRecon&&menuRecon.items)challengeChooseMenu(menuRecon);}catch(e){challenge.manualHold=true;challengeSay("菜单异常，等待手动处理");}};
-  challengeInstallNotices();window.addEventListener("pagehide",function(){challengeStop("页面离开，挑战已停止");});window.addEventListener("beforeunload",function(){challengeStop("页面离开，挑战已停止");});window.__dshChallenge={start:challengeStart,stop:challengeStop,active:challengeActive,state:function(){return JSON.parse(JSON.stringify(challenge));},observe:chOnAnnouncement};
-  // V2.35.0 changelog：重建无限挑战；邮件/push/清包/巡逻排除。
+  function arrowDefaults(){return {enabled:false,neutralItid:null,ghostItid:null,bossByMid:{}};}
+  function arrowLoad(){var d=arrowDefaults(),r=null,raw=null;try{raw=localStorage.getItem(ARROW_RULES_KEY);r=JSON.parse(raw||"null");}catch(e){}if(raw==null){try{var old=JSON.parse(localStorage.getItem(CHALLENGE_KEY)||"null");if(old&&typeof old==="object"){r={enabled:old.arrowOn===true,neutralItid:old.neutralItid,ghostItid:old.ghostItid,bossByMid:old.bossByMid};localStorage.setItem(ARROW_RULES_KEY,JSON.stringify(r));}}catch(e2){}}if(!r||typeof r!=="object")return d;d.enabled=r.enabled===true;d.neutralItid=arrowPos(r.neutralItid);d.ghostItid=arrowPos(r.ghostItid);if(r.bossByMid&&typeof r.bossByMid==="object")Object.keys(r.bossByMid).forEach(function(k){var mid=arrowPos(k),v=r.bossByMid[k],itid=arrowPos(v&&v.itid!=null?v.itid:v);if(mid&&itid)d.bossByMid[mid]=itid;});return d;}
+  var arrowRules=arrowLoad(),arrowTarget=null,arrowPending=null,arrowStatus="未启用",arrowBlocked=false,arrowReady=false;
+  function arrowSave(){try{localStorage.setItem(ARROW_RULES_KEY,JSON.stringify(arrowRules));}catch(e){}}
+  function arrowDecision(raw,isBoss,mid,cfg){raw=Number(raw);if(!Number.isInteger(raw)||raw<0)return null;cfg=cfg||arrowRules;var type=raw%20,level=Math.floor(raw/20),neutral=arrowPos(cfg.neutralItid),ghost=arrowPos(cfg.ghostItid),v=cfg.bossByMid&&cfg.bossByMid[mid],boss=arrowPos(v&&v.itid!=null?v.itid:v);if(type===8&&level===3)return ghost?{kind:"ghost3",itid:ghost}:null;if(isBoss)return boss||neutral?{kind:boss?"boss":"neutral",itid:boss||neutral}:null;if(type===8&&level===4)return ghost?{kind:"ghost4",itid:ghost}:null;return neutral?{kind:"neutral",itid:neutral}:null;}
+  function arrowSay(s){arrowStatus=String(s);var e=$id("dsh-arrow-rules-status");if(e)e.textContent=arrowStatus;apiEmit("notice",{kind:"arrow",message:arrowStatus});}
+  function arrowFill(s){if(!s)return;var old=s.value;s.innerHTML='<option value="">选择背包 type10 箭矢</option>';readBagArrows().forEach(function(x){var o=document.createElement("option");o.value=x.itid;o.textContent=(getItemName(x.itid)||("ITID "+x.itid))+" #"+x.itid+" ×"+x.count;s.appendChild(o);});s.value=old;}
+  function arrowFillBosses(s){if(!s)return;var old=s.value,db=getMobDb()||{};s.innerHTML='<option value="">选择 mob_db Boss</option>';Object.keys(db).filter(function(k){return db[k]&&Number(db[k].MvpDropsNum)>0;}).forEach(function(k){var o=document.createElement("option");o.value=k;o.textContent=(db[k].kName||db[k].name||db[k].Name||"Boss")+" #"+k;s.appendChild(o);});s.value=old;}
+  function arrowEnsureHost(){var h=$id("dsh-fw-arrowrules");if(h){arrowFill($id("dsh-arrow-rules-item"));arrowFillBosses($id("dsh-arrow-rules-boss"));return h;}var dock=$id("dsh-arrow-rules-dock");if(!dock){dock=document.createElement("div");dock.id="dsh-arrow-rules-dock";dock.style.display="none";document.documentElement.appendChild(dock);}h=document.createElement("div");h.id="dsh-fw-arrowrules";h.innerHTML='<div class="sec">换箭设置</div><label><input id="dsh-arrow-rules-enabled" type="checkbox">按目标属性自动换箭（默认关闭）</label><div class="row"><select id="dsh-arrow-rules-item"></select><button id="dsh-arrow-rules-neutral">设无属性</button><button id="dsh-arrow-rules-ghost">设念属性</button></div><div class="row"><select id="dsh-arrow-rules-boss"></select><button id="dsh-arrow-rules-bosssave">保存 Boss 箭</button></div><div id="dsh-arrow-rules-status" class="st"></div><div class="log">优先级：念3 → Boss专用/无属性 → 非Boss念4 → 无属性。外部目标换箭会暂时压住通用耗尽换箭。</div>';dock.appendChild(h);var en=$id("dsh-arrow-rules-enabled"),item=$id("dsh-arrow-rules-item"),boss=$id("dsh-arrow-rules-boss");en.checked=arrowRules.enabled;arrowFill(item);arrowFillBosses(boss);en.onchange=function(){arrowRules.enabled=en.checked;arrowSave();arrowSay(en.checked?"已启用":"已关闭");};$id("dsh-arrow-rules-neutral").onclick=function(){arrowRules.neutralItid=arrowPos(item.value);arrowSave();arrowSay("无属性箭已保存");};$id("dsh-arrow-rules-ghost").onclick=function(){arrowRules.ghostItid=arrowPos(item.value);arrowSave();arrowSay("念属性箭已保存");};$id("dsh-arrow-rules-bosssave").onclick=function(){var mid=arrowPos(boss.value),itid=arrowPos(item.value);if(mid&&itid)arrowRules.bossByMid[mid]=itid;arrowSave();arrowSay(mid&&itid?"Boss 箭已保存":"请选择 Boss 与箭矢");};arrowSay(arrowStatus);return h;}
+  function arrowTargetTick(now){arrowReady=false;arrowBlocked=!!arrowTarget;if(!arrowTarget||!arrowRules.enabled){arrowBlocked=!!arrowTarget&&arrowRules.enabled;return arrowBlocked;}var db=getMobDb(),m=db&&db[arrowTarget.mid];if(!m){arrowSay("阻塞：目标属性未知");return true;}var d=arrowDecision(m.Element!=null?m.Element:m.element,Number(m.MvpDropsNum)>0,arrowTarget.mid,arrowRules);if(!d||!d.itid){arrowSay("阻塞：所需箭矢未配置");return true;}var ammo=readEquippedAmmo();if(ammo&&Number(ammo.itid)===d.itid){arrowPending=null;arrowBlocked=false;arrowReady=true;arrowSay("已装备 "+d.kind+" #"+d.itid);return false;}var row=readBagArrows().filter(function(x){return Number(x.itid)===d.itid;})[0],p=arrowPending;if(!row){arrowSay("阻塞：背包缺少 #"+d.itid);return true;}if(p&&p.itid===d.itid){if(now<p.confirmUntil)return true;if(!p.retryAt){p.retryAt=now+3000;arrowSay("确认超时，3秒后重试");return true;}if(now<p.retryAt)return true;}if(equipArrow(row.index)){arrowPending={itid:d.itid,confirmUntil:now+5000,retryAt:0};arrowSay("换箭中 #"+d.itid);return true;}arrowSay("阻塞：装备请求失败");return true;}
+  setInterval(function(){try{arrowTargetTick(Date.now());}catch(e){}},250);
+
+  var API_PROTOCOL=1,apiGeneration=0,apiLease=null,apiMenuUsed="",apiNoticeObserver=null;
+  function apiEmit(kind,detail){try{window.dispatchEvent(new CustomEvent("dsh-ro-assist-"+kind,{detail:detail||{}}));}catch(e){}}
+  function apiOwner(owner){return typeof owner==="string"&&/^[A-Za-z0-9_.:-]{8,128}$/.test(owner);}
+  function apiScopes(scopes){var allowed={dojo:1,battle:1,movement:1,dialog:1,arrow:1,fly:1};return Array.isArray(scopes)&&scopes.length>0&&scopes.every(function(s){return typeof s==="string"&&allowed[s]&&scopes.indexOf(s)===scopes.lastIndexOf(s);});}
+  function apiHas(owner,scope){return !!(apiLease&&apiLease.owner===owner&&apiLease.scopes.indexOf(scope)>=0);}
+  function apiCurrent(owner,generation){return !!(apiLease&&apiLease.owner===owner&&apiLease.generation===generation);}
+  function externalAutomationOwns(scope){return !!(apiLease&&(!scope||apiLease.scopes.indexOf(scope)>=0));}
+  function apiEntities(){var out=[];try{var em=CLIENT.EM||(window.require&&window.require("Renderer/EntityManager"));if(em&&em.forEach)em.forEach(function(e){if(!e||!e.position)return;var type=Number(e.objecttype),mid=type===5?Number(e._job!=null?e._job:(e.job!=null?e.job:e.mobId)):null;out.push({gid:Number(e.GID),type:type,mid:Number.isFinite(mid)?mid:null,name:String(e.displayName||e.name||(e.display&&e.display.name)||""),position:[Number(e.position[0]),Number(e.position[1])],dead:!!(e.isDeath||e.remove_tick||(e.ACTION&&e.action===e.ACTION.DIE))});});}catch(e){}return out;}
+  function apiDialogOpen(){try{var b=requireDB("UI/Components/NpcBox/NpcBox"),m=requireDB("UI/Components/NpcMenu/NpcMenu");return !!((b&&b.ui&&b.ui.is(":visible"))||(m&&m.ui&&m.ui.is(":visible")));}catch(e){return false;}}
+  function apiMenu(){var items=(menuRecon.items||[]).slice(),naid=Number(menuRecon.NAID)||0,time=Number(menuRecon.time)||0,generation=Number(menuRecon.generation)||0;return {naid:naid,items:items,time:time,generation:generation,fingerprint:generation+"@"+time+"|"+naid+"|"+items.map(function(x){return String(x).replace(/\s+/g," ").trim();}).join("|")};}
+  function apiSnapshot(owner){if(!apiLease||apiLease.owner!==owner)return null;var me=CLIENT.SS&&CLIENT.SS.Entity,entities=apiEntities(),target=zLock&&gidInt(zLock.gid),menu=apiMenu(),map=getMapName()||"";return {protocol:API_PROTOCOL,ready:clientReady(),map:map,player:me?{gid:Number(me.GID),position:me.position?[Number(me.position[0]),Number(me.position[1])]:null,hp:me.life&&Number(me.life.hp),maxHp:me.life&&Number(me.life.hp_max)}:null,mobs:entities.filter(function(e){return e.type===5&&!e.dead;}),npcs:entities.filter(function(e){return e.type===6||e.type===12;}),target:target||null,inDojoMap:/dojo|challenge|trial|道场|道場/i.test(map),dialogOpen:apiDialogOpen(),menu:menu,battleState:npBattleState(),busy:{assistantCombat:!!zRunning,bagClean:!!(bagClean&&bagClean.busy),movement:!!moveXY.busy},arrow:{enabled:arrowRules.enabled,status:arrowStatus,blocked:arrowBlocked,ready:arrowReady,target:arrowTarget?{mid:arrowTarget.mid,gid:arrowTarget.gid}:null}};}
+  function apiAcquire(owner,scopes){if(!apiOwner(owner)||!apiScopes(scopes))return {ok:false,error:"invalid-owner-or-scopes"};if(!clientReady())return {ok:false,error:"client-not-ready"};if(apiLease&&apiLease.owner!==owner)return {ok:false,error:"owned"};if(apiLease)return {ok:true,generation:apiLease.generation};if(zRunning||bagClean&&bagClean.busy)return {ok:false,error:"assistant-busy"};apiLease={owner:owner,scopes:scopes.slice(),generation:++apiGeneration,selectedNpc:0,released:false,battle:{state:"none",initial:npBattleState()}};apiEmit("state",{owner:owner});return {ok:true,generation:apiLease.generation};}
+  function apiGuard(owner,scope){if(!clientReady())return {ok:false,error:"client-not-ready"};if(!apiHas(owner,scope))return {ok:false,error:"lease-required"};return null;}
+  function apiBattleTick(){if(!apiLease)return;var b=apiLease.battle,s=npBattleState();if(b.state==="pending-on"&&s===true)b.state="owned";else if(b.state==="pending-off"&&s===false)b.state="none";if(apiLease.released&&b.state==="none"){apiLease=null;apiEmit("state",{});}}
+  function apiRelease(owner){if(!apiLease||apiLease.owner!==owner)return {ok:false,error:"not-owner"};apiBattleTick();if(!apiLease)return {ok:true};var l=apiLease;if(l.scopes.indexOf("movement")>=0){moveXY.busy=false;moveXY.onArrive=null;}if(l.scopes.indexOf("arrow")>=0&&arrowTarget&&arrowTarget.owner===owner){arrowTarget=null;arrowPending=null;arrowReady=false;arrowBlocked=false;}if(l.scopes.indexOf("battle")>=0&&(l.battle.state==="owned"||l.battle.state==="pending-off")){l.released=true;if(l.battle.state!=="pending-off"){var generation=l.generation,r=npRequestBattle(false,"external-release:"+owner,true,function(){return !!(apiLease&&apiLease.owner===owner&&apiLease.generation===generation);});if(r==="sent"||r==="queued")l.battle.state="pending-off";else l.released=false;}return {ok:l.released,result:l.battle.state};}if(l.battle.state==="pending-on")npClearBattleIntent();apiLease=null;apiEmit("state",{});return {ok:true};}
+  function apiContact(owner,gid){var bad=apiGuard(owner,"dialog");gid=arrowPos(gid);if(bad)return bad;if(!gid)return {ok:false,error:"invalid-gid"};var found=apiEntities().filter(function(e){return e.gid===gid&&(e.type===6||e.type===12);})[0];if(!found)return {ok:false,error:"npc-not-found"};try{var p=new CLIENT.PS.CZ.CONTACTNPC();p.NAID=gid;p.type=1;CLIENT.NM.sendPacket(p);apiLease.selectedNpc=gid;lastTalkNpc={GID:gid,name:found.name,pos:found.position};return {ok:true};}catch(e){return {ok:false,error:"contact-failed"};}}
+  function apiWalk(owner,payload){var bad=apiGuard(owner,"movement"),x=payload&&Number(payload.x),y=payload&&Number(payload.y);if(bad)return bad;if(!payload||!Number.isInteger(x)||!Number.isInteger(y))return {ok:false,error:"invalid-position"};return {ok:!!walkToXY(x,y,null,"dsh-arrow-rules-status")};}
+  function apiChoose(owner,payload){var bad=apiGuard(owner,"dialog"),menu=apiMenu(),naid=payload&&arrowPos(payload.naid),index=payload&&Number(payload.index),fp=payload&&payload.fingerprint;if(bad)return bad;if(!payload||!naid||!Number.isInteger(index)||index<0||index>=menu.items.length||naid!==menu.naid||naid!==apiLease.selectedNpc||typeof fp!=="string"||fp!==menu.fingerprint)return {ok:false,error:"invalid-menu"};if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"};apiMenuUsed=fp;try{var p=new CLIENT.PS.CZ.CHOOSE_MENU();p.NAID=naid;p.num=index+1;CLIENT.NM.sendPacket(p);return {ok:true};}catch(e){return {ok:false,error:"choose-failed"};}}
+  function apiBattle(owner,on){var bad=apiGuard(owner,"battle");if(bad)return bad;if(typeof on!=="boolean")return {ok:false,error:"invalid-payload"};apiBattleTick();var b=apiLease.battle,s=npBattleState(),generation=apiLease.generation,current=function(){return apiCurrent(owner,generation);};if(on){if(s!==false)return {ok:true,result:s===true?"preexisting":"unknown"};if(b.state==="pending-on"||b.state==="owned")return {ok:true,result:b.state};var r=npRequestBattle(true,"external:"+owner,true,current);if(r==="sent"||r==="queued")b.state="pending-on";return {ok:r!=="failed",result:r};}if(b.state!=="owned")return {ok:true,result:"not-owned"};var r2=npRequestBattle(false,"external:"+owner,true,current);if(r2==="sent"||r2==="queued")b.state="pending-off";return {ok:r2!=="failed",result:r2};}
+  function apiSetArrow(owner,target){var bad=apiGuard(owner,"arrow"),mid=target&&arrowPos(target.mid),gid=target&&arrowPos(target.gid);if(bad)return bad;if(!target||!mid||!gid)return {ok:false,error:"invalid-target"};if(!arrowTarget||arrowTarget.mid!==mid||arrowTarget.gid!==gid)arrowPending=null;arrowTarget={owner:owner,mid:mid,gid:gid};arrowTargetTick(Date.now());return {ok:true,enabled:arrowRules.enabled,blocked:arrowBlocked,ready:arrowReady,status:arrowStatus};}
+  function apiClearArrow(owner){var bad=apiGuard(owner,"arrow");if(bad)return bad;if(arrowTarget&&arrowTarget.owner===owner)arrowTarget=null;arrowPending=null;arrowReady=false;arrowBlocked=false;return {ok:true};}
+  function apiFly(owner,payload){var bad=apiGuard(owner,"fly");if(bad)return bad;if(!payload||typeof payload.reason!=="string"||!payload.reason.trim()||payload.reason.length>120)return {ok:false,error:"invalid-payload"};return {ok:!!doFly()};}
+  function apiNoticeWatch(){if(apiNoticeObserver||typeof MutationObserver!=="function"||!document.body)return;apiNoticeObserver=new MutationObserver(function(ms){ms.forEach(function(m){Array.prototype.forEach.call(m.addedNodes||[],function(n){var el=n&&n.nodeType===1?n:n&&n.parentElement;if(!el||!el.closest)return;var box=el.closest('[id*="Chat"],[class*="Chat"],[id*="chat"],[class*="chat"],[id*="Announce"],[class*="Announce"],[id*="announce"],[class*="announce"]');var text=n&&n.textContent&&String(n.textContent).trim();if(box&&text)apiEmit("notice",{text:text});});});});apiNoticeObserver.observe(document.body,{childList:true,subtree:true});}
+
+
+  // ================= V2.36.0 不可丢物品出口策略 / pushplus / 窗口注册门面 =================
+  // 不可丢物品：只认 DB 明确字段（NoDrop 等）或描述里的“无法丢弃”字样。
+  // 标记为不可丢、或字段缺失导致状态未知时，只放行 mail（邮件）与 bag（背包丢弃）两个出口。
+  var ITEM_OUTLET_NOTE="不可丢或状态未知的物品只允许「邮件发送」「背包丢弃」两个出口，NPC 出售 / 仓库存放等其它出口一律拒绝。";
+  var ITEM_NODROP_FIELDS=["NoDrop","noDrop","nodrop","NoDropFlag","Undroppable","CantDrop","CannotDrop","NotDroppable","DropDeny","no_drop"];
+  function itemNoDropState(itid){
+    try{
+      var id=Number(itid);if(!Number.isInteger(id)||id<=0)return "unknown";
+      var db=CLIENT.DB||requireDB("DB/DBManager");
+      if(!db||typeof db.getItemInfo!=="function")return "unknown";
+      var info=db.getItemInfo(id);
+      if(!info||typeof info!=="object")return "unknown";
+      for(var i=0;i<ITEM_NODROP_FIELDS.length;i++){
+        var k=ITEM_NODROP_FIELDS[i];
+        if(!Object.prototype.hasOwnProperty.call(info,k))continue;
+        var v=info[k];
+        if(v===true||v===1||v==="1")return "nodrop";
+        if(v===false||v===0||v==="0")return "keep";
+        return "unknown"; // 字段在但取值不明 → 未知，按不可丢处理
+      }
+      // 无标记字段时退回描述文本探测（无法丢弃 / 不可丢弃 / 不能丢弃）
+      var descs=[info.identifiedDescriptionName,info.unidentifiedDescriptionName];
+      for(var j=0;j<descs.length;j++){
+        var raw=descs[j];if(raw==null)continue;
+        var text=(Array.isArray(raw)?raw.join("\n"):String(raw)).replace(/\^[0-9a-f]{6}/gi,"").replace(/<[^>]*>/g," ");
+        if(/无法丢弃|不可丢弃|不能丢弃/.test(text))return "nodrop";
+      }
+      return "unknown"; // 无明确标记 → 未知，不放行其它出口
+    }catch(e){return "unknown";}
+  }
+  function itemOutletAllowed(itid,outlet){
+    try{
+      var state=itemNoDropState(itid);
+      if(state==="keep")return {ok:true,state:state,restricted:false};
+      if(outlet==="mail"||outlet==="bag")return {ok:true,state:state,restricted:true};
+      return {ok:false,error:"item-outlet-locked",state:state,note:ITEM_OUTLET_NOTE};
+    }catch(e){return {ok:false,error:"item-outlet-locked",state:"unknown",note:ITEM_OUTLET_NOTE};}
+  }
+  // pushplus：token 存全局键 dsh_ro_plugin_v1 的新字段（与 DEFAULTS/buildConfig 同款约定），发送失败静默
+  function notifyLoadToken(){try{var g=JSON.parse(localStorage.getItem(LS_KEY)||"{}");return g&&typeof g.pushplusToken==="string"?g.pushplusToken:"";}catch(e){return "";}}
+  function notifySaveToken(token){try{var g=JSON.parse(localStorage.getItem(LS_KEY)||"{}");if(!g||typeof g!=="object")g={};g.pushplusToken=String(token==null?"":token);localStorage.setItem(LS_KEY,JSON.stringify(g));return true;}catch(e){return false;}}
+  function notifyPushEnabled(){try{var g=JSON.parse(localStorage.getItem(LS_KEY)||"{}");return !g||g.pushplusEnabled!==false;}catch(e){return true;}} // V2.36.0：未显式关闭即视为启用（兼容未写入该键的旧配置）
+  function notifySetPushEnabled(on){try{var g=JSON.parse(localStorage.getItem(LS_KEY)||"{}");if(!g||typeof g!=="object")g={};g.pushplusEnabled=!!on;localStorage.setItem(LS_KEY,JSON.stringify(g));return true;}catch(e){return false;}}
+  function notifyPush(text){
+    try{
+      var token=notifyLoadToken();
+      if(!token||!notifyPushEnabled()||typeof fetch!=="function")return false; // V2.36.0：未勾选「启用推送」时静默不发
+      fetch("https://www.pushplus.plus/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:token,title:"RO助手",content:String(text==null?"":text)})}).then(function(){},function(){});
+      return true;
+    }catch(e){return false;} // 未配置 / fetch 失败 / 被拦截：一律静默
+  }
+  // 窗口注册入口：薄封装 fwReg / fwMakeWin / fwClose，外部脚本经门面即可复用本脚本浮窗系统
+  function apiRegisterWindow(id,title,getEl){
+    try{
+      if(typeof id!=="string"||!/^[A-Za-z0-9_-]{1,32}$/.test(id))return {ok:false,error:"invalid-id"};
+      if(typeof getEl!=="function")return {ok:false,error:"invalid-getter"};
+      fwReg(id,String(title||id),getEl);
+      return {ok:true,id:id};
+    }catch(e){return {ok:false,error:"register-failed"};}
+  }
+  function apiOpenWindow(id){
+    try{
+      if(typeof id!=="string"||!fwState[id])return {ok:false,error:"unknown-window"};
+      fwMakeWin(id,fwState[id].title);
+      return {ok:!!fwOpen(id,true)};
+    }catch(e){return {ok:false,error:"open-failed"};}
+  }
+  function apiCloseWindow(id){
+    try{
+      if(typeof id!=="string"||!fwState[id])return {ok:false,error:"unknown-window"};
+      fwClose(id);
+      return {ok:true};
+    }catch(e){return {ok:false,error:"close-failed"};}
+  }
+  // bag：规划与执行直接复用 bagCleanPlan / bagCleanRevalidate / bagCleanExecute（不绕过任何安全校验）
+  function apiBagPlan(){
+    try{
+      var inv=bagCleanInventory();
+      if(!inv)return {ok:false,error:"inventory-not-ready"};
+      return {ok:true,plan:bagCleanPlan(inv)};
+    }catch(e){return {ok:false,error:"plan-failed"};}
+  }
+  async function apiBagDrop(index){
+    try{
+      var idx=Number(index);
+      if(!Number.isInteger(idx)||idx<0)return {ok:false,error:"invalid-index"};
+      if(bagClean.busy)return {ok:false,error:"busy"};
+      if(apiLease&&apiLease.owner!==DOJO_OWNER)return {ok:false,error:"external-lease"};
+      var inv=bagCleanInventory();
+      if(!inv)return {ok:false,error:"inventory-not-ready"};
+      var plan=bagCleanPlan(inv),row=null;
+      plan.forEach(function(r){(r.stacks||[]).forEach(function(s){if(!row&&Number(s.index)===idx)row=r;});});
+      if(!row)return {ok:false,error:"not-planned"};
+      var limits={};limits[row.key+"|"+row.source]=row.drop;
+      await bagCleanExecute(function(){},limits);
+      return bagClean.error?{ok:false,error:bagClean.error}:{ok:true,dropped:row.drop};
+    }catch(e){return {ok:false,error:"drop-failed"};}
+  }
+  // mail：包类名未知 → 运行时在 CLIENT.PS.CZ 里探测 /MAIL/ 且五个字段齐备的构造器；探测不到一律 fail-closed
+  var MAIL_FIELD_RE={to:/^(to|tomail|receiver|recipient|target|charname|name)$/i,title:/^(title|subject|head)$/i,body:/^(body|content|message|msg|text)$/i,itemIndex:/^(itemindex|item_index|itemidx|index|slotid)$/i,itemAmount:/^(itemamount|item_amount|amount|count|num|qty)$/i};
+  function mailProbe(){
+    try{
+      var CZ=CLIENT&&CLIENT.PS&&CLIENT.PS.CZ;
+      if(!CZ)return null;
+      var names=Object.keys(CZ);
+      for(var i=0;i<names.length;i++){
+        var name=names[i];
+        if(!/MAIL/i.test(name))continue;
+        var Ctor=CZ[name];
+        if(typeof Ctor!=="function")continue;
+        var probe=null;try{probe=new Ctor();}catch(e){continue;}
+        if(!probe||typeof probe!=="object")continue;
+        var keys=Object.keys(probe);
+        if(keys.length<2)continue;
+        var map={},used={},ok=true;
+        ["to","title","body","itemIndex","itemAmount"].forEach(function(role){
+          var re=MAIL_FIELD_RE[role],hit=null;
+          for(var k=0;k<keys.length;k++){if(!used[keys[k]]&&re.test(keys[k])){hit=keys[k];break;}}
+          if(!hit)ok=false;else used[hit]=1;
+          map[role]=hit;
+        });
+        if(!ok)continue; // 字段不齐备：绝不猜字段名，直接放弃该构造器
+        return {name:name,ctor:Ctor,map:map};
+      }
+    }catch(e){}
+    return null;
+  }
+  function apiMailSend(payload){
+    try{
+      var probe=mailProbe();
+      if(!probe)return {ok:false,error:"mail-unsupported"}; // 探测不到 → 绝不猜测发送
+      if(!clientReady())return {ok:false,error:"client-not-ready"};
+      var to=payload&&payload.to!=null?String(payload.to).trim():"";
+      var title=payload&&payload.title!=null?String(payload.title):"";
+      var body=payload&&payload.body!=null?String(payload.body):"";
+      var itemIndex=payload&&payload.itemIndex!=null?Number(payload.itemIndex):null;
+      var itemAmount=payload&&payload.itemAmount!=null?Number(payload.itemAmount):null;
+      if(!to||to.length>24)return {ok:false,error:"invalid-to"};
+      if(title.length>40||body.length>500)return {ok:false,error:"invalid-body"};
+      if(itemIndex!=null&&(!Number.isInteger(itemIndex)||itemIndex<0))return {ok:false,error:"invalid-item"};
+      if(itemAmount!=null&&(!Number.isInteger(itemAmount)||itemAmount<1||itemAmount>32767))return {ok:false,error:"invalid-item"};
+      var packet=new probe.ctor();
+      packet[probe.map.to]=to;packet[probe.map.title]=title;packet[probe.map.body]=body;
+      if(itemIndex!=null){packet[probe.map.itemIndex]=itemIndex;packet[probe.map.itemAmount]=itemAmount==null?1:itemAmount;}
+      CLIENT.NM.sendPacket(packet);
+      return {ok:true,packet:probe.name};
+    }catch(e){return {ok:false,error:"mail-send-failed"};}
+  }
+
+  var apiFacade={protocol:API_PROTOCOL,assistantVersion:VER,handshake:function(request){return request&&request.protocol===API_PROTOCOL&&request.client==="ro-infinite-dojo"?apiFacade:null;},capabilities:function(){return {protocol:API_PROTOCOL,scopes:["dojo","battle","movement","dialog","arrow","fly"],modules:["dojo"],arrowRules:true};},ready:function(){return !!clientReady();},snapshot:apiSnapshot,acquire:apiAcquire,release:apiRelease,contactNpc:apiContact,walkTo:apiWalk,chooseMenu:apiChoose,requestBattle:apiBattle,setArrowTarget:apiSetArrow,clearArrowTarget:apiClearArrow,requestFly:apiFly,registerWindow:apiRegisterWindow,openWindow:apiOpenWindow,closeWindow:apiCloseWindow,bag:{plan:apiBagPlan,drop:apiBagDrop,busy:function(){return !!(bagClean&&bagClean.busy);}},mail:{send:apiMailSend},notify:{push:notifyPush,token:notifyLoadToken,setToken:notifySaveToken,configured:function(){return !!notifyLoadToken();}},items:{noDrop:itemNoDropState,outlet:itemOutletAllowed,note:ITEM_OUTLET_NOTE}};
+  try{window.__DSH_RO_ASSIST_API__=Object.freeze(apiFacade);}catch(e){window.__DSH_RO_ASSIST_API__=apiFacade;}
+  apiNoticeWatch();setTimeout(function(){apiEmit("ready",{protocol:API_PROTOCOL,assistantVersion:VER});},0);
+  setInterval(function(){apiBattleTick();if(apiLease)apiEmit("state",{owner:apiLease.owner});},250);
+
+  // ================= V2.36.0 内置无限道场（并入主脚本 · 走公共 API 与同一租约） =================
+  // UI 一律走标准浮窗：fwReg("dojo","无限道场",dojoEnsureHost) + fwMakeWin + RO_SKIN_CSS 的 sec/row/st/log 约定，
+  // 不再使用独立脚本那种自建左上角 plain 面板。
+  var DOJO_OWNER="builtin-dojo",DOJO_KEY="dsh-ro-infinite-dojo-v1";
+  var dojoCfg=dojoLoad(),dojoRun={on:false,generation:0,round:0,remaining:null,lastMenu:"",lastNotice:"",lastNoticeAt:0,timer:null,phase:"等待助手",npc:null,lastFly:0};
+  function dojoLoad(){var d={difficulty:"basic",stop100:true,fly:false,emergency:false,migrated:false},v;try{v=JSON.parse(localStorage.getItem(DOJO_KEY)||"null");if(v&&typeof v==="object")Object.assign(d,v);}catch(e){}if(!d.migrated){try{v=JSON.parse(localStorage.getItem(CHALLENGE_KEY)||"null");if(v&&typeof v==="object"){if(/^(basic|middle|advanced)$/.test(v.difficulty))d.difficulty=v.difficulty;d.stop100=v.stop100!==false;d.fly=v.flyOn===true;d.emergency=v.emergencyFly===true;}}catch(e2){}d.migrated=true;dojoSave(d);}return d;}
+  function dojoSave(v){try{localStorage.setItem(DOJO_KEY,JSON.stringify(v||dojoCfg));}catch(e){}}
+  function dojoApi(){
+    try{
+      var a=window.__DSH_RO_ASSIST_API__,c=a&&a.capabilities();
+      if(!a||a.protocol!==API_PROTOCOL||!c||c.protocol!==API_PROTOCOL||c.arrowRules!==true)return null;
+      if(!Array.isArray(c.scopes)||!Array.isArray(c.modules)||c.modules.indexOf("dojo")<0)return null;
+      if(["dojo","battle","movement","dialog","arrow","fly"].some(function(k){return c.scopes.indexOf(k)<0;}))return null;
+      if(["snapshot","acquire","release","contactNpc","walkTo","chooseMenu","requestBattle","setArrowTarget","clearArrowTarget","requestFly"].some(function(k){return typeof a[k]!=="function";}))return null;
+      return a;
+    }catch(e){return null;}
+  }
+  function dojoDist(a,b){try{if(!a||!b)return Infinity;return Math.max(Math.abs(Number(a[0])-Number(b[0])),Math.abs(Number(a[1])-Number(b[1])));}catch(e){return Infinity;}}
+  function dojoNorm(s){return String(s||"").replace(/\^[0-9a-f]{6}/gi,"").replace(/<[^>]*>/g," ").replace(/[０-９]/g,function(c){return String.fromCharCode(c.charCodeAt(0)-65248);}).replace(/達/g,"达").replace(/貓/g,"猫").replace(/\s+/g," ").trim();}
+  function dojoNotice(raw){if(!dojoRun.on)return;var s=dojoNorm(raw),now=Date.now(),m;if(!s||(s===dojoRun.lastNotice&&now-dojoRun.lastNoticeAt<2500))return;dojoRun.lastNotice=s;dojoRun.lastNoticeAt=now;m=s.match(/第\s*(\d+)\s*[轮层波]/);if(m)dojoRun.round=Math.max(dojoRun.round,Number(m[1]));m=s.match(/(?:还剩|剩余)\s*[:：]?\s*(\d+)/);if(m)dojoRun.remaining=Number(m[1]);m=s.match(/(?:完成|通过)\s*第?\s*(\d+)\s*[轮层波]|第\s*(\d+)\s*[轮层波]\s*(?:完成|结束|通过)/);if(m){dojoRun.round=Math.max(dojoRun.round,Number(m[1]||m[2]));if(dojoCfg.stop100&&dojoRun.round>=100)return dojoStop("第100轮领奖前暂停");dojoRun.phase="本轮完成，等待领奖菜单";}dojoRender();}
+  function dojoChoose(a,s){var m=s.menu;if(!s.dialogOpen){dojoRun.lastMenu="";return false;}if(!m||!m.naid||!Array.isArray(m.items)||!m.items.length||!m.fingerprint)return false;if(m.fingerprint===dojoRun.lastMenu)return true;var re=dojoRun.phase.indexOf("领奖")>=0?/领取奖励|领奖/:({basic:/初级/,middle:/中级/,advanced:/高级/}[dojoCfg.difficulty]),hits=[];m.items.forEach(function(x,i){if(re.test(dojoNorm(x)))hits.push(i);});if(!hits.length&&dojoRun.phase.indexOf("领奖")<0)m.items.forEach(function(x,i){if(/继续挑战|开始挑战|进入挑战/.test(dojoNorm(x)))hits.push(i);});if(hits.length!==1){dojoRun.phase="菜单不唯一，请手动选择";return true;}dojoRun.lastMenu=m.fingerprint;var r=a.chooseMenu(DOJO_OWNER,{naid:m.naid,index:hits[0],fingerprint:m.fingerprint});if(!r||!r.ok)dojoRun.phase="菜单提交失败";return true;}
+  function dojoNpcs(s){return (s.npcs||[]).filter(function(n){return /^(喵达人|猫达人|白猫|白猫达人)$/.test(dojoNorm(n.name).replace(/\s/g,""));});}
+  function dojoContact(a,s,now){
+    var list=dojoNpcs(s);
+    if(!dojoRun.npc)dojoRun.npc={gid:list.length===1?list[0].gid:0,firstAt:now,lastAt:0,walked:false};
+    if(now-dojoRun.npc.firstAt>=30000)return dojoStop("寻找 NPC 超过30秒，已停止");
+    if(list.length>1){dojoRun.phase="NPC 别名不唯一，请手动靠近";return;}
+    if(list.length===1){
+      var n=list[0];
+      if(dojoRun.npc.gid!==n.gid)dojoRun.npc={gid:n.gid,firstAt:now,lastAt:0,walked:false};
+      if(now-dojoRun.npc.lastAt>=1000){a.contactNpc(DOJO_OWNER,n.gid);dojoRun.npc.lastAt=now;}
+      var far=!s.player||!s.player.position?true:dojoDist(s.player.position,n.position)>2; // 8 秒后且距离>2 才走近
+      if(now-dojoRun.npc.firstAt>=8000&&!dojoRun.npc.walked&&n.position&&far){a.walkTo(DOJO_OWNER,{x:Math.round(n.position[0]),y:Math.round(n.position[1])});dojoRun.npc.walked=true;}
+      dojoRun.phase="接触道场 NPC";
+    }else if(now-dojoRun.npc.firstAt>=8000&&!dojoRun.npc.walked){a.walkTo(DOJO_OWNER,{x:99,y:107});dojoRun.npc.walked=true;dojoRun.phase="前往 NPC 候选坐标";}
+    else dojoRun.phase="寻找道场 NPC";
+  }
+  function dojoTick(g){
+    if(!dojoRun.on||g!==dojoRun.generation)return;
+    var a=dojoApi(),s=a&&a.snapshot(DOJO_OWNER),now=Date.now();
+    if(!a||!s||!s.ready)return dojoStop("助手 API 缺失或未就绪");
+    if(dojoChoose(a,s)||s.dialogOpen)return dojoRender();
+    var t=(s.mobs||[]).filter(function(m){return !m.dead&&m.mid;})[0];
+    if(t){
+      dojoRun.npc=null;
+      var ar=a.setArrowTarget(DOJO_OWNER,{mid:t.mid,gid:t.gid}),fresh=a.snapshot(DOJO_OWNER),match=fresh&&fresh.arrow&&fresh.arrow.target&&fresh.arrow.target.mid===t.mid&&fresh.arrow.target.gid===t.gid,allowed=dojoCfg.difficulty==="basic"&&fresh&&fresh.arrow&&fresh.arrow.enabled===false||fresh&&fresh.arrow&&fresh.arrow.enabled===true&&fresh.arrow.ready===true&&fresh.arrow.blocked===false&&match;
+      dojoRun.phase=allowed?"战斗中":"等待换箭就绪"; // 换箭未就绪不开战；basic 且未启用换箭时放行
+      a.requestBattle(DOJO_OWNER,!!allowed);
+      if(dojoCfg.emergency&&dojoCfg.difficulty!=="basic"&&s.player&&s.player.maxHp>0&&s.player.hp/s.player.maxHp<.7&&now-dojoRun.lastFly>3000){dojoRun.lastFly=now;a.requestFly(DOJO_OWNER,{reason:"道场低血量"});}
+    }else{
+      a.clearArrowTarget(DOJO_OWNER);
+      if(dojoCfg.fly&&s.inDojoMap&&dojoRun.remaining>0&&now-dojoRun.lastFly>3000){dojoRun.lastFly=now;a.requestFly(DOJO_OWNER,{reason:"道场无怪且仍有剩余"});}
+      dojoContact(a,s,now);
+    }
+    dojoRender();
+  }
+  function dojoStart(){
+    var a=dojoApi();
+    if(!a||!a.ready())return dojoStop("缺少兼容的 RO助手 API，功能已禁用");
+    var r=a.acquire(DOJO_OWNER,["dojo","battle","movement","dialog","arrow","fly"]); // 与外部脚本同一租约，被占用即拒绝
+    if(!r||!r.ok)return dojoStop(r&&r.error||"助手正被其他流程占用");
+    dojoRun.on=true;dojoRun.generation++;dojoRun.round=0;dojoRun.remaining=null;dojoRun.lastMenu="";dojoRun.npc=null;dojoRun.lastFly=0;dojoRun.phase="启动中";
+    dojoRun.timer=setInterval(function(){dojoTick(dojoRun.generation);},250);
+    dojoTick(dojoRun.generation);
+  }
+  function dojoStop(reason){
+    var a=dojoApi();
+    dojoRun.on=false;dojoRun.generation++;
+    if(dojoRun.timer)clearInterval(dojoRun.timer); // 100 轮暂停/停止必须清掉定时器
+    dojoRun.timer=null;
+    if(a){try{a.clearArrowTarget(DOJO_OWNER);a.release(DOJO_OWNER);}catch(e){}}
+    dojoRun.npc=null;dojoRun.phase=reason||"已停止";dojoRender();
+  }
+  function dojoRender(){
+    try{
+      var st=$id("dsh-dojo-state");
+      if(st)st.textContent=dojoRun.phase+"\n轮次："+(dojoRun.round||"—")+"　剩余："+(dojoRun.remaining==null?"—":dojoRun.remaining);
+      var b=$id("dsh-dojo-start");if(b)b.disabled=dojoRun.on||!dojoApi();
+      var c=$id("dsh-dojo-stop");if(c)c.disabled=!dojoRun.on;
+    }catch(e){}
+  }
+  // V2.36.0：pushplus token / 启用开关复用 notify.setToken（notifySaveToken）与 notifyLoadToken 链路，落全局键 dsh_ro_plugin_v1
+  function dojoPushFill(){
+    try{
+      var t=$id("dsh-dojo-pptoken"),e=$id("dsh-dojo-ppen");
+      if(t)t.value=notifyLoadToken();
+      if(e)e.checked=notifyPushEnabled();
+      dojoPushSay();
+    }catch(err){}
+  }
+  function dojoPushSay(msg){
+    try{
+      var s=$id("dsh-dojo-ppstate");
+      if(s)s.textContent=msg||((notifyLoadToken()?"已配置 token":"未配置 token")+" · "+(notifyPushEnabled()?"推送已启用":"推送已停用"));
+    }catch(err){}
+  }
+  function dojoEnsureHost(){
+    var h=$id("dsh-fw-dojo");
+    if(h){dojoPushFill();dojoRender();return h;} // V2.36.0：每次打开回填 pushplus 现值
+    var dock=$id("dsh-dojo-dock");
+    if(!dock){dock=document.createElement("div");dock.id="dsh-dojo-dock";dock.style.display="none";document.documentElement.appendChild(dock);}
+    h=document.createElement("div");h.id="dsh-fw-dojo";
+    h.innerHTML='<div class="sec">无限道场（内置 · 走助手公共 API）</div>'
+      +'<div class="row"><select id="dsh-dojo-diff"><option value="basic">初级</option><option value="middle">中级</option><option value="advanced">高级</option></select><button class="green" id="dsh-dojo-start">开始</button><button class="red" id="dsh-dojo-stop">停止</button></div>'
+      +'<label class="switch"><input id="dsh-dojo-stop100" type="checkbox">100轮领奖前暂停</label>'
+      +'<label class="switch"><input id="dsh-dojo-fly" type="checkbox">道场无怪时飞行</label>'
+      +'<label class="switch"><input id="dsh-dojo-emergency" type="checkbox">中高级 HP&lt;70% 紧急飞行</label>'
+      +'<div class="st" id="dsh-dojo-state"></div>'
+      +'<div class="row"><input id="dsh-dojo-pptoken" type="password" placeholder="pushplus token" autocomplete="off"><button class="green" id="dsh-dojo-ppsave">保存推送</button></div>'
+      +'<label class="switch"><input id="dsh-dojo-ppen" type="checkbox">启用推送</label>'
+      +'<div class="st" id="dsh-dojo-ppstate"></div>'
+      +'<div class="log">租约 builtin-dojo（dojo/battle/movement/dialog/arrow/fly）：被其它自动化占用时拒绝启动，停止即释放。'+ITEM_OUTLET_NOTE+'</div>';
+    dock.appendChild(h);
+    var diff=$id("dsh-dojo-diff"),stop100=$id("dsh-dojo-stop100"),fly=$id("dsh-dojo-fly"),emg=$id("dsh-dojo-emergency"),ppen=$id("dsh-dojo-ppen"),pptoken=$id("dsh-dojo-pptoken");
+    diff.value=dojoCfg.difficulty;stop100.checked=dojoCfg.stop100;fly.checked=dojoCfg.fly;emg.checked=dojoCfg.emergency;
+    function save(){dojoCfg.difficulty=diff.value;dojoCfg.stop100=stop100.checked;dojoCfg.fly=fly.checked;dojoCfg.emergency=emg.checked;dojoSave();}
+    diff.onchange=stop100.onchange=fly.onchange=emg.onchange=save;
+    dojoPushFill();
+    $id("dsh-dojo-ppsave").onclick=function(){var ok=notifySaveToken(pptoken.value);pptoken.value=notifyLoadToken();dojoPushSay(ok?"推送 token 已保存":"保存失败：浏览器存储不可写");};
+    ppen.onchange=function(){notifySetPushEnabled(ppen.checked);dojoPushSay(ppen.checked?"已启用 pushplus 推送":"已停用 pushplus 推送");};
+    $id("dsh-dojo-start").onclick=dojoStart;
+    $id("dsh-dojo-stop").onclick=function(){dojoStop();};
+    dojoRender();
+    return h;
+  }
+  try{fwReg("dojo", "无限道场", dojoEnsureHost);}catch(e){}
+  try{window.addEventListener("dsh-ro-assist-notice",function(e){try{dojoNotice(e.detail&&(e.detail.text||e.detail.message));}catch(err){}});}catch(e){}
+  try{window.addEventListener("pagehide",function(){try{if(dojoRun.on)dojoStop("页面离开");}catch(err){}});}catch(e){}
+  setInterval(function(){try{dojoRender();}catch(e){}},1000);
+
 
 // MVP_TIMER_START: 公告栏剩余时间以接收时刻为基准，关闭窗口不停止计时。
   var mvpStoreKey = "dsh_mvp_timer_v1_cv_" + pickCv();

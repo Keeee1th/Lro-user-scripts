@@ -569,8 +569,8 @@ test('exp 功能菜单五栏顺序与条目齐全', () => {
   const ctx = {}; vm.createContext(ctx);
   vm.runInContext(code + ';this.secs=[];this.bySec={};for(var i=0;i<RO_MODULES.length;i++){var m=RO_MODULES[i];if(this.secs[this.secs.length-1]!==m.sec)this.secs.push(m.sec);(this.bySec[m.sec]=this.bySec[m.sec]||[]).push(m.id);}', ctx);
   assert.deepEqual(Array.from(ctx.secs), ['常用', '战斗功能', '战斗辅助', '提示', '其他'], 'sec 顺序即菜单显示顺序');
-  assert.deepEqual(Array.from(ctx.bySec['常用']), ['menu', 'tp', 'challenge', 'np', 'zhu']);
-  assert.deepEqual(Array.from(ctx.bySec['战斗功能']), ['mlock', 'zhu2', 'zskill']);
+  assert.deepEqual(Array.from(ctx.bySec['常用']), ['menu', 'tp', 'np', 'zhu']);
+  assert.deepEqual(Array.from(ctx.bySec['战斗功能']), ['arrowrules', 'dojo', 'mlock', 'zhu2', 'zskill']);
   assert.deepEqual(Array.from(ctx.bySec['战斗辅助']), ['aid', 'party', 'dps', 'boss', 'askcombo', 'item']);
   assert.deepEqual(Array.from(ctx.bySec['提示']), ['zhud', 'ztip', 'tgt', 'znear']);
   assert.deepEqual(Array.from(ctx.bySec['其他']), ['perf', 'txcap', 'mvp', 'panel']);
@@ -586,6 +586,8 @@ test('exp 三个一级窗口容器 + fwReg + RO_MODULES 登记齐全且走标准
   }
   assert.ok(expSource.includes('{ id: "zskill", name: "技能设置"'), 'RO_MODULES 缺 zskill');
   assert.ok(expSource.includes('{ id: "znear", name: "附近怪物实时列表"'), 'RO_MODULES 缺 znear');
+  assert.ok(expSource.includes('{ id: "dojo",  name: "无限道场"'), 'RO_MODULES 缺 dojo');
+  assert.ok(expSource.includes('fwReg("dojo", "无限道场", dojoEnsureHost)'), '缺少 fwReg("dojo")');
   // 新 id 不得另起一套窗口系统：继续沿用 fwSyncState / fwOpen / fwClose
   assert.ok(expSource.includes('return fwSyncState(id);'));
   assert.ok(expSource.includes('if (!fwActualOpen(id)) fwOpen(id, false);'));
@@ -715,10 +717,10 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
 
 // ================= V2.34.3：格子距离口径 / 内挂状态校准 / 混合接管兜底 / 坐下放宽 =================
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
-  // 1) 版本号：稳定版与实验版都必须是 2.34.5（@version 与运行时常量一致）
+  // 1) 版本号：稳定版与实验版都必须是 2.36.0（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.35.0', name + ' @version 必须是 2.35.0');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.35.0', name + ' 运行时常量 VER 必须是 2.35.0');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.0', name + ' @version 必须是 2.36.0');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.0', name + ' 运行时常量 VER 必须是 2.36.0');
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
   const stripHead = (s) => s.replace(/\r\n/g,'\n').split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
@@ -1076,8 +1078,8 @@ test('V2.34.5 战斗诊断快照 prof 字段已就位（不改既有字段）', 
 // ================= V2.34.5：配置自动备份（两代）/ 黄金副本找回（纯函数真值表 / 按钮 / 键隔离）=================
 test('V2.34.5 版本号升到 2.34.5（@version 与运行时常量一致，两文件同步）', () => {
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.35.0', name + ' @version 必须是 2.35.0');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.35.0', name + ' 运行时常量 VER 必须是 2.35.0');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.0', name + ' @version 必须是 2.36.0');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.0', name + ' 运行时常量 VER 必须是 2.36.0');
   }
 });
 
@@ -1319,18 +1321,299 @@ test('bagClean v2 UI and storage contract is lockstep and documents unsupported 
 });
 
 
-// ================= V2.35.0 无限挑战 =================
-const chSources=[['stable',source],['exp',expSource]];
-function chBlock(src){const a=src.indexOf('  // ================= V2.35.0 无限挑战（纠正版）'),b=src.indexOf('// MVP_TIMER_START:',a);assert.ok(a>=0&&b>a);return src.slice(a,b).replace(/\r\n/g,'\n')}
-function chPure(){const b=chBlock(source),a=b.indexOf('  function challengeDefaults'),z=b.indexOf('  function challengeEntities');const ctx={String,Number,Math,Object,Array,RegExp,JSON,isFinite,localStorage:{getItem:()=>null,setItem(){}}};vm.createContext(ctx);vm.runInContext(b.slice(a,z)+';this.norm=challengeNormalizeText;this.parse=challengeParseNotice;this.arrow=challengeArrowDecision;this.pick=challengePickNpc;this.option=challengeUniqueOption;this.defaults=challengeDefaults',ctx);return ctx;}
-test('V2.35.0 challenge metadata registration and scripts stay synchronized',()=>{for(const[,s]of chSources){assert.match(s,/@version\s+2\.35\.0/);assert.ok(s.includes('fwReg("challenge", "无限挑战", challengeEnsureHost)'));assert.ok(s.includes('id: "challenge", name: "无限挑战", kind: "fw"'))}assert.equal(chBlock(source),chBlock(expSource))});
-test('V2.35.0 challenge parser decisions and NPC selection stay deterministic',()=>{const h=chPure(),a={GID:1,objecttype:6,displayName:'白猫',position:[5,5]},b={GID:2,objecttype:6,displayName:'喵达人',position:[2,2]};assert.equal(h.pick([a]).GID,1);assert.equal(h.pick([a,b],[1,1]),null);assert.equal(h.norm('^FF0000 第 ５ 轮 '),'第 5 轮');assert.equal(h.parse('完成第100轮，怪物剩余 0 只').completed,100);assert.deepEqual(JSON.parse(JSON.stringify(h.arrow(68,false,1,{ghostItid:2}))),{kind:'ghost3',itid:2});assert.equal(h.option(['挑战','开始挑战'],/挑战/),null)});
-test('V2.35.0 challenge owns combat and releases only its confirmed battle lease',()=>{for(const[name,s]of chSources){const b=chBlock(s),own=b.slice(b.indexOf('  function challengeActive()'),b.indexOf('  function challengeDialogOpen()')),lease=b.slice(b.indexOf('  function challengeBattleOn()'),b.indexOf('  function challengeStop('));let state=false,calls=[];const ctx={challenge:{running:true,npLease:'none'},challengeCfg:{difficulty:'advanced'},npBattleState:()=>state,npRequestBattle:(on,source,explicit)=>{calls.push([on,source,explicit]);return 'sent'},challengeCancelNpIntent(){}};vm.createContext(ctx);vm.runInContext(own+lease+';this.owns=challengeOwnsCombat;this.on=challengeBattleOn;this.confirm=challengeBattleConfirm;this.off=challengeBattleOff',ctx);
-    assert.equal(ctx.owns(),true,name+' active challenge owns combat in every difficulty');state=true;assert.equal(ctx.on(),'already');assert.equal(ctx.challenge.npLease,'none');assert.deepEqual(calls,[],name+' must not claim pre-existing battle');state=false;assert.equal(ctx.on(),'sent');assert.equal(ctx.challenge.npLease,'pending');state=true;ctx.confirm();assert.equal(ctx.challenge.npLease,'owned');assert.equal(ctx.off(),'sent');assert.deepEqual(calls,[[true,'challenge-start',true],[false,'challenge-stop',true]],name+' may stop only battle it started')}});
-test('V2.35.0 arrow timeout blocks then retries only at retryAt',()=>{for(const[,s]of chSources){const b=chBlock(s);assert.ok(b.includes('if(!p.retryAt){p.retryAt=now+3000'));assert.ok(b.includes('if(now<p.retryAt)return true;if(equipArrow(row.index))'));assert.ok(b.includes('challenge.arrowBlocked=true'));assert.ok(b.includes('if(challengeArrowTick(t,now)||challenge.arrowBlocked)return;'))}});
-test('V2.35.0 fly is battle-only with positive remaining count',()=>{for(const[,s]of chSources){const b=chBlock(s);assert.ok(b.includes('emergencyFly&&challenge.state==="battle"&&challenge.remaining>0'));assert.ok(b.includes('flyOn&&challenge.state==="battle"&&challenge.remaining>0'))}});
-test('V2.35.0 NPC deadline persists and walking requires distance above two',()=>{for(const[,s]of chSources){const b=chBlock(s);assert.ok(b.includes('firstAt:challenge.contact&&challenge.contact.firstAt||Date.now()'));assert.ok(b.includes('if(now-c.firstAt>=30000)'));assert.ok(b.includes('if(dist<=2||c.retries>=3)return false'))}});
-test('V2.35.0 menu fingerprint is reserved before submission',()=>{for(const[,s]of chSources){const b=chBlock(s),reserve=b.indexOf('challenge.menuFingerprint=fp;try{'),send=b.indexOf('CLIENT.NM.sendPacket(p);',reserve);assert.ok(reserve>=0&&send>reserve);assert.ok(b.includes('if(fp===challenge.menuFingerprint)return false'))}});
-test('V2.35.0 announcement observer watches chat and announce containers only',()=>{for(const[,s]of chSources){const b=chBlock(s);assert.ok(b.includes('document.querySelectorAll(sel)'));assert.ok(b.includes('[id*="Chat"]'));assert.ok(b.includes('[class*="Announce"]'));assert.doesNotMatch(b,/observe\(document\.body/);assert.ok(b.includes('!el.closest("#dsh-assistant")'))}});
-test('V2.35.0 stop100 clears interval and marks paused before reward path',()=>{for(const[,s]of chSources){const b=chBlock(s),fn=b.slice(b.indexOf('function challengePause100'),b.indexOf('function challengeContact'));assert.ok(fn.indexOf('clearInterval(challenge.timer)')<fn.indexOf('challenge.state="paused"'));assert.ok(fn.includes('challenge.state="paused"'));assert.ok(b.includes('challengeCfg.stop100&&ev.completed>=100'))}});
-test('V2.35.0 generic arrow tick yields during every challenge mode',()=>{for(const[,s]of chSources)assert.ok(s.includes('if (challengeOwnsCombat()) return; // V2.35.0'))});
+// ================= V2.35.1 assistant API + standalone dojo =================
+const splitSources=[['stable',source],['exp',expSource]];
+test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.36\.0/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
+test('V2.35.1 public API uses owner-only external signatures and validates the current lease owner',()=>{for(const[,s]of splitSources){assert.ok(s.includes('/^[A-Za-z0-9_.:-]{8,128}$/'));assert.ok(s.includes('dojo:1,battle:1,movement:1,dialog:1,arrow:1,fly:1'));assert.ok(s.includes('if(apiLease&&apiLease.owner!==owner)'));for(const sig of ['apiHas(owner,scope)','apiSnapshot(owner)','apiRelease(owner)','apiContact(owner,gid)','apiWalk(owner,payload)','apiChoose(owner,payload)','apiBattle(owner,on)','apiSetArrow(owner,target)','apiClearArrow(owner)','apiFly(owner,payload)'])assert.ok(s.includes('function '+sig),sig);assert.ok(s.includes('apiLease.generation===generation'));assert.ok(!s.includes('apiHas(owner,generation'));}});
+test('V2.35.1 snapshot and battle/menu ownership contracts are explicit',()=>{for(const[,s]of splitSources){for(const key of ['ready:','map:','player:','mobs:','npcs:','target:','inDojoMap:','dialogOpen:','menu:','battleState:','busy:','arrow:'])assert.ok(s.includes(key),key);assert.ok(s.includes('if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"}'));assert.ok(s.includes('b.state="pending-on"'));assert.ok(s.includes('if(b.state!=="owned")return {ok:true,result:"not-owned"}'));assert.ok(s.includes('l.battle.state==="owned"||l.battle.state==="pending-off"'));assert.ok(s.includes('if(s!==false)return {ok:true,result:s===true?"preexisting":"unknown"}'));}});
+test('V2.35.1 arrow decision priority and confirmation retry remain assistant-owned',()=>{for(const[,s]of splitSources){assert.ok(s.includes('if(type===8&&level===3)'));assert.ok(s.includes('if(isBoss)return boss||neutral'));assert.ok(s.includes('if(type===8&&level===4)'));assert.ok(s.includes('confirmUntil:now+5000'));assert.ok(s.includes('p.retryAt=now+3000'));}});
+const dojo=fs.readFileSync(new URL('../ro-infinite-dojo.user.js',import.meta.url),'utf8');
+test('dojo is API-only with migration missing-API and generation lifecycle',()=>{assert.match(dojo,/@version\s+1\.\d+\.\d+/);assert.ok(dojo.includes('dsh-ro-infinite-dojo-v1'));assert.ok(dojo.includes('dsh-ro-challenge-v1'));assert.ok(dojo.includes('d.migrated=true'));assert.doesNotMatch(dojo,/\bCLIENT\b|sendPacket|REQ_WEAR_EQUIP|\.NM\b|\bCZ\.|ITEM_THROW|require\(|MutationObserver/);assert.ok(dojo.includes('raw.handshake({protocol:PROTOCOL,client:"ro-infinite-dojo"})'));assert.ok(dojo.includes('a.protocol!==PROTOCOL')); assert.ok(dojo.includes('a.acquire(run.owner,["dojo","battle","movement","dialog","arrow","fly"])'));assert.ok(dojo.includes('a.snapshot(run.owner)'));assert.ok(dojo.includes('a.release(run.owner)'));assert.ok(dojo.includes('run.generation++'));assert.ok(dojo.includes('缺少')||dojo.includes('请先安装'));assert.ok(dojo.includes('dsh-ro-assist-ready'));assert.ok(dojo.includes('dsh-ro-assist-notice'));});
+test('assistant facade and dojo calls keep matching owner-only signatures',()=>{const calls={snapshot:['snapshot:apiSnapshot','a.snapshot(run.owner)'],release:['release:apiRelease','a.release(run.owner)'],contactNpc:['contactNpc:apiContact','a.contactNpc(run.owner,n.gid)'],walkTo:['walkTo:apiWalk','a.walkTo(run.owner,{'],chooseMenu:['chooseMenu:apiChoose','a.chooseMenu(run.owner,{'],requestBattle:['requestBattle:apiBattle','a.requestBattle(run.owner,!!allowed)'],setArrowTarget:['setArrowTarget:apiSetArrow','a.setArrowTarget(run.owner,{'],clearArrowTarget:['clearArrowTarget:apiClear','a.clearArrowTarget(run.owner)'],requestFly:['requestFly:apiFly','a.requestFly(run.owner,{']};for(const parts of Object.values(calls)){for(const[,s]of splitSources)assert.ok(s.includes(parts[0]));assert.ok(dojo.includes(parts[1]));}});
+test('dojo menu once-only notice dedupe NPC bounds and deferred list are explicit',()=>{assert.ok(dojo.includes('m.fingerprint'));assert.ok(dojo.includes('m.fingerprint===run.lastMenu')); assert.ok(dojo.includes('now-run.lastNoticeAt<2500'));assert.ok(dojo.includes('list.length>1'));assert.ok(dojo.includes('>=8000'));assert.ok(dojo.includes('>=30000'));assert.ok(dojo.includes('第100轮领奖前暂停'));assert.ok(dojo.includes('不含技能、邮件、push、清包、巡逻'));});
+
+
+// ================= V2.36.0 内置道馆并入主脚本 + 新门面能力 =================
+test('V2.36.0 window facade registers opens and closes through the shared fw layer',()=>{
+  for(const[name,s]of splitSources){
+    assert.ok(s.includes('fwReg("dojo", "无限道场", dojoEnsureHost)'),name+' 内置道馆必须注册为标准浮窗');
+    assert.ok(s.includes('function apiRegisterWindow(id,title,getEl)'));
+    assert.ok(s.includes('function apiOpenWindow(id)'));
+    assert.ok(s.includes('function apiCloseWindow(id)'));
+    assert.ok(s.includes('registerWindow:apiRegisterWindow,openWindow:apiOpenWindow,closeWindow:apiCloseWindow'));
+    assert.ok(s.includes('modules:["dojo"]'),name+' capabilities 必须声明 modules:["dojo"]');
+    assert.ok(s.includes('fwMakeWin(id,fwState[id].title)'),name+' openWindow 必须复用 fwMakeWin');
+    assert.ok(s.includes('fwReg(id,String(title||id),getEl)'),name+' registerWindow 必须复用 fwReg');
+    assert.ok(s.includes('fwClose(id)'),name+' closeWindow 必须复用 fwClose');
+    assert.ok(s.includes('h.id="dsh-fw-dojo"'),name+' 道场宿主必须沿用 dsh-fw-* 约定');
+    assert.ok(s.includes('<div class="sec">无限道场'),name+' 道场必须用 sec 区块样式');
+    assert.ok(s.includes('<div class="st" id="dsh-dojo-state"></div>'),name+' 道场必须用 st 状态样式');
+    assert.ok(s.includes('<div class="log">租约 builtin-dojo'),name+' 道场必须用 log 说明样式');
+    assert.ok(!s.includes('id="dsh-dojo-panel"'),name+' 禁止自建左上角 plain 面板');
+  }
+  // 独立脚本 1.1.0 兼容壳：主脚本声明 modules:["dojo"] 后必须自行停用，避免双控
+  assert.ok(dojo.includes('hasDojo'),'独立道馆必须探测主脚本的 modules');
+  assert.ok(dojo.includes('c.modules.indexOf("dojo")>=0'));
+  assert.ok(dojo.includes('道馆已并入主脚本'));
+  // 行为：合法 id 走 fwReg，非法 id / 未登记窗口一律 fail-closed
+  const code=extract('  function apiRegisterWindow(id,title,getEl){','  // bag：规划与执行');
+  const registered=[];const ctx={fwState:{},fwReg(id,title,getEl){registered.push(id);ctx.fwState[id]={title:title,getEl:getEl};},fwMakeWin(id){ctx.made=id;return {};},fwOpen(id){return !!ctx.fwState[id];},fwClose(id){ctx.closed=id;},String};
+  vm.createContext(ctx);vm.runInContext(code+';this.reg=apiRegisterWindow;this.open=apiOpenWindow;this.close=apiCloseWindow',ctx);
+  assert.equal(ctx.reg('bad id','x',()=>null).error,'invalid-id');
+  assert.equal(ctx.reg('x'.repeat(33),'x',()=>null).error,'invalid-id');
+  assert.equal(ctx.reg('ok','x',null).error,'invalid-getter');
+  assert.equal(ctx.open('nope').error,'unknown-window');
+  assert.equal(ctx.close('nope').error,'unknown-window');
+  const okReg=ctx.reg('extwin','外部窗口',()=>null);
+  assert.equal(okReg.ok,true);assert.equal(okReg.id,'extwin');
+  assert.deepEqual(registered,['extwin']);
+  assert.equal(ctx.open('extwin').ok,true);
+  assert.equal(ctx.made,'extwin');
+  assert.equal(ctx.close('extwin').ok,true);
+  assert.equal(ctx.closed,'extwin');
+});
+
+test('V2.36.0 builtin dojo joins the shared lease and refuses when the lease is occupied',()=>{
+  for(const[name,s]of splitSources){
+    assert.ok(s.includes('var DOJO_OWNER="builtin-dojo"'));
+    assert.ok(s.includes('a.acquire(DOJO_OWNER,["dojo","battle","movement","dialog","arrow","fly"])'),name+' 内置道馆必须走同一租约');
+    assert.ok(s.includes('a.release(DOJO_OWNER)'),name+' 停止必须释放租约');
+    assert.ok(s.includes('if(!r||!r.ok)return dojoStop(r&&r.error||"助手正被其他流程占用")'),name+' 被占用必须拒绝并提示');
+    assert.ok(s.includes('if(apiLease&&apiLease.owner!==owner)return {ok:false,error:"owned"}')); // apiAcquire 单一租约不变
+    assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'),name+' 通用换箭让位逻辑不得改动');
+    assert.ok(s.includes('externalAutomationOwns("battle")'),name+' 助手战斗让位逻辑不得改动');
+    assert.ok(s.includes('++menuReconGeneration'),name+' apiMenu 仍用 menuRecon 指纹');
+    assert.ok(s.includes('if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"}'));
+    assert.ok(s.includes('dojo:1,battle:1,movement:1,dialog:1,arrow:1,fly:1'));
+    for(const sig of ['apiHas(owner,scope)','apiSnapshot(owner)','apiRelease(owner)','apiContact(owner,gid)','apiWalk(owner,payload)','apiChoose(owner,payload)','apiBattle(owner,on)','apiSetArrow(owner,target)','apiClearArrow(owner)','apiFly(owner,payload)'])assert.ok(s.includes('function '+sig),sig);
+    assert.ok(s.includes('if(dojoRun.timer)clearInterval(dojoRun.timer)'),name+' 停止/暂停必须清定时器');
+  }
+  const code=extract('  function dojoStart(){','  function dojoStop(reason){')+extract('  function dojoStop(reason){','  function dojoRender(){');
+  function run(startOk,apiMissing){
+    const calls=[];let timerSet=null;
+    const ctx={DOJO_OWNER:'builtin-dojo',dojoRun:{on:false,generation:0,timer:null,phase:''},dojoRender(){},
+      dojoTick:g=>calls.push(['tick',g]),dojoStop:r=>{calls.push(['stop',r]);return r;},
+      dojoApi:()=>apiMissing?null:{ready:()=>true,acquire:(o,sc)=>{calls.push(['acquire',o,sc.join('+')]);return startOk?{ok:true}:{ok:false,error:'owned'};},clearArrowTarget:o=>calls.push(['clear',o]),release:o=>calls.push(['release',o])},
+      setInterval:(fn,ms)=>{timerSet=ms;return 7;},clearInterval:id=>{calls.push(['clearInterval',id]);},Date,Math};
+    vm.createContext(ctx);vm.runInContext(code+';this.start=dojoStart;this.stop=dojoStop',ctx);
+    return {ctx,timerSet:()=>timerSet,calls};
+  }
+  const busy=run(false,false);
+  busy.ctx.start();
+  assert.equal(busy.ctx.dojoRun.phase,'owned'); // dojoStop(原因) 无返回值，原因落在 phase
+  assert.equal(busy.ctx.dojoRun.on,false);
+  assert.equal(busy.ctx.dojoRun.timer,null);
+  assert.deepEqual(busy.calls.filter(c=>c[0]==='acquire').length,1);
+  assert.deepEqual(busy.calls.filter(c=>c[0]==='acquire')[0][1],'builtin-dojo');
+  assert.equal(busy.calls.filter(c=>c[0]==='acquire')[0][2],'dojo+battle+movement+dialog+arrow+fly');
+  const missing=run(false,true);
+  missing.ctx.start();
+  assert.equal(missing.ctx.dojoRun.phase,'缺少兼容的 RO助手 API，功能已禁用');
+  assert.equal(missing.ctx.dojoRun.on,false);
+  const okk=run(true,false);
+  okk.ctx.start();
+  assert.equal(okk.ctx.dojoRun.on,true);
+  assert.equal(okk.ctx.dojoRun.timer,7);
+  assert.equal(okk.timerSet(),250);
+  assert.equal(okk.ctx.dojoRun.phase,'启动中');
+  assert.deepEqual(okk.calls.filter(c=>c[0]==='tick').length,1);
+  okk.ctx.stop('页面离开');
+  assert.equal(okk.ctx.dojoRun.phase,'页面离开');
+  assert.equal(okk.ctx.dojoRun.on,false);
+  assert.equal(okk.ctx.dojoRun.timer,null);
+  assert.deepEqual(okk.calls.filter(c=>c[0]==='clearInterval')[0],['clearInterval',7]);
+  assert.deepEqual(okk.calls.filter(c=>c[0]==='release')[0],['release','builtin-dojo']);
+  assert.deepEqual(okk.calls.filter(c=>c[0]==='clear')[0],['clear','builtin-dojo']);
+});
+
+test('V2.36.0 undroppable or unknown items only exit through mail and bag',()=>{
+  for(const[name,s]of splitSources){
+    assert.ok(s.includes('itemOutletAllowed(it.ITID, "sell")'),name+' NPC 出售必须走出口校验');
+    assert.ok(s.includes('itemOutletAllowed(id, "store")'),name+' 仓库存放必须走出口校验');
+    assert.ok(s.includes('items:{noDrop:itemNoDropState,outlet:itemOutletAllowed,note:ITEM_OUTLET_NOTE}'));
+    assert.ok(s.includes('只允许「邮件发送」「背包丢弃」两个出口，NPC 出售 / 仓库存放等其它出口一律拒绝。'));
+    for(const marker of ['NoDrop','noDrop','nodrop','NoDropFlag','Undroppable','CantDrop','CannotDrop','NotDroppable','DropDeny','no_drop'])assert.ok(s.includes('"'+marker+'"'),'不可丢字段探测缺少 '+marker);
+    assert.ok(s.includes('无法丢弃|不可丢弃|不能丢弃'),'描述文本探测必须保留');
+  }
+  const code=extract('  var ITEM_OUTLET_NOTE=','  // pushplus：token');
+  function outlet(info){
+    const ctx={CLIENT:{DB:{getItemInfo:()=>info}},requireDB:()=>null,Object,Number,String,Array};
+    vm.createContext(ctx);vm.runInContext(code+';this.state=itemNoDropState;this.out=itemOutletAllowed',ctx);
+    return ctx;
+  }
+  const nd=outlet({NoDrop:1});
+  assert.equal(nd.state(501),'nodrop');
+  assert.equal(nd.out(501,'sell').ok,false);
+  assert.equal(nd.out(501,'sell').error,'item-outlet-locked');
+  assert.equal(nd.out(501,'store').ok,false);
+  assert.equal(nd.out(501,'trade').ok,false);
+  assert.equal(nd.out(501,'mail').ok,true);
+  assert.equal(nd.out(501,'mail').restricted,true);
+  assert.equal(nd.out(501,'bag').ok,true);
+  const un=outlet(null);
+  assert.equal(un.state(501),'unknown');
+  assert.equal(un.out(501,'sell').ok,false);
+  assert.equal(un.out(501,'mail').ok,true);
+  assert.equal(un.out(501,'bag').ok,true);
+  const keep=outlet({NoDrop:0});
+  assert.equal(keep.state(501),'keep');
+  assert.equal(keep.out(501,'sell').ok,true);
+  const txt=outlet({identifiedDescriptionName:'某材料'+String.fromCharCode(10)+'无法丢弃'});
+  assert.equal(txt.state(501),'nodrop');
+  const badId=outlet({NoDrop:0});
+  assert.equal(badId.state('x'),'unknown');
+  assert.equal(badId.out(0,'sell').ok,false);
+});
+
+test('V2.36.0 mail probing is fail-closed when no complete MAIL packet constructor exists',()=>{
+  for(const[name,s]of splitSources){
+    assert.ok(s.includes('if(!probe)return {ok:false,error:"mail-unsupported"}'),name+' 探测不到邮件包必须 fail-closed');
+    assert.ok(s.includes('if(!/MAIL/i.test(name))continue'),name+' 必须按 /MAIL/ 探测构造器');
+    assert.ok(s.includes('if(!ok)continue'),name+' 字段不齐备的构造器必须放弃');
+    assert.ok(s.includes('CLIENT.NM.sendPacket(packet)'));
+  }
+  const probeCode=extract('  var MAIL_FIELD_RE=','  function apiMailSend(payload){');
+  const sendCode=extract('  function apiMailSend(payload){','  var apiFacade={protocol:API_PROTOCOL');
+  function mailVm(CZ,ready){
+    const sent=[];
+    const ctx={CLIENT:{PS:{CZ:CZ},NM:{sendPacket:p=>sent.push(p)}},clientReady:()=>ready!==false,Object,Number,String,Array};
+    vm.createContext(ctx);vm.runInContext(probeCode+sendCode+';this.probe=mailProbe;this.send=apiMailSend',ctx);
+    return {ctx,sent};
+  }
+  const none=mailVm({CONTACTNPC:function(){this.NAID=0;this.type=1;}},true);
+  assert.equal(none.ctx.probe(),null);
+  const noneRes=none.ctx.send({to:'u1',title:'t',body:'b'});
+  assert.equal(noneRes.ok,false);assert.equal(noneRes.error,'mail-unsupported');
+  assert.equal(none.sent.length,0,'探测不到邮件包时绝不允许发包');
+  const thin=mailVm({MAIL_X:function(){this.to='';this.title='';}},true);
+  assert.equal(thin.ctx.probe(),null);
+  assert.equal(thin.ctx.send({to:'u1'}).error,'mail-unsupported');
+  assert.equal(thin.sent.length,0);
+  const boom=mailVm({MAIL_BOOM:function(){throw new Error('ctor')}},true);
+  assert.equal(boom.ctx.send({to:'u1'}).error,'mail-unsupported');
+  const good=mailVm({MAIL_SEND:function(){this.to='';this.title='';this.body='';this.itemIndex=0;this.itemAmount=0;}},true);
+  assert.equal(good.ctx.probe().name,'MAIL_SEND');
+  const r=good.ctx.send({to:'u1',title:'你好',body:'正文',itemIndex:3,itemAmount:2});
+  assert.equal(r.ok,true);
+  assert.equal(r.packet,'MAIL_SEND');
+  assert.equal(good.sent.length,1);
+  assert.equal(good.sent[0].to,'u1');
+  assert.equal(good.sent[0].title,'你好');
+  assert.equal(good.sent[0].body,'正文');
+  assert.equal(good.sent[0].itemIndex,3);
+  assert.equal(good.sent[0].itemAmount,2);
+  assert.equal(good.ctx.send({to:'u1',itemIndex:-1}).error,'invalid-item');
+  assert.equal(good.ctx.send({to:''}).error,'invalid-to');
+  assert.equal(good.sent.length,1,'非法入参不得发包');
+  const notReady=mailVm({MAIL_SEND:function(){this.to='';this.title='';this.body='';this.itemIndex=0;this.itemAmount=0;}},false);
+  assert.equal(notReady.ctx.send({to:'u1'}).error,'client-not-ready');
+  assert.equal(notReady.sent.length,0);
+});
+
+test('V2.36.0 builtin dojo keeps standalone semantics for menu NPC and arrow gates',()=>{
+  for(const[name,s]of splitSources){
+    assert.ok(s.includes('if(now-dojoRun.npc.firstAt>=30000)return dojoStop("寻找 NPC 超过30秒，已停止")'),name+' 30 秒 NPC 止损');
+    assert.ok(s.includes('now-dojoRun.npc.firstAt>=8000&&!dojoRun.npc.walked'),name+' 8 秒后才走近');
+    assert.ok(s.includes('dojoDist(s.player.position,n.position)>2'),name+' 距离>2 才走近');
+    assert.ok(s.includes('if(m.fingerprint===dojoRun.lastMenu)return true'),name+' 菜单指纹不重复提交');
+    assert.ok(s.includes('if(hits.length!==1){dojoRun.phase="菜单不唯一，请手动选择"'),name+' 菜单必须唯一');
+    assert.ok(s.includes('if(list.length>1){dojoRun.phase="NPC 别名不唯一，请手动靠近"'),name+' 别名必须唯一');
+    assert.ok(s.includes('if(dojoCfg.stop100&&dojoRun.round>=100)return dojoStop("第100轮领奖前暂停")'),name+' 100 轮领奖前暂停');
+    assert.ok(s.includes('dojoRun.phase=allowed?"战斗中":"等待换箭就绪"'),name+' 换箭未就绪不开战');
+    assert.ok(s.includes('allowed=dojoCfg.difficulty==="basic"&&fresh&&fresh.arrow&&fresh.arrow.enabled===false'),name+' basic 且未启用换箭时放行');
+    assert.ok(s.includes('window.addEventListener("pagehide",function(){try{if(dojoRun.on)dojoStop("页面离开");'),name+' 页面离开停止');
+    assert.ok(s.includes('try { dojoStop("换角色"); } catch (e5) {}'),name+' 换角色停止');
+    assert.ok(s.includes('difficulty:"basic",stop100:true,fly:false,emergency:false,migrated:false'));
+    assert.ok(s.includes('CHALLENGE_KEY="dsh-ro-challenge-v1"'),name+' 旧配置迁移键必须复用常量');
+    assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' 迁移键只允许出现一次');
+  }
+  const code=extract('  function dojoContact(a,s,now){','  function dojoTick(g){');
+  const calls=[];
+  const aliases=s=>(s.npcs||[]).filter(n=>/^(喵达人|猫达人|白猫|白猫达人)$/.test(String(n.name)));
+  const ctx={DOJO_OWNER:'builtin-dojo',dojoRun:{npc:null,phase:''},dojoNpcs:aliases,dojoDist:(x,y)=>x&&y?Math.max(Math.abs(x[0]-y[0]),Math.abs(x[1]-y[1])):Infinity,dojoStop:r=>{calls.push(['stop',r]);return r;},Math,String};
+  vm.createContext(ctx);vm.runInContext(code+';this.contact=dojoContact',ctx);
+  const a={contactNpc:(o,g)=>calls.push(['contact',o,g]),walkTo:(o,p)=>calls.push(['walk',o,p.x,p.y])};
+  ctx.contact(a,{npcs:[{gid:7,name:'喵达人',position:[10,10]}],player:{position:[10,12]}},1000);
+  assert.deepEqual(calls[0],['contact','builtin-dojo',7]);
+  ctx.contact(a,{npcs:[{gid:7,name:'喵达人',position:[10,10]}],player:{position:[10,12]}},9100);
+  assert.equal(calls.filter(c=>c[0]==='walk').length,0,'距离<=2 不得走近');
+  ctx.contact(a,{npcs:[{gid:7,name:'喵达人',position:[10,10]}],player:{position:[10,30]}},9100);
+  assert.deepEqual(calls.filter(c=>c[0]==='walk')[0],['walk','builtin-dojo',10,10]);
+  ctx.dojoRun.npc=null;
+  ctx.contact(a,{npcs:[{gid:7,name:'喵达人'},{gid:8,name:'白猫'}],player:{position:[0,0]}},500);
+  assert.equal(ctx.dojoRun.phase,'NPC 别名不唯一，请手动靠近');
+  ctx.dojoRun.npc=null;
+  ctx.contact(a,{npcs:[],player:{position:[0,0]}},500);
+  ctx.contact(a,{npcs:[],player:{position:[0,0]}},31500);
+  assert.equal(calls.filter(c=>c[0]==='stop').slice(-1)[0][1],'寻找 NPC 超过30秒，已停止');
+  assert.ok(code.includes('x:99')&&code.includes('y:107'),'无 NPC 候选坐标兜底不变');
+});
+
+// ================= V2.35.4：统一采集器注册表 dsh-collect v1 =================
+test('V2.35.4 统一采集器：旧探针与所有权契约保持不变、环形与上报收敛', () => {
+  for (const [name, s] of splitSources) {
+    // 1) 注册表命名空间 + 版本标识（内部 IIFE，不新增 window 全局）
+    assert.ok(s.includes('var DSHCollect = (function'), name + ' 必须存在 DSHCollect 注册表');
+    assert.ok(s.includes('var NS = "dsh-collect"'), name + ' 命名空间必须是 dsh-collect');
+    assert.ok(s.includes('var VERSION = 1;'), name + ' 版本标识必须是 1');
+    assert.ok(!/window\.__dshCollect\s*=|window\.DSHCollect\s*=/.test(s), name + ' 不得新增 window 全局');
+    // 2) 五方法 + 三助手全部暴露
+    for (const m of ['register','sample','query','refresh','release','ringPush','ringUnshift','post']) {
+      assert.ok(new RegExp(m+':\\s*'+m).test(s), name + ' 必须暴露方法 ' + m);
+    }
+    // 3) 收敛：环形与上报走统一入口（旧手工 push+splice 模式已消除）
+    assert.ok((s.match(/DSHCollect\.ringPush\(/g) || []).length >= 5, name + ' 追加式环形 ≥5 处收敛');
+    assert.ok((s.match(/DSHCollect\.ringUnshift\(/g) || []).length >= 1, name + ' 前插式环形 ≥1 处收敛');
+    assert.ok((s.match(/DSHCollect\.post\(/g) || []).length >= 3, name + ' 上报传输 ≥3 处收敛');
+    assert.ok(!s.includes('btRing.push(line); if (btRing.length > 60)'), name + ' btLog 旧环形模式必须移除');
+    assert.ok(!s.includes('__dshSphereLog.push({ t: Date.now()'), name + ' sphere 旧环形模式必须移除');
+    assert.ok(!s.includes('fetch(INGEST_URL, {'), name + ' ingest 旧 fetch 必须移除');
+    // 4) 旧探针入口全部保留（可回溯）
+    for (const fn of ['function btLog(','function btSnap(','function btMarkTarget(','function hkProbe(','function neiProbe(','function ingest(','function probeCollect(','function dshDiag(','function dshSphereLog(','function dshCastLog(']) {
+      assert.ok(s.includes(fn), name + ' 旧探针必须保留 ' + fn);
+    }
+    // 5) window 事件环/探针暴露点全部保留
+    for (const g of ['window.__dshDiag','window.__dshCast','window.__dshBattle','window.__dshZDiag','window.__dshSphereLog','window.__dshCastTrace','window.__dshSkillDelay','window.__dshSkillNext']) {
+      assert.ok(s.includes(g), name + ' window 探针必须保留 ' + g);
+    }
+    // 6) 对外所有权契约不受影响
+    assert.ok(s.includes('function externalAutomationOwns('), name + ' 所有权判定必须保留');
+    assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'), name + ' 外部 API 门面必须保留');
+    for (const sc of ['dojo','battle','movement','dialog','arrow','fly']) {
+      assert.ok(new RegExp('["\']'+sc+'["\']').test(s), name + ' 作用域必须保留 ' + sc);
+    }
+  }
+});
+
+// ================= V2.36.0：道馆菜单入口 + pushplus token UI（统一落全局键） =================
+test('V2.36.0 pushplus token UI lives inside the dojo window and persists through the global key', () => {
+  for (const [name, s] of splitSources) {
+    assert.ok(s.includes('{ id: "dojo",  name: "无限道场"'), name + ' RO_MODULES 必须新增 dojo 条目');
+    assert.ok(s.includes('<input id="dsh-dojo-pptoken" type="password"'), name + ' 道馆窗口必须提供 pushplus token 密码框');
+    assert.ok(s.includes('id="dsh-dojo-ppsave">保存推送</button>'), name + ' 必须提供「保存推送」按钮');
+    assert.ok(s.includes('<input id="dsh-dojo-ppen" type="checkbox">启用推送'), name + ' 必须提供「启用推送」复选框');
+    const seg = s.slice(s.indexOf('function dojoPushFill()'), s.indexOf('try{fwReg("dojo"'));
+    assert.ok(seg.includes('function dojoEnsureHost()'), name + ' 道馆窗口宿主必须存在');
+    assert.ok(seg.includes('t.value=notifyLoadToken()'), name + ' 道馆窗口必须回填 token');
+    assert.ok(seg.includes('e.checked=notifyPushEnabled()'), name + ' 道馆窗口必须回填启用状态');
+    assert.ok(seg.includes('notifySaveToken(pptoken.value)'), name + ' 保存必须走 notify.setToken（notifySaveToken）链路');
+    assert.ok(seg.includes('notifySetPushEnabled(ppen.checked)'), name + ' 勾选状态必须落盘');
+  }
+  // 行为：token / 启用状态同写全局键 dsh_ro_plugin_v1；未显式关闭默认启用；关闭后 notifyPush 静默
+  const store = {};
+  const ctx = { LS_KEY: 'dsh_ro_plugin_v1',
+    localStorage: { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } },
+    JSON, String, fetch: () => Promise.resolve({ ok: true }) };
+  vm.createContext(ctx);
+  vm.runInContext(extract('  // pushplus：token', '  // 窗口注册入口') + ';this.load=notifyLoadToken;this.save=notifySaveToken;this.on=notifyPushEnabled;this.setOn=notifySetPushEnabled;this.push=notifyPush', ctx);
+  assert.equal(ctx.load(), '');
+  assert.equal(ctx.on(), true, '未写入该键时必须默认启用（兼容旧配置）');
+  assert.equal(ctx.save('tk-123'), true);
+  assert.equal(ctx.load(), 'tk-123');
+  assert.deepEqual(JSON.parse(store['dsh_ro_plugin_v1']), { pushplusToken: 'tk-123' }, 'token 必须写进全局键');
+  assert.equal(ctx.push('hi'), true);
+  assert.equal(ctx.setOn(false), true);
+  assert.equal(ctx.on(), false);
+  assert.equal(ctx.push('hi'), false, '停用后不得再发送');
+  assert.deepEqual(JSON.parse(store['dsh_ro_plugin_v1']), { pushplusToken: 'tk-123', pushplusEnabled: false }, 'token 与启用状态必须同键共存');
+});

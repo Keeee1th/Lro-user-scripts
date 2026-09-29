@@ -37,6 +37,7 @@
   var ENDPOINT = 'http://127.0.0.1:8899/api/probe-collect';
   var POLL_MS = 500;
   var DEADLINE_MS = 60000;
+  var ENGINE_GRACE_MS = 3000;   // 只命中 (a) 时，再等引擎挂全局的上限（每 500ms 复查一次 b/c）
   var GUARD = '__dshPrivateClientProbeV1';
 
   // 防重入：同一页面只跑一次（本仓库其它脚本另有前缀，互不干扰）
@@ -51,6 +52,7 @@
   var CAP_ITER = 5000;
 
   var GLOB_RE = /client|entity|network|packet|legacy|bridge|ro|renderer|engine/i;
+  var BUNDLE_RE = /roe|roBrowser|Online|Engine|Renderer|Network|Packet|Session|Entity|require|module|chunk/i;
   var AUTO_RE = /auto|assist|robot|bot|hunt|battle|farm/i;
 
   var REQ_CANDIDATES = [
@@ -166,6 +168,50 @@
     try { return !!(o && (k in o)); } catch (e) { return false; }
   }
 
+  /* ---------- 就绪判据（修正版） ----------
+   * 就绪 = 以下任一成立：
+   *   (a) win.__roeLocalClient 存在且 started 为真值（引擎确实启动）；
+   *   (b) win.require 是函数；
+   *   (c) win.CLIENT 是对象。
+   * 单独的 win.ROConfig 不再构成就绪：它来自宿主页静态加载的 Config.js，
+   * 引擎没收到启动配置时它照样存在（实测坑：iframe 已到 client/api.html 但引擎没跑）。
+   * 只读：仅存在性 / typeof / 真值判断，不写、不调用任何加载器。 */
+  function engineState(w) {
+    var st = { ready: false, engineBooted: false, hasRequire: false, hasClient: false, engineRef: null };
+    try {
+      if (!w) return st;
+      try {
+        var eng = w.__roeLocalClient;
+        st.engineRef = (eng === undefined) ? null : eng;
+        st.engineBooted = !!(eng && eng.started);
+      } catch (e) { st.engineBooted = false; }
+      try { st.hasRequire = (typeof w.require === 'function'); } catch (e) { st.hasRequire = false; }
+      try {
+        var c = w.CLIENT;
+        st.hasClient = !!(c && typeof c === 'object');
+      } catch (e) { st.hasClient = false; }
+      st.ready = st.engineBooted || st.hasRequire || st.hasClient;
+    } catch (e) { /* 读取失败按未就绪处理 */ }
+    return st;
+  }
+
+  function lookLikeClient(w) { return engineState(w).ready; }
+
+  // 只读探测单个全局键：取不到（undefined/null/读失败）→ exists:false、type:null
+  function probeGlobal(win, key) {
+    var r = { name: key, exists: false, type: null, ctor: null, error: null };
+    try {
+      var v = win[key];
+      if (v === undefined || v === null) { r.exists = false; r.type = null; }
+      else {
+        r.exists = true;
+        r.type = typeName(v);
+        if (r.type === 'object' || r.type === 'function') r.ctor = ctorName(v);
+      }
+    } catch (e) { r.error = errOf(e); }
+    return r;
+  }
+
   // 只数元素个数，不读文本、不改 DOM
   function countEls(win, sel) {
     var res = { count: 0, error: null };
@@ -213,6 +259,12 @@
       href: null,
       hasRequire: null,
       hasClient: null,
+      engineBooted: null,
+      readiness: null,
+      roConfigKeys: null,
+      roConfigBaseKeys: null,
+      bundleHints: null,
+      engineHooks: null,
       clientKeys: null,
       clientReadError: null,
       clientSSKeys: null,
@@ -251,18 +303,37 @@
 
     /* ---------------- 0. 目标窗口基本信息 ---------------- */
 
-    var FR = { href: null, hasRequire: false, hasClient: false, engine: false, engineType: null, error: null };
+    var FR = { href: null, hasRequire: false, hasClient: false, engine: false, engineType: null, engineBooted: false, roConfig: false, roConfigBase: false, error: null };
     out.frame = FR;
     try { FR.href = String(win.location.href); }
     catch (e) { FR.error = errOf(e); note('frame.location: ' + errOf(e)); }
     out.href = FR.href;
+
+    // 就绪判据 (a)(b)(c)：engineBooted 语义 = (a) win.__roeLocalClient 存在且 started 为真值
+    var st = engineState(win);
+    out.engineBooted = st.engineBooted;
+    FR.engine = !!st.engineRef;
+    FR.engineType = typeName(st.engineRef);
     try { FR.hasRequire = (typeof win.require === 'function'); } catch (e) { FR.hasRequire = false; note('frame.require: ' + errOf(e)); }
     try { FR.hasClient = !!(win.CLIENT); } catch (e) { FR.hasClient = false; note('frame.CLIENT: ' + errOf(e)); }
-    try {
-      var eng = win.__roeLocalClient;
-      FR.engine = !!eng;
-      FR.engineType = typeName(eng);
-    } catch (e) { FR.engine = false; FR.engineType = 'unreadable'; }
+    try { FR.roConfig = !!(win.ROConfig); } catch (e) { FR.roConfig = false; }
+    try { FR.roConfigBase = !!(win.ROConfigBase); } catch (e) { FR.roConfigBase = false; }
+    FR.engineBooted = st.engineBooted;
+    out.readiness = {
+      ready: st.ready,
+      engineBooted: st.engineBooted,
+      hasRequire: st.hasRequire,
+      hasClient: st.hasClient,
+      rule: '就绪 = (a) __roeLocalClient 存在且 started 为真 或 (b) require 是函数 或 (c) CLIENT 是对象；单独 ROConfig 不构成就绪'
+    };
+    // ROConfig 只是宿主页静态加载的 Config.js，不代表引擎在跑：引擎没启动时必须说清楚，不能说成「接口不存在」
+    if (!st.engineBooted) note('引擎未启动（宿主页已加载但未收到启动配置）');
+
+    // ROConfig / ROConfigBase 继续采集键名供分析（只列名，取不到为 null）
+    try { out.roConfigKeys = keyList(win.ROConfig, 40); }
+    catch (e) { out.roConfigKeys = null; note('ROConfig: ' + errOf(e)); }
+    try { out.roConfigBaseKeys = keyList(win.ROConfigBase, 40); }
+    catch (e) { out.roConfigBaseKeys = null; note('ROConfigBase: ' + errOf(e)); }
 
     /* ---------------- 0b. 助手（ro-assist 系列）在目标窗口内的存在性 ---------------- */
 
@@ -280,6 +351,118 @@
     } catch (e) { AS.errors.push('globals: ' + errOf(e)); }
     try { AS.storageKeys = storageKeyNames(win, 'dsh_ro_'); }
     catch (e) { AS.errors.push('storageKeys: ' + errOf(e)); }
+
+    /* ---------------- 0c. bundle 暴露方式探测（只读；决定阶段 2 能否接入） ---------------- */
+
+    var BH = {
+      note: '只读存在性/typeof 检查：不 eval、不 new Function、不做动态加载器调用、不调用任何加载器',
+      webpack: { chunkGlobals: null, chunkGlobalCount: null, chunkGlobalsCapped: null, webpackRequire: null, webpackJsonp: null },
+      systemjs: null,
+      amd: null,
+      requirejs: null,
+      esm: null,
+      known: null,
+      globals: null,
+      globalsInfo: null,
+      error: null
+    };
+    out.bundleHints = BH;
+
+    var wkeys = null;
+    try {
+      wkeys = Object.keys(win);
+
+      // webpack：只列 webpackChunk* 的名字，不触碰加载器
+      var chunks = [];
+      for (var wci = 0; wci < wkeys.length; wci++) {
+        if (wkeys[wci].indexOf('webpackChunk') === 0) chunks.push(wkeys[wci]);
+      }
+      BH.webpack.chunkGlobals = chunks.length ? chunks.slice(0, 60) : null;
+      BH.webpack.chunkGlobalCount = chunks.length;
+      BH.webpack.chunkGlobalsCapped = chunks.length > 60;
+      BH.webpack.webpackRequire = probeGlobal(win, '__webpack_require__');
+      BH.webpack.webpackJsonp = probeGlobal(win, 'webpackJsonp');
+
+      // systemjs：window.System 存在性 + System.constructor.name
+      var sys = probeGlobal(win, 'System');
+      BH.systemjs = { name: 'System', exists: sys.exists, type: sys.type, constructorName: (sys.exists ? sys.ctor : null), error: sys.error };
+
+      // amd：window.define 存在性 + typeof window.define.amd
+      var dfn = probeGlobal(win, 'define');
+      var amdType = null;
+      var amdErr = null;
+      try {
+        if (dfn.exists) {
+          var av = win.define.amd;
+          amdType = (av === undefined || av === null) ? null : typeName(av);
+        }
+      } catch (e) { amdErr = errOf(e); }
+      BH.amd = { defineExists: dfn.exists, defineType: dfn.type, defineCtor: dfn.ctor, amdType: amdType, error: amdErr || dfn.error };
+
+      // requirejs / require 的 typeof
+      BH.requirejs = { requirejs: probeGlobal(win, 'requirejs'), require: probeGlobal(win, 'require') };
+
+      // esm / 引擎线索
+      var ESM_KEYS = ['__vite__', '__esModule', '__roBrowser', 'roBrowser', 'roBrowserLegacy', 'Engine', 'Renderer', 'Network'];
+      var esm = {};
+      for (var esi = 0; esi < ESM_KEYS.length; esi++) esm[ESM_KEYS[esi]] = probeGlobal(win, ESM_KEYS[esi]);
+      BH.esm = esm;
+
+      // 已知引擎对象的键名（各取前 40）
+      var KNOWN_KEYS = ['__roeLocalClient', 'ROConfig', 'ROConfigBase'];
+      var known = {};
+      for (var kni = 0; kni < KNOWN_KEYS.length; kni++) {
+        var kname = KNOWN_KEYS[kni];
+        var kpg = probeGlobal(win, kname);
+        var kent = { name: kname, exists: kpg.exists, type: kpg.type, ctor: kpg.ctor, keyCount: null, keys: null, error: kpg.error };
+        if (kpg.exists && (kpg.type === 'object' || kpg.type === 'function')) {
+          var kk = keysOf(win[kname], 40);
+          kent.keyCount = kk.count;
+          kent.keys = kk.keys;
+          if (kk.error && !kent.error) kent.error = kk.error;
+        }
+        known[kname] = kent;
+      }
+      BH.known = known;
+
+      // 全局里名字含 bundle 关键词的键名清单（上限 60）
+      var bHits = [];
+      for (var bhi = 0; bhi < wkeys.length; bhi++) {
+        if (BUNDLE_RE.test(wkeys[bhi])) bHits.push(wkeys[bhi]);
+      }
+      BH.globals = bHits.length ? bHits.slice(0, 60) : null;
+      BH.globalsInfo = {
+        pattern: 'roe|roBrowser|Online|Engine|Renderer|Network|Packet|Session|Entity|require|module|chunk（忽略大小写）',
+        windowKeyCount: wkeys.length,
+        matchedCount: bHits.length,
+        cap: 60,
+        truncated: bHits.length > 60
+      };
+    } catch (e) {
+      BH.error = errOf(e);
+      note('bundleHints: ' + errOf(e));
+    }
+
+    /* ---------------- 0d. __roeLocalClient 钩子面（键名 + 各值 typeof，只读） ---------------- */
+
+    var EH = null;
+    try {
+      var lc = win.__roeLocalClient;
+      if (lc !== undefined && lc !== null && (typeof lc === 'object' || typeof lc === 'function')) {
+        EH = { name: '__roeLocalClient', type: typeName(lc), ctor: ctorName(lc), keyCount: null, capped: false, maxKeys: 40, keys: [], valueTypes: {} };
+        var lcKeys = Object.keys(lc);
+        EH.keyCount = lcKeys.length;
+        EH.capped = lcKeys.length > 40;
+        for (var lci = 0; lci < lcKeys.length && lci < 40; lci++) {
+          var lkk = lcKeys[lci];
+          EH.keys.push(lkk);
+          var ltv = null;
+          try { ltv = typeName(lc[lkk]); } catch (e) { ltv = 'unreadable'; }
+          EH.valueTypes[lkk] = ltv;
+        }
+      }
+    } catch (e) { EH = null; note('engineHooks: ' + errOf(e)); }
+    out.engineHooks = EH;
 
     /* ---------------- 1. window.require ---------------- */
 
@@ -670,16 +853,8 @@
   /* ==PROBE-CORE-END== */
 
   /* ---------------- 目标窗口解析（只读，仅同源可读的 contentWindow） ---------------- */
-
-  function lookLikeClient(w) {
-    try {
-      if (!w) return false;
-      if (typeof w.require === 'function') return true;
-      if (w.CLIENT) return true;
-      if (w.ROConfig) return true;
-    } catch (e) { return false; }
-    return false;
-  }
+  /* lookLikeClient 已上移到采集核心（PROBE-CORE 区），判据与 engineState 一致：
+   * require 函数 / CLIENT 对象 / __roeLocalClient.started 三者任一；单独 ROConfig 不算就绪。 */
 
   function scanIframes() {
     var res = null;
@@ -756,7 +931,7 @@
     try {
       if (!ready) {
         result.notes.push(how
-          ? ('等待 60 秒仍未就绪：已找到 ' + how + '，但其内没有 require / CLIENT / ROConfig')
+          ? ('等待 60 秒仍未就绪：已找到 ' + how + '，但没有命中就绪判据（require 不是函数 / CLIENT 不是对象 / __roeLocalClient 未启动）；这是「引擎未启动」，不是「旧引擎接口不存在」')
           : '等待 60 秒仍未就绪：页面上没有任何同源可读的 iframe.contentWindow');
       }
     } catch (e) {}
@@ -782,6 +957,7 @@
   var tries = 0;
   var lastCandidate = null;
   var timer = null;
+  var engineGraceAt = 0;   // 首次只命中 (a) 的时刻；0 = 尚未命中
 
   function stop() {
     if (timer !== null) {
@@ -791,26 +967,33 @@
   }
 
   function tick() {
+    var now = Date.now();
     var t = findTarget();
-    if (t && t.ready) { stop(); finalize(t.win, t.how, true, tries); return; }
     if (t) lastCandidate = t;
+    if (t && t.ready) {
+      var st = engineState(t.win);
+      // (b)/(c) 已挂上 → 立即快照
+      if (st.hasRequire || st.hasClient) { stop(); finalize(t.win, t.how, true, tries); return; }
+      // 只命中 (a)：__roeLocalClient 已启动但全局还没挂完，再等 ENGINE_GRACE_MS，
+      // 期间每 500ms 复查一次 (b)/(c)；总等待上限仍是 DEADLINE_MS
+      if (!engineGraceAt) engineGraceAt = now;
+      if ((now - engineGraceAt) >= ENGINE_GRACE_MS) { stop(); finalize(t.win, t.how, true, tries); return; }
+    }
     tries++;
     if ((Date.now() - startedAt) >= DEADLINE_MS) {
+      var cand = lastCandidate;
       stop();
-      finalize(lastCandidate ? lastCandidate.win : null, lastCandidate ? lastCandidate.how : null, false, tries);
+      if (cand && cand.ready) finalize(cand.win, cand.how, true, tries);
+      else finalize(cand ? cand.win : null, cand ? cand.how : null, false, tries);
+      return;
     }
+    if (timer === null) timer = setInterval(tick, POLL_MS);
   }
 
   try { console.log('[private-client-probe] 开始等待客户端 iframe 就绪（每 500ms 重试，最长 60 秒，全程只读）…'); } catch (e) {}
 
   try {
-    var first = findTarget();
-    if (first && first.ready) {
-      finalize(first.win, first.how, true, 0);
-    } else {
-      lastCandidate = first || null;
-      timer = setInterval(tick, POLL_MS);
-    }
+    tick();   // 立即跑一轮；未就绪时由 tick 内部启动唯一的轮询
   } catch (e) {
     stop();
     finalize(null, null, false, tries);

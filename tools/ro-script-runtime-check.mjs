@@ -715,10 +715,10 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
 
 // ================= V2.34.3：格子距离口径 / 内挂状态校准 / 混合接管兜底 / 坐下放宽 =================
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
-  // 1) 版本号：稳定版与实验版都必须是 2.34.4（@version 与运行时常量一致）
+  // 1) 版本号：稳定版与实验版都必须是 2.34.5（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.34.4', name + ' @version 必须是 2.34.4');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.34.4', name + ' 运行时常量 VER 必须是 2.34.4');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.34.5', name + ' @version 必须是 2.34.5');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.34.5', name + ' 运行时常量 VER 必须是 2.34.5');
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
   const stripHead = (s) => s.split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
@@ -981,4 +981,231 @@ test('V2.34.4 守名单门：打全部怪与 BOSS 模式文案已更新（防回
   }
 });
 
+// ================= V2.34.5：角色档案回落默认根因（落盘门 / 合并写入 / 名单归属 / 漏登记控件 / 诊断字段）=================
+function captureAllCode() { return extract('  function captureAll() {', '  // V2.16.7：配置控件统一 change 即时保存'); }
+function makeCaptureCtx(controls, els, savedUi, applied) {
+  const savedState = { ui: savedUi };
+  const ctx = { PROF_CONTROLS: controls, $id: (id) => els[id] || null, saved: savedState, saveSaved: () => {}, profUIApplied: applied };
+  vm.createContext(ctx);
+  vm.runInContext(captureAllCode() + ';this.fn = captureAll', ctx);
+  return { ctx, savedState };
+}
 
+test('V2.34.5 落盘门：profUIApplied=false 时 captureAll 不动 saved.ui，置 true 后才写入控件值', () => {
+  const { ctx, savedState } = makeCaptureCtx([['A', 'v']], { A: { value: '9' } }, { A: '1', KEEP: 'x' }, false);
+  const before = JSON.stringify(savedState.ui);
+  ctx.fn();
+  assert.equal(JSON.stringify(savedState.ui), before, 'profUIApplied=false 时必须整体早退，saved.ui 不得被默认值覆盖');
+  ctx.profUIApplied = true;
+  ctx.fn();
+  assert.equal(savedState.ui.A, '9', '置 true 后控件值必须落盘');
+  assert.equal(savedState.ui.KEEP, 'x', '既有未覆盖键不得因落盘被删');
+});
+
+test('V2.34.5 合并写入：界面本次只读到 A 时，saved.ui 里的 B 仍必须保留', () => {
+  const { ctx, savedState } = makeCaptureCtx([['A', 'v'], ['C', 'c'], ['MISS', 'v']], { A: { value: '9' }, C: { checked: true } }, { A: '1', B: '2', MISS: 'keep' }, true);
+  ctx.fn();
+  assert.equal(savedState.ui.A, '9', 'A 必须被本次界面值覆盖');
+  assert.equal(savedState.ui.B, '2', 'B 不得因整体替换被删（合并写入）');
+  assert.equal(savedState.ui.C, 1, 'checkbox 口径仍是 checked?1:0');
+  assert.equal(savedState.ui.MISS, 'keep', '取不到的元素必须 continue，不得覆盖旧值');
+  assert.deepEqual(Object.keys(savedState.ui).sort(), ['A', 'B', 'C', 'MISS'], 'ui 键集合 = 旧键 ∪ 本次读到的新键');
+});
+
+test('V2.34.5 PROF_CONTROLS 补齐漏登记控件：dsh-z-allmobs 类型 c 且全表无重复', () => {
+  const code = expExtract('  var PROF_CONTROLS = [', '  ];') + '  ];';
+  const ctx = {}; vm.createContext(ctx);
+  vm.runInContext(code + ';this.list = PROF_CONTROLS;', ctx);
+  const ids = ctx.list.map((r) => r[0]);
+  const types = {}; for (const r of ctx.list) types[r[0]] = r[1];
+  const added = ['dsh-z-allmobs', 'dsh-z-astar', 'dsh-z-attmixmargin', 'dsh-np-huntmode', 'dsh-boss-range', 'dsh-boss-toast', 'dsh-alert', 'dsh-reconn', 'dsh-party-self'];
+  assert.equal(types['dsh-z-allmobs'], 'c', 'dsh-z-allmobs 必须登记进 PROF_CONTROLS 且类型为 c');
+  for (const id of added) assert.ok(ids.includes(id), 'PROF_CONTROLS 缺新增控件 ' + id);
+  assert.equal(ids.length, new Set(ids).size, 'PROF_CONTROLS 不得有重复 id');
+  for (const id of added) assert.ok(source.includes('id="' + id + '"'), '面板 HTML 找不到控件 id=' + id);
+  assert.equal(types['dsh-z-astar'], 'c'); assert.equal(types['dsh-z-attmixmargin'], 'v');
+  assert.equal(types['dsh-np-huntmode'], 'v'); assert.equal(types['dsh-boss-range'], 'v');
+  assert.equal(types['dsh-boss-toast'], 'c'); assert.equal(types['dsh-alert'], 'c');
+  assert.equal(types['dsh-reconn'], 'c'); assert.equal(types['dsh-party-self'], 'c');
+});
+
+test('V2.34.5 名单归属校验：profMemKey 与当前档不一致时不得反写 profiles[key].lockList/askList', () => {
+  const code = extract('  function saveSaved(o) {', '  var version = (location.href.match');
+  const mk = (profMemKey) => {
+    const store = {};
+    const profiles = { 'hero_1': { name: 'h', gid: 1, saved: {}, lockList: { '1': { name: '旧锁' } }, askList: [{ skid: 1 }], lastAt: 0 } };
+    const ctx = {
+      LOGIN_KEYS: ['account', 'password', 'server', 'autoBoot'],
+      LS_KEY: 'dsh_ro_plugin_v1',
+      localStorage: { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } },
+      profiles, lockList: { '9': { name: '新锁' } }, askList: [{ skid: 99 }], profMemKey,
+      activeProfileKey: () => 'hero_1',
+      ensureProfile: (k) => { if (!profiles[k]) profiles[k] = { name: k, gid: 0, saved: {}, lockList: {}, askList: [], lastAt: 0 }; return profiles[k]; },
+      saveProfiles: () => {}, saved: null, console: { log: () => {} }
+    };
+    vm.createContext(ctx);
+    vm.runInContext(code + ';this.save = saveSaved', ctx);
+    return { ctx, profiles };
+  };
+  const bad = mk('other_2');
+  bad.ctx.save({ someKey: 1 });
+  assert.deepEqual(bad.profiles['hero_1'].lockList, { '1': { name: '旧锁' } }, '归属不符时 lockList 必须保持原值不动');
+  assert.deepEqual(bad.profiles['hero_1'].askList, [{ skid: 1 }], '归属不符时 askList 必须保持原值不动');
+  assert.equal(bad.profiles['hero_1'].saved.someKey, 1, '普通设置键仍必须正常写回');
+  const good = mk('hero_1');
+  good.ctx.save({ someKey: 1 });
+  assert.deepEqual(good.profiles['hero_1'].lockList, { '9': { name: '新锁' } }, '归属一致时 lockList 必须写回');
+  assert.deepEqual(good.profiles['hero_1'].askList, [{ skid: 99 }], '归属一致时 askList 必须写回');
+});
+
+test('V2.34.5 三处结构断言：captureAll 早退 / applyProfileUI 末尾置位 / setActiveProfile 复位必须同时存在', () => {
+  for (const [name, src] of [['stable', source], ['exp', expSource]]) {
+    assert.ok(src.includes('var profUIApplied = false; // V2.34.5'), name + ' 缺 profUIApplied 声明');
+    const capStart = src.indexOf('  function captureAll() {');
+    assert.ok(capStart >= 0, name + ' 找不到 captureAll');
+    const capSeg = src.slice(capStart, src.indexOf('\n  }', src.indexOf('saveSaved(saved);', capStart)));
+    const capGate = capSeg.indexOf('if (!profUIApplied) return; // V2.34.5');
+    assert.ok(capGate >= 0, name + ' captureAll 必须含 profUIApplied 早退');
+    assert.ok(capGate < capSeg.indexOf('var ui = {};'), name + ' 早退必须是 captureAll 首句（任何读值之前）');
+    assert.ok(capGate < capSeg.indexOf('saveSaved(saved)'), name + ' 早退必须在落盘之前');
+    const apStart = src.indexOf('  function applyProfileUI() {');
+    const apTrue = src.indexOf('profUIApplied = true;', apStart);
+    assert.ok(apTrue > apStart, name + ' applyProfileUI 必须置 profUIApplied = true');
+    const apSeg = src.slice(apStart, src.indexOf('\n  }', apTrue));
+    assert.ok(apSeg.indexOf('var ui = saved.ui || {};') < apSeg.indexOf('profUIApplied = true;'), name + ' 置位必须在所有控件填充之后（函数体末尾）');
+    const spStart = src.indexOf('function setActiveProfile(k)');
+    const spSeg = src.slice(spStart, src.indexOf('\n', spStart));
+    assert.ok(spSeg.includes('profUIApplied = false;'), name + ' setActiveProfile 必须复位 profUIApplied');
+    assert.ok(src.includes('try { profUIApplied = true; captureAll(); } catch (e) {}'), name + ' 「保存当前角色设置」必须显式先置位再落盘（人工兜底）');
+  }
+});
+
+test('V2.34.5 战斗诊断快照 prof 字段已就位（不改既有字段）', () => {
+  for (const [name, src] of [['stable', source], ['exp', expSource]]) {
+    const at = src.indexOf('ready: profUIApplied');
+    assert.ok(at > 0, name + ' zDiagSnapNow 必须带 prof.ready');
+    assert.ok(src.includes('k: activeCharKey, n: Object.keys(profiles).length, ready: profUIApplied, lock: Object.keys(lockList || {}).length, ask: (askList || []).length'), name + ' prof 字段口径必须完整');
+    const snap = src.slice(src.indexOf('  function zDiagSnapNow() {'), at);
+    for (const keep of ['atkWhy: zAtkWhy', 'zAllMobs: !$id("dsh-z-allmobs")', 'sitWhy: zSitWhy']) assert.ok(snap.includes(keep), name + ' 既有诊断字段被改动: ' + keep);
+  }
+});
+
+
+// ================= V2.34.5：配置自动备份（两代）/ 黄金副本找回（纯函数真值表 / 按钮 / 键隔离）=================
+test('V2.34.5 版本号升到 2.34.5（@version 与运行时常量一致，两文件同步）', () => {
+  for (const [name, src] of [['stable', source], ['exp', expSource]]) {
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.34.5', name + ' @version 必须是 2.34.5');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.34.5', name + ' 运行时常量 VER 必须是 2.34.5');
+  }
+});
+
+test('V2.34.5 goldenFillIn 真值表：缺档补齐 / 缺 ui 键补齐 / 本地已有值胜出 / 缺名单条目补齐 / 无差异返回 false', () => {
+  const code = extract('  function goldenFillIn(', '  // 启动自动找回');
+  const ctx = { JSON, Object, Array, String };
+  vm.createContext(ctx);
+  vm.runInContext(code + ';this.fn = goldenFillIn', ctx);
+  const golden = {
+    hero_1: { name: 'hero', gid: 1, lastAt: 111, saved: { ui: { A: '9', B: '2' }, other: 'keep' }, lockList: { '1002': { name: 'Poring' } }, askList: [{ skid: 10, lv: 5 }, { skid: 20 }] },
+    hero_9: { name: 'nine', gid: 9, lastAt: 999, saved: { ui: { Z: '1' } }, lockList: { '5': { name: 'x' } }, askList: [{ skid: 1 }] }
+  };
+  const snap = JSON.stringify(golden);
+  // 1) 本地缺档 → 整档补齐（深拷贝，不共享引用）
+  const local1 = { hero_1: { name: 'mine', gid: 1, lastAt: 5, saved: { ui: { A: '1' }, mine: 'x' }, lockList: { '1002': { name: '本地锁定' } }, askList: [{ skid: 10, lv: 99 }] } };
+  assert.equal(ctx.fn(local1, golden), true, '有补齐必须返回 true');
+  assert.deepEqual(JSON.parse(JSON.stringify(local1.hero_9)), JSON.parse(JSON.stringify(golden.hero_9)), '本地缺失的档必须整档补齐');
+  assert.notEqual(local1.hero_9, golden.hero_9, '补齐的档必须是深拷贝，不得与副本共享引用');
+  // 2) 已有档：本地已有的值一律胜出，副本只补缺失键
+  assert.equal(local1.hero_1.saved.ui.A, '1', '本地已有的 ui 键绝不能被副本覆盖（本地胜出：本地 1 vs 副本 9）');
+  assert.equal(local1.hero_1.saved.ui.B, '2', '本地缺失的 ui 键必须补齐');
+  assert.equal(local1.hero_1.saved.mine, 'x', '本地 saved 下其它键不得被碰');
+  assert.equal(local1.hero_1.name, 'mine', '本地 name 不得被覆盖');
+  assert.equal(local1.hero_1.gid, 1, '本地 gid 不得被覆盖');
+  assert.equal(local1.hero_1.lastAt, 5, '本地 lastAt 不得被覆盖');
+  assert.deepEqual(local1.hero_1.lockList['1002'], { name: '本地锁定' }, '同名 lockList 条目本地胜出');
+  assert.deepEqual(local1.hero_1.askList, [{ skid: 10, lv: 99 }, { skid: 20 }], '同 skid 的条目不得重复追加（本地 lv:99 胜出），缺失的 skid:20 必须补齐');
+  assert.equal(JSON.stringify(golden), snap, '纯函数不得修改副本对象');
+  // 3) 已有档缺 lockList / askList 条目 → 补齐
+  const local2 = { hero_1: { name: 'h', gid: 1, lastAt: 0, saved: { ui: { A: '1', B: '2' } }, lockList: {}, askList: [] } };
+  assert.equal(ctx.fn(local2, golden), true);
+  assert.deepEqual(local2.hero_1.lockList, { '1002': { name: 'Poring' } }, '缺失的 lockList 条目必须补齐');
+  assert.deepEqual(local2.hero_1.askList, [{ skid: 10, lv: 5 }, { skid: 20 }], '缺失的 askList 条目必须补齐');
+  assert.deepEqual(local2.hero_1.saved.ui, { A: '1', B: '2' }, '已有 ui 键不得被改动');
+  // 4) 无差异 → false 且对象逐字节不变
+  const local3 = JSON.parse(JSON.stringify(golden));
+  const before3 = JSON.stringify(local3);
+  assert.equal(ctx.fn(local3, golden), false, '无差异必须返回 false');
+  assert.equal(JSON.stringify(local3), before3, '无差异时对象不得被改动');
+  // 5) 空/非法输入不抛错
+  assert.equal(ctx.fn(null, golden), false);
+  assert.equal(ctx.fn({}, null), false);
+  assert.equal(ctx.fn({}, {}), false);
+});
+
+test('V2.34.5 恢复副本键 dsh_ro_profiles_v2.golden 不进 KV_KEYS（否则 5 秒轮询自动互覆）', () => {
+  for (const [name, src] of [['stable', source], ['exp', expSource]]) {
+    const at = src.indexOf('  var KV_KEYS = [');
+    assert.ok(at > 0, name + ' 找不到 KV_KEYS');
+    const kvSrc = src.slice(at, src.indexOf('];', at));
+    assert.ok(!kvSrc.includes('golden'), name + ' KV_KEYS 行内不得出现 golden');
+    const ctx = {}; vm.createContext(ctx); vm.runInContext(kvSrc + '];this.keys = KV_KEYS', ctx);
+    assert.ok(ctx.keys.includes('dsh_ro_profiles_v2'), name + ' KV_KEYS 必须仍含 dsh_ro_profiles_v2');
+    assert.ok(!ctx.keys.includes('dsh_ro_profiles_v2.golden'), name + ' KV_KEYS 不得包含 dsh_ro_profiles_v2.golden');
+    assert.ok(src.includes('var PROF_GOLDEN_KEY = PROF_KEY + ".golden";'), name + ' 恢复副本键必须独立定义');
+    assert.ok(src.includes('if (typeof fetch !== "function") return;'), name + ' 自动找回必须有 fetch 可用性守卫（8899 未启动静默）');
+    assert.ok(src.includes('setTimeout(function () { try { goldenAutoRecover(); } catch (e) {} }, 6000);'), name + ' 启动自动找回必须只跑一次（6000ms）');
+  }
+});
+
+test('V2.34.5 两个恢复副本按钮与导出/导入同处一行且监听器就位', () => {
+  for (const [name, src] of [['stable', source], ['exp', expSource]]) {
+    const at = src.indexOf('<button id="dsh-cfg-exp"');
+    assert.ok(at > 0, name + ' 找不到导出配置按钮');
+    const row = src.slice(src.lastIndexOf('<div class="row"', at), src.indexOf('</div>', at));
+    for (const id of ['dsh-cfg-exp', 'dsh-cfg-imp', 'dsh-cfg-golden-save', 'dsh-cfg-golden-restore']) {
+      assert.ok(row.includes('id="' + id + '"'), name + ' 按钮 ' + id + ' 必须在导出/导入同一 row 字符串内');
+    }
+    assert.ok(row.includes('<button id="dsh-cfg-golden-save"'), name + ' 「保存为恢复副本」沿用非 ghost 样式（与导出配置一致）');
+    assert.ok(row.includes('<button class="ghost" id="dsh-cfg-golden-restore"'), name + ' 「恢复上次配置」必须 class=ghost');
+    assert.ok(src.includes('$id("dsh-cfg-golden-save").addEventListener("click"'), name + ' 缺保存按钮监听');
+    assert.ok(src.includes('$id("dsh-cfg-golden-restore").addEventListener("click"'), name + ' 缺恢复按钮监听');
+    assert.ok(src.includes('"已保存恢复副本"'), name + ' 缺保存成功提示');
+    assert.ok(src.includes('setStatus("已从恢复副本补齐缺失配置", "ok")'), name + ' 缺自动补齐提示');
+    assert.ok(src.includes('setStatus("恢复副本里没有该角色的档", "err")'), name + ' 缺「副本里没有该角色的档」提示');
+  }
+});
+
+test('V2.34.5 备份轮转：首轮写 .bak/.bak2、同一次加载第二次不再轮转、值与 .bak 相同不轮转', () => {
+  const code = extract('  function profBackupRotate(', '  function ensureProfile(');
+  const run = (init) => {
+    const store = new Map(Object.entries(init));
+    const ctx = {
+      PROF_KEY: 'dsh_ro_profiles_v2', PROF_BAK_KEY: 'dsh_ro_profiles_v2.bak', PROF_BAK2_KEY: 'dsh_ro_profiles_v2.bak2',
+      PROF_BAK_AT: 'dsh_ro_prof_bak_at', profBackupDone: false, Date,
+      localStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => { store.set(k, String(v)); } }
+    };
+    vm.createContext(ctx);
+    vm.runInContext(code + ';this.fn = profBackupRotate', ctx);
+    return { ctx, store };
+  };
+  const a = run({ dsh_ro_profiles_v2: 'v2', 'dsh_ro_profiles_v2.bak': 'v1' });
+  assert.equal(a.ctx.fn(), true, '首轮必须轮转');
+  assert.equal(a.store.get('dsh_ro_profiles_v2.bak'), 'v2', '当前值必须写入 .bak');
+  assert.equal(a.store.get('dsh_ro_profiles_v2.bak2'), 'v1', '旧 .bak 必须轮转到 .bak2');
+  assert.ok(a.store.get('dsh_ro_prof_bak_at'), '轮转时间戳必须写入独立键 dsh_ro_prof_bak_at（不入 KV_KEYS）');
+  a.store.set('dsh_ro_profiles_v2', 'v3');
+  assert.equal(a.ctx.fn(), false, '同一次页面加载第二次调用不得再轮转（profBackupDone 语义）');
+  assert.equal(a.store.get('dsh_ro_profiles_v2.bak'), 'v2', '.bak 不得被第二次调用改写');
+  assert.equal(a.store.get('dsh_ro_profiles_v2.bak2'), 'v1', '.bak2 不得被第二次调用改写');
+  const b = run({ dsh_ro_profiles_v2: 'same', 'dsh_ro_profiles_v2.bak': 'same' });
+  assert.equal(b.ctx.fn(), false, '当前值等于 .bak 现有值时不得重复轮转');
+  assert.ok(!b.store.has('dsh_ro_profiles_v2.bak2'), '值相同时不得写 .bak2');
+  const c = run({});
+  assert.equal(c.ctx.fn(), false, '无当前值时必须安全返回 false');
+  for (const [name, src] of [['stable', source], ['exp', expSource]]) {
+    assert.ok(src.includes('function profBackupRotate('), name + ' 缺 profBackupRotate');
+    const sp = src.slice(src.indexOf('  function saveProfiles() {'), src.indexOf('  function profBackupRotate('));
+    assert.ok(sp.indexOf('profBackupRotate()') >= 0, name + ' saveProfiles 必须先调用 profBackupRotate()');
+    assert.ok(sp.indexOf('profBackupRotate()') < sp.indexOf('localStorage.setItem(PROF_KEY'), name + ' 轮转必须早于真正写 localStorage');
+  }
+  assert.ok(source.includes('var profBackupDone = false; // V2.34.5'), '必须有内存标志 profBackupDone');
+});

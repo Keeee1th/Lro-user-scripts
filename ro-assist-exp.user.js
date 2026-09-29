@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手 · 实验版）
 // @namespace    dsh.ro-plugin
-// @version      2.34.4
+// @version      2.34.5
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -67,6 +67,10 @@
 // ---------------- V2.34.4 变更摘要 ----------------
 // 1. 攻击名单语义修正：名单非空时只主动攻击名单内怪物（「打全部怪」不再覆盖名单）；名单为空时按「打全部怪」（勾=主动攻击全部，取消=不主动攻击，但还击/群殴瞬移/解围技能照常）。
 // 2. 追怪口径对齐：zWalk 的怪物 ID 推导补齐 mobId 兜底；还击锁定的攻击者纳入 zWalk 追击候选，修「还击目标不被追、站着挨打」。
+// ---------------- V2.34.5 变更摘要 ----------------
+// 1. 修复角色设置回默认（根因）：界面未按当前档填充前禁止把界面值落盘（此前页面一打开就用 HTML 默认值覆盖档案）；落盘改为合并写入；锁定名单写回加归属校验（防被错档名单反写覆盖）；补齐此前漏登记的 9 个设置控件（含「打全部怪」）。
+// 2. 新增配置自动备份：每次页面加载首次落盘前把 dsh_ro_profiles_v2 轮转两代（.bak / .bak2）留底。
+// 3. 新增黄金副本：经本机 8899 保存/读取恢复副本，启动时自动补齐缺失的档与键（只补不覆盖）；功能菜单「导出配置/导入配置」同一行新增「保存为恢复副本」「恢复上次配置」两个按钮。
 
 (function () {
   "use strict";
@@ -92,7 +96,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.34.4"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.34.5"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
 
   // V2.11.0：仓库+背包读取全局变量
@@ -103,6 +107,9 @@
   // 全局（登录/线路）→ dsh_ro_plugin_v1；角色设置（全部开关/技能/锁定/自动技能）→ dsh_ro_profiles_v2
   var LOGIN_KEYS = ["account", "password", "server", "autoBoot"];
   var PROF_KEY = "dsh_ro_profiles_v2";
+  var PROF_BAK_KEY = PROF_KEY + ".bak", PROF_BAK2_KEY = PROF_KEY + ".bak2"; // V2.34.5：本地备份两代（独立键，不入 KV_KEYS）
+  var PROF_BAK_AT = "dsh_ro_prof_bak_at"; // V2.34.5：仅诊断用（最近一次轮转时间），不入 KV_KEYS
+  var profBackupDone = false; // V2.34.5：每次页面加载只在首次落盘前轮转一次本地备份
   var profiles = loadProfiles();
   pruneProfiles(); // V2.8.9：启动即归并历史小数垃圾键（无损，只删重复档）
   var activeCharKey = "default";
@@ -110,10 +117,32 @@
   try { var _lastAk = localStorage.getItem("dsh_ro_last_active"); if (_lastAk && profiles[_lastAk]) activeCharKey = _lastAk; } catch (e) {}
   var lastCharGid = null; // 已识别的主角色 GID（换角色自动切档）
   var lastCharName = null; // V2.32.2 已识别角色名（游戏内切角色 GID 可能不变，加角色名双检测）
+  var profUIApplied = false; // V2.34.5：仅在 applyProfileUI 完成对当前档的填充后，才允许把界面值落盘
+  var profMemKey = null; // V2.34.5：内存 lockList/askList 当前所属档案键
   function activeProfileKey() { return activeCharKey; }
-  function setActiveProfile(k) { activeCharKey = k || "default"; try { localStorage.setItem("dsh_ro_last_active", activeCharKey); } catch (e) {} }
+  function setActiveProfile(k) { activeCharKey = k || "default"; profUIApplied = false; try { localStorage.setItem("dsh_ro_last_active", activeCharKey); } catch (e) {} }
   function loadProfiles() { try { return JSON.parse(localStorage.getItem(PROF_KEY)) || {}; } catch (e) { return {}; } }
-  function saveProfiles() { try { localStorage.setItem(PROF_KEY, JSON.stringify(profiles)); } catch (e) {} }
+  function saveProfiles() {
+    try {
+      profBackupRotate(); // V2.34.5：真正写 localStorage 之前先把旧值轮转备份（每次页面加载只一次）
+      localStorage.setItem(PROF_KEY, JSON.stringify(profiles));
+    } catch (e) {}
+  }
+  // V2.34.5：本地自动备份（保留两代）——当前值 → .bak，旧 .bak → .bak2；仅当前值非空且与 .bak 现有值不同才轮转
+  function profBackupRotate(force) {
+    try {
+      if (profBackupDone && !force) return false;
+      profBackupDone = true;
+      var cur = localStorage.getItem(PROF_KEY);
+      if (!cur) return false;
+      var bak = localStorage.getItem(PROF_BAK_KEY);
+      if (cur === bak) return false;
+      if (bak != null) localStorage.setItem(PROF_BAK2_KEY, bak);
+      localStorage.setItem(PROF_BAK_KEY, cur);
+      try { localStorage.setItem(PROF_BAK_AT, String(Date.now())); } catch (e0) {}
+      return true;
+    } catch (e) { return false; }
+  }
   function ensureProfile(k) { if (!profiles[k]) profiles[k] = { name: k, gid: 0, saved: {}, lockList: {}, askList: [], lastAt: 0 }; return profiles[k]; }
   // V2.8.9：lastro 自身实体 GID 是带随机小数的浮点（引擎自己用 parseInt 比较），
   // 这里统一取整（Math.floor），非法/非正数返回 0，避免每秒拼出 name_GID.<小数> 的新档键。
@@ -226,8 +255,13 @@
       ensureProfile(key);
       var p = profiles[key];
       for (var kp in prof) p.saved[kp] = prof[kp];
-      p.lockList = (typeof lockList !== "undefined" && lockList) || (p.lockList || {});
-      p.askList = (typeof askList !== "undefined" && askList) || (p.askList || []);
+      // V2.34.5：名单写回加归属校验——内存 lockList/askList 不属于本档时不得反写覆盖（KV 中继刷新/切档后可能错档）
+      if (profMemKey === key) {
+        p.lockList = (typeof lockList !== "undefined" && lockList) || (p.lockList || {});
+        p.askList = (typeof askList !== "undefined" && askList) || (p.askList || []);
+      } else {
+        try { console.log('[PROFILE] 名单归属不符，跳过写回'); } catch (e0) {}
+      }
       p.lastAt = Date.now();
       saveProfiles();
     } catch (e) {}
@@ -1118,7 +1152,7 @@
       '<div class="row"><span class="lb">填入后等待</span><input id="dsh-capwait" type="number" value="10" min="0" style="flex:0 0 48px"><span style="color:#5a6b7f">s 再点「下面」（0=立即提交）</span></div>' +
       '<div class="log">点登录/换角色弹验证时自动读算式算结果，填入输入框，等 N 秒后自动点「下面」提交。</div>' +
       '<div class="sec">配置备份</div>' +
-      '<div class="row" style="gap:6px;flex-wrap:wrap"><button id="dsh-cfg-exp" style="flex:0 0 auto">导出配置</button><button class="ghost" id="dsh-cfg-imp" style="flex:0 0 auto">导入配置</button></div>' +
+      '<div class="row" style="gap:6px;flex-wrap:wrap"><button id="dsh-cfg-exp" style="flex:0 0 auto">导出配置</button><button class="ghost" id="dsh-cfg-imp" style="flex:0 0 auto">导入配置</button><button id="dsh-cfg-golden-save" style="flex:0 0 auto">保存为恢复副本</button><button class="ghost" id="dsh-cfg-golden-restore" style="flex:0 0 auto">恢复上次配置</button></div>' +
       '<div class="log">导出=把本入口全部配置（角色档/技能/传送点/快捷键/高亮/白名单等）打包成 JSON 下载；导入=选文件恢复。跨入口/跨机器迁移或备份用，导入后刷新页面生效。</div>' +
       '<div class="sec">扩展脚本（独立功能包）</div>' +
       '<div id="dsh-extlist" style="font-size:11px;max-height:130px;overflow:auto"><span class="st">未检测到扩展脚本（安装独立功能包后自动显示）</span></div>'
@@ -3510,11 +3544,18 @@
     ["dsh-followtarget", "v"], ["dsh-followdist", "v"], ["dsh-followen", "c"],
     ["dsh-itempick", "v"], ["dsh-itemcond", "v"], ["dsh-itemcondval", "v"], ["dsh-itemen", "c"],
     ["dsh-lootprob", "v"], ["dsh-openpick", "c"], ["dsh-picken", "c"], ["dsh-pickwalk", "c"], ["dsh-picksafe", "c"], ["dsh-bountyhl", "c"], ["dsh-bgkeep", "c"], ["dsh-capauto", "c"], ["dsh-capwait", "v"], ["dsh-z-rein", "c"], ["dsh-sync-en", "c"], ["dsh-sync-mode", "v"], ["dsh-sync-int", "v"],
-    ["dsh-perf-on", "c"], ["dsh-perf-q", "v"], ["dsh-perf-fog", "c"], ["dsh-perf-lightmap", "c"], ["dsh-perf-effect", "c"], ["dsh-perf-mineffect", "c"], ["dsh-perf-miss", "c"], ["dsh-perf-fpslock", "c"], ["dsh-perf-fps", "v"]
+    ["dsh-perf-on", "c"], ["dsh-perf-q", "v"], ["dsh-perf-fog", "c"], ["dsh-perf-lightmap", "c"], ["dsh-perf-effect", "c"], ["dsh-perf-mineffect", "c"], ["dsh-perf-miss", "c"], ["dsh-perf-fpslock", "c"], ["dsh-perf-fps", "v"],
+    // V2.34.5：补齐此前漏登记的用户设置控件（这些控件运行时直接读 DOM，登记后才会随档保存/恢复）
+    ["dsh-z-allmobs", "c"], ["dsh-z-astar", "c"], ["dsh-z-attmixmargin", "v"],
+    ["dsh-np-huntmode", "v"], ["dsh-boss-range", "v"], ["dsh-boss-toast", "c"],
+    ["dsh-alert", "c"], ["dsh-reconn", "c"], ["dsh-party-self", "c"]
   ];
   function captureAll() {
     try {
+      if (!profUIApplied) return; // V2.34.5：界面尚未按当前档填充，禁止落盘（防默认值覆盖档案）
+      // V2.34.5：以现有 saved.ui 为底合并写入（新增/改名控件不再连带丢失其它设置）
       var ui = {};
+      try { if (saved && saved.ui) for (var kb in saved.ui) ui[kb] = saved.ui[kb]; } catch (e0) {}
       for (var i = 0; i < PROF_CONTROLS.length; i++) {
         var id = PROF_CONTROLS[i][0], tp = PROF_CONTROLS[i][1];
         var el = $id(id); if (!el) continue;
@@ -3595,6 +3636,7 @@
       }
       // V1.9.4：高亮规则名单（localStorage dsh_ro_hlrules）随角色档重建样式与列表
       try { rebuildBountyStyle(); renderHlList(); } catch (e) {}
+      profUIApplied = true; // V2.34.5：当前档已填充完毕，此后才允许 captureAll 落盘
     } catch (e) {}
   }
   // 角色切换 → 切档 + 自动加载上次保存（第8项）
@@ -3625,6 +3667,7 @@
       if (btDiagOn) { try { btLog('hk', '切档=' + key + ' panel=' + JSON.stringify(hkOf('panel')) + ' np=' + JSON.stringify(hkOf('np')) + ' zhu=' + JSON.stringify(hkOf('zhu'))); } catch (e) {} }
       lockList = profiles[key].lockList || {};
       askList = profiles[key].askList || [];
+      profMemKey = activeProfileKey(); // V2.34.5：内存名单归属=当前档（切档后名单已同步）
       applyProfileUI();
       try { fillZhuQoaskill(); } catch (e) {} // V2.16.7：切档后重填解围下拉（新角色已学技能，清掉旧角色技能）
       try { syncApplyRuntime(); renderSyncState(); } catch (e) {} // V2.15.10：切档后同步器按新档配置启停
@@ -3639,7 +3682,8 @@
     } catch (e) { try { roFeedback("角色设置切换失败：" + (e.message || e), "err"); } catch (e2) {} }
   }
   $id("dsh-saveprofile").addEventListener("click", function () {
-    try { captureAll(); } catch (e) {}
+    // V2.34.5：用户显式点「保存当前角色设置」=明确意图，即使界面未按档填充也强制落盘一次
+    try { profUIApplied = true; captureAll(); } catch (e) {}
     renderWinInfo();
     setStatus("已保存当前角色设置（档: " + activeProfileKey() + "）", "ok");
   });
@@ -4965,7 +5009,7 @@
 
   // ---------------- B5：自动使用技能（点选技能栏主动辅助 · 调序）----------------
   var askList = (function () {
-    try { ensureProfilesInit(); var k = activeProfileKey(); return (profiles[k] && profiles[k].askList) || []; } catch (e) { return []; }
+    try { ensureProfilesInit(); var k = activeProfileKey(); profMemKey = k; return (profiles[k] && profiles[k].askList) || []; } catch (e) { return []; }
   })();
   var askPickIdx = -1;
   function saveAskList() {
@@ -6234,7 +6278,7 @@
   var zLockCounts = {}; // V1.7.5 每次锁定释放次数计数（换目标/重新锁定时清零）
   var zCastIdx = 0;     // V1.7.5 技能轮换游标：下轮从该索引开始扫（拖拽顺序真正生效）
   var lockList = (function () {
-    try { ensureProfilesInit(); var k = activeProfileKey(); return (profiles[k] && profiles[k].lockList) || {}; } catch (e) { return {}; }
+    try { ensureProfilesInit(); var k = activeProfileKey(); profMemKey = k; return (profiles[k] && profiles[k].lockList) || {}; } catch (e) { return {}; }
   })();
   var zLastPos = null, zStuckSince = null;
 
@@ -7045,7 +7089,9 @@
       flyFailUntil: flyFailUntil || 0,
       lastFly: lastFly || 0,
       sitWhy: zSitWhy,
-      atkWhy: zAtkWhy
+      atkWhy: zAtkWhy,
+      // V2.34.5：档案诊断（当前档键/档数/界面是否已按档填充/名单归属与规模）
+      prof: (function () { try { return { k: activeCharKey, n: Object.keys(profiles).length, ready: profUIApplied, lock: Object.keys(lockList || {}).length, ask: (askList || []).length }; } catch (eP) { return null; } })()
     };
   }
   function zDiagTick() {
@@ -14745,5 +14791,125 @@
     try { kvSyncLoop(); } catch (e) {}
     setInterval(function () { try { kvSyncLoop(); } catch (e) {} }, 5000);
   }, 2500);
+  // ================= V2.34.5 黄金副本（本机 8899 显式读写 · 该键严禁加入 KV_KEYS）=================
+  // dsh_ro_profiles_v2.golden 不参与 5 秒轮询自动同步（一旦进 KV_KEYS 会导致两个入口自动互相覆盖）。
+  var PROF_GOLDEN_KEY = PROF_KEY + ".golden";
+  // 纯函数（不碰 localStorage/DOM）：只把恢复副本里「本地缺失」的档与键补进来；本地已有的值一律不动。
+  function goldenFillIn(localProfiles, goldenProfiles) {
+    try {
+      if (!localProfiles || typeof localProfiles !== "object") return false;
+      if (!goldenProfiles || typeof goldenProfiles !== "object") return false;
+      var changed = false;
+      var cp = function (v) { return JSON.parse(JSON.stringify(v)); };
+      var has = function (o, k) { return Object.prototype.hasOwnProperty.call(o, k); };
+      for (var gk in goldenProfiles) {
+        var gp = goldenProfiles[gk];
+        if (!gp || typeof gp !== "object") continue;
+        var lp = has(localProfiles, gk) ? localProfiles[gk] : null;
+        if (!lp || typeof lp !== "object") { localProfiles[gk] = cp(gp); changed = true; continue; } // 本地缺档 → 整档补齐
+        var gui = (gp.saved && typeof gp.saved === "object" && gp.saved.ui && typeof gp.saved.ui === "object") ? gp.saved.ui : null;
+        if (gui) { // 已有档：只补缺失的 saved.ui 键（本地其它 saved 键 / name / gid / lastAt 一律不动）
+          if (!lp.saved || typeof lp.saved !== "object") lp.saved = {};
+          if (!lp.saved.ui || typeof lp.saved.ui !== "object") lp.saved.ui = {};
+          for (var uk in gui) { if (!has(lp.saved.ui, uk)) { lp.saved.ui[uk] = cp(gui[uk]); changed = true; } }
+        }
+        if (gp.lockList && typeof gp.lockList === "object") { // 只补缺失条目，同 ID 已有则以本地为准
+          if (!lp.lockList || typeof lp.lockList !== "object") lp.lockList = {};
+          for (var lk in gp.lockList) { if (!has(lp.lockList, lk)) { lp.lockList[lk] = cp(gp.lockList[lk]); changed = true; } }
+        }
+        if (Array.isArray(gp.askList)) { // 只补缺失条目（同 skid 视为已有；无 skid 时按整体相等判定）
+          if (!Array.isArray(lp.askList)) lp.askList = [];
+          for (var ai = 0; ai < gp.askList.length; ai++) {
+            var ae = gp.askList[ai], dup = false;
+            for (var aj = 0; aj < lp.askList.length; aj++) {
+              var le = lp.askList[aj];
+              if (le && ae && le.skid !== undefined && ae.skid !== undefined) { if (String(le.skid) === String(ae.skid)) { dup = true; break; } continue; }
+              if (JSON.stringify(le) === JSON.stringify(ae)) { dup = true; break; }
+            }
+            if (!dup) { lp.askList.push(cp(ae)); changed = true; }
+          }
+        }
+      }
+      return changed;
+    } catch (e) { return false; }
+  }
+  // 启动自动找回（只跑一次；6000ms 晚于 KV 中继首轮）：只补齐缺失项，绝不覆盖本地已有值；8899 未启动则静默跳过
+  function goldenAutoRecover() {
+    try {
+      if (typeof fetch !== "function") return;
+      fetch(KV_BASE + "/get?key=" + encodeURIComponent(PROF_GOLDEN_KEY))
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          try {
+            if (!j || !j.ok || typeof j.value !== "string" || !j.value) return;
+            var gp = null; try { gp = JSON.parse(j.value); } catch (e0) { return; }
+            if (!gp || typeof gp !== "object") return;
+            if (!goldenFillIn(profiles, gp)) return;
+            saveProfiles();
+            profiles = loadProfiles();
+            saved = loadSaved();
+            var pk = activeProfileKey();
+            try { lockList = (profiles[pk] && profiles[pk].lockList) || {}; } catch (e1) { lockList = {}; }
+            try { askList = (profiles[pk] && profiles[pk].askList) || []; } catch (e2) { askList = []; }
+            try { profMemKey = activeProfileKey(); } catch (e3) {}
+            if (panel && panel.style.display !== "none") applyProfileUI();
+            try { renderLockList(); renderAskList(); } catch (e4) {}
+            setStatus("已从恢复副本补齐缺失配置", "ok");
+          } catch (e) {}
+        })
+        .catch(function () {});
+    } catch (e) {}
+  }
+  // 按钮「保存为恢复副本」：把当前 dsh_ro_profiles_v2 显式 POST 到恢复副本键（该键不进 KV_KEYS）
+  $id("dsh-cfg-golden-save").addEventListener("click", function () {
+    try {
+      var cur = localStorage.getItem(PROF_KEY);
+      if (!cur) { setStatus("暂无可保存的配置", "err"); return; }
+      fetch(KV_BASE + "/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: PROF_GOLDEN_KEY, value: cur, ts: Date.now() }) })
+        .then(function (r) { return r.json(); })
+        .then(function (j) { setStatus(j && j.ok ? "已保存恢复副本" : "保存恢复副本失败：先启动本机 8899 服务", j && j.ok ? "ok" : "err"); })
+        .catch(function () { try { setStatus("保存恢复副本失败：先启动本机 8899 服务", "err"); } catch (e0) {} });
+    } catch (e) { try { setStatus("保存恢复副本失败：先启动本机 8899 服务", "err"); } catch (e2) {} }
+  });
+  // 按钮「恢复上次配置」：用户显式操作 → 允许覆盖当前档（先 profBackupRotate(true) 留底）
+  $id("dsh-cfg-golden-restore").addEventListener("click", function () {
+    try { profBackupRotate(true); } catch (e) {}
+    try {
+      fetch(KV_BASE + "/get?key=" + encodeURIComponent(PROF_GOLDEN_KEY))
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          try {
+            if (!j || !j.ok || typeof j.value !== "string" || !j.value) { setStatus("恢复副本不可用：先启动本机 8899 并保存一次", "err"); return; }
+            var gp = null; try { gp = JSON.parse(j.value); } catch (e0) { gp = null; }
+            var k = activeProfileKey();
+            var g = gp && gp[k];
+            if (!g || typeof g !== "object") { setStatus("恢复副本里没有该角色的档", "err"); return; }
+            var local = loadProfiles();
+            var lp = local[k];
+            if (!lp || typeof lp !== "object") { lp = local[k] = { name: g.name || k, gid: Number(g.gid) || 0, saved: {}, lockList: {}, askList: [], lastAt: Date.now() }; }
+            if (!lp.saved || typeof lp.saved !== "object") lp.saved = {};
+            if (!lp.saved.ui || typeof lp.saved.ui !== "object") lp.saved.ui = {};
+            var gui = (g.saved && typeof g.saved === "object" && g.saved.ui && typeof g.saved.ui === "object") ? g.saved.ui : null;
+            if (gui) for (var uk in gui) lp.saved.ui[uk] = gui[uk]; // 显式恢复：副本值覆盖本地同名键
+            if (g.lockList && typeof g.lockList === "object") lp.lockList = JSON.parse(JSON.stringify(g.lockList));
+            if (Array.isArray(g.askList)) lp.askList = JSON.parse(JSON.stringify(g.askList));
+            lp.lastAt = Date.now();
+            profiles = local;
+            saveProfiles();
+            profiles = loadProfiles();
+            saved = loadSaved();
+            var pk = activeProfileKey();
+            lockList = (profiles[pk] && profiles[pk].lockList) || {};
+            askList = (profiles[pk] && profiles[pk].askList) || [];
+            profMemKey = pk;
+            if (panel && panel.style.display !== "none") applyProfileUI();
+            try { renderLockList(); renderAskList(); } catch (e4) {}
+            setStatus("已恢复该角色的配置（档: " + pk + "）", "ok");
+          } catch (e) { try { setStatus("恢复配置失败: " + (e.message || e), "err"); } catch (e2) {} }
+        })
+        .catch(function () { try { setStatus("恢复失败：先启动本机 8899 服务", "err"); } catch (e0) {} });
+    } catch (e) { try { setStatus("恢复配置失败: " + (e.message || e), "err"); } catch (e2) {} }
+  });
+  setTimeout(function () { try { goldenAutoRecover(); } catch (e) {} }, 6000);
   init();
 })();

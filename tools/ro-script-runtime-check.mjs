@@ -715,10 +715,10 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
 
 // ================= V2.34.3：格子距离口径 / 内挂状态校准 / 混合接管兜底 / 坐下放宽 =================
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
-  // 1) 版本号：稳定版与实验版都必须是 2.34.3（@version 与运行时常量一致）
+  // 1) 版本号：稳定版与实验版都必须是 2.34.4（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.34.3', name + ' @version 必须是 2.34.3');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.34.3', name + ' 运行时常量 VER 必须是 2.34.3');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.34.4', name + ' @version 必须是 2.34.4');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.34.4', name + ' 运行时常量 VER 必须是 2.34.4');
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
   const stripHead = (s) => s.split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
@@ -833,9 +833,59 @@ test('exp V2.34.4 3A：名单有/无 × 打全部怪开/关 真值表（vm 实�
   }
 });
 
-test('exp V2.34.4 3A：名单为空且关「打全部怪」时主动攻击为假，但还击兜底链路仍在', () => {
-  const walk = expExtract('  function zWalk() {', '  // 无锁定怪持续 N 秒');
-  assert.equal(inLockEval(inLockExpr(expSource, 'zWalk'), false, false, {}, '1002'), false, '名单为空+全打关 → 非名单怪不主动攻击');
+test('exp V2.34.4 F5：非选中攻击者还击链路行为测试（vm 实跑 zAttack 分支）', () => {
+  // 提取还击分支本体：A5 标记 → 「换怪延迟」之前（含 hitCandEnt 处理与 onaMode 三路分支）
+  const seg = expExtract('      // V2.34.0 A5：非选中怪独立一路判定', '      // 换怪延迟：目标变化时记录延迟点');
+  for (const need of ['target = hitCandEnt;', 'zLock.gid = hitCandEnt.GID;', 'zLock.reactive = true;',
+    'if (onaMode === "瞬移" && !($id("dsh-z-flykill") && !$id("dsh-z-flykill").checked))']) {
+    assert.ok(seg.includes(need), '还击分支提取不完整，缺少: ' + need);
+  }
+  const run = (lockGid, mode) => {
+    const escapes = [];
+    const lock = { gid: lockGid, reactive: false, name: '', dist: null };
+    const ctx = {
+      gidInt: (v) => { const n = parseInt(v, 10); return isFinite(n) ? n : 0; },
+      zHitPrune: () => {}, zHitKeepMs: 3000,
+      zEntOf: (gid) => ({ GID: gid, display: { name: 'Mob' + gid }, _job: 1002, position: [1, 1] }),
+      zHitBy: { 4242: { ts: 9000, dist: 3 } },
+      zLock: lock, zMon: {}, onaMode: mode, now: 10000,
+      requestEmergencyEscape: (reason) => escapes.push(reason),
+      setStatus: () => {}, $id: () => null,
+      target: null, hitCandDist: 0, parseInt, isFinite, String,
+    };
+    vm.createContext(ctx);
+    vm.runInContext('this.fn = function () {\n' + seg + '\n};', ctx);
+    ctx.fn();
+    return { ctx, lock, escapes };
+  };
+  // 1) 还击 + 一个新近命中过我的攻击者 → 锁上它并追击
+  const r1 = run(null, '还击');
+  assert.ok(r1.ctx.target, '新近命中过我的攻击者必须成为 target（target = null 变异会被抓）');
+  assert.equal(r1.ctx.target.GID, 4242, 'target 必须是该攻击者实体');
+  assert.equal(r1.lock.gid, 4242, 'zLock.gid 必须锁到攻击者');
+  assert.equal(r1.lock.reactive, true, '必须标记为还击锁定（zLock.reactive = true）');
+  // 2) 攻击者 gid 等于 zLock.gid → 排除行仍生效，不还击
+  const r2 = run(4242, '还击');
+  assert.equal(r2.ctx.target, null, '锁定目标本身必须被排除（排除行仍然生效）');
+  assert.equal(r2.lock.reactive, false);
+  assert.equal(r2.escapes.length, 0);
+  // 3) onaMode=瞬移 → requestEmergencyEscape("最近受击")，不接管目标
+  const r3 = run(null, '瞬移');
+  assert.deepEqual(r3.escapes, ['最近受击'], '瞬移必须调用紧急逃生，原因=最近受击');
+  assert.equal(r3.ctx.target, null, '瞬移分支不得接管目标');
+  assert.equal(r3.lock.gid, null);
+});
+
+test('exp V2.34.4 F2：zWalk 把还击锁定的攻击者纳入追击候选（结构断言）', () => {
+  const walk = expExtract('  function zWalk() {', '  function zAttack() {');
+  const anchor = 'var zReactiveGid = zLock.reactive ? gidInt(zLock.gid) : 0;';
+  const adopt = 'if (!inLockN && zReactiveGid && gidInt(e.GID) === zReactiveGid) inLockN = true;';
+  assert.ok(walk.includes(anchor), 'zWalk 必须有还击锚点 zReactiveGid');
+  assert.ok(walk.includes(adopt), '还击锁定的攻击者必须被纳入 zWalk 追击候选');
+  const gi = walk.indexOf(adopt), gate = walk.indexOf('if (!inLockN && !allowHitTarget) return;');
+  assert.ok(gi >= 0 && gate >= 0 && gi < gate, '纳入行必须在 allowHitTarget 门之前（否则仍被 return 掉）');
+  assert.ok(walk.indexOf(anchor) < gi, '锚点必须声明在 forEach 循环之前');
+  // 原有还击兜底链路保持（含 allowHitTarget 门与 hitNear 收集/兜底分支）
   assert.ok(walk.includes('var allowHitTarget = beingHit && onaMode === "还击";'), '还击开关判定必须保留');
   assert.ok(walk.includes('if (!inLockN && !allowHitTarget) return;'), '非名单怪仍须走 allowHitTarget 门（还击路径保留）');
   assert.ok(walk.includes('if (!hitNear || hpNow < hitNearHp || (hpNow === hitNearHp && d < hitNearD)) { hitNear = e; hitNearD = d; hitNearHp = hpNow; }'), 'hitNear 还击候选收集必须保留');

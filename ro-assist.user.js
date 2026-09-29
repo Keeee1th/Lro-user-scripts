@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.34.3
+// @version      2.34.4
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -64,6 +64,9 @@
 // 3. 混合寻怪兜底：内挂实际关闭，或 2.5 秒原地未动且（被打 / 距怪≤接管距离+8）→ 判定内挂没在工作，助手自行接管 12 秒，不再死等。
 // 4. 自动坐下放宽：锁定目标已不在射程内且未被打时允许坐下；新增坐下/攻击原因诊断字段 sitWhy、atkWhy。
 // 5. 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）；战斗适配能力待该客户端实测确认。
+// ---------------- V2.34.4 变更摘要 ----------------
+// 1. 攻击名单语义修正：名单非空时只主动攻击名单内怪物（「打全部怪」不再覆盖名单）；名单为空时按「打全部怪」（勾=主动攻击全部，取消=不主动攻击，但还击/群殴瞬移/解围技能照常）。
+// 2. 追怪口径对齐：zWalk 的怪物 ID 推导补齐 mobId 兜底；还击锁定的攻击者纳入 zWalk 追击候选，修「还击目标不被追、站着挨打」。
 
 (function () {
   "use strict";
@@ -89,7 +92,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.34.3"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.34.4"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
 
   // V2.11.0：仓库+背包读取全局变量
@@ -7848,13 +7851,14 @@
       var beingHit = (now - zHpWatch.lastHitAt) < 3000; // 被攻击中
       var onaMode = $id("dsh-z-ona") ? $id("dsh-z-ona").value : "还击";
       var allowHitTarget = beingHit && onaMode === "还击"; // 被攻击且设置为还击 → 无锁定怪时非锁定怪也追
-      // V2.34.0 A5：与 zAttack 7921 口径一致——「打全部怪」打开时不再受锁定名单限制
+      // V2.34.4：与 zAttack 同口径——名单非空时只认名单，「打全部怪」仅在没有名单时生效
       var zAllMobsW = !$id("dsh-z-allmobs") || $id("dsh-z-allmobs").checked;
       // V2.16.3：追怪候选分两池——锁定怪候选（lockNear）永远优先；还击候选（hitNear）仅当没有任何锁定怪候选时才兜底。
       //   旧实现把还击怪混入同一候选并按「血少优先」排序，快死的非锁定怪会抢走锁定怪目标（来回转向/追怪中断）。
       var near = null, nearD = 1e9, nearHp = 1e18; // V2.15.25：nearHp=最近候选绝对剩余HP（血少优先抢尾刀）
       var lockNear = null, lockNearD = 1e9, lockNearHp = 1e18; // 锁定怪候选（优先）
       var hitNear = null, hitNearD = 1e9, hitNearHp = 1e18;    // 还击候选（兜底）
+      var zReactiveGid = zLock.reactive ? gidInt(zLock.gid) : 0; // V2.34.4：还击锁定的攻击者必须被追击（与 zAttack 同锚点）
       if (EM && EM.forEach) {
         EM.forEach(function (e) {
           try {
@@ -7864,8 +7868,9 @@
             if (e.remove_tick) return;
             // V2.34.0 A3：尾刀模式未到尾刀线的 BOSS 不追（既不打也不飞）
             if (zBossSkipGid && gidInt(e.GID) === zBossSkipGid) return;
-            var mid = e._job != null ? String(e._job) : (e.job != null ? String(e.job) : null);
+            var mid = e._job != null ? String(e._job) : (e.job != null ? String(e.job) : (e.mobId != null ? String(e.mobId) : null));
             var inLockN = anyLock ? !!(mid && lockList[mid]) : zAllMobsW; // V2.34.4：名单非空→只认名单；名单为空→按「打全部怪」
+            if (!inLockN && zReactiveGid && gidInt(e.GID) === zReactiveGid) inLockN = true;
             if (!inLockN && !allowHitTarget) return;
             if (!ent.position || !e.position) return;
             var d = zRangeDist(e.position, ent.position); // V2.34.3：格子距离口径（与客户端一致）
@@ -8313,7 +8318,7 @@
       }
       var zFollow = !$id("dsh-z-follow") || $id("dsh-z-follow").checked; // 锁定目标跟随追击
       var zNext = !$id("dsh-z-next") || $id("dsh-z-next").checked;       // 打死换下一个
-      var zAllMobs = !$id("dsh-z-allmobs") || $id("dsh-z-allmobs").checked; // V2.22.0 打全部怪（默认开）
+      var zAllMobs = !$id("dsh-z-allmobs") || $id("dsh-z-allmobs").checked; // V2.34.4：仅在未设锁定名单时生效（名单非空时只打名单）
       var target = null, best = 1e9, bestHp = 1e18; // V2.15.25：bestHp=当前选中怪的绝对剩余HP（血少优先抢尾刀）
       var hitTarget = null, hitBest = 1e9;
       // 锁定模式：已锁定目标 → 只认锁定目标（固定 GID 持续攻击，防目标漂移），不重新扫描选最近

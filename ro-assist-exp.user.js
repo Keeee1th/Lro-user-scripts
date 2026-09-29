@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手 · 实验版）
 // @namespace    dsh.ro-plugin
-// @version      2.36.0
+// @version      2.36.2
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -89,6 +89,13 @@
 // 1. 独立「无限道场」并入主脚本：走助手公共 API 与同一租约；功能菜单「战斗功能」新增入口（arrowrules 之后）。
 // 2. pushplus 推送补 UI：内置道场窗口内联 token /「保存推送」/「启用推送」，落全局键 dsh_ro_plugin_v1 的 pushplusToken 与 pushplusEnabled。
 // 3. 不可丢或状态未知的物品只允许「邮件发送」「背包丢弃」两个出口，其它出口一律拒绝。
+// ---------------- V2.36.1 变更摘要 ----------------
+// 1. 修复攻击距离口径不一致：scanOnce / 技能施放射程 / 上马判定 仍用曼哈顿距离（|dx|+|dy|），与 V2.34.3 定下的客户端格子距离（max(|dx|,|dy|)）不一致——斜向怪在射程内被误判为超射程，表现为「锁定怪在脸上却提示未侦测到 / 走位追怪不放技能」。统一改用格子距离 max(|dx|,|dy|)。
+// ---------------- V2.36.2 变更摘要 ----------------
+// 1. 无限道馆移出主脚本菜单，改由「脚本执行」浮窗承载：新增 dojoStart / dojoWait / dojoStop 三个脚本动作，道馆参数（难度/100轮暂停/飞行/紧急飞行）放脚本条目 params，一键「导入道馆脚本」模板；移除内置道馆窗口与独立脚本 ro-infinite-dojo.user.js（停止发布并从仓库移除），API 门面 scopes 保持不变。
+// 2. 脚本系统升级：顶层新增 type/priority/order/loop 字段；串行调度（priority 降序、order 升序、运行态互斥、完成接续）；循环三选一（count 次数 / duration 时长 / until 条件）；新「脚本执行」一级浮窗（导入 + 列表 + 运行/停止 + pushplus token）。
+// 3. 100 轮领奖前暂停改为可选 pushplus 推送；token / 启用开关迁入「脚本执行」窗口，仍落全局键 dsh_ro_plugin_v1。
+
 
 
 (function () {
@@ -115,7 +122,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.36.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.36.2"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -929,8 +936,7 @@
       '<button class="sub-tab" data-sub="ap-mvp">MVP计时</button>' +
       '<button class="sub-tab" data-sub="ap-dps">战斗统计</button>' +
       '<button class="sub-tab" data-sub="ap-inv">仓库查询</button>' +
-      '<button class="sub-tab" data-sub="ap-scr">脚本执行</button>' +
-      '<button class="sub-tab" data-sub="ap-item">物品</button>' +
+            '<button class="sub-tab" data-sub="ap-item">物品</button>' +
       '<button class="sub-tab" data-sub="ap-sync">同步器</button></div>' +
       '<div class="a-body">' +
       // 子页1：战斗辅助（自动使用物品 + 自动装箭矢）+ 背包快照 + 自动跟随（默认）
@@ -993,19 +999,6 @@
       '<div class="box"><div class="b-hd">高亮名单 <span class="tag blue" id="dsh-hlcount" style="float:right">0 条</span></div>' +
       '<div id="dsh-hllist" style="font-size:11px;max-height:110px;overflow:auto"><span class="st">空（输入 ID[颜色] 添加，赏金材料默认黄）</span></div></div>' +
       '<div class="log">按赏金任务收集品清单（92 件，V2.6.5 按游戏内导出重建）给物品栏物品槽加金边框+数量变金（V1.8.4：选择器按实测物品栏结构 .item[data-itid] 重写，v0.13.10 探针取证）。仓库槽由助手按实例索引补充物品 ID 后同步标色；装备槽暂不覆盖。</div>' +
-      '</div>' +
-            '<div class="sub-page" data-subpage="ap-scr">' +
-      '<div class="sec">脚本执行（导入 JSON 模板 · 白名单 8 类动作）</div>' +
-      '<div class="row"><span class="lb" style="min-width:42px">脚本名</span><input id="dsh-scr-name" type="text" placeholder="如：每日签到" style="flex:1 1 90px"></div>' +
-      '<textarea id="dsh-scr-json" rows="4" placeholder="JSON 模板：{\"templateId\":\"daily\",\"version\":1,\"steps\":[{\"action\":\"walk\",\"params\":{\"x\":100,\"y\":80}},{\"action\":\"talk\",\"params\":{\"npc\":\"^_^\"}}]}"></textarea>' +
-      '<div class="row"><button id="dsh-scr-imp" style="flex:0 0 auto">导入校验</button>' +
-      '<button class="ghost" id="dsh-scr-clear" style="flex:0 0 auto">清空输入</button>' +
-      '<span class="st" id="dsh-scr-msg" style="font-size:10px"></span></div>' +
-      '<div class="box"><div class="b-hd">已导入脚本 <span class="tag green" id="dsh-scr-count" style="float:right">0</span></div>' +
-      '<div id="dsh-scr-list" style="font-size:11px;max-height:110px;overflow:auto"><span class="st">空（粘贴 JSON 后点「导入校验」）</span></div></div>' +
-      '<div class="row"><span class="lb" style="min-width:42px">运行</span><span class="st" id="dsh-scr-state" style="font-size:11px">未运行</span>' +
-      '<button class="ghost" id="dsh-scr-stop" style="flex:0 0 auto;color:#b91c1c;border-color:#e5b3b3">停止</button></div>' +
-      '<div class="log" id="dsh-scr-log" style="font-size:10px;max-height:64px;overflow:auto">模板动作：teleport 传送 / walk 走路 / battleOn 开自动 / battleOff 关自动 / useItem 用物品 / stopMove 停止 / check 读取状态 / talk 对话NPC；判定：arrive 到达 / waitFor 界面文本 / until 物品数量；HP<25% 自动停手。</div>' +
       '</div>' +
             '<div class="sub-page" data-subpage="ap-mvp">' +
       '<div class="sec">MVP 计时（公告栏 #i1 → MVP 日志自动校准 · 点击地图名传送）</div>' +
@@ -1998,8 +1991,8 @@
     { id: "tp",    name: "传送功能",        kind: "fw", sec: "常用" },
     { id: "np",    name: "内挂自动战斗",    kind: "act", noToggle: true, sec: "常用" },
     { id: "zhu",   name: "助手自动战斗",    kind: "act", noToggle: true, sec: "常用" },
+    { id: "scr",   name: "脚本执行",        kind: "fw", sec: "常用" },
     { id: "arrowrules", name: "换箭设置", kind: "fw", sec: "战斗功能" },
-    { id: "dojo",  name: "无限道场",        kind: "fw", sec: "战斗功能" },
     { id: "mlock", name: "攻击名单",        kind: "fw", sec: "战斗功能" },
     { id: "zhu2",  name: "战斗设置",        kind: "fw", sec: "战斗功能" },
     { id: "zskill", name: "技能设置",       kind: "fw", sec: "战斗功能" },
@@ -6558,7 +6551,7 @@
           if (e.remove_tick) return;
           var d = -1;
           if (ent && ent.position && e.position) {
-            d = Math.abs(e.position[0] - ent.position[0]) + Math.abs(e.position[1] - ent.position[1]);
+            d = Math.max(Math.abs(e.position[0] - ent.position[0]), Math.abs(e.position[1] - ent.position[1]));
           }
           // 怪物类ID在 e._job（vbk 用 _job 与地图表怪物ID比对；job 会被变身覆盖）
           var mid = e._job != null ? e._job : (e.job != null ? e.job : (e.mobId != null ? e.mobId : e.GID));
@@ -7733,7 +7726,7 @@
         EM.forEach(function (e) {
           if (inR) return;
           if (e.GID === zLock.gid && e.objecttype === 5 && e.position) {
-            var d = Math.abs(e.position[0] - entR.position[0]) + Math.abs(e.position[1] - entR.position[1]);
+            var d = Math.max(Math.abs(e.position[0] - entR.position[0]), Math.abs(e.position[1] - entR.position[1]));
             if (d <= atkR) inR = true;
           }
         });
@@ -9302,7 +9295,7 @@
     // V2.15.28 每技能独立 CD：每个技能记录自己的 skillNextAt[SKID]（上次释放 + 该技能真实间隔），到点才发。
     //   间隔来源：服务器 2842(0xb1a USESKILL_ACK3) 动态下发的真实后摇 skillDelay[SKID]（随等级/装备/状态变动）
     //   > 技能行第7段配置 cd 秒数 > 默认 250ms。不再用攻击轮次全局窗口（轮次驱动会重复发包 → 服务器点击限制弹窗）。
-    var d = Math.abs(target.position[0] - ent.position[0]) + Math.abs(target.position[1] - ent.position[1]);
+    var d = Math.max(Math.abs(target.position[0] - ent.position[0]), Math.abs(target.position[1] - ent.position[1]));
     var prereqEn = $id("dsh-prereq") ? $id("dsh-prereq").checked : true;
     var blocked = null; // 第一个前置不满足的技能（{o, condStr}，合流阶段才补它的前置）
     var walkSk = null;  // 第一个前置满足但超射程的技能（无射程内可放时才走近）
@@ -13269,7 +13262,7 @@
 
   // ---------------- V2.7.0 脚本执行器（导入 JSON 模板 · 白名单 8 类动作） ----------------
   var SCRIPTS_KEY = "dsh_scripts";
-  var SCR_ACTIONS = ["teleport", "walk", "battleOn", "battleOff", "useItem", "stopMove", "check", "talk", "loop", "ifWeight", "store"];
+  var SCR_ACTIONS = ["teleport", "walk", "battleOn", "battleOff", "useItem", "stopMove", "check", "talk", "loop", "ifWeight", "store", "dojoStart", "dojoWait", "dojoStop"];
   function scrLoad() { try { var a = JSON.parse(localStorage.getItem(SCRIPTS_KEY) || "[]"); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
   function scrSave(a) { try { localStorage.setItem(SCRIPTS_KEY, JSON.stringify(a)); } catch (e) {} }
   function scrValidate(obj) {
@@ -13292,6 +13285,17 @@
         if (!s.until || typeof s.until !== "object") return { ok: false, err: "steps[" + i + "] loop 须提供顶层 until" };
       }
       if (s.action === "ifWeight" && p && p.goto != null && (!Number.isInteger(p.goto) || p.goto < 1 || p.goto > obj.steps.length)) return { ok: false, err: "steps[" + i + "] ifWeight.goto 越界" };
+    }
+    if (obj.type != null && ["generic", "dojo"].indexOf(obj.type) < 0) return { ok: false, err: "type 只能是 generic/dojo" };
+    if (obj.priority != null && (!Number.isInteger(obj.priority) || obj.priority < 0 || obj.priority > 999)) return { ok: false, err: "priority 须为 0-999 整数" };
+    if (obj.order != null && (!Number.isInteger(obj.order) || obj.order < 0 || obj.order > 999999)) return { ok: false, err: "order 须为 0-999999 整数" };
+    if (obj.params != null && (typeof obj.params !== "object" || Array.isArray(obj.params))) return { ok: false, err: "params 须为对象" };
+    if (obj.loop != null) {
+      if (typeof obj.loop !== "object") return { ok: false, err: "loop 须为对象" };
+      if (["count", "duration", "until"].indexOf(obj.loop.mode) < 0) return { ok: false, err: "loop.mode 须为 count/duration/until" };
+      if (obj.loop.mode === "count" && (!Number.isInteger(obj.loop.n) || obj.loop.n < 1 || obj.loop.n > 100000)) return { ok: false, err: "loop.n 须为 1-100000 整数" };
+      if (obj.loop.mode === "duration" && (!Number.isInteger(obj.loop.minutes) || obj.loop.minutes < 1 || obj.loop.minutes > 1440)) return { ok: false, err: "loop.minutes 须为 1-1440 整数" };
+      if (obj.loop.mode === "until" && (typeof obj.loop.until !== "object" || obj.loop.until == null)) return { ok: false, err: "loop.until 须提供条件对象" };
     }
     return { ok: true, script: obj };
   }
@@ -13320,7 +13324,7 @@
         var row = document.createElement("div");
         row.style.cssText = "display:flex;align-items:center;gap:6px;padding:3px 4px;border-bottom:1px solid #eef2f6";
         var nm = document.createElement("span");
-        nm.textContent = (i + 1) + ". " + (it.name || it.templateId || "未命名") + " (v" + (it.version || 1) + ") · " + (it.steps ? it.steps.length : 0) + "步";
+        nm.textContent = (i + 1) + ". " + (it.name || it.templateId || "未命名") + (it.type === "dojo" ? "[道馆]" : "") + " · " + (it.steps ? it.steps.length : 0) + "步" + (it.loop ? "·循环" + it.loop.mode : "") + "·P" + (it.priority != null ? it.priority : 0);
         nm.style.cssText = "flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
         row.appendChild(nm);
         var runB = document.createElement("button");
@@ -13597,6 +13601,9 @@
         case "check": scrLogLine("check: map=" + getMapName() + " pos=" + (scrGetPos() ? Math.floor(scrGetPos()[0]) + "," + Math.floor(scrGetPos()[1]) : "?")); break;
         case "talk": scrTalkNpc(p.npc); break;
         case "store": scrStore(p); break;
+        case "dojoStart": scrDojoStart(step); break;
+        case "dojoStop": scrDojoStop(); break;
+        case "dojoWait": break; // 由 scrTick 等待轮次/条件
         case "loop": case "ifWeight": break; // 由 scrTick 直接处理，不走这里
       }
     } catch (e) { scrLogLine("动作异常: " + e.message); }
@@ -13649,6 +13656,10 @@
         return;
       }
     }
+    if (step.action === "dojoWait") {
+      if (scrDojoWaitMet(step)) scrNextStep();
+      return;
+    }
     if (scrCheckArrive(step) && scrCheckWait(step) && scrCheckUntil(step)) { scrNextStep(); return; }
     var maxT = step.timeoutMs || 20000;
     if (Date.now() - step._started > maxT) {
@@ -13667,68 +13678,132 @@
       }
     }
   }
+  // 脚本级循环三选一（count 次数 / duration 时长分钟 / until 条件）——与步骤级 loop 动作独立
+  function scrLoopMore(loopCfg) {
+    if (!loopCfg) return false;
+    if (loopCfg.mode === "count") return (scrRun.scriptLoops || 0) < parseInt(loopCfg.n, 10);
+    if (loopCfg.mode === "duration") return (Date.now() - scrRun.startedAt) < parseInt(loopCfg.minutes, 10) * 60000;
+    if (loopCfg.mode === "until") return !scrCondMet(loopCfg.until);
+    return false;
+  }
+  function scrScriptLoopAgain(loopCfg) {
+    scrRun.scriptLoops = (scrRun.scriptLoops || 0) + 1;
+    scrRun.script.steps.forEach(function (st) { try { delete st._started; } catch (e) {} });
+    scrRun.stepIndex = 0; scrRun.stepStartedAt = 0;
+    scrSetState("循环 " + scrRun.scriptLoops + (loopCfg.mode === "count" ? "/" + loopCfg.n : "") + "，重新开始", "ok");
+    scrLogLine("第 " + scrRun.scriptLoops + " 轮完成 → 重新开始");
+  }
+  function scrDojoStart(step) { try { dojoStart((step && step.params) || null); } catch (e) { scrLogLine("dojoStart 异常: " + e.message); } }
+  function scrDojoStop() { try { dojoStop("脚本停止道馆"); } catch (e) { scrLogLine("dojoStop 异常: " + e.message); } }
+  function scrDojoWaitMet(step) {
+    var p = (step && step.params) || {};
+    try { if (!dojoRun || !dojoRun.on) return true; } catch (e) { return true; } // 已停/暂停 → 完成
+    if (p.round != null) {
+      try { if (dojoRun.round < parseInt(p.round, 10)) return false; } catch (e) { return false; } // 未达轮次
+      return true; // 已达目标轮次
+    }
+    if (step && step.until) return !!scrCheckUntil(step);
+    return false; // 无轮次无条件 → 一直等到道馆停止
+  }
   function scrNextStep() {
     scrRun.stepIndex++;
     scrRun.stepStartedAt = 0;
     scrSetState("运行中… " + scrRun.stepIndex + "/" + scrRun.script.steps.length, "ok");
   }
   function scrFinish(ok, msg) {
+    var lp = scrRun.script && scrRun.script.loop;
+    if (ok && lp && scrLoopMore(lp)) { scrScriptLoopAgain(lp); return; }
     scrRun.running = false;
     if (scrRun.timer) { clearInterval(scrRun.timer); scrRun.timer = null; }
     scrSetState(ok ? "完成" : (msg || "已停止"), ok ? "ok" : "warn");
     scrLogLine(ok ? "脚本执行完成" : (msg || "已停止"));
     try { if (scrKill.total) scrLogLine("本次击杀 " + scrKill.total + " 只（只算自己打死的）"); } catch (e) {}
+    if (ok) scrQueueStart(); // 串行：正常完成后接续队列里下一个
+  }
+  var scrQueue = []; // 待运行脚本索引（priority 降序、order 升序），运行态互斥
+  function scrQueueSort(list) {
+    scrQueue.sort(function (a, b) {
+      var pa = list[a] && list[a].priority != null ? list[a].priority : 0, pb = list[b] && list[b].priority != null ? list[b].priority : 0;
+      if (pa !== pb) return pb - pa;
+      var oa = list[a] && list[a].order != null ? list[a].order : 0, ob = list[b] && list[b].order != null ? list[b].order : 0;
+      return oa - ob;
+    });
+  }
+  function scrQueueStart() {
+    if (scrRun.running) return; // 串行：运行中不抢占
+    var list = scrLoad();
+    while (scrQueue.length) {
+      var idx = scrQueue.shift();
+      if (idx < 0 || idx >= list.length) continue;
+      var v = scrValidate(list[idx]);
+      if (!v.ok) { scrSetState("脚本无效: " + v.err, "err"); scrLogLine("脚本无效: " + v.err); continue; }
+      scrRun.script = JSON.parse(JSON.stringify(v.script));
+      scrRun.script.steps.forEach(function (st) { try { delete st._started; } catch (e) {} });
+      scrRun.stepIndex = 0; scrRun.stop = false;
+      scrRun.loops = 0;
+      scrRun.scriptLoops = 0;
+      scrRun.startedAt = Date.now();
+      scrRun.baseline = scrSnapshotInv();
+      scrKillReset();
+      scrKill.nearby = !!scrRun.script.killNearby;
+      scrSetState("运行中… 0/" + scrRun.script.steps.length, "ok");
+      scrLogLine("执行 " + scrRun.script.templateId + " (v" + (scrRun.script.version || 1) + ")");
+      scrRun.running = true;
+      scrRun.timer = setInterval(scrTick, 800);
+      return;
+    }
   }
   function scrRunScript(idx) {
-    if (scrRun.running) { scrRun.stop = true; if (scrRun.timer) { clearInterval(scrRun.timer); scrRun.timer = null; } scrRun.running = false; }
     var list = scrLoad();
     if (idx < 0 || idx >= list.length) return;
-    var v = scrValidate(list[idx]);
-    if (!v.ok) { scrSetState("脚本无效: " + v.err, "err"); return; }
-    scrRun.script = JSON.parse(JSON.stringify(v.script));
-    scrRun.script.steps.forEach(function (st) { try { delete st._started; } catch (e) {} });
-    scrRun.stepIndex = 0; scrRun.stop = false;
-    scrRun.loops = 0;
-    scrRun.startedAt = Date.now();
-    scrRun.baseline = scrSnapshotInv();
-    scrKillReset();
-    scrKill.nearby = !!scrRun.script.killNearby;
-    scrSetState("运行中… 0/" + scrRun.script.steps.length, "ok");
-    scrLogLine("执行 " + scrRun.script.templateId + " (v" + (scrRun.script.version || 1) + ")");
-    scrRun.running = true;
-    scrRun.timer = setInterval(scrTick, 800);
+    if (scrQueue.indexOf(idx) < 0) scrQueue.push(idx);
+    scrQueueSort(list);
+    scrLogLine("已入队（第 " + scrQueue.length + " 个待运行 · 串行）");
+    scrQueueStart();
   }
-  try {
-    var impB = $id("dsh-scr-imp");
-    if (impB) impB.addEventListener("click", function () {
-      var msg = $id("dsh-scr-msg");
-      var name = ($id("dsh-scr-name").value || "").trim();
-      var raw = ($id("dsh-scr-json").value || "").trim();
-      if (!raw) { msg.textContent = "请粘贴 JSON 模板"; return; }
-      var obj = null;
-      try { obj = JSON.parse(raw); } catch (e) { msg.textContent = "JSON 解析失败: " + e.message; return; }
-      var v = scrValidate(obj);
-      if (!v.ok) { msg.textContent = v.err; return; }
-      var list = scrLoad();
-      v.script.name = name || v.script.templateId || ("脚本" + (list.length + 1));
-      list.push(v.script);
-      scrSave(list);
-      scrRenderList();
-      msg.textContent = "已导入 " + list.length + " 个";
-      $id("dsh-scr-json").value = "";
-    });
-    var clrB = $id("dsh-scr-clear");
-    if (clrB) clrB.addEventListener("click", function () { $id("dsh-scr-json").value = ""; $id("dsh-scr-name").value = ""; });
-    var stopB = $id("dsh-scr-stop");
-    if (stopB) stopB.addEventListener("click", function () {
-      scrRun.stop = true; scrRun.running = false;
-      if (scrRun.timer) { clearInterval(scrRun.timer); scrRun.timer = null; }
-      try { stopWalkXY(); } catch (e) {}
-      scrSetState("已停止", "warn");
-      scrLogLine("手动停止");
-    });
+  var DOJO_SCRIPT_TPL = { templateId: "infinite-dojo", version: 1, type: "dojo", priority: 0, order: 0, loop: { mode: "count", n: 1 }, params: { difficulty: "basic", stop100: true, fly: false, emergency: false }, steps: [ { action: "dojoStart", params: { difficulty: "basic", stop100: true, fly: false, emergency: false } }, { action: "dojoWait" }, { action: "dojoStop" } ] };
+  function scrImportRaw(name, raw) {
+    var msg = $id("dsh-scr-msg");
+    if (!raw) { if (msg) msg.textContent = "请粘贴 JSON 模板"; return; }
+    var obj = null;
+    try { obj = JSON.parse(raw); } catch (e) { if (msg) msg.textContent = "JSON 解析失败: " + e.message; return; }
+    var v = scrValidate(obj);
+    if (!v.ok) { if (msg) msg.textContent = v.err; return; }
+    var list = scrLoad();
+    v.script.name = name || v.script.templateId || ("脚本" + (list.length + 1));
+    list.push(v.script);
+    scrSave(list);
     scrRenderList();
-  } catch (e) {}
+    if (msg) msg.textContent = "已导入 " + list.length + " 个";
+  }
+  function scrEnsureHost() {
+    var h = $id("dsh-fw-scr");
+    if (h) { scrRenderList(); return h; }
+    var dock = $id("dsh-scr-dock");
+    if (!dock) { dock = document.createElement("div"); dock.id = "dsh-scr-dock"; dock.style.display = "none"; document.documentElement.appendChild(dock); }
+    h = document.createElement("div"); h.id = "dsh-fw-scr";
+    h.innerHTML = '<div class="sec">脚本执行（导入 JSON 模板 · 串行按优先级）</div>'
+      + '<div class="row"><span class="lb" style="min-width:42px">脚本名</span><input id="dsh-scr-name" type="text" placeholder="如：无限道场" style="flex:1 1 90px"></div>'
+      + '<textarea id="dsh-scr-json" rows="4" placeholder=\'JSON 模板：{"templateId":"daily","version":1,"steps":[{"action":"walk","params":{"x":100,"y":80}}]}\'></textarea>'
+      + '<div class="row"><button id="dsh-scr-imp">导入校验</button><button class="green" id="dsh-scr-tpl-dojo">导入道馆脚本</button><button class="ghost" id="dsh-scr-clear">清空输入</button><span class="st" id="dsh-scr-msg" style="font-size:10px"></span></div>'
+      + '<div class="box"><div class="b-hd">已导入脚本 <span class="tag green" id="dsh-scr-count" style="float:right">0</span></div>'
+      + '<div id="dsh-scr-list" style="font-size:11px;max-height:130px;overflow:auto"><span class="st">空（粘贴 JSON 后点「导入校验」）</span></div></div>'
+      + '<div class="row"><span class="lb" style="min-width:42px">运行</span><span class="st" id="dsh-scr-state" style="font-size:11px">未运行</span><button class="ghost" id="dsh-scr-stop" style="flex:0 0 auto;color:#b91c1c;border-color:#e5b3b3">停止</button></div>'
+      + '<div class="row"><input id="dsh-scr-pptoken" type="password" placeholder="pushplus token（100轮暂停推送）" autocomplete="off" style="flex:1 1 90px"><button class="green" id="dsh-scr-ppsave" style="flex:0 0 auto">保存推送</button></div>'
+      + '<label class="switch"><input id="dsh-scr-ppen" type="checkbox">启用推送</label>'
+      + '<div class="log" id="dsh-scr-log" style="font-size:10px;max-height:72px;overflow:auto">动作：teleport/walk/battleOn/battleOff/useItem/stopMove/check/talk/store/loop/ifWeight/dojoStart/dojoWait/dojoStop；顶层可配 type(dojo)/priority/order/loop(count|duration|until)；HP&lt;25% 自动停手。</div>';
+    dock.appendChild(h);
+    $id("dsh-scr-imp").onclick = function () { var v = $id("dsh-scr-json").value; scrImportRaw(($id("dsh-scr-name").value || "").trim(), v); if (v) $id("dsh-scr-json").value = ""; };
+    $id("dsh-scr-tpl-dojo").onclick = function () { scrImportRaw("无限道场", JSON.stringify(DOJO_SCRIPT_TPL)); };
+    $id("dsh-scr-clear").onclick = function () { $id("dsh-scr-json").value = ""; $id("dsh-scr-name").value = ""; };
+    $id("dsh-scr-stop").onclick = function () { scrQueue = []; scrRun.stop = true; scrRun.running = false; if (scrRun.timer) { clearInterval(scrRun.timer); scrRun.timer = null; } try { stopWalkXY(); } catch (e) {} scrSetState("已停止", "warn"); scrLogLine("手动停止"); };
+    $id("dsh-scr-pptoken").value = notifyLoadToken(); $id("dsh-scr-ppen").checked = notifyPushEnabled();
+    $id("dsh-scr-ppsave").onclick = function () { notifySaveToken($id("dsh-scr-pptoken").value); $id("dsh-scr-pptoken").value = notifyLoadToken(); };
+    $id("dsh-scr-ppen").onchange = function () { notifySetPushEnabled($id("dsh-scr-ppen").checked); };
+    scrRenderList();
+    return h;
+  }
+  try { fwReg("scr", "脚本执行", scrEnsureHost); } catch (e) {}
   // ---------------- 仓库数据源启动期 hook（V2.26.1）----------------
   // Storage 的权威列表在组件闭包里，外部读不到；镜像 setItems/addItem/removeItem，并在 onRemove 清空前最终落盘。
   function storageClone(v) {
@@ -14051,9 +14126,8 @@
   apiNoticeWatch();setTimeout(function(){apiEmit("ready",{protocol:API_PROTOCOL,assistantVersion:VER});},0);
   setInterval(function(){apiBattleTick();if(apiLease)apiEmit("state",{owner:apiLease.owner});},250);
 
-  // ================= V2.36.0 内置无限道场（并入主脚本 · 走公共 API 与同一租约） =================
-  // UI 一律走标准浮窗：fwReg("dojo","无限道场",dojoEnsureHost) + fwMakeWin + RO_SKIN_CSS 的 sec/row/st/log 约定，
-  // 不再使用独立脚本那种自建左上角 plain 面板。
+  // ================= 无限道场（脚本系统承载 · dojoStart/dojoWait/dojoStop 动作走公共 API 与同一租约） =================
+  // V2.36.2：道馆移出主脚本菜单，改为「脚本执行」浮窗导入任务脚本运行；此处保留 dojoStart/dojoTick/dojoStop 等动作实现。
   var DOJO_OWNER="builtin-dojo",DOJO_KEY="dsh-ro-infinite-dojo-v1";
   var dojoCfg=dojoLoad(),dojoRun={on:false,generation:0,round:0,remaining:null,lastMenu:"",lastNotice:"",lastNoticeAt:0,timer:null,phase:"等待助手",npc:null,lastFly:0};
   function dojoLoad(){var d={difficulty:"basic",stop100:true,fly:false,emergency:false,migrated:false},v;try{v=JSON.parse(localStorage.getItem(DOJO_KEY)||"null");if(v&&typeof v==="object")Object.assign(d,v);}catch(e){}if(!d.migrated){try{v=JSON.parse(localStorage.getItem(CHALLENGE_KEY)||"null");if(v&&typeof v==="object"){if(/^(basic|middle|advanced)$/.test(v.difficulty))d.difficulty=v.difficulty;d.stop100=v.stop100!==false;d.fly=v.flyOn===true;d.emergency=v.emergencyFly===true;}}catch(e2){}d.migrated=true;dojoSave(d);}return d;}
@@ -14070,8 +14144,8 @@
   }
   function dojoDist(a,b){try{if(!a||!b)return Infinity;return Math.max(Math.abs(Number(a[0])-Number(b[0])),Math.abs(Number(a[1])-Number(b[1])));}catch(e){return Infinity;}}
   function dojoNorm(s){return String(s||"").replace(/\^[0-9a-f]{6}/gi,"").replace(/<[^>]*>/g," ").replace(/[０-９]/g,function(c){return String.fromCharCode(c.charCodeAt(0)-65248);}).replace(/達/g,"达").replace(/貓/g,"猫").replace(/\s+/g," ").trim();}
-  function dojoNotice(raw){if(!dojoRun.on)return;var s=dojoNorm(raw),now=Date.now(),m;if(!s||(s===dojoRun.lastNotice&&now-dojoRun.lastNoticeAt<2500))return;dojoRun.lastNotice=s;dojoRun.lastNoticeAt=now;m=s.match(/第\s*(\d+)\s*[轮层波]/);if(m)dojoRun.round=Math.max(dojoRun.round,Number(m[1]));m=s.match(/(?:还剩|剩余)\s*[:：]?\s*(\d+)/);if(m)dojoRun.remaining=Number(m[1]);m=s.match(/(?:完成|通过)\s*第?\s*(\d+)\s*[轮层波]|第\s*(\d+)\s*[轮层波]\s*(?:完成|结束|通过)/);if(m){dojoRun.round=Math.max(dojoRun.round,Number(m[1]||m[2]));if(dojoCfg.stop100&&dojoRun.round>=100)return dojoStop("第100轮领奖前暂停");dojoRun.phase="本轮完成，等待领奖菜单";}dojoRender();}
-  function dojoChoose(a,s){var m=s.menu;if(!s.dialogOpen){dojoRun.lastMenu="";return false;}if(!m||!m.naid||!Array.isArray(m.items)||!m.items.length||!m.fingerprint)return false;if(m.fingerprint===dojoRun.lastMenu)return true;var re=dojoRun.phase.indexOf("领奖")>=0?/领取奖励|领奖/:({basic:/初级/,middle:/中级/,advanced:/高级/}[dojoCfg.difficulty]),hits=[];m.items.forEach(function(x,i){if(re.test(dojoNorm(x)))hits.push(i);});if(!hits.length&&dojoRun.phase.indexOf("领奖")<0)m.items.forEach(function(x,i){if(/继续挑战|开始挑战|进入挑战/.test(dojoNorm(x)))hits.push(i);});if(hits.length!==1){dojoRun.phase="菜单不唯一，请手动选择";return true;}dojoRun.lastMenu=m.fingerprint;var r=a.chooseMenu(DOJO_OWNER,{naid:m.naid,index:hits[0],fingerprint:m.fingerprint});if(!r||!r.ok)dojoRun.phase="菜单提交失败";return true;}
+  function dojoNotice(raw){if(!dojoRun.on)return;var s=dojoNorm(raw),now=Date.now(),m;if(!s||(s===dojoRun.lastNotice&&now-dojoRun.lastNoticeAt<2500))return;dojoRun.lastNotice=s;dojoRun.lastNoticeAt=now;m=s.match(/第\s*(\d+)\s*[轮层波]/);if(m)dojoRun.round=Math.max(dojoRun.round,Number(m[1]));m=s.match(/(?:还剩|剩余)\s*[:：]?\s*(\d+)/);if(m)dojoRun.remaining=Number(m[1]);m=s.match(/(?:完成|通过)\s*第?\s*(\d+)\s*[轮层波]|第\s*(\d+)\s*[轮层波]\s*(?:完成|结束|通过)/);if(m){dojoRun.round=Math.max(dojoRun.round,Number(m[1]||m[2]));if((dojoRun.cfg||dojoCfg).stop100&&dojoRun.round>=100){try{notifyPush("无限道场已达 100 轮，领奖前已暂停");}catch(e){}return dojoStop("第100轮领奖前暂停");}dojoRun.phase="本轮完成，等待领奖菜单";}dojoRender();}
+  function dojoChoose(a,s){var m=s.menu;if(!s.dialogOpen){dojoRun.lastMenu="";return false;}if(!m||!m.naid||!Array.isArray(m.items)||!m.items.length||!m.fingerprint)return false;if(m.fingerprint===dojoRun.lastMenu)return true;var re=dojoRun.phase.indexOf("领奖")>=0?/领取奖励|领奖/:({basic:/初级/,middle:/中级/,advanced:/高级/}[(dojoRun.cfg||dojoCfg).difficulty]),hits=[];m.items.forEach(function(x,i){if(re.test(dojoNorm(x)))hits.push(i);});if(!hits.length&&dojoRun.phase.indexOf("领奖")<0)m.items.forEach(function(x,i){if(/继续挑战|开始挑战|进入挑战/.test(dojoNorm(x)))hits.push(i);});if(hits.length!==1){dojoRun.phase="菜单不唯一，请手动选择";return true;}dojoRun.lastMenu=m.fingerprint;var r=a.chooseMenu(DOJO_OWNER,{naid:m.naid,index:hits[0],fingerprint:m.fingerprint});if(!r||!r.ok)dojoRun.phase="菜单提交失败";return true;}
   function dojoNpcs(s){return (s.npcs||[]).filter(function(n){return /^(喵达人|猫达人|白猫|白猫达人)$/.test(dojoNorm(n.name).replace(/\s/g,""));});}
   function dojoContact(a,s,now){
     var list=dojoNpcs(s);
@@ -14096,23 +14170,24 @@
     var t=(s.mobs||[]).filter(function(m){return !m.dead&&m.mid;})[0];
     if(t){
       dojoRun.npc=null;
-      var ar=a.setArrowTarget(DOJO_OWNER,{mid:t.mid,gid:t.gid}),fresh=a.snapshot(DOJO_OWNER),match=fresh&&fresh.arrow&&fresh.arrow.target&&fresh.arrow.target.mid===t.mid&&fresh.arrow.target.gid===t.gid,allowed=dojoCfg.difficulty==="basic"&&fresh&&fresh.arrow&&fresh.arrow.enabled===false||fresh&&fresh.arrow&&fresh.arrow.enabled===true&&fresh.arrow.ready===true&&fresh.arrow.blocked===false&&match;
+      var ar=a.setArrowTarget(DOJO_OWNER,{mid:t.mid,gid:t.gid}),fresh=a.snapshot(DOJO_OWNER),match=fresh&&fresh.arrow&&fresh.arrow.target&&fresh.arrow.target.mid===t.mid&&fresh.arrow.target.gid===t.gid,allowed=(dojoRun.cfg||dojoCfg).difficulty==="basic"&&fresh&&fresh.arrow&&fresh.arrow.enabled===false||fresh&&fresh.arrow&&fresh.arrow.enabled===true&&fresh.arrow.ready===true&&fresh.arrow.blocked===false&&match;
       dojoRun.phase=allowed?"战斗中":"等待换箭就绪"; // 换箭未就绪不开战；basic 且未启用换箭时放行
       a.requestBattle(DOJO_OWNER,!!allowed);
-      if(dojoCfg.emergency&&dojoCfg.difficulty!=="basic"&&s.player&&s.player.maxHp>0&&s.player.hp/s.player.maxHp<.7&&now-dojoRun.lastFly>3000){dojoRun.lastFly=now;a.requestFly(DOJO_OWNER,{reason:"道场低血量"});}
+      if((dojoRun.cfg||dojoCfg).emergency&&(dojoRun.cfg||dojoCfg).difficulty!=="basic"&&s.player&&s.player.maxHp>0&&s.player.hp/s.player.maxHp<.7&&now-dojoRun.lastFly>3000){dojoRun.lastFly=now;a.requestFly(DOJO_OWNER,{reason:"道场低血量"});}
     }else{
       a.clearArrowTarget(DOJO_OWNER);
-      if(dojoCfg.fly&&s.inDojoMap&&dojoRun.remaining>0&&now-dojoRun.lastFly>3000){dojoRun.lastFly=now;a.requestFly(DOJO_OWNER,{reason:"道场无怪且仍有剩余"});}
+      if((dojoRun.cfg||dojoCfg).fly&&s.inDojoMap&&dojoRun.remaining>0&&now-dojoRun.lastFly>3000){dojoRun.lastFly=now;a.requestFly(DOJO_OWNER,{reason:"道场无怪且仍有剩余"});}
       dojoContact(a,s,now);
     }
     dojoRender();
   }
-  function dojoStart(){
+  function dojoStart(params){
     var a=dojoApi();
     if(!a||!a.ready())return dojoStop("缺少兼容的 RO助手 API，功能已禁用");
     var r=a.acquire(DOJO_OWNER,["dojo","battle","movement","dialog","arrow","fly"]); // 与外部脚本同一租约，被占用即拒绝
     if(!r||!r.ok)return dojoStop(r&&r.error||"助手正被其他流程占用");
     dojoRun.on=true;dojoRun.generation++;dojoRun.round=0;dojoRun.remaining=null;dojoRun.lastMenu="";dojoRun.npc=null;dojoRun.lastFly=0;dojoRun.phase="启动中";
+    dojoRun.cfg = params ? Object.assign({}, dojoCfg, params) : dojoCfg; // 脚本动作参数覆盖（不落盘，仅本次运行）
     dojoRun.timer=setInterval(function(){dojoTick(dojoRun.generation);},250);
     dojoTick(dojoRun.generation);
   }
@@ -14126,60 +14201,12 @@
   }
   function dojoRender(){
     try{
-      var st=$id("dsh-dojo-state");
-      if(st)st.textContent=dojoRun.phase+"\n轮次："+(dojoRun.round||"—")+"　剩余："+(dojoRun.remaining==null?"—":dojoRun.remaining);
-      var b=$id("dsh-dojo-start");if(b)b.disabled=dojoRun.on||!dojoApi();
-      var c=$id("dsh-dojo-stop");if(c)c.disabled=!dojoRun.on;
+      var st=$id("dsh-scr-state");
+      if(st&&dojoRun.on)st.textContent="道馆 " + dojoRun.phase + " · 轮次 " + (dojoRun.round||0) + (dojoRun.remaining==null?"":" · 剩余 "+dojoRun.remaining);
     }catch(e){}
   }
-  // V2.36.0：pushplus token / 启用开关复用 notify.setToken（notifySaveToken）与 notifyLoadToken 链路，落全局键 dsh_ro_plugin_v1
-  function dojoPushFill(){
-    try{
-      var t=$id("dsh-dojo-pptoken"),e=$id("dsh-dojo-ppen");
-      if(t)t.value=notifyLoadToken();
-      if(e)e.checked=notifyPushEnabled();
-      dojoPushSay();
-    }catch(err){}
-  }
-  function dojoPushSay(msg){
-    try{
-      var s=$id("dsh-dojo-ppstate");
-      if(s)s.textContent=msg||((notifyLoadToken()?"已配置 token":"未配置 token")+" · "+(notifyPushEnabled()?"推送已启用":"推送已停用"));
-    }catch(err){}
-  }
-  function dojoEnsureHost(){
-    var h=$id("dsh-fw-dojo");
-    if(h){dojoPushFill();dojoRender();return h;} // V2.36.0：每次打开回填 pushplus 现值
-    var dock=$id("dsh-dojo-dock");
-    if(!dock){dock=document.createElement("div");dock.id="dsh-dojo-dock";dock.style.display="none";document.documentElement.appendChild(dock);}
-    h=document.createElement("div");h.id="dsh-fw-dojo";
-    h.innerHTML='<div class="sec">无限道场（内置 · 走助手公共 API）</div>'
-      +'<div class="row"><select id="dsh-dojo-diff"><option value="basic">初级</option><option value="middle">中级</option><option value="advanced">高级</option></select><button class="green" id="dsh-dojo-start">开始</button><button class="red" id="dsh-dojo-stop">停止</button></div>'
-      +'<label class="switch"><input id="dsh-dojo-stop100" type="checkbox">100轮领奖前暂停</label>'
-      +'<label class="switch"><input id="dsh-dojo-fly" type="checkbox">道场无怪时飞行</label>'
-      +'<label class="switch"><input id="dsh-dojo-emergency" type="checkbox">中高级 HP&lt;70% 紧急飞行</label>'
-      +'<div class="st" id="dsh-dojo-state"></div>'
-      +'<div class="row"><input id="dsh-dojo-pptoken" type="password" placeholder="pushplus token" autocomplete="off"><button class="green" id="dsh-dojo-ppsave">保存推送</button></div>'
-      +'<label class="switch"><input id="dsh-dojo-ppen" type="checkbox">启用推送</label>'
-      +'<div class="st" id="dsh-dojo-ppstate"></div>'
-      +'<div class="log">租约 builtin-dojo（dojo/battle/movement/dialog/arrow/fly）：被其它自动化占用时拒绝启动，停止即释放。'+ITEM_OUTLET_NOTE+'</div>';
-    dock.appendChild(h);
-    var diff=$id("dsh-dojo-diff"),stop100=$id("dsh-dojo-stop100"),fly=$id("dsh-dojo-fly"),emg=$id("dsh-dojo-emergency"),ppen=$id("dsh-dojo-ppen"),pptoken=$id("dsh-dojo-pptoken");
-    diff.value=dojoCfg.difficulty;stop100.checked=dojoCfg.stop100;fly.checked=dojoCfg.fly;emg.checked=dojoCfg.emergency;
-    function save(){dojoCfg.difficulty=diff.value;dojoCfg.stop100=stop100.checked;dojoCfg.fly=fly.checked;dojoCfg.emergency=emg.checked;dojoSave();}
-    diff.onchange=stop100.onchange=fly.onchange=emg.onchange=save;
-    dojoPushFill();
-    $id("dsh-dojo-ppsave").onclick=function(){var ok=notifySaveToken(pptoken.value);pptoken.value=notifyLoadToken();dojoPushSay(ok?"推送 token 已保存":"保存失败：浏览器存储不可写");};
-    ppen.onchange=function(){notifySetPushEnabled(ppen.checked);dojoPushSay(ppen.checked?"已启用 pushplus 推送":"已停用 pushplus 推送");};
-    $id("dsh-dojo-start").onclick=dojoStart;
-    $id("dsh-dojo-stop").onclick=function(){dojoStop();};
-    dojoRender();
-    return h;
-  }
-  try{fwReg("dojo", "无限道场", dojoEnsureHost);}catch(e){}
   try{window.addEventListener("dsh-ro-assist-notice",function(e){try{dojoNotice(e.detail&&(e.detail.text||e.detail.message));}catch(err){}});}catch(e){}
   try{window.addEventListener("pagehide",function(){try{if(dojoRun.on)dojoStop("页面离开");}catch(err){}});}catch(e){}
-  setInterval(function(){try{dojoRender();}catch(e){}},1000);
 
 
 // MVP_TIMER_START: 公告栏剩余时间以接收时刻为基准，关闭窗口不停止计时。

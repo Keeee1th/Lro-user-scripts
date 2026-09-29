@@ -569,8 +569,8 @@ test('exp 功能菜单五栏顺序与条目齐全', () => {
   const ctx = {}; vm.createContext(ctx);
   vm.runInContext(code + ';this.secs=[];this.bySec={};for(var i=0;i<RO_MODULES.length;i++){var m=RO_MODULES[i];if(this.secs[this.secs.length-1]!==m.sec)this.secs.push(m.sec);(this.bySec[m.sec]=this.bySec[m.sec]||[]).push(m.id);}', ctx);
   assert.deepEqual(Array.from(ctx.secs), ['常用', '战斗功能', '战斗辅助', '提示', '其他'], 'sec 顺序即菜单显示顺序');
-  assert.deepEqual(Array.from(ctx.bySec['常用']), ['menu', 'tp', 'np', 'zhu']);
-  assert.deepEqual(Array.from(ctx.bySec['战斗功能']), ['arrowrules', 'dojo', 'mlock', 'zhu2', 'zskill']);
+  assert.deepEqual(Array.from(ctx.bySec['常用']), ['menu', 'tp', 'np', 'zhu', 'scr']);
+  assert.deepEqual(Array.from(ctx.bySec['战斗功能']), ['arrowrules', 'mlock', 'zhu2', 'zskill']);
   assert.deepEqual(Array.from(ctx.bySec['战斗辅助']), ['aid', 'party', 'dps', 'boss', 'askcombo', 'item']);
   assert.deepEqual(Array.from(ctx.bySec['提示']), ['zhud', 'ztip', 'tgt', 'znear']);
   assert.deepEqual(Array.from(ctx.bySec['其他']), ['perf', 'txcap', 'mvp', 'panel']);
@@ -586,8 +586,8 @@ test('exp 三个一级窗口容器 + fwReg + RO_MODULES 登记齐全且走标准
   }
   assert.ok(expSource.includes('{ id: "zskill", name: "技能设置"'), 'RO_MODULES 缺 zskill');
   assert.ok(expSource.includes('{ id: "znear", name: "附近怪物实时列表"'), 'RO_MODULES 缺 znear');
-  assert.ok(expSource.includes('{ id: "dojo",  name: "无限道场"'), 'RO_MODULES 缺 dojo');
-  assert.ok(expSource.includes('fwReg("dojo", "无限道场", dojoEnsureHost)'), '缺少 fwReg("dojo")');
+  assert.ok(expSource.includes('{ id: "scr",   name: "脚本执行"'), 'RO_MODULES 缺 scr');
+  assert.ok(expSource.includes('fwReg("scr", "脚本执行", scrEnsureHost)'), '缺少 fwReg("scr")');
   // 新 id 不得另起一套窗口系统：继续沿用 fwSyncState / fwOpen / fwClose
   assert.ok(expSource.includes('return fwSyncState(id);'));
   assert.ok(expSource.includes('if (!fwActualOpen(id)) fwOpen(id, false);'));
@@ -717,10 +717,10 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
 
 // ================= V2.34.3：格子距离口径 / 内挂状态校准 / 混合接管兜底 / 坐下放宽 =================
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
-  // 1) 版本号：稳定版与实验版都必须是 2.36.0（@version 与运行时常量一致）
+  // 1) 版本号：稳定版与实验版都必须是 2.36.1（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.0', name + ' @version 必须是 2.36.0');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.0', name + ' 运行时常量 VER 必须是 2.36.0');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.2', name + ' @version 必须是 2.36.2');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.2', name + ' 运行时常量 VER 必须是 2.36.2');
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
   const stripHead = (s) => s.replace(/\r\n/g,'\n').split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
@@ -769,6 +769,20 @@ test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、�
     assert.ok(zAtkSeg.includes('zAtkWhy = "' + why + '"'), '攻击诊断缺少原因 ' + why);
   }
 });
+
+// ================= V2.36.1：补全格子距离口径（侦查扫描 / 技能射程 / 上马判定） =================
+test('v2.36.1 侦查扫描/技能射程/上马三处距离统一为格子口径（max），不再残留曼哈顿', () => {
+  const scanSeg = extract('  function scanOnce() {', '  function hpDrop2sPct(');
+  assert.ok(scanSeg.includes('Math.max(Math.abs(e.position[0] - ent.position[0]), Math.abs(e.position[1] - ent.position[1]))'), 'scanOnce 距离必须是格子口径');
+  assert.doesNotMatch(scanSeg, /Math\.abs\(e\.position\[0\] - ent\.position\[0\]\) \+ Math\.abs\(e\.position\[1\] - ent\.position\[1\]\)/, 'scanOnce 仍残留曼哈顿距离');
+  const castSeg = extract('  function castOrderSkill(order, target) {', '  function learnedActiveSkills() {');
+  assert.ok(castSeg.includes('Math.max(Math.abs(target.position[0] - ent.position[0]), Math.abs(target.position[1] - ent.position[1]))'), 'castOrderSkill 距离必须是格子口径');
+  assert.doesNotMatch(castSeg, /Math\.abs\(target\.position\[0\] - ent\.position\[0\]\) \+ Math\.abs\(target\.position\[1\] - ent\.position\[1\]\)/, 'castOrderSkill 仍残留曼哈顿距离');
+  const mountSeg = extract('  function lockMobInAtkRange() {', '  function tickRein() {');
+  assert.ok(mountSeg.includes('Math.max(Math.abs(e.position[0] - entR.position[0]), Math.abs(e.position[1] - entR.position[1]))'), 'lockMobInAtkRange 距离必须是格子口径');
+  assert.doesNotMatch(mountSeg, /Math\.abs\(e\.position\[0\] - entR\.position\[0\]\) \+ Math\.abs\(e\.position\[1\] - entR\.position\[1\]\)/, 'lockMobInAtkRange 仍残留曼哈顿距离');
+});
+
 
 // ================= V2.34.4：锁定名单语义（3A）+ 受击死角（3B） =================
 // 权威语义：名单非空 → 只主动攻击名单内怪（「打全部怪」不再覆盖）；名单为空 → 按「打全部怪」；
@@ -1078,8 +1092,8 @@ test('V2.34.5 战斗诊断快照 prof 字段已就位（不改既有字段）', 
 // ================= V2.34.5：配置自动备份（两代）/ 黄金副本找回（纯函数真值表 / 按钮 / 键隔离）=================
 test('V2.34.5 版本号升到 2.34.5（@version 与运行时常量一致，两文件同步）', () => {
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.0', name + ' @version 必须是 2.36.0');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.0', name + ' 运行时常量 VER 必须是 2.36.0');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.2', name + ' @version 必须是 2.36.2');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.2', name + ' 运行时常量 VER 必须是 2.36.2');
   }
 });
 
@@ -1323,20 +1337,16 @@ test('bagClean v2 UI and storage contract is lockstep and documents unsupported 
 
 // ================= V2.35.1 assistant API + standalone dojo =================
 const splitSources=[['stable',source],['exp',expSource]];
-test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.36\.0/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
+test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.36\.2/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
 test('V2.35.1 public API uses owner-only external signatures and validates the current lease owner',()=>{for(const[,s]of splitSources){assert.ok(s.includes('/^[A-Za-z0-9_.:-]{8,128}$/'));assert.ok(s.includes('dojo:1,battle:1,movement:1,dialog:1,arrow:1,fly:1'));assert.ok(s.includes('if(apiLease&&apiLease.owner!==owner)'));for(const sig of ['apiHas(owner,scope)','apiSnapshot(owner)','apiRelease(owner)','apiContact(owner,gid)','apiWalk(owner,payload)','apiChoose(owner,payload)','apiBattle(owner,on)','apiSetArrow(owner,target)','apiClearArrow(owner)','apiFly(owner,payload)'])assert.ok(s.includes('function '+sig),sig);assert.ok(s.includes('apiLease.generation===generation'));assert.ok(!s.includes('apiHas(owner,generation'));}});
 test('V2.35.1 snapshot and battle/menu ownership contracts are explicit',()=>{for(const[,s]of splitSources){for(const key of ['ready:','map:','player:','mobs:','npcs:','target:','inDojoMap:','dialogOpen:','menu:','battleState:','busy:','arrow:'])assert.ok(s.includes(key),key);assert.ok(s.includes('if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"}'));assert.ok(s.includes('b.state="pending-on"'));assert.ok(s.includes('if(b.state!=="owned")return {ok:true,result:"not-owned"}'));assert.ok(s.includes('l.battle.state==="owned"||l.battle.state==="pending-off"'));assert.ok(s.includes('if(s!==false)return {ok:true,result:s===true?"preexisting":"unknown"}'));}});
 test('V2.35.1 arrow decision priority and confirmation retry remain assistant-owned',()=>{for(const[,s]of splitSources){assert.ok(s.includes('if(type===8&&level===3)'));assert.ok(s.includes('if(isBoss)return boss||neutral'));assert.ok(s.includes('if(type===8&&level===4)'));assert.ok(s.includes('confirmUntil:now+5000'));assert.ok(s.includes('p.retryAt=now+3000'));}});
-const dojo=fs.readFileSync(new URL('../ro-infinite-dojo.user.js',import.meta.url),'utf8');
-test('dojo is API-only with migration missing-API and generation lifecycle',()=>{assert.match(dojo,/@version\s+1\.\d+\.\d+/);assert.ok(dojo.includes('dsh-ro-infinite-dojo-v1'));assert.ok(dojo.includes('dsh-ro-challenge-v1'));assert.ok(dojo.includes('d.migrated=true'));assert.doesNotMatch(dojo,/\bCLIENT\b|sendPacket|REQ_WEAR_EQUIP|\.NM\b|\bCZ\.|ITEM_THROW|require\(|MutationObserver/);assert.ok(dojo.includes('raw.handshake({protocol:PROTOCOL,client:"ro-infinite-dojo"})'));assert.ok(dojo.includes('a.protocol!==PROTOCOL')); assert.ok(dojo.includes('a.acquire(run.owner,["dojo","battle","movement","dialog","arrow","fly"])'));assert.ok(dojo.includes('a.snapshot(run.owner)'));assert.ok(dojo.includes('a.release(run.owner)'));assert.ok(dojo.includes('run.generation++'));assert.ok(dojo.includes('缺少')||dojo.includes('请先安装'));assert.ok(dojo.includes('dsh-ro-assist-ready'));assert.ok(dojo.includes('dsh-ro-assist-notice'));});
-test('assistant facade and dojo calls keep matching owner-only signatures',()=>{const calls={snapshot:['snapshot:apiSnapshot','a.snapshot(run.owner)'],release:['release:apiRelease','a.release(run.owner)'],contactNpc:['contactNpc:apiContact','a.contactNpc(run.owner,n.gid)'],walkTo:['walkTo:apiWalk','a.walkTo(run.owner,{'],chooseMenu:['chooseMenu:apiChoose','a.chooseMenu(run.owner,{'],requestBattle:['requestBattle:apiBattle','a.requestBattle(run.owner,!!allowed)'],setArrowTarget:['setArrowTarget:apiSetArrow','a.setArrowTarget(run.owner,{'],clearArrowTarget:['clearArrowTarget:apiClear','a.clearArrowTarget(run.owner)'],requestFly:['requestFly:apiFly','a.requestFly(run.owner,{']};for(const parts of Object.values(calls)){for(const[,s]of splitSources)assert.ok(s.includes(parts[0]));assert.ok(dojo.includes(parts[1]));}});
-test('dojo menu once-only notice dedupe NPC bounds and deferred list are explicit',()=>{assert.ok(dojo.includes('m.fingerprint'));assert.ok(dojo.includes('m.fingerprint===run.lastMenu')); assert.ok(dojo.includes('now-run.lastNoticeAt<2500'));assert.ok(dojo.includes('list.length>1'));assert.ok(dojo.includes('>=8000'));assert.ok(dojo.includes('>=30000'));assert.ok(dojo.includes('第100轮领奖前暂停'));assert.ok(dojo.includes('不含技能、邮件、push、清包、巡逻'));});
 
 
 // ================= V2.36.0 内置道馆并入主脚本 + 新门面能力 =================
 test('V2.36.0 window facade registers opens and closes through the shared fw layer',()=>{
   for(const[name,s]of splitSources){
-    assert.ok(s.includes('fwReg("dojo", "无限道场", dojoEnsureHost)'),name+' 内置道馆必须注册为标准浮窗');
+    assert.ok(s.includes('fwReg("scr", "脚本执行", scrEnsureHost)'),name+' 脚本必须注册为标准浮窗');
     assert.ok(s.includes('function apiRegisterWindow(id,title,getEl)'));
     assert.ok(s.includes('function apiOpenWindow(id)'));
     assert.ok(s.includes('function apiCloseWindow(id)'));
@@ -1345,16 +1355,12 @@ test('V2.36.0 window facade registers opens and closes through the shared fw lay
     assert.ok(s.includes('fwMakeWin(id,fwState[id].title)'),name+' openWindow 必须复用 fwMakeWin');
     assert.ok(s.includes('fwReg(id,String(title||id),getEl)'),name+' registerWindow 必须复用 fwReg');
     assert.ok(s.includes('fwClose(id)'),name+' closeWindow 必须复用 fwClose');
-    assert.ok(s.includes('h.id="dsh-fw-dojo"'),name+' 道场宿主必须沿用 dsh-fw-* 约定');
-    assert.ok(s.includes('<div class="sec">无限道场'),name+' 道场必须用 sec 区块样式');
-    assert.ok(s.includes('<div class="st" id="dsh-dojo-state"></div>'),name+' 道场必须用 st 状态样式');
-    assert.ok(s.includes('<div class="log">租约 builtin-dojo'),name+' 道场必须用 log 说明样式');
+    assert.ok(s.includes('h.id = "dsh-fw-scr"'),name+' 脚本宿主必须沿用 dsh-fw-* 约定');
+    assert.ok(s.includes('<div class="sec">脚本执行'),name+' 脚本必须用 sec 区块样式');
+    assert.ok(s.includes('<span class="st" id="dsh-scr-state"'),name+' 脚本必须用 st 状态样式');
+    assert.ok(s.includes('<div class="log" id="dsh-scr-log"'),name+' 脚本必须用 log 说明样式');
     assert.ok(!s.includes('id="dsh-dojo-panel"'),name+' 禁止自建左上角 plain 面板');
   }
-  // 独立脚本 1.1.0 兼容壳：主脚本声明 modules:["dojo"] 后必须自行停用，避免双控
-  assert.ok(dojo.includes('hasDojo'),'独立道馆必须探测主脚本的 modules');
-  assert.ok(dojo.includes('c.modules.indexOf("dojo")>=0'));
-  assert.ok(dojo.includes('道馆已并入主脚本'));
   // 行为：合法 id 走 fwReg，非法 id / 未登记窗口一律 fail-closed
   const code=extract('  function apiRegisterWindow(id,title,getEl){','  // bag：规划与执行');
   const registered=[];const ctx={fwState:{},fwReg(id,title,getEl){registered.push(id);ctx.fwState[id]={title:title,getEl:getEl};},fwMakeWin(id){ctx.made=id;return {};},fwOpen(id){return !!ctx.fwState[id];},fwClose(id){ctx.closed=id;},String};
@@ -1388,10 +1394,10 @@ test('V2.36.0 builtin dojo joins the shared lease and refuses when the lease is 
     for(const sig of ['apiHas(owner,scope)','apiSnapshot(owner)','apiRelease(owner)','apiContact(owner,gid)','apiWalk(owner,payload)','apiChoose(owner,payload)','apiBattle(owner,on)','apiSetArrow(owner,target)','apiClearArrow(owner)','apiFly(owner,payload)'])assert.ok(s.includes('function '+sig),sig);
     assert.ok(s.includes('if(dojoRun.timer)clearInterval(dojoRun.timer)'),name+' 停止/暂停必须清定时器');
   }
-  const code=extract('  function dojoStart(){','  function dojoStop(reason){')+extract('  function dojoStop(reason){','  function dojoRender(){');
+  const code=extract('  function dojoStart(params){','  function dojoStop(reason){')+extract('  function dojoStop(reason){','  function dojoRender(){');
   function run(startOk,apiMissing){
     const calls=[];let timerSet=null;
-    const ctx={DOJO_OWNER:'builtin-dojo',dojoRun:{on:false,generation:0,timer:null,phase:''},dojoRender(){},
+    const ctx={DOJO_OWNER:'builtin-dojo',dojoCfg:{difficulty:'basic',stop100:true,fly:false,emergency:false},dojoRun:{on:false,generation:0,timer:null,phase:''},dojoRender(){},
       dojoTick:g=>calls.push(['tick',g]),dojoStop:r=>{calls.push(['stop',r]);return r;},
       dojoApi:()=>apiMissing?null:{ready:()=>true,acquire:(o,sc)=>{calls.push(['acquire',o,sc.join('+')]);return startOk?{ok:true}:{ok:false,error:'owned'};},clearArrowTarget:o=>calls.push(['clear',o]),release:o=>calls.push(['release',o])},
       setInterval:(fn,ms)=>{timerSet=ms;return 7;},clearInterval:id=>{calls.push(['clearInterval',id]);},Date,Math};
@@ -1570,7 +1576,7 @@ test('V2.36.1 普通物品（无 NoDrop 字段）恢复可卖可存，只有显�
 });
 
 test('V2.36.1 内置道馆换箭 gate：未就绪 / 被阻塞 / 目标不匹配都不开战',()=>{
-  const code=extract('  function dojoTick(g){','  function dojoStart(){');
+  const code=extract('  function dojoTick(g){','  function dojoStart(params){');
   const base={ready:true,inDojoMap:true,mobs:[],npcs:[],player:{position:[0,0],hp:100,maxHp:100},dialogOpen:false,menu:null}; // ready:true 否则 dojoTick 直接 dojoStop
   function tick(arrow,arrowCfg,mob,extra){
     const calls=[];
@@ -1621,8 +1627,9 @@ test('V2.36.1 暂停与限次顺序：先清定时器 / 先占位指纹再发包
   assert.ok(onOff>=0&&clear>onOff,'dojoStop 必须先置 on=false 再清定时器（顺序性回归）');
   assert.ok(null0>clear,'清定时器后必须把 timer 置回 null');
   for(const[name,s]of splitSources){
-    const m=s.match(/if\(dojoCfg\.stop100&&dojoRun\.round>=100\)return dojoStop\("第100轮领奖前暂停"\)/);
-    assert.ok(m,name+' 100 轮领奖前暂停必须仍然触发 dojoStop');
+    assert.ok(s.includes('(dojoRun.cfg||dojoCfg).stop100&&dojoRun.round>=100'), name+' 100 轮领奖前暂停条件仍在');
+    assert.ok(s.includes('return dojoStop("第100轮领奖前暂停")'), name+' 100 轮领奖前暂停必须仍然触发 dojoStop');
+    assert.ok(s.includes('notifyPush("无限道场已达 100 轮，领奖前已暂停")'), name+' 100 轮暂停应推送通知');
   }
   // 行为：定期器在清掉时必须已经不再挂在 run.timer 上
   const run={on:true,generation:1,phase:'',npc:null,lastMenu:'',lastFly:0,round:100,remaining:1,timer:7};
@@ -1645,9 +1652,9 @@ test('V2.36.0 builtin dojo keeps standalone semantics for menu NPC and arrow gat
     assert.ok(s.includes('if(m.fingerprint===dojoRun.lastMenu)return true'),name+' 菜单指纹不重复提交');
     assert.ok(s.includes('if(hits.length!==1){dojoRun.phase="菜单不唯一，请手动选择"'),name+' 菜单必须唯一');
     assert.ok(s.includes('if(list.length>1){dojoRun.phase="NPC 别名不唯一，请手动靠近"'),name+' 别名必须唯一');
-    assert.ok(s.includes('if(dojoCfg.stop100&&dojoRun.round>=100)return dojoStop("第100轮领奖前暂停")'),name+' 100 轮领奖前暂停');
+    assert.ok(s.includes('(dojoRun.cfg||dojoCfg).stop100&&dojoRun.round>=100'),name+' 100 轮领奖前暂停');
     assert.ok(s.includes('dojoRun.phase=allowed?"战斗中":"等待换箭就绪"'),name+' 换箭未就绪不开战');
-    assert.ok(s.includes('allowed=dojoCfg.difficulty==="basic"&&fresh&&fresh.arrow&&fresh.arrow.enabled===false'),name+' basic 且未启用换箭时放行');
+    assert.ok(s.includes('allowed=(dojoRun.cfg||dojoCfg).difficulty==="basic"&&fresh&&fresh.arrow&&fresh.arrow.enabled===false'),name+' basic 且未启用换箭时放行');
     assert.ok(s.includes('window.addEventListener("pagehide",function(){try{if(dojoRun.on)dojoStop("页面离开");'),name+' 页面离开停止');
     assert.ok(s.includes('try { dojoStop("换角色"); } catch (e5) {}'),name+' 换角色停止');
     assert.ok(s.includes('difficulty:"basic",stop100:true,fly:false,emergency:false,migrated:false'));
@@ -1713,18 +1720,17 @@ test('V2.35.4 统一采集器：旧探针与所有权契约保持不变、环形
 });
 
 // ================= V2.36.0：道馆菜单入口 + pushplus token UI（统一落全局键） =================
-test('V2.36.0 pushplus token UI lives inside the dojo window and persists through the global key', () => {
+test('V2.36.2 pushplus token UI lives inside the script window and persists through the global key', () => {
   for (const [name, s] of splitSources) {
-    assert.ok(s.includes('{ id: "dojo",  name: "无限道场"'), name + ' RO_MODULES 必须新增 dojo 条目');
-    assert.ok(s.includes('<input id="dsh-dojo-pptoken" type="password"'), name + ' 道馆窗口必须提供 pushplus token 密码框');
-    assert.ok(s.includes('id="dsh-dojo-ppsave">保存推送</button>'), name + ' 必须提供「保存推送」按钮');
-    assert.ok(s.includes('<input id="dsh-dojo-ppen" type="checkbox">启用推送'), name + ' 必须提供「启用推送」复选框');
-    const seg = s.slice(s.indexOf('function dojoPushFill()'), s.indexOf('try{fwReg("dojo"'));
-    assert.ok(seg.includes('function dojoEnsureHost()'), name + ' 道馆窗口宿主必须存在');
-    assert.ok(seg.includes('t.value=notifyLoadToken()'), name + ' 道馆窗口必须回填 token');
-    assert.ok(seg.includes('e.checked=notifyPushEnabled()'), name + ' 道馆窗口必须回填启用状态');
-    assert.ok(seg.includes('notifySaveToken(pptoken.value)'), name + ' 保存必须走 notify.setToken（notifySaveToken）链路');
-    assert.ok(seg.includes('notifySetPushEnabled(ppen.checked)'), name + ' 勾选状态必须落盘');
+    assert.ok(s.includes('{ id: "scr",   name: "脚本执行"'), name + ' RO_MODULES 必须有脚本执行条目');
+    assert.ok(s.includes('<input id="dsh-scr-pptoken" type="password"'), name + ' 脚本窗口必须提供 pushplus token 密码框');
+    assert.ok(s.includes('id="dsh-scr-ppsave"'), name + ' 必须提供「保存推送」按钮');
+    assert.ok(s.includes('<input id="dsh-scr-ppen" type="checkbox">启用推送'), name + ' 必须提供「启用推送」复选框');
+    const seg = s.slice(s.indexOf('function scrEnsureHost()'), s.indexOf('try { fwReg("scr"'));
+    assert.ok(seg.includes('notifyLoadToken()'), name + ' 脚本窗口必须回填 token');
+    assert.ok(seg.includes('notifyPushEnabled()'), name + ' 脚本窗口必须回填启用状态');
+    assert.ok(seg.includes('notifySaveToken($id("dsh-scr-pptoken").value)'), name + ' 保存必须走 notifySaveToken 链路');
+    assert.ok(seg.includes('notifySetPushEnabled($id("dsh-scr-ppen").checked)'), name + ' 勾选状态必须落盘');
   }
   // 行为：token / 启用状态同写全局键 dsh_ro_plugin_v1；未显式关闭默认启用；关闭后 notifyPush 静默
   const store = {};
@@ -1743,4 +1749,73 @@ test('V2.36.0 pushplus token UI lives inside the dojo window and persists throug
   assert.equal(ctx.on(), false);
   assert.equal(ctx.push('hi'), false, '停用后不得再发送');
   assert.deepEqual(JSON.parse(store['dsh_ro_plugin_v1']), { pushplusToken: 'tk-123', pushplusEnabled: false }, 'token 与启用状态必须同键共存');
+});
+
+// ================= V2.36.2：道馆移出主脚本 · 脚本系统承载 =================
+test('v2.36.2 道馆脚本化：动作/窗口/模板/门面', () => {
+  for (const [name, s] of splitSources) {
+    assert.ok(s.includes('"dojoStart", "dojoWait", "dojoStop"'), name + ' SCR_ACTIONS 含 dojo 三动作');
+    assert.ok(s.includes('case "dojoStart": scrDojoStart(step);'), name + ' dojoStart 分发');
+    assert.ok(s.includes('case "dojoStop": scrDojoStop();'), name + ' dojoStop 分发');
+    assert.ok(s.includes('fwReg("scr", "脚本执行", scrEnsureHost)'), name + ' 脚本窗口注册');
+    assert.ok(s.includes('function scrEnsureHost()'), name + ' 脚本窗口宿主');
+    assert.ok(s.includes('var DOJO_SCRIPT_TPL'), name + ' 道馆模板');
+    assert.ok(s.includes('templateId: "infinite-dojo"'), name + ' 模板 templateId');
+    assert.ok(s.includes('type: "dojo"'), name + ' 模板 type=dojo');
+    assert.ok(s.includes('action: "dojoWait"'), name + ' 模板 dojoWait 步');
+    // 内置道馆窗口移除，但门面能力保留
+    assert.ok(!s.includes('fwReg("dojo"'), name + ' 内置道馆窗口必须移除');
+    assert.ok(!s.includes('dojoEnsureHost'), name + ' 内置道馆宿主必须移除');
+    assert.ok(s.includes('modules:["dojo"]'), name + ' API 门面保留 dojo 模块');
+    assert.ok(s.includes('function dojoStart(params)'), name + ' dojoStart 动作实现保留');
+    // 顶层字段校验
+    assert.ok(s.includes('obj.priority != null'), name + ' priority 校验');
+    assert.ok(s.includes('obj.loop.mode === "count"'), name + ' loop.count 校验');
+    assert.ok(s.includes('obj.loop.mode === "duration"'), name + ' loop.duration 校验');
+    assert.ok(s.includes('obj.loop.mode === "until"'), name + ' loop.until 校验');
+  }
+});
+
+test('v2.36.2 串行队列按 priority 降序 / order 升序', () => {
+  const code = extract('  function scrQueueSort(list) {', '  function scrQueueStart() {');
+  const list = [{ priority: 1, order: 2 }, { priority: 3, order: 1 }, { priority: 1, order: 1 }, {}, { priority: 0, order: 0 }];
+  const ctx = { scrQueue: [0, 1, 2, 3, 4] };
+  vm.createContext(ctx);
+  vm.runInContext(code + ';this.sort=scrQueueSort', ctx);
+  ctx.sort(list);
+  assert.deepEqual(ctx.scrQueue, [1, 2, 0, 3, 4], 'priority 降序 + 同级 order 升序');
+});
+
+test('v2.36.2 脚本级循环三选一（count/duration/until）', () => {
+  const code = extract('  function scrLoopMore(loopCfg) {', '  function scrScriptLoopAgain(loopCfg) {');
+  function mk(run, cond) {
+    const ctx = { scrRun: run, scrCondMet: cond || (() => true), parseInt, Date: { now: () => 100000 } };
+    vm.createContext(ctx);
+    vm.runInContext(code + ';this.fn=scrLoopMore', ctx);
+    return ctx;
+  }
+  let c = mk({ scriptLoops: 2 });
+  assert.equal(c.fn({ mode: 'count', n: 3 }), true, 'count 未达上限继续');
+  assert.equal(c.fn({ mode: 'count', n: 2 }), false, 'count 达上限停止');
+  assert.equal(mk({ scriptLoops: 0, startedAt: 100000 - 59999 }).fn({ mode: 'duration', minutes: 1 }), true, 'duration 未超时继续');
+  assert.equal(mk({ scriptLoops: 0, startedAt: 100000 - 60001 }).fn({ mode: 'duration', minutes: 1 }), false, 'duration 超时停止');
+  assert.equal(mk({ scriptLoops: 0 }, () => false).fn({ mode: 'until', until: { item: 1 } }), true, 'until 未达成继续');
+  assert.equal(mk({ scriptLoops: 0 }, () => true).fn({ mode: 'until', until: { item: 1 } }), false, 'until 达成停止');
+});
+
+test('v2.36.2 dojoWait 语义：已停/轮次/条件', () => {
+  const code = extract('  function scrDojoWaitMet(step) {', '  function scrNextStep() {');
+  function run(dojoRun, step, cond) {
+    const ctx = { dojoRun, scrCheckUntil: cond || (() => true), parseInt };
+    vm.createContext(ctx);
+    vm.runInContext(code + ';this.fn=scrDojoWaitMet', ctx);
+    return ctx.fn(step);
+  }
+  assert.equal(run(null, {}), true, '未启动视为完成');
+  assert.equal(run({ on: false }, {}), true, '已暂停视为完成');
+  assert.equal(run({ on: true, round: 50 }, { params: { round: 100 } }), false, '未达轮次继续等');
+  assert.equal(run({ on: true, round: 100 }, { params: { round: 100 } }), true, '达轮次完成');
+  assert.equal(run({ on: true, round: 1 }, {}), false, '无轮次无条件等到道馆停止');
+  assert.equal(run({ on: true, round: 1 }, { until: { item: 1 } }, () => false), false, '条件未达继续等');
+  assert.equal(run({ on: true, round: 1 }, { until: { item: 1 } }, () => true), true, '条件达成完成');
 });

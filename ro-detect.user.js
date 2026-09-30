@@ -1,16 +1,15 @@
 // ==UserScript==
 // @name         仙境传说 · 检测插件（ro-detect）
 // @namespace    dsh.ro-detect
-// @version      1.0.8
+// @version      1.0.9
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-detect.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-detect.user.js
-// @description  v1.0.8：检测插件（合并 ro-probe 回传框架 + ro-attack-test 攻击测试）。模块：A验证码/自动验证日志监控 B攻击测试（标记/模拟点击/buff上身诊断） C自动buff状态监控+自动加buff（状态未常驻自动放技能，面板开关+防抖退避） D防原地走动判定。回传带角色名（多开隔离）+ 面板与游戏页彻底隔层（stopPropagation 防点地板）。抓取 [ASK-DIAG] 自动技能逐项决策日志。检测日志自动回传本机接收服务（8899），DSH 直接自取，无需手动复制控制台。
+// @description  v1.0.9：检测插件（回传地址改本机 127.0.0.1，隐私隔离：别人用脚本数据留在对方本机）（合并 ro-probe 回传框架 + ro-attack-test 攻击测试）。模块：A验证码/自动验证日志监控 B攻击测试（标记/模拟点击/buff上身诊断） C自动buff状态监控+自动加buff（状态未常驻自动放技能，面板开关+防抖退避） D防原地走动判定。回传带角色名（多开隔离）+ 面板与游戏页彻底隔层（stopPropagation 防点地板）。抓取 [ASK-DIAG] 自动技能逐项决策日志。检测日志自动回传本机接收服务（8899），DSH 直接自取，无需手动复制控制台。
 // @match        https://post.lastro.cn/*
 // @match        https://post.lastro.cn/ro/api.html*
 // @run-at       document-start
 // @grant        GM_xmlhttpRequest
 // @grant        unsafeWindow
-// @connect      192.168.31.97
 // @connect      127.0.0.1
 // ==/UserScript==
 
@@ -18,7 +17,7 @@
   'use strict';
 
   /* ==================== 配置 ==================== */
-  var COLLECT_URL = 'http://192.168.31.97:8899/api/probe-collect'; // 本机接收服务（DSH 自取）
+  var COLLECT_URL = 'http://127.0.0.1:8899/api/probe-collect'; // 本机接收服务（DSH 自取）
   var MAX_Q = 200;            // 待回传队列上限
   var FLUSH_MS = 8000;        // 批量回传间隔
   var SESSION = String(Date.now()).slice(-8) + '-' + Math.floor(Math.random() * 900 + 100); // 本次会话标识

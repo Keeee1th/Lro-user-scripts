@@ -9,7 +9,6 @@
 // @run-at       document-start
 // @grant        GM_xmlhttpRequest
 // @grant        unsafeWindow
-// @connect      192.168.31.97
 // @connect      127.0.0.1
 // ==/UserScript==
 
@@ -996,7 +995,7 @@ function pageWindow() {
   }
 
   /* ==================== 回执采集（v0.9.0：聊天框开关回执+ 设备信息 →本机 8899 txt，==================== */
-  var COLLECT_URL = 'http://192.168.31.97:8899/api/probe-collect'
+  var COLLECT_URL = 'http://127.0.0.1:8899/api/probe-collect'
 ;
   var collectSeenCount = 0;       // 已扫描过的聊天行数（增量检测）
   var collectLastPost = 0;        // 上次回传时间（防抖）

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手 · 实验版）
 // @namespace    dsh.ro-plugin
-// @version      2.36.3
+// @version      2.36.4
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -98,6 +98,8 @@
 // ---------------- V2.36.3 变更摘要 ----------------
 // 1. 索敌优先级修正：锁定名单内先打正在攻击你的怪（打死为止），再打身侧相邻怪，最后才按血少/距离选——避免多只锁定怪时被远处低血怪抢走目标、忽视贴脸攻击你的怪（修复「怪在脸上不攻击」）。
 // 2. 追怪候选同口径：锁定怪追怪池同样按「已攻击 > 身侧 > 血少 > 距离」排序，与索敌一致。
+// ---------------- V2.36.4 变更摘要 ----------------
+// 1. 脚本执行改为表单式设置：点「执行」弹出该脚本的设置界面（道馆=难度下拉 + 100轮暂停/无怪飞行/紧急飞行 三个开关 + 循环方式/次数/时长/条件 + 优先级/顺序），确认后保存并入队执行，不再只靠纯文字 JSON。
 
 
 
@@ -125,7 +127,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.36.3"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.36.4"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -13337,7 +13339,7 @@
         var runB = document.createElement("button");
         runB.textContent = "执行";
         runB.style.cssText = "flex:0 0 auto;padding:1px 8px;font-size:11px";
-        runB.addEventListener("click", function () { scrRunScript(i); });
+        runB.addEventListener("click", function () { scrEditOpen(i); });
         row.appendChild(runB);
         var delB = document.createElement("button");
         delB.textContent = "删除";
@@ -13347,6 +13349,84 @@
         box.appendChild(row);
       });
     } catch (e) {}
+  }
+  // V2.36.4：脚本设置弹窗——点「执行」先弹该脚本的设置表单（下拉/勾选/数字），确认后再入队执行
+  function scrEditModal() {
+    var m = $id("dsh-scr-modal");
+    if (m) return m;
+    m = document.createElement("div");
+    m.id = "dsh-scr-modal";
+    m.style.cssText = "display:none;position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,.42);z-index:2147483000;align-items:center;justify-content:center";
+    m.innerHTML = '<div style="background:#fff;border:1px solid #8a9bb0;border-radius:6px;padding:12px 14px;min-width:300px;max-width:360px;box-shadow:0 8px 24px rgba(0,0,0,.35)">'
+      + '<div class="sec" id="dsh-scr-modal-title">脚本设置</div>'
+      + '<div id="dsh-scr-modal-body" style="margin-top:2px"></div>'
+      + '<div class="row" style="margin-top:10px;gap:8px">'
+      + '<button class="green" id="dsh-scr-modal-ok" style="flex:1 1 auto">确认执行</button>'
+      + '<button id="dsh-scr-modal-cancel" style="flex:1 1 auto">取消</button>'
+      + '</div></div>';
+    document.body.appendChild(m);
+    $id("dsh-scr-modal-cancel").onclick = function () { m.style.display = "none"; };
+    m.addEventListener("click", function (ev) { if (ev.target === m) m.style.display = "none"; });
+    return m;
+  }
+  function scrEditOpen(idx) {
+    var list = scrLoad(), it = list[idx];
+    if (!it) return;
+    var m = scrEditModal();
+    $id("dsh-scr-modal-title").textContent = "设置 · " + (it.name || it.templateId || ("脚本" + (idx + 1)));
+    var body = $id("dsh-scr-modal-body");
+    var isDojo = it.type === "dojo";
+    var dp = (isDojo && it.steps && it.steps[0] && it.steps[0].params) || it.params || {};
+    var lp = it.loop || { mode: "count", n: 1 };
+    function opt(v, cur) { return v === cur ? " selected" : ""; }
+    function chk(v) { return v ? " checked" : ""; }
+    var html = "";
+    if (isDojo) {
+      html += '<div class="row"><span class="lb" style="min-width:56px">难度</span><select id="dsh-scr-e-diff">'
+        + '<option value="basic"' + opt(dp.difficulty || "basic", "basic") + '>初级</option>'
+        + '<option value="middle"' + opt(dp.difficulty, "middle") + '>中级</option>'
+        + '<option value="advanced"' + opt(dp.difficulty, "advanced") + '>高级</option></select></div>'
+        + '<label class="switch"><input id="dsh-scr-e-stop100" type="checkbox"' + chk(dp.stop100 !== false) + '>100轮领奖前暂停</label>'
+        + '<label class="switch"><input id="dsh-scr-e-fly" type="checkbox"' + chk(dp.fly) + '>道场无怪时飞行</label>'
+        + '<label class="switch"><input id="dsh-scr-e-emergency" type="checkbox"' + chk(dp.emergency) + '>中高级 HP&lt;70% 紧急飞行</label>';
+    }
+    var untilTxt = lp.until ? String(JSON.stringify(lp.until)).replace(/"/g, "&quot;") : "";
+    html += '<div class="row"><span class="lb" style="min-width:56px">循环</span><select id="dsh-scr-e-loopmode">'
+      + '<option value="count"' + opt(lp.mode || "count", "count") + '>按次数</option>'
+      + '<option value="duration"' + opt(lp.mode, "duration") + '>按时长</option>'
+      + '<option value="until"' + opt(lp.mode, "until") + '>按条件</option></select></div>'
+      + '<div class="row" id="dsh-scr-e-row-count"' + (lp.mode === "count" || !lp.mode ? "" : ' style="display:none"') + '><span class="lb" style="min-width:56px">次数</span><input id="dsh-scr-e-count" type="number" min="1" max="100000" value="' + (lp.n != null ? lp.n : 1) + '"></div>'
+      + '<div class="row" id="dsh-scr-e-row-duration"' + (lp.mode === "duration" ? "" : ' style="display:none"') + '><span class="lb" style="min-width:56px">分钟</span><input id="dsh-scr-e-minutes" type="number" min="1" max="1440" value="' + (lp.minutes != null ? lp.minutes : 1) + '"></div>'
+      + '<div class="row" id="dsh-scr-e-row-until"' + (lp.mode === "until" ? "" : ' style="display:none"') + '><span class="lb" style="min-width:56px">条件</span><input id="dsh-scr-e-until" type="text" value="' + untilTxt + '" placeholder=\'如 {"item":501}\'></div>'
+      + '<div class="row"><span class="lb" style="min-width:56px">优先级</span><input id="dsh-scr-e-priority" type="number" min="0" max="999" value="' + (it.priority != null ? it.priority : 0) + '"></div>'
+      + '<div class="row"><span class="lb" style="min-width:56px">顺序</span><input id="dsh-scr-e-order" type="number" min="0" max="999999" value="' + (it.order != null ? it.order : 0) + '"></div>'
+      + '<div class="log" style="font-size:10px;margin-top:4px">难度/暂停/飞行/循环/优先级都会随「确认执行」保存；循环=次数/时长/条件三选一。</div>';
+    body.innerHTML = html;
+    $id("dsh-scr-e-loopmode").onchange = function () {
+      var v = this.value;
+      $id("dsh-scr-e-row-count").style.display = v === "count" ? "" : "none";
+      $id("dsh-scr-e-row-duration").style.display = v === "duration" ? "" : "none";
+      $id("dsh-scr-e-row-until").style.display = v === "until" ? "" : "none";
+    };
+    $id("dsh-scr-modal-ok").onclick = function () {
+      if (isDojo) {
+        var ndp = { difficulty: $id("dsh-scr-e-diff").value, stop100: $id("dsh-scr-e-stop100").checked, fly: $id("dsh-scr-e-fly").checked, emergency: $id("dsh-scr-e-emergency").checked };
+        if (it.steps && it.steps[0] && it.steps[0].action === "dojoStart") it.steps[0].params = ndp;
+        it.params = ndp;
+      }
+      var nlp = { mode: $id("dsh-scr-e-loopmode").value };
+      if (nlp.mode === "count") nlp.n = Math.max(1, parseInt($id("dsh-scr-e-count").value, 10) || 1);
+      else if (nlp.mode === "duration") nlp.minutes = Math.max(1, Math.min(1440, parseInt($id("dsh-scr-e-minutes").value, 10) || 1));
+      else { var tv = $id("dsh-scr-e-until").value; try { nlp.until = JSON.parse(tv); } catch (e) { nlp.until = { keyword: tv }; } }
+      it.loop = nlp;
+      it.priority = Math.max(0, Math.min(999, parseInt($id("dsh-scr-e-priority").value, 10) || 0));
+      it.order = Math.max(0, parseInt($id("dsh-scr-e-order").value, 10) || 0);
+      scrSave(list);
+      scrRenderList();
+      m.style.display = "none";
+      scrRunScript(idx);
+    };
+    m.style.display = "flex";
   }
   function scrGetPos() { try { var ent = CLIENT.SS && CLIENT.SS.Entity; return ent && ent.position; } catch (e) { return null; } }
   function scrCheckArrive(step) {

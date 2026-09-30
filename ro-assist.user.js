@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.36.4
+// @version      2.36.5
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -127,7 +127,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.36.4"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.36.5"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -15229,6 +15229,63 @@
     try { kvSyncLoop(); } catch (e) {}
     setInterval(function () { try { kvSyncLoop(); } catch (e) {} }, 5000);
   }, 2500);
+  // ================= V2.36.5 任务采集（只读：读客户端 Quest 组件任务列表 → 本机 8899 kv）=================
+  // 纯只读上报：只读 Quest 组件 .list（服务器 0x09f8/0x9f9/0x9fa 实时维护），不接取/不放弃/不刷新。
+  // 上报键 quest:<account>；8899 不可用一律 try/catch 静默跳过，绝不影响其它功能。
+  var questSyncPrev = null;
+  function readQuestSnapshot() {
+    try {
+      var Quest = null;
+      try { Quest = window.requirejs && window.requirejs("UI/Components/Quest/Quest"); } catch (e1) {}
+      if (!Quest || !Array.isArray(Quest.list)) { try { Quest = window.require && window.require("UI/Components/Quest/Quest"); } catch (e2) {} }
+      if (!Quest || !Array.isArray(Quest.list)) return null;
+      var DB = CLIENT.DB || (window.require && window.require("DB/DBManager")) || (window.requirejs && window.requirejs("DB/DBManager"));
+      var account = getInventoryAccount();
+      var charName = getCurrentCharName();
+      var tasks = [];
+      for (var i = 0; i < Quest.list.length; i++) {
+        var q = Quest.list[i] || {};
+        var info = null;
+        try { info = (DB && typeof DB.getQuestInfo === "function") ? DB.getQuestInfo(q.questID) : null; } catch (e) {}
+        var hunt = [];
+        var hh = q.hunt || [];
+        for (var j = 0; j < hh.length; j++) {
+          var h = hh[j] || {};
+          hunt.push({ mobName: h.mobName || "", mobGID: h.mobGID || null, huntCount: h.huntCount || 0, maxCount: h.maxCount || 0 });
+        }
+        tasks.push({
+          questID: q.questID,
+          active: q.active,
+          title: (info && info.name) ? String(info.name) : ("任务#" + q.questID),
+          type: (info && info.type != null) ? info.type : null,
+          endTime: q.quest_endTime || 0,
+          hunt: hunt
+        });
+      }
+      return { account: account, charName: charName, map: getMapName(), tasks: tasks };
+    } catch (e) { return null; }
+  }
+  function questSyncTick() {
+    try {
+      if (typeof fetch !== "function") return;
+      var snap = readQuestSnapshot();
+      if (!snap || !snap.account) return;
+      var key = "quest:" + snap.account;
+      var sig = JSON.stringify(snap);
+      if (sig === questSyncPrev) return;
+      questSyncPrev = sig;
+      fetch("http://127.0.0.1:8899/api/kv/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: key, value: sig, ts: Date.now() })
+      }).catch(function () {});
+    } catch (e) {}
+  }
+  setTimeout(function () {
+    try { questSyncTick(); } catch (e) {}
+    setInterval(function () { try { questSyncTick(); } catch (e) {} }, 5000);
+  }, 4000);
+
   // ================= V2.34.5 黄金副本（本机 8899 显式读写 · 该键严禁加入 KV_KEYS）=================
   // dsh_ro_profiles_v2.golden 不参与 5 秒轮询自动同步（一旦进 KV_KEYS 会导致两个入口自动互相覆盖）。
   var PROF_GOLDEN_KEY = PROF_KEY + ".golden";

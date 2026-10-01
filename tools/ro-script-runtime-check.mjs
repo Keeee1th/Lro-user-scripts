@@ -238,7 +238,7 @@ test('same-map coordinate routing normalizes map prefixes and extensions',()=>{
 });
 
 test('skill scheduler reports cooldown and 300ms margin yields to imminent skill',()=>{
-  const castCode=extract('  function castOrderSkill(order, target) {','  $id("dsh-z-on")');
+  const castCode=extract('  function castOrderSkill(order, target) {','  onId("dsh-z-on",');
   const now=Date.now(),sent=[];const ctx={Date,Math,CLIENT:{SS:{Entity:{GID:1,position:[0,0]}},PS:{CZ:{USE_SKILL:function(){}}},NM:{sendPacket:p=>sent.push(p)}},zCastIdx:0,zUseCounts:{},zLockCounts:{},skillNextAt:{10:now+250},zSkillSentAt:{},zLastCastAt:0,zLastCastSkid:0,btDiagOn:false,
     ordinaryCastBlocked:()=>false,clampSkillLv:()=>1,dshCastSkip(){},tlog(){},$id:()=>({checked:false}),skillReq:()=>null,skillTypeBits:()=>0,getSkillRange:()=>9,dshCastMark(){},skillCdMs:()=>250,dshDiag(){},checkSkillCond:()=>({ok:true}),castStatusPrep:()=>false};
   vm.createContext(ctx);vm.runInContext(castCode+';this.cast=castOrderSkill',ctx);const order=[{skid:10,lv:1,uses:0,lock:0,prob:100,cond:'',cd:0}];
@@ -702,7 +702,7 @@ test('exp 物品搜索控件与代码已删净，「＋加入」落在白名单�
   const anc = expAncestors(html);
   assert.ok((anc['dsh-wlid'] || '').includes('dsh-fw-item'), '手动加ID输入应在物品窗口的白名单区块内');
   assert.ok((anc['dsh-wladdbtn'] || '').includes('dsh-fw-item'), '「＋加入」按钮应在物品窗口的白名单区块内');
-  assert.ok(expSource.includes('$id("dsh-wladdbtn").addEventListener("click"'), '「＋加入」必须已绑定新的小ID输入行');
+  assert.ok(expSource.includes('onId("dsh-wladdbtn", "click"'), '「＋加入」必须已绑定新的小ID输入行');
   assert.ok(expSource.includes('function getItemNameS(id)'), 'getItemNameS 仍被图鉴/仓库统计复用，必须保留');
 });
 
@@ -710,7 +710,7 @@ test('exp 技能点选/顺序表等级输入与释放% 即时写回守卫', () =
   assert.ok(expSource.includes('data-lvsel="'), '点选网格每行必须有等级输入');
   assert.ok(expSource.includes('skillLine({ skid: skid, lv: lv, cond: "", prob: 100 })'), '勾选加入顺序表必须用输入框里的等级');
   assert.ok(expSource.includes("if (++skillPickTicker % 3 === 0 && !skillEditFocused())"), '3 秒自动重绘必须有焦点守卫');
-  const guard = expExtract('  function skillEditFocused() {', '  $id("dsh-skillorder").addEventListener("input"');
+  const guard = expExtract('  function skillEditFocused() {', '  onId("dsh-skillorder", "input"');
   assert.ok(guard.includes('document.activeElement'), '守卫必须判断 document.activeElement');
   assert.ok(guard.includes('#dsh-skillorderlist') && guard.includes('#dsh-skillpick'), '守卫必须覆盖顺序表与点选网格');
   const order = expExtract('  function renderSkillOrderList() {', '  function renderSkillPick() {');
@@ -793,8 +793,8 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
   // 1) 版本号：稳定版与实验版都必须是 2.36.1（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.15', name + ' @version 必须是 2.36.15');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.15', name + ' 运行时常量 VER 必须是 2.36.15');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.16', name + ' @version 必须是 2.36.16');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.16', name + ' 运行时常量 VER 必须是 2.36.16');
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
   const stripHead = (s) => s.replace(/\r\n/g,'\n').split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
@@ -1166,8 +1166,8 @@ test('V2.34.5 战斗诊断快照 prof 字段已就位（不改既有字段）', 
 // ================= V2.34.5：配置自动备份（两代）/ 黄金副本找回（纯函数真值表 / 按钮 / 键隔离）=================
 test('V2.34.5 版本号升到 2.34.5（@version 与运行时常量一致，两文件同步）', () => {
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.15', name + ' @version 必须是 2.36.15');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.15', name + ' 运行时常量 VER 必须是 2.36.15');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.16', name + ' @version 必须是 2.36.16');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.16', name + ' 运行时常量 VER 必须是 2.36.16');
   }
 });
 
@@ -1238,8 +1238,8 @@ test('V2.34.5 两个恢复副本按钮与导出/导入同处一行且监听器�
     }
     assert.ok(row.includes('<button id="dsh-cfg-golden-save"'), name + ' 「保存为恢复副本」沿用非 ghost 样式（与导出配置一致）');
     assert.ok(row.includes('<button class="ghost" id="dsh-cfg-golden-restore"'), name + ' 「恢复上次配置」必须 class=ghost');
-    assert.ok(src.includes('$id("dsh-cfg-golden-save").addEventListener("click"'), name + ' 缺保存按钮监听');
-    assert.ok(src.includes('$id("dsh-cfg-golden-restore").addEventListener("click"'), name + ' 缺恢复按钮监听');
+    assert.ok(src.includes('onId("dsh-cfg-golden-save", "click"'), name + ' 缺保存按钮监听');
+    assert.ok(src.includes('onId("dsh-cfg-golden-restore", "click"'), name + ' 缺恢复按钮监听');
     assert.ok(src.includes('"已保存恢复副本"'), name + ' 缺保存成功提示');
     assert.ok(src.includes('setStatus("已从恢复副本补齐缺失配置", "ok")'), name + ' 缺自动补齐提示');
     assert.ok(src.includes('setStatus("恢复副本里没有该角色的档", "err")'), name + ' 缺「副本里没有该角色的档」提示');
@@ -1282,10 +1282,10 @@ test('V2.34.5 备份轮转：首轮写 .bak/.bak2、同一次加载第二次不�
   assert.ok(source.includes('var profBackupDone = false; // V2.34.5'), '必须有内存标志 profBackupDone');
 });
 
-function battleVm(){let now=0,id=1;const timers=new Map(),packets=[];const code=extract('  function npBattleState() {','  $id("dsh-battleon")');const ctx={Math,Date:{now:()=>now},npBattleKnown:false,npHuntOn:false,npBattleLastSentAt:-Infinity,npBattleConfirmedAt:0,npBattleCandidate:null,npBattleExplicit:null,npBattleExplicitTimer:null,setTimeout(fn,ms){const n=id++;timers.set(n,{fn,at:now+ms});return n},clearTimeout(n){timers.delete(n)},npToggleHunt(){packets.push(ctx.want);return ctx.send!==false},npSyncBattleCheckbox(){},tlog(){}};vm.createContext(ctx);vm.runInContext(code+';this.req=npRequestBattle;this.reset=npResetBattleState',ctx);return{ctx,packets,req(w,s,i){ctx.want=w;return ctx.req(w,s,i)},tick(ms){now+=ms;for(const[n,t]of[...timers])if(t.at<=now){timers.delete(n);t.fn()}},pending:()=>timers.size}}
+function battleVm(){let now=0,id=1;const timers=new Map(),packets=[];const code=extract('  function npBattleState() {','  onId("dsh-battleon",');const ctx={Math,Date:{now:()=>now},npBattleKnown:false,npHuntOn:false,npBattleLastSentAt:-Infinity,npBattleConfirmedAt:0,npBattleCandidate:null,npBattleExplicit:null,npBattleExplicitTimer:null,setTimeout(fn,ms){const n=id++;timers.set(n,{fn,at:now+ms});return n},clearTimeout(n){timers.delete(n)},npToggleHunt(){packets.push(ctx.want);return ctx.send!==false},npSyncBattleCheckbox(){},tlog(){}};vm.createContext(ctx);vm.runInContext(code+';this.req=npRequestBattle;this.reset=npResetBattleState',ctx);return{ctx,packets,req(w,s,i){ctx.want=w;return ctx.req(w,s,i)},tick(ms){now+=ms;for(const[n,t]of[...timers])if(t.at<=now){timers.delete(n);t.fn()}},pending:()=>timers.size}}
 test('V2.34.6 VM auto debounce stability oscillation and liveness',()=>{let h=battleVm();h.req(true,'auto',false);h.tick(800);h.req(true,'auto',false);for(let i=0;i<20;i++){h.tick(250);h.req(true,'auto',false)}assert.deepEqual(h.packets,[true]);h=battleVm();for(let i=0;i<40;i++){h.req(i%2===0,'auto',false);h.tick(250)}assert.equal(h.packets.length,0);h=battleVm();h.req(true,'auto',false);h.tick(800);h.req(true,'auto',false);h.req(false,'auto',false);h.tick(800);h.req(false,'auto',false);assert.deepEqual(h.packets,[true,false])});
 test('V2.34.6 VM explicit latest wins finite queue failure and reset',()=>{let h=battleVm();h.req(true,'click',true);h.tick(100);h.req(false,'click',true);h.tick(100);assert.equal(h.req(true,'click',true),'already');h.tick(500);assert.deepEqual(h.packets,[true]);assert.equal(h.pending(),0);h=battleVm();h.ctx.send=false;assert.equal(h.req(true,'click',true),'failed');assert.equal(h.ctx.npBattleKnown,false);assert.equal(h.ctx.npBattleLastSentAt,-Infinity);h=battleVm();h.req(true,'click',true);h.tick(100);h.req(false,'click',true);h.ctx.reset();h.tick(1000);assert.deepEqual(h.packets,[true]);assert.equal(h.pending(),0)});
-test('V2.34.6 structure guards shared entry points incremental receipt and local display',()=>{for(const src of[source,expSource]){const btn=src.slice(src.indexOf('$id("dsh-np-atk")'),src.indexOf('$id("dsh-np-pick")'));assert.ok(btn.includes('setBattle(true)'));assert.doesNotMatch(btn,/npCmd|npToggleHunt/);const hk=src.slice(src.indexOf('  function npToggleFight()'),src.indexOf('  // 助手自动战斗快捷键'));assert.ok(hk.includes('npRequestBattle(want, "hotkey", true)'));assert.equal((src.match(/npToggleHunt\(\)/g)||[]).length,3);const paint=src.slice(src.indexOf('  function qswPaint()'),src.indexOf('  try {',src.indexOf('  function qswPaint()')+10));assert.doesNotMatch(paint,/npReadPanelState|npHuntOn\s*=/);assert.ok(src.includes('npResetBattleState(); } catch (e0) {} // 换角色'));assert.ok(src.includes('npChatSeen.has(p)'));assert.ok(src.includes('var bsLocal = npBattleState(), bsPanel = npReadPanelState()'))}});
+test('V2.34.6 structure guards shared entry points incremental receipt and local display',()=>{for(const src of[source,expSource]){const btn=src.slice(src.indexOf('onId("dsh-np-atk",'),src.indexOf('onId("dsh-np-pick",'));assert.ok(btn.includes('setBattle(true)'));assert.doesNotMatch(btn,/npCmd|npToggleHunt/);const hk=src.slice(src.indexOf('  function npToggleFight()'),src.indexOf('  // 助手自动战斗快捷键'));assert.ok(hk.includes('npRequestBattle(want, "hotkey", true)'));assert.equal((src.match(/npToggleHunt\(\)/g)||[]).length,3);const paint=src.slice(src.indexOf('  function qswPaint()'),src.indexOf('  try {',src.indexOf('  function qswPaint()')+10));assert.doesNotMatch(paint,/npReadPanelState|npHuntOn\s*=/);assert.ok(src.includes('npResetBattleState(); } catch (e0) {} // 换角色'));assert.ok(src.includes('npChatSeen.has(p)'));assert.ok(src.includes('var bsLocal = npBattleState(), bsPanel = npReadPanelState()'))}});
 
 test('V2.34.6 explicit OFF after ON waits remainder then sends once',()=>{const h=battleVm();h.req(true,'on',true);h.tick(100);assert.equal(h.req(false,'off',true),'queued');h.tick(249);assert.deepEqual(h.packets,[true]);h.tick(1);assert.deepEqual(h.packets,[true,false]);assert.equal(h.pending(),0)});
 test('V2.34.6 failed explicit timer clears without periodic retry',()=>{const h=battleVm();h.req(true,'on',true);h.tick(100);h.ctx.send=false;h.req(false,'off',true);h.tick(250);assert.equal(h.pending(),0);assert.equal(h.ctx.npBattleExplicit,null);h.tick(30000);assert.equal(h.packets.length,2)});
@@ -1411,7 +1411,7 @@ test('bagClean v2 UI and storage contract is lockstep and documents unsupported 
 
 // ================= V2.35.1 assistant API + standalone dojo =================
 const splitSources=[['stable',source],['exp',expSource]];
-test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.36\.15/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
+test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.36\.16/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
 test('V2.35.1 public API uses owner-only external signatures and validates the current lease owner',()=>{for(const[,s]of splitSources){assert.ok(s.includes('/^[A-Za-z0-9_.:-]{8,128}$/'));assert.ok(s.includes('dojo:1,battle:1,movement:1,dialog:1,arrow:1,fly:1'));assert.ok(s.includes('if(apiLease&&apiLease.owner!==owner)'));for(const sig of ['apiHas(owner,scope)','apiSnapshot(owner)','apiRelease(owner)','apiContact(owner,gid)','apiWalk(owner,payload)','apiChoose(owner,payload)','apiBattle(owner,on)','apiSetArrow(owner,target)','apiClearArrow(owner)','apiFly(owner,payload)'])assert.ok(s.includes('function '+sig),sig);assert.ok(s.includes('apiLease.generation===generation'));assert.ok(!s.includes('apiHas(owner,generation'));}});
 test('V2.35.1 snapshot and battle/menu ownership contracts are explicit',()=>{for(const[,s]of splitSources){for(const key of ['ready:','map:','player:','mobs:','npcs:','target:','inDojoMap:','dialogOpen:','menu:','battleState:','busy:','arrow:'])assert.ok(s.includes(key),key);assert.ok(s.includes('if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"}'));assert.ok(s.includes('b.state="pending-on"'));assert.ok(s.includes('if(b.state!=="owned")return {ok:true,result:"not-owned"}'));assert.ok(s.includes('l.battle.state==="owned"||l.battle.state==="pending-off"'));assert.ok(s.includes('if(s!==false)return {ok:true,result:s===true?"preexisting":"unknown"}'));}});
 test('V2.36.11 arrow rules use a per-monster table plus a default arrow',()=>{for(const[name,s]of splitSources){
@@ -2251,4 +2251,36 @@ test('V2.36.15 战斗提示横条可拖动 + 战斗监控横条默认关闭 + �
   assert.equal(dCtx.distIntTxt(1e9), null, '未知距离（1e9）不得显示成天文数字');
   assert.equal(dCtx.distIntTxt(null), null, '空距离不显示');
   assert.equal(dCtx.distIntTxt(5.4), 5, '5.4 格必须显示 5');
+});
+
+test('V2.36.16 加载期空安全：内挂「开自动吃药」按钮回归 + 全部绑定走 onId + 引用的 id 必须在标记里', () => {
+  // 1) 内挂页必须有「开自动吃药」按钮（V2.36.13 误删后加载期取到 null，整个脚本中断）
+  for (const [name, s] of [['stable', source], ['exp', expSource]]) {
+    assert.ok(s.includes('id="dsh-np-eat"'), name + ' 内挂页必须存在「开自动吃药」按钮');
+    assert.ok(s.includes('onId("dsh-np-eat", "click"'), name + ' 「开自动吃药」必须绑定到发包逻辑');
+  }
+  // 2) 不得再出现裸 $id(...).addEventListener（加载期 null 会中断该行之后的全部代码）
+  for (const [name, s] of [['stable', source], ['exp', expSource]]) {
+    assert.equal((s.match(/\$id\("[^"]+"\)\.addEventListener\(/g) || []).length, 0, name + ' 不得再有裸 $id(...).addEventListener 绑定');
+    assert.ok(s.includes('function onId(id, ev, fn, opt) {'), name + ' 必须有空安全绑定 helper onId');
+    assert.ok(s.includes('[RO助手] 绑定跳过'), name + ' 缺元素时必须留一行控制台警告');
+  }
+  // 3) onId 引用的每个 id 都必须在标记里存在（旧辅助页遗留、已带 if 守卫的除外）
+  const legacy = new Set(['dsh-peten', 'dsh-petfeednow']);
+  for (const [name, s] of [['stable', source], ['exp', expSource]]) {
+    const markup = new Set(); { const re = /id="([^"]+)"/g; let m; while ((m = re.exec(s))) markup.add(m[1]); }
+    const used = new Set(); { const re = /onId\("([^"]+)",/g; let m; while ((m = re.exec(s))) used.add(m[1]); }
+    const missing = [...used].filter((x) => !markup.has(x) && !legacy.has(x));
+    assert.deepEqual(missing, [], name + ' onId 引用了标记里不存在的 id: ' + missing.join(','));
+  }
+  // 4) vm 实跑：缺元素只跳过绑定并返回 null，有元素时正常绑定
+  const ctx = { document: { getElementById: () => null }, console: { warn: () => {} } };
+  vm.createContext(ctx);
+  vm.runInContext(expExtract('  // ---------------- 工具 ----------------', '  // 通用拖拽排序'), ctx);
+  assert.equal(ctx.onId('dsh-不存在', 'click', () => {}), null, '缺元素必须返回 null 而不是抛错');
+  let hit = 0;
+  const fake = { addEventListener: () => { hit++; } };
+  ctx.document.getElementById = () => fake;
+  assert.equal(ctx.onId('dsh-x', 'click', () => {}), fake, '有元素时必须返回该元素');
+  assert.equal(hit, 1, '有元素时必须真的调用 addEventListener');
 });

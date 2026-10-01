@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手 · 实验版）
 // @namespace    dsh.ro-plugin
-// @version      2.36.15
+// @version      2.36.16
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -113,6 +113,13 @@
 // 3) 自启配置不完整：用脚本 DEFAULTS 自启缺少新引擎必需的 lastroProtocol / lastroCustomPackets / 各 charset / packetKeys / servers(数组) 等字段，
 //    引擎在模块初始化 hook NOTIFY_LOADINFO 抛 Packet not yet register "LoadInfo" 后中断启动，依旧黑屏。改为以宿主页 window.ROConfigBase 为基底自启。
 // 原站 post.lastro.cn / game.lastro.cn 的启动判据、注入方式与配置来源全部保持不变。
+// ---------------- V2.36.16 变更摘要 ----------------
+// 修复 V2.36.13 起「脚本加载即中断」的严重回归：内挂页改版时误删了「开自动吃药」按钮（id=dsh-np-eat），而绑定代码仍在，
+// 加载期 $id(...) 取到 null 抛 TypeError → 该行之后的全部代码一次都不执行（战斗监控/目标/状态刷新、本图怪名单、未鉴定装备浮层、init 等）。
+// 表现为：本图攻击名单一直停在「读取当前地图怪物表（换图自动刷新）」、未鉴定装备悬浮信息不弹、按钮点不动。
+// 1. 内挂页补回「开自动吃药」按钮（与开自动战斗/开自动拾取/校对内挂状态同一行）。
+// 2. 所有 $id(...).addEventListener(...) 绑定改走空安全 helper onId()：标记里缺元素只跳过该绑定并在控制台留一行警告，不再中断整个脚本。
+// 3. 新增回归测试：稳定版/实验版里不得再出现裸 $id(...).addEventListener，且 onId 引用的 id 必须在标记中存在（旧辅助页遗留 id 白名单）。
 // ---------------- V2.36.15 变更摘要 ----------------
 // 1. 战斗提示横条（功能菜单 → 提示 → 战斗提示横条）可拖动：按住横条拖到哪停哪，位置记在本机（dsh_ztip_pos），下次打开还在原位。
 // 2. 战斗监控横条改为默认关闭（同「首领警报」）：默认不显示也不创建那层浮层；要看就去 功能菜单 → 提示 → 战斗监控横条 勾上。
@@ -182,7 +189,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.36.15"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.36.16"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -536,6 +543,15 @@
     return el;
   };
   var $id = function (id) { return document.getElementById(id); };
+  // V2.36.16：空安全绑定——标记里少一个元素只会跳过这一条绑定，绝不会让整段脚本在加载期中断。
+  // V2.36.13 的回归就是内挂页误删了 id="dsh-np-eat" 的按钮、绑定代码仍在，加载即抛 TypeError，
+  // 该行之后的所有代码（战斗监控/目标/状态刷新、本图怪名单、未鉴定装备浮层、init）一次都没跑。
+  function onId(id, ev, fn, opt) {
+    var el = $id(id);
+    if (!el) { try { console.warn("[RO助手] 绑定跳过：标记里缺少 #" + id); } catch (e) {} return null; }
+    el.addEventListener(ev, fn, opt);
+    return el;
+  }
 
   // 通用拖拽排序：给容器内的 .drag-item 行启用 HTML5 拖拽重排，完成后回调 onReorder(旧索引,新索引)
   function enableDragSort(container, onReorder) {
@@ -887,6 +903,7 @@
       '<div class="sec">快速开关（直接发包给服务器，不依赖内挂窗口是否打开）</div>' +
       '<div class="row"><button id="dsh-np-atk" style="flex:0 0 auto">开自动战斗</button>' +
       '<button class="ghost" id="dsh-np-pick" style="flex:0 0 auto">开自动拾取</button>' +
+      '<button class="ghost" id="dsh-np-eat" style="flex:0 0 auto">开自动吃药</button>' +
       '<button class="ghost" id="dsh-np-probe" style="flex:0 0 auto">校对内挂状态</button></div>' +
       '<div class="row"><span class="st" style="font-size:10px">校对=快速点一次内挂开关并读回执：读到「关闭」就停；读到「开启」立刻关回去（结束一定=关闭，同步悬浮球[内]开关显示）。</span></div>' +
       '<div class="row"><span class="lb">寻怪模式</span><select id="dsh-np-huntmode" style="flex:0 0 96px">' +
@@ -3450,9 +3467,9 @@
   perfBind("dsh-perf-apply", "click", function () { perfApply(false); });
   try { window.addEventListener("storage", function (ev) { if (ev && (ev.key === "Graphics" || ev.key === "Map")) perfPull(null); }); } catch (e) {}
   try { renderPerfState(); } catch (e) {}
-  $id("dsh-sync-en").addEventListener("change", function () { try { captureAll(); } catch (e) {} syncApplyRuntime(); renderSyncState(); });
-  $id("dsh-sync-mode").addEventListener("change", function () { try { captureAll(); } catch (e) {} renderSyncState(); });
-  $id("dsh-sync-int").addEventListener("change", function () { try { captureAll(); } catch (e) {} renderSyncState(); });
+  onId("dsh-sync-en", "change", function () { try { captureAll(); } catch (e) {} syncApplyRuntime(); renderSyncState(); });
+  onId("dsh-sync-mode", "change", function () { try { captureAll(); } catch (e) {} renderSyncState(); });
+  onId("dsh-sync-int", "change", function () { try { captureAll(); } catch (e) {} renderSyncState(); });
   // （V2.23.0：原「省内存模式」已拆到独立模块「画面性能」，控件与监听都移到那边）
   // ---------------- 多开帧率限制（V2.15.20）：包装 Renderer._render 跳帧节流——多开挂机时每窗口满帧渲染拖垮 GPU 进程（整 Chrome 卡），锁帧后渲染成本按比例下降 --------------
   var fpsLockWrapped = null; // 已包装的渲染函数引用（防重复包装/便于恢复）
@@ -3860,7 +3877,7 @@
       try { syncRealAtkRange(); } catch (e) {} // V2.16.7：切档后读真实射程并回写物理距离设置
     } catch (e) { try { roFeedback("角色设置切换失败：" + (e.message || e), "err"); } catch (e2) {} }
   }
-  $id("dsh-saveprofile").addEventListener("click", function () {
+  onId("dsh-saveprofile", "click", function () {
     // V2.34.5：用户显式点「保存当前角色设置」=明确意图，即使界面未按档填充也强制落盘一次
     try { profUIApplied = true; captureAll(); } catch (e) {}
     renderWinInfo();
@@ -4652,8 +4669,8 @@
     } catch (e) {}
   }
   // 兼容旧辅助页宠物区块（已迁移到宠物/道具页；元素存在才绑定）
-  if ($id("dsh-petfeednow")) $id("dsh-petfeednow").addEventListener("click", function () { petFeedNow(true); });
-  if ($id("dsh-peten")) $id("dsh-peten").addEventListener("change", function () {
+  if ($id("dsh-petfeednow")) onId("dsh-petfeednow", "click", function () { petFeedNow(true); });
+  if ($id("dsh-peten")) onId("dsh-peten", "change", function () {
     saved.petFeed = this.checked; saveSaved(saved);
     if (this.checked) { if (!petFeedTimer) petFeedTimer = setInterval(tickPetFeed, 1000); tickPetFeed(); petLog("自动喂食已启用"); }
     else { if (petFeedTimer) { clearInterval(petFeedTimer); petFeedTimer = null; } petLog("自动喂食已停"); }
@@ -4679,7 +4696,7 @@
       return null;
     } catch (e) { return null; }
   }
-  $id("dsh-petegg").addEventListener("click", function () {
+  onId("dsh-petegg", "click", function () {
     try {
       if (!clientReady()) { setStatus("客户端未就绪", "err"); return; }
       var egg = findPetEgg();
@@ -4691,14 +4708,14 @@
       tlog("pet-egg idx=" + egg.index);
     } catch (e) { setStatus("召唤异常: " + e.message, "err"); }
   });
-  $id("dsh-petback").addEventListener("click", function () {
+  onId("dsh-petback", "click", function () {
     if (petCmd(3)) setStatus("宠物已变蛋（收回）", "ok");
   });
-  $id("dsh-petperf").addEventListener("click", function () {
+  onId("dsh-petperf", "click", function () {
     if (petCmd(2)) setStatus("宠物表演指令已发送", "ok");
   });
-  $id("dsh-petfeed2").addEventListener("click", function () { petFeedNow(true); });
-  $id("dsh-peten2").addEventListener("change", function () {
+  onId("dsh-petfeed2", "click", function () { petFeedNow(true); });
+  onId("dsh-peten2", "change", function () {
     saved.petFeed = this.checked; saveSaved(saved);
     if (this.checked) { if (!petFeedTimer) petFeedTimer = setInterval(tickPetFeed, 1000); tickPetFeed(); petLog("自动喂食已启用"); }
     else { if (petFeedTimer) { clearInterval(petFeedTimer); petFeedTimer = null; } petLog("自动喂食已停"); }
@@ -4790,12 +4807,12 @@
       followLog("跟随中… 距离 " + d + " 格（目标 " + ((tg.display && tg.display.name) || tg.name || tg.GID) + "）");
     } catch (e) {}
   }
-  $id("dsh-followscan").addEventListener("click", function () { scanPlayers(); });
-  $id("dsh-followtarget").addEventListener("change", function () {
+  onId("dsh-followscan", "click", function () { scanPlayers(); });
+  onId("dsh-followtarget", "change", function () {
     followTargetGID = this.value ? this.value : null;
     followLog(followTargetGID ? "跟随目标已设为 GID " + followTargetGID : "已清除跟随目标");
   });
-  $id("dsh-followen").addEventListener("change", function () {
+  onId("dsh-followen", "change", function () {
     saved.followEn = this.checked; saveSaved(saved);
     if (this.checked && !followTargetGID) { setStatus("请先选择跟随目标玩家", "err"); this.checked = false; return; }
     followLog(this.checked ? "自动跟随已启用" : "自动跟随已停");
@@ -4907,9 +4924,9 @@
     sel.innerHTML = html;
     setStatus("已读取背包 " + Object.keys(seen).length + " 种物品", "ok");
   }
-  $id("dsh-itempickload").addEventListener("click", loadInvItems);
+  onId("dsh-itempickload", "click", loadInvItems);
   // V2.21.0 一键加红蓝药：从背包找红药/蓝药，生成 HP低于50% / SP低于30% 两条规则（可在列表里改数值）
-  $id("dsh-potquick").addEventListener("click", function () {
+  onId("dsh-potquick", "click", function () {
     try {
       if (!clientReady()) { setStatus("客户端未就绪，进图后再点", "err"); return; }
       var hp = findPotion(true), sp = findPotion(false);
@@ -4939,7 +4956,7 @@
     icSel.addEventListener("change", updateItemStatusHint);
     updateItemStatusHint();
   })();
-  $id("dsh-itempickadd").addEventListener("click", function () {
+  onId("dsh-itempickadd", "click", function () {
     var sel = $id("dsh-itempick");
     var itid = sel.value;
     if (!itid) { setStatus("先选择物品", "err"); return; }
@@ -4963,16 +4980,16 @@
     saveItemList();
     setStatus("已加入物品 " + nm + "（" + itemCondText({ cond: cond, condval: condval, st: ist }) + "）", "ok");
   });
-  $id("dsh-itemup").addEventListener("click", function () {
+  onId("dsh-itemup", "click", function () {
     if (itemPickIdx > 0) { var t = itemList[itemPickIdx]; itemList[itemPickIdx] = itemList[itemPickIdx - 1]; itemList[itemPickIdx - 1] = t; itemPickIdx--; saveItemList(); }
   });
-  $id("dsh-itemdown").addEventListener("click", function () {
+  onId("dsh-itemdown", "click", function () {
     if (itemPickIdx >= 0 && itemPickIdx < itemList.length - 1) { var t2 = itemList[itemPickIdx]; itemList[itemPickIdx] = itemList[itemPickIdx + 1]; itemList[itemPickIdx + 1] = t2; itemPickIdx++; saveItemList(); }
   });
-  $id("dsh-itemdel").addEventListener("click", function () {
+  onId("dsh-itemdel", "click", function () {
     if (itemPickIdx >= 0) { itemList.splice(itemPickIdx, 1); itemPickIdx = -1; saveItemList(); }
   });
-  $id("dsh-itemupd").addEventListener("click", function () {
+  onId("dsh-itemupd", "click", function () {
     if (itemPickIdx < 0) { setStatus("先点选列表里的物品", "err"); return; }
     var itp = itemList[itemPickIdx];
     if (!itp) return;
@@ -4986,8 +5003,8 @@
     saveItemList();
     setStatus("已更新 " + (itp.name || ("ID" + itp.itid)) + " " + itemCondText(itp), "ok");
   });
-  $id("dsh-itemen").addEventListener("change", function () { saved.itemEn = this.checked; saveSaved(saved); if (this.checked) hookStatusIcons(); });
-  $id("dsh-healfirst").addEventListener("change", function () { saved.healFirst = this.checked; saveSaved(saved); });
+  onId("dsh-itemen", "change", function () { saved.itemEn = this.checked; saveSaved(saved); if (this.checked) hookStatusIcons(); });
+  onId("dsh-healfirst", "change", function () { saved.healFirst = this.checked; saveSaved(saved); });
   function tickItems() {
     try {
       var en = $id("dsh-itemen") && $id("dsh-itemen").checked;
@@ -5231,10 +5248,10 @@
     sel.innerHTML = html;
     setStatus("已读取 " + skills.length + " 个已学主动技能", "ok");
   }
-  $id("dsh-askskillload").addEventListener("click", loadAskSkills);
+  onId("dsh-askskillload", "click", loadAskSkills);
   bindStatusAc($id("dsh-askdebuff"), $id("dsh-askdebuff-ac"));
   bindStatusAc($id("dsh-askstatus"), $id("dsh-askstatus-ac")); // V2.10.5 自身状态输入框联想（内部只认ID/英文，中文仅展示辅助）
-  $id("dsh-askskilladd").addEventListener("click", function () {
+  onId("dsh-askskilladd", "click", function () {
     var sel = $id("dsh-askskill");
     var skid = parseInt(sel.value, 10);
     if (!skid) { setStatus("先选择技能", "err"); return; }
@@ -5268,13 +5285,13 @@
     saveAskList();
     setStatus("已加入 " + sname + (stId >= 0 ? "（自身状态消失才补·ID" + stId + "）" : (cond === "party" ? "（队友判定待支持，暂按间隔）" : "（未识别状态，按间隔放）")), "ok");
   });
-  $id("dsh-askup").addEventListener("click", function () {
+  onId("dsh-askup", "click", function () {
     if (askPickIdx > 0) { var t = askList[askPickIdx]; askList[askPickIdx] = askList[askPickIdx - 1]; askList[askPickIdx - 1] = t; askPickIdx--; saveAskList(); }
   });
-  $id("dsh-askdown").addEventListener("click", function () {
+  onId("dsh-askdown", "click", function () {
     if (askPickIdx >= 0 && askPickIdx < askList.length - 1) { var t2 = askList[askPickIdx]; askList[askPickIdx] = askList[askPickIdx + 1]; askList[askPickIdx + 1] = t2; askPickIdx++; saveAskList(); }
   });
-  $id("dsh-askdel").addEventListener("click", function () {
+  onId("dsh-askdel", "click", function () {
     if (askPickIdx >= 0) { askList.splice(askPickIdx, 1); askPickIdx = -1; saveAskList(); }
   });
   function tickAskSkills() {
@@ -5451,7 +5468,7 @@
   if (saved.buffSP) { var abs = $id("dsh-asksp"); if (abs) abs.value = saved.buffSP; saved.buffSP = ""; }
   if (saved.buffEnabled) { var abe = $id("dsh-asken"); if (abe) abe.checked = true; saved.askEn = true; saved.buffEnabled = ""; saveSaved(saved); }
   if (saved.askEn) { $id("dsh-asken").checked = true; hookStatusIcons(); }
-  $id("dsh-asken").addEventListener("change", function () { saved.askEn = this.checked; saveSaved(saved); if (this.checked) hookStatusIcons(); });
+  onId("dsh-asken", "change", function () { saved.askEn = this.checked; saveSaved(saved); if (this.checked) hookStatusIcons(); });
   // V1.7.0 一次性清空：多辅助/自动技能 历史数据（用户要求默认清空「助手内按间隔自动施放的增益」）
   if (!saved.uiClear170) {
     try { askList.length = 0; saveAskList(); } catch (e) {}
@@ -5536,7 +5553,7 @@
     tlog("switch-server cv=" + v);
     location.replace(switchServerUrl(v));
   });
-  $id("dsh-save").addEventListener("click", function () {
+  onId("dsh-save", "click", function () {
     var acc = $id("dsh-acc").value.trim();
     var pwd = $id("dsh-pwd").value;
     if (!acc || !pwd) { setStatus("请填写账号和密码", "err"); return; }
@@ -5545,7 +5562,7 @@
     setStatus("已保存，重启客户端生效", "ok");
     renderWinInfo();
   });
-  $id("dsh-clear").addEventListener("click", function () {
+  onId("dsh-clear", "click", function () {
     saved = {};
     try {
       var k = activeProfileKey(); ensureProfile(k);
@@ -5558,10 +5575,10 @@
     try { renderLockList(); renderAskList(); } catch (e) {}
     setStatus("已清除", "st");
   });
-  $id("dsh-reboot").addEventListener("click", function () { location.reload(); });
+  onId("dsh-reboot", "click", function () { location.reload(); });
   // 中转确认后登录已保存账号：默认打开不自动登录（防挤掉中转会话），用户在中转页确认后点此按钮
   // → 用输入框当前账号（或已保存 saved）写 saved → 带 ?auto=1 重载（buildConfig 检测到 auto= 才注入 autoLogin）
-  $id("dsh-save-confirm").addEventListener("click", function () {
+  onId("dsh-save-confirm", "click", function () {
     var acc = ($id("dsh-acc") && $id("dsh-acc").value.trim()) || saved.account;
     var pwd = ($id("dsh-pwd") && $id("dsh-pwd").value) || saved.password;
     if (!acc || !pwd) { setStatus("请先填写账号和密码（登录框）", "err"); return; }
@@ -6042,16 +6059,16 @@
     } catch (e) { console.log("[RO助手] syncNeiAddiFromPanel: " + e.message); }
   }
   neiAddiRender();
-  $id("dsh-readbot").addEventListener("click", function () {
+  onId("dsh-readbot", "click", function () {
     setStatus("内挂: " + readBot(), "ok");
   });
   // V2.20.0 内挂齿轮直连按钮
   try {
-    $id("dsh-open-gear").addEventListener("click", function () {
+    onId("dsh-open-gear", "click", function () {
       if (neiGearOpen()) { neiGearTab("openattack"); setStatus("已打开游戏内挂设置（战斗设置页）", "ok"); }
       else setStatus("没找到内挂齿轮（客户端内挂组件未就绪，进图后再试）", "err");
     });
-    $id("dsh-open-gear-skill").addEventListener("click", function () {
+    onId("dsh-open-gear-skill", "click", function () {
       if (neiGearOpen()) { neiGearTab("openattack"); setStatus("已打开游戏内挂设置（技能在战斗设置页里）", "ok"); }
       else setStatus("没找到内挂齿轮（客户端内挂组件未就绪，进图后再试）", "err");
     });
@@ -6124,7 +6141,7 @@
     ta.focus(); ta.select();
     try { alert(sent ? "探查完成：已发送 " + items.length + " 个控件到本地服务，弹窗内容已全选可复制备用。" : "发送失败（请先启动中心服务 8899）。弹窗内容已全选，请 Ctrl+C 复制发我。"); } catch (e) {}
   }
-  $id("dsh-probe-neidom").addEventListener("click", function () { neiProbe(); });
+  onId("dsh-probe-neidom", "click", function () { neiProbe(); });
   // 自动战斗状态只由启动首次面板校准、玩家真实 change、新增聊天回执和助手成功发包更新。
   var npHuntOn = false, npBattleKnown = false, npBattleLastSentAt = -Infinity, npBattleConfirmedAt = 0;
   var npBattleCandidate = null, npBattleExplicit = null, npBattleExplicitTimer = null;
@@ -6240,8 +6257,8 @@
     setStatus(result === "failed" ? "内挂开关发送失败：客户端未就绪" : (result === "already" ? "内挂自动战斗已处于目标状态" : (result === "queued" ? "内挂自动战斗请求已排队" : "内挂自动战斗请求已发送")), result === "failed" ? "err" : "ok");
     tlog("setBattle on=" + on + " result=" + result);
   }
-  $id("dsh-battleon").addEventListener("click", function () { setBattle(true); });
-  $id("dsh-battleoff").addEventListener("click", function () { setBattle(false); });
+  onId("dsh-battleon", "click", function () { setBattle(true); });
+  onId("dsh-battleoff", "click", function () { setBattle(false); });
 
   // ---------------- 模拟内挂指令（直接发服务器 · 套用内挂机制）----------------
   // 机制（vbk 逆向）：二转 ClientVer=5 → CZ.NOTIFY_UPDATEINFO{id,value}；三转 ClientVer=3 → CZ.WHISPER{receiver:"NPC:setauto*", msg:"0"}
@@ -6278,11 +6295,11 @@
     setStatus("已发送模拟内挂指令：" + label, "ok");
     tlog("np-cmd " + label + " cv=" + DEFAULTS.ClientVer);
   }
-  $id("dsh-np-atk").addEventListener("click", function () { setBattle(true); });
-  $id("dsh-np-pick").addEventListener("click", function () { npCmd("开自动拾取", "NPC:setautopick", 35, 1); });
-  $id("dsh-np-eat").addEventListener("click", function () { npCmd("开自动吃药", "NPC:setautoeat", 36, 1); });
-  $id("dsh-np-probe").addEventListener("click", function () { npProbeBattle("manual"); });
-  $id("dsh-np-hunt").addEventListener("click", function () {
+  onId("dsh-np-atk", "click", function () { setBattle(true); });
+  onId("dsh-np-pick", "click", function () { npCmd("开自动拾取", "NPC:setautopick", 35, 1); });
+  onId("dsh-np-eat", "click", function () { npCmd("开自动吃药", "NPC:setautoeat", 36, 1); });
+  onId("dsh-np-probe", "click", function () { npProbeBattle("manual"); });
+  onId("dsh-np-hunt", "click", function () {
     var v = parseInt($id("dsh-np-huntmode").value, 10);
     if (isNaN(v)) v = 0;
     // 寻怪模式仅二转 UPDATEINFO id=38；三转无此字段则提示
@@ -6398,7 +6415,7 @@
   // 寻怪方式下拉 change：切到「内挂机制」→ 仅校准面板状态 + 同步锁定目录，不发 toggle（等点开自动战斗后由 zWalk 状态机自动发第一次）；
   // 切走 → 若内挂在跑则关掉（toggle 一次）
   try {
-    $id("dsh-z-huntmode").addEventListener("change", function () {
+    onId("dsh-z-huntmode", "change", function () {
       if (this.value === "np" || this.value === "hybrid") {
         npCalibrate();               // 仅首次未知态校准，不周期覆盖
         npSyncTargets();             // 锁定目录同步给内挂（只追锁定怪）
@@ -6529,11 +6546,11 @@
     renderLockList();
     try { npSyncTargetsDom(); npSyncTargets(); } catch (e) {} // V2.16.7 双向同步内挂名单
   }
-  $id("dsh-locklist").addEventListener("click", function (e) {
+  onId("dsh-locklist", "click", function (e) {
     var b = e.target.closest && e.target.closest("[data-unlock]");
     if (b) removeLock(b.getAttribute("data-unlock"));
   });
-  $id("dsh-lockclear").addEventListener("click", function () {
+  onId("dsh-lockclear", "click", function () {
     lockList = {};
     profileLockSave();
     renderLockList();
@@ -6563,10 +6580,10 @@
     el.innerHTML = html + (hits.length > 10 ? '<div class="st">共 ' + hits.length + ' 条，只显示前 10 条（名字写全一点可缩小范围）</div>' : "");
     setStatus("找到 " + hits.length + " 只怪" + (hits.length > 10 ? "，显示前 10" : ""), "ok");
   }
-  $id("dsh-locksearchbtn").addEventListener("click", function () { renderLockHits($id("dsh-locksearch").value); });
-  $id("dsh-locksearch").addEventListener("keypress", function (e) { if (e.key === "Enter") renderLockHits(this.value); });
-  $id("dsh-locksearchclr").addEventListener("click", function () { $id("dsh-locksearch").value = ""; renderLockHits(""); });
-  $id("dsh-lockhits").addEventListener("click", function (e) {
+  onId("dsh-locksearchbtn", "click", function () { renderLockHits($id("dsh-locksearch").value); });
+  onId("dsh-locksearch", "keypress", function (e) { if (e.key === "Enter") renderLockHits(this.value); });
+  onId("dsh-locksearchclr", "click", function () { $id("dsh-locksearch").value = ""; renderLockHits(""); });
+  onId("dsh-lockhits", "click", function (e) {
     if (e.target.closest && e.target.closest("a")) return; // 点「小册子」外链不加入名单
     var row = e.target.closest && e.target.closest("[data-lockadd]");
     if (!row) return;
@@ -9631,8 +9648,8 @@
     // 全部技能被状态前置挡住且补状态节流/不可用 → 等（外层 wait 分支穿插普攻）
     return "wait";
   }
-  $id("dsh-z-on").addEventListener("click", startZhu);
-  $id("dsh-z-off").addEventListener("click", stopZhu);
+  onId("dsh-z-on", "click", startZhu);
+  onId("dsh-z-off", "click", stopZhu);
   // 技能前置/穿插平A 开关持久化
   try {
     var prereqEl = $id("dsh-prereq");
@@ -9658,7 +9675,7 @@
       allMobsEl.addEventListener("change", function () { saved.allMobs = this.checked; saveSaved(saved); });
     }
   } catch (e) {}
-  $id("dsh-scanen").addEventListener("change", function () {
+  onId("dsh-scanen", "change", function () {
     if (this.checked) startScan(); else stopScan();
   });
   // 点选技能释放：已学主动技能勾选 → 生成/更新技能顺序
@@ -9869,14 +9886,14 @@
       return !!(ae.closest("#dsh-skillorderlist") || ae.closest("#dsh-skillpick"));
     } catch (e) { return false; }
   }
-  $id("dsh-skillorder").addEventListener("input", function () { try { renderSkillPick(); renderSkillOrderList(); } catch (e) {} });
-  $id("dsh-skillclear").addEventListener("click", function () {
+  onId("dsh-skillorder", "input", function () { try { renderSkillPick(); renderSkillOrderList(); } catch (e) {} });
+  onId("dsh-skillclear", "click", function () {
     $id("dsh-skillorder").value = "";
     renderSkillPick();
     renderSkillOrderList();
     setStatus("技能顺序已清空", "st");
   });
-  $id("dsh-skillimp").addEventListener("click", function () {
+  onId("dsh-skillimp", "click", function () {
     try {
       var learned = learnedActiveSkills();
       if (!learned.length) { setStatus("角色还没有已学主动技能（登录后重试）", "err"); return; }
@@ -10004,7 +10021,7 @@
     render();setInterval(function(){if(!bagClean.enabled||!bagClean.config.armed||bagClean.busy)return;var w=bagCleanWeight(),free=bagCleanFreeSlots();if(bagCleanNeeded(w,free)){bagClean.pending=true;bagCleanExecute(function(){},null);}},2000);
   }
   // ---------------- 拾取页：内挂百分比联动 ----------------
-  $id("dsh-lootread").addEventListener("click", function () {
+  onId("dsh-lootread", "click", function () {
     try {
       var lp = document.querySelector("#lootProbability, .lootProbability");
       var op = document.querySelector(".openpick");
@@ -10013,7 +10030,7 @@
       setStatus("已读取内挂拾取设置", "ok");
     } catch (e) { setStatus("读取异常（需打开内挂窗口）: " + e.message, "err"); }
   });
-  $id("dsh-lootwrite").addEventListener("click", function () {
+  onId("dsh-lootwrite", "click", function () {
     try {
       var lp = document.querySelector("#lootProbability, .lootProbability");
       var op = document.querySelector(".openpick");
@@ -10054,7 +10071,7 @@
     try { localStorage.setItem("dsh_ro_whitelist", JSON.stringify(wl)); } catch (e) {}
     renderWl();
   }
-  $id("dsh-wllist").addEventListener("click", function (e) {
+  onId("dsh-wllist", "click", function (e) {
     var b = e.target.closest && e.target.closest("[data-wlrm]");
     if (b) removeWl(b.getAttribute("data-wlrm"));
   });
@@ -10097,7 +10114,7 @@
       });
     });
   }
-  $id("dsh-mobsearchbtn").addEventListener("click", function () {
+  onId("dsh-mobsearchbtn", "click", function () {
     var kw = ($id("dsh-mobsearch").value || "").trim();
     var mobDB = getMobDb();
     if (!mobDB) { setStatus("怪物库未就绪", "err"); return; }
@@ -10114,7 +10131,7 @@
     else setStatus("未找到怪物", "err");
   });
   // 拾取页清空搜索：清输入框 + 恢复初始掉落树（当前地图怪物掉落）
-  $id("dsh-mobsearchclr").addEventListener("click", function () {
+  onId("dsh-mobsearchclr", "click", function () {
     $id("dsh-mobsearch").value = "";
     renderDropTree(null); // null → 内部自动回退当前地图怪物/图鉴前8
     setStatus("搜索已清空，恢复当前地图掉落", "st");
@@ -10124,7 +10141,7 @@
     try { return getItemName(id) || ("ID" + id); } catch (e) { return "ID" + id; }
   }
   // V2.34.0：「＋加入」直达——白名单区块内的小 ID 输入行；输入数字 ID 直接写入拾取名单（不依赖搜索/物品库/掉落索引）
-  $id("dsh-wladdbtn").addEventListener("click", function () {
+  onId("dsh-wladdbtn", "click", function () {
     var kw = ($id("dsh-wlid").value || "").trim();
     if (!/^\d+$/.test(kw)) { setStatus("先输入数字物品ID，再点「＋加入」", "st"); return; }
     var id = parseInt(kw, 10);
@@ -10134,7 +10151,7 @@
     setStatus("已加入拾取名单：ID " + id + (nm !== ("ID" + id) ? "（" + nm + "）" : ""), "ok");
   });
   // V1.9.4：开启「指定ID自动拾取」时确认白名单状态（空名单 = 提示先加 ID，避免开关无效感）
-  if ($id("dsh-picken")) $id("dsh-picken").addEventListener("change", function () {
+  if ($id("dsh-picken")) onId("dsh-picken", "change", function () {
     var ids = Object.keys(wl);
     if (this.checked && !ids.length) setStatus("白名单为空：先在「＋加入」处输入物品ID，否则不会拾取任何物品", "st");
     else if (this.checked) setStatus("拾取名单 " + ids.length + " 个 ID，落地即自动拾取", "ok");
@@ -10184,7 +10201,7 @@
     renderMapLock();
     setStatus("已读取本图锁定目录", "ok");
   });
-  $id("dsh-pickmapbtn").addEventListener("click", function () {
+  onId("dsh-pickmapbtn", "click", function () {
     var mobDB = getMobDb();
     if (!mobDB) { setStatus("怪物库未就绪", "err"); return; }
     var info = getCurrentMapInfo();
@@ -10443,13 +10460,13 @@
   } catch (e) {}
   function closeMapList() { var box = $id("dsh-maplist"); if (box) box.style.display = "none"; }
   function saveMapCache() { try { saved.mapCache = mapCache; saveSaved(saved); } catch (e) {} }
-  $id("dsh-map").addEventListener("input", function () { if ($id("dsh-maplist").style.display === "block") renderMapList(); });
-  $id("dsh-map").addEventListener("focus", function () { openMapList(); });
-  $id("dsh-map").addEventListener("keydown", function (e) {
+  onId("dsh-map", "input", function () { if ($id("dsh-maplist").style.display === "block") renderMapList(); });
+  onId("dsh-map", "focus", function () { openMapList(); });
+  onId("dsh-map", "keydown", function (e) {
     if (e.key === "Enter") { e.preventDefault(); closeMapList(); }
     if (e.key === "Escape") { e.preventDefault(); closeMapList(); }
   });
-  $id("dsh-maptog").addEventListener("click", function (e) {
+  onId("dsh-maptog", "click", function (e) {
     e.stopPropagation();
     var box = $id("dsh-maplist");
     if (box.style.display === "block") closeMapList(); else openMapList();
@@ -10459,7 +10476,7 @@
     if (!inp || !box) return;
     if (box.style.display === "block" && e.target !== inp && e.target !== tog && !box.contains(e.target)) closeMapList();
   });
-  $id("dsh-tp").addEventListener("click", function () {
+  onId("dsh-tp", "click", function () {
     try {
       var world = ($id("dsh-world").value || "").trim();
       var ok = gptTeleport(world);
@@ -10520,7 +10537,7 @@
     visit(document);
     return out;
   }
-  $id("dsh-mapload").addEventListener("click", function () {
+  onId("dsh-mapload", "click", function () {
     try {
       var seen = {};
       var n = 0;
@@ -10560,7 +10577,7 @@
       }
     } catch (e) { $id("dsh-tpmsg2").textContent = "读地图异常: " + e.message; }
   });
-  $id("dsh-world").addEventListener("change", function () {
+  onId("dsh-world", "change", function () {
     try { $id("dsh-mapload").click(); } catch (e) {}
   });
   function findMapCell(m) {
@@ -10578,7 +10595,7 @@
     }
     return null;
   }
-  $id("dsh-tp-map").addEventListener("click", function () {
+  onId("dsh-tp-map", "click", function () {
     try {
       var m = ($id("dsh-map").value || "").trim();
       if (!m) { $id("dsh-tpmsg2").textContent = "先选择或输入目标地图"; return; }
@@ -10586,7 +10603,7 @@
       $id("dsh-tpmsg2").textContent = ok ? "GPT 传送请求已提交 → " + m : "GPT 传送提交失败";
     } catch (e) { $id("dsh-tpmsg2").textContent = "前往异常: " + e.message; }
   });
-  $id("dsh-tp-walk").addEventListener("click", function () {
+  onId("dsh-tp-walk", "click", function () {
     try {
       var m = $id("dsh-map").value;
       if (!m) { $id("dsh-tpmsg2").textContent = "先「读地图」选目标地图"; return; }
@@ -10772,13 +10789,13 @@
     else gptTeleport(p.map, p.x, p.y);
     tpPointMsg("前往 " + p.name + "：" + p.map + " (" + p.x + "," + p.y + ")");
   }
-  $id("dsh-tpp-current").addEventListener("click", function () {
+  onId("dsh-tpp-current", "click", function () {
     mvCurMap();
     var nm = $id("dsh-tpp-name");
     if (nm && !nm.value.trim()) nm.value = getMapNameCn() || getMapName() || "当前位置";
     tpPointMsg("已填入当前位置，确认名称后点保存");
   });
-  $id("dsh-tpp-save").addEventListener("click", function () {
+  onId("dsh-tpp-save", "click", function () {
     var name = ($id("dsh-tpp-name").value || "").trim();
     var map = ($id("dsh-mvmap").value || getMapName() || "").trim();
     var x = parseInt($id("dsh-mvx").value, 10), y = parseInt($id("dsh-mvy").value, 10);
@@ -10790,7 +10807,7 @@
     tpPointEdit = -1; $id("dsh-tpp-save").textContent = "保存"; $id("dsh-tpp-name").value = "";
     tpPointSaveList(); tpPointRender(); tpPointMsg("已保存快捷传送点");
   });
-  $id("dsh-tpp-list").addEventListener("click", function (e) {
+  onId("dsh-tpp-list", "click", function (e) {
     var b = e.target.closest && e.target.closest("button"); if (!b) return;
     var list = tpPoints(), i;
     if (b.hasAttribute("data-tpp-go")) { i = parseInt(b.getAttribute("data-tpp-go"), 10); tpPointGo(list[i]); return; }
@@ -10810,9 +10827,9 @@
     var k = activeProfileKey();
     if (k !== tpPointProfile) { tpPointProfile = k; tpPointEdit = -1; tpPointRender(); }
   });
-  $id("dsh-mvcur").addEventListener("click", mvCurMap);
-  $id("dsh-mvstop").addEventListener("click", stopWalkXY);
-  $id("dsh-mvgo").addEventListener("click", function () {
+  onId("dsh-mvcur", "click", mvCurMap);
+  onId("dsh-mvstop", "click", stopWalkXY);
+  onId("dsh-mvgo", "click", function () {
     try {
       var x = parseInt($id("dsh-mvx").value, 10);
       var y = parseInt($id("dsh-mvy").value, 10);
@@ -10832,13 +10849,13 @@
   // ---------------- 回城 / NPC / 卖装备 ----------------
   var npcList = [];
   var selNpc = null; // 当前选中的 NPC {GID,name,pos}
-  $id("dsh-tp-town").addEventListener("click", function () {
+  onId("dsh-tp-town", "click", function () {
     try {
       var ok = gptTeleport("prontera");
       $id("dsh-tpmsg2").textContent = ok ? "GPT 回城请求已提交" : "GPT 回城提交失败";
     } catch (e) { $id("dsh-tpmsg2").textContent = "回城异常: " + e.message; }
   });
-  $id("dsh-scan-npc").addEventListener("click", function () {
+  onId("dsh-scan-npc", "click", function () {
     npcList = [];
     selNpc = null;
     try {
@@ -10875,7 +10892,7 @@
     }
     $id("dsh-cleanlog").textContent = "扫描到 " + npcList.length + " 个NPC" + (npcList.length ? "（默认选中第 1 个，点条目切换）" : "");
   });
-  $id("dsh-go-npc").addEventListener("click", function () {
+  onId("dsh-go-npc", "click", function () {
     try {
       if (!selNpc) { $id("dsh-cleanlog").textContent = "先点「扫描NPC」并选中一个 NPC"; return; }
       if (!selNpc.pos) { $id("dsh-cleanlog").textContent = "NPC 无坐标（需在城镇内扫描）"; return; }
@@ -10885,7 +10902,7 @@
       if (ok) $id("dsh-cleanlog").textContent = "走向 NPC「" + selNpc.name + "」…";
     } catch (e) { $id("dsh-cleanlog").textContent = "走到NPC异常: " + e.message; }
   });
-  $id("dsh-talk-npc").addEventListener("click", function () {
+  onId("dsh-talk-npc", "click", function () {
     try {
       if (!clientReady()) throw new Error("客户端未就绪");
       var target = null;
@@ -10923,7 +10940,7 @@
       $id("dsh-cleanlog").textContent = "已点击 NPC「" + (target.displayName || target.name || target.GID) + "」";
     } catch (e) { $id("dsh-cleanlog").textContent = "对话异常: " + e.message; }
   });
-  $id("dsh-sell").addEventListener("click", function () {
+  onId("dsh-sell", "click", function () {
     try {
       if (!clientReady()) throw new Error("客户端未就绪");
       var inv = findInventory();
@@ -11432,14 +11449,14 @@
       capturedAt: new Date().toISOString()
     }, null, 2);
   }
-  $id("dsh-menu-export").addEventListener("click", function () {
+  onId("dsh-menu-export", "click", function () {
     if (!menuRecon.items.length) { $id("dsh-cleanlog").textContent = "先捕获菜单（点NPC对话）"; return; }
     var j = buildMenuJson();
     try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(j); } catch (e) {}
     $id("dsh-menu-recon").textContent = "已生成JSON（已尝试复制到剪贴板）:\n" + j;
   });
   // V2.32.2 气弹自采集诊断导出（复制 JSON 到剪贴板，粘贴给助手分析气弹来源）
-  $id("dsh-spheredump").addEventListener("click", function () {
+  onId("dsh-spheredump", "click", function () {
     try {
       var _sl = window.__dshSphereLog || [];
       var txt = JSON.stringify(_sl, null, 1);
@@ -11459,7 +11476,7 @@
     } catch (e) {}
     return out;
   }
-  $id("dsh-cfg-exp").addEventListener("click", function () {
+  onId("dsh-cfg-exp", "click", function () {
     try {
       var data = collectDshConfig();
       var json = JSON.stringify({ v: 2, exportedAt: new Date().toISOString(), keys: data }, null, 1);
@@ -11472,7 +11489,7 @@
       setStatus("已导出配置（" + Object.keys(data).length + " 键）", "ok");
     } catch (e) { try { setStatus("导出失败: " + e.message, "err"); } catch (e2) {} }
   });
-  $id("dsh-cfg-imp").addEventListener("click", function () {
+  onId("dsh-cfg-imp", "click", function () {
     try {
       var fi = document.createElement("input");
       fi.type = "file"; fi.accept = ".json,application/json";
@@ -11498,13 +11515,13 @@
       fi.click();
     } catch (e) { try { setStatus("导入失败: " + e.message, "err"); } catch (e2) {} }
   });
-  $id("dsh-menu-copy").addEventListener("click", function () {
+  onId("dsh-menu-copy", "click", function () {
     if (!menuRecon.items.length) { $id("dsh-cleanlog").textContent = "先捕获菜单（点NPC对话）"; return; }
     var j = buildMenuJson();
     try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(j); } catch (e) {}
     $id("dsh-cleanlog").textContent = navigator.clipboard ? "已复制JSON到剪贴板" : "剪贴板不可用";
   });
-  $id("dsh-menu-choose").addEventListener("click", function () {
+  onId("dsh-menu-choose", "click", function () {
     try {
       if (!clientReady()) throw new Error("客户端未就绪");
       if (!menuRecon.NAID) { $id("dsh-cleanlog").textContent = "先捕获菜单（点NPC对话）"; return; }
@@ -11516,7 +11533,7 @@
       $id("dsh-cleanlog").textContent = "已发 CHOOSE_MENU：第 " + (n + 1) + " 项" + (menuRecon.items[n] ? "（" + menuRecon.items[n] + "）" : "");
     } catch (e) { $id("dsh-cleanlog").textContent = "选菜单异常: " + e.message; }
   });
-  $id("dsh-menu-next").addEventListener("click", function () {
+  onId("dsh-menu-next", "click", function () {
     try {
       if (!clientReady()) throw new Error("客户端未就绪");
       if (!menuRecon.NAID) { $id("dsh-cleanlog").textContent = "先捕获菜单（点NPC对话）"; return; }
@@ -11597,18 +11614,18 @@
       $id("dsh-txlog").textContent = "已导出 " + txCap.ring.length + " 条（已尝试复制到剪贴板；下方文本框可手动全选复制）";
     } catch (e) { try { $id("dsh-txlog").textContent = "导出异常: " + e.message; } catch (e2) {} }
   }
-  $id("dsh-txcap").addEventListener("click", function () {
+  onId("dsh-txcap", "click", function () {
     if (!hookSendPacket()) { $id("dsh-txlog").textContent = "客户端未就绪：请先进游戏，再点「开始抓包」"; return; }
     txCap.on = true; txCap.ring = []; txCap.n = 0;
     $id("dsh-txlog").textContent = "出站抓包：已开始（先进图站稳 20 秒，再点停止）";
   });
-  $id("dsh-txstop").addEventListener("click", function () {
+  onId("dsh-txstop", "click", function () {
     txCap.on = false;
     $id("dsh-txlog").textContent = "出站抓包：已停止，共 " + txCap.n + " 个包；点「导出出站序列」复制";
   });
-  $id("dsh-txexp").addEventListener("click", txExport);
+  onId("dsh-txexp", "click", txExport);
   // V2.16.16：下载成文件（避免几千行粘进聊天框）——存到浏览器默认下载目录
-  $id("dsh-txdl").addEventListener("click", function () {
+  onId("dsh-txdl", "click", function () {
     try {
       if (!txCap.lastText) { $id("dsh-txlog").textContent = "还没有内容：先点「停止」再点「导出出站序列」"; return; }
       var blob = new Blob([txCap.lastText], { type: "text/plain;charset=utf-8" });
@@ -16050,7 +16067,7 @@
     } catch (e) {}
   }
   // 按钮「保存为恢复副本」：把当前 dsh_ro_profiles_v2 显式 POST 到恢复副本键（该键不进 KV_KEYS）
-  $id("dsh-cfg-golden-save").addEventListener("click", function () {
+  onId("dsh-cfg-golden-save", "click", function () {
     try {
       var cur = localStorage.getItem(PROF_KEY);
       if (!cur) { setStatus("暂无可保存的配置", "err"); return; }
@@ -16061,7 +16078,7 @@
     } catch (e) { try { setStatus("保存恢复副本失败：先启动本机 8899 服务", "err"); } catch (e2) {} }
   });
   // 按钮「恢复上次配置」：用户显式操作 → 允许覆盖当前档（先 profBackupRotate(true) 留底）
-  $id("dsh-cfg-golden-restore").addEventListener("click", function () {
+  onId("dsh-cfg-golden-restore", "click", function () {
     try { profBackupRotate(true); } catch (e) {}
     try {
       fetch(KV_BASE + "/get?key=" + encodeURIComponent(PROF_GOLDEN_KEY))

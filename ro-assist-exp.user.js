@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手 · 实验版）
 // @namespace    dsh.ro-plugin
-// @version      2.36.13
+// @version      2.36.14
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -113,6 +113,10 @@
 // 3) 自启配置不完整：用脚本 DEFAULTS 自启缺少新引擎必需的 lastroProtocol / lastroCustomPackets / 各 charset / packetKeys / servers(数组) 等字段，
 //    引擎在模块初始化 hook NOTIFY_LOADINFO 抛 Packet not yet register "LoadInfo" 后中断启动，依旧黑屏。改为以宿主页 window.ROConfigBase 为基底自启。
 // 原站 post.lastro.cn / game.lastro.cn 的启动判据、注入方式与配置来源全部保持不变。
+// ---------------- V2.36.14 变更摘要 ----------------
+// 1. 换箭「打完后自动换回默认箭」：没有攻击目标（或目标怪已从实体列表消失）且稳定 1.5 秒后，自动装回换箭设置里的「默认箭」；默认箭没配就什么都不做（保持当前装备）。
+// 2. 连续死亡自动下线（默认开）：5 分钟内死亡 3 次 → 停助手/内挂并按「正确下线方式」自动下线（地图内 ESC →「选择角色」→ 角色选择界面右下角「取消」→ 确认结束游戏）；
+//    只统计助手或内挂在跑时的死亡（手动玩不计数）；某步走不完会提示手动下线。设置项在「助手 → 死亡后返回目标地图」一栏。
 // ---------------- V2.36.13 变更摘要 ----------------
 // 本地数据源探测改三层（顺序固定）：① 页面同源（宿主页由 ro-helper 提供，端口任意，无跨域）→ ② 固定端口 127.0.0.1:8971 → ③ 都失败才回落原站 /ro/client_re/；探测失败不抛异常、不中断启动。
 // 2. 走路拾取暂时下线：掉落钩子 / 5 秒轮询 / 走过去拾取三条路径被同一个开关挡住，界面标注「暂时下线」；白名单数据与掉落树保留，掉落树移回「物品拾取」页。
@@ -122,7 +126,7 @@
 // 5. 攻击名单窗口新增怪物搜索：一行一只怪，点整行直接加入名单（已在名单的显示「已在名单」，解除仍在名单行操作）；行尾两个入口——「跳转」打开游戏内导航的魔物搜索（DB.searchNavigation(name,'MOB')），
 //    「小册子」=DVG 资料外链；旧的「数量」RO321 外链移除。
 // 6. 换箭新增「属性 → 箭」：火/水/风/地/毒/圣/暗/念/不死/无 十行，留空=不强制；优先级 属性箭 > 指定怪箭 > 默认箭，都没有则保持当前箭。元素表内嵌全量怪物属性（2471 只），
-//    真实换箭仍要求背包里有这支箭。
+//    真实换箭仍要求背包里有这支箭；一场打完（没有攻击目标）会自动换回默认箭。
 // 7. 换箭防抖 + boss 粘性：目标刚换先等 1.5 秒确认再换；大 MVP（MvpDropsNum>0）30 秒内还在实体列表里就保持它的箭，随机刷新图不再乱换。
 // ---------------- V2.36.12 变更摘要 ----------------
 // 1. 换箭改成按「当前攻击的那只怪」换：不再只有道场生效——助手挂机的锁定目标优先，其次客户端锁定的那只怪（内挂自动战斗、手动普攻都是它），
@@ -174,7 +178,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.36.13"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.36.14"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -1061,7 +1065,8 @@
       '<div class="row"><span class="lb">目标地图（死亡后返回）</span><input id="dsh-z-returnmap" type="text" placeholder="练级地图 key" style="flex:1;min-width:80px">' +
       '<button class="ghost" id="dsh-z-returnmap-get" style="flex:0 0 auto">取当前</button></div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-returnauto" type="checkbox" checked>回到目标图自动开启助手挂机（默认开）</label></div>' +
-      '<div class="log">在目标图开着自动战斗时若角色死亡：助手自动点「重新开始」回城复活（点不动会重试，最多 4 次，仍失败就等你手点），坐下回满血后传回目标地图。回图后按上面的开关继续：勾选=自动开助手挂机；不勾=按死亡前的方式恢复（助手/内挂）。状态不确定或超时即停。</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-z-deathguard" type="checkbox" checked>连续死亡自动下线（5 分钟死 3 次，默认开）</label></div>' +
+      '<div class="log">在目标图开着自动战斗时若角色死亡：助手自动点「重新开始」回城复活（点不动会重试，最多 4 次，仍失败就等你手点），坐下回满血后传回目标地图。回图后按上面的开关继续：勾选=自动开助手挂机；不勾=按死亡前的方式恢复（助手/内挂）。状态不确定或超时即停。<br>连续死亡自动下线：5 分钟内死亡 3 次（只统计助手或内挂在跑时）就停掉助手/内挂，并按正确下线方式自动下线——地图内 ESC →「选择角色」→ 角色选择界面右下角「取消」→ 确认结束游戏；某一步走不完会提示你手动下线。</div>' +
       '<div class="sec">背包快照定期上报（V2.15.27）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-invshot" type="checkbox" checked>开启定期上报</label>' +
       '<span class="lb" style="margin-left:8px">间隔</span><input id="dsh-invshotint" type="number" value="120" style="flex:0 0 44px"><span style="color:#5a6b7f">秒</span></div>' +
@@ -3694,7 +3699,7 @@
     ["dsh-z-hpfly", "v"], ["dsh-z-spfly", "v"], ["dsh-z-hpout", "v"], ["dsh-z-keep", "v"],
     ["dsh-z-sit", "c"], ["dsh-z-sithplo", "v"], ["dsh-z-sithphi", "v"], ["dsh-z-sitsplo", "v"], ["dsh-z-sitsphi", "v"],
     ["dsh-z-sitxw", "v"], ["dsh-z-sitback", "c"], ["dsh-z-sitnofight", "c"],
-    ["dsh-z-deathreturn", "c"], ["dsh-z-returnmap", "v"], ["dsh-z-returnauto", "c"],
+    ["dsh-z-deathreturn", "c"], ["dsh-z-returnmap", "v"], ["dsh-z-returnauto", "c"], ["dsh-z-deathguard", "c"],
     ["dsh-z-attint", "v"], ["dsh-z-range", "v"], ["dsh-z-pmrange", "v"], ["dsh-z-mgrange", "v"], ["dsh-z-minrange", "v"], ["dsh-z-mapbound", "c"], ["dsh-z-mapbound-r", "v"], ["dsh-z-mapbound-edge", "v"],
     ["dsh-z-switchdelay", "v"], ["dsh-z-walkint", "v"], ["dsh-z-chaseint", "v"], ["dsh-z-huntmode", "v"], ["dsh-z-takeover", "v"], ["dsh-z-follow", "c"], ["dsh-z-next", "c"],
     ["dsh-arrowen", "c"], ["dsh-invshot", "c"], ["dsh-invshotint", "v"],
@@ -14353,6 +14358,8 @@
   function arrowFillElemSelect(sel,cur){if(!sel)return;sel.innerHTML="";var o0=document.createElement("option");o0.value="";o0.textContent="不强制";sel.appendChild(o0);var seen={};ARROW_ELEM_SUGGEST.forEach(function(x){if(seen[x[0]])return;seen[x[0]]=1;var o=document.createElement("option");o.value=String(x[0]);o.textContent=x[1]+" #"+x[0];sel.appendChild(o);});try{readBagArrows().forEach(function(x){if(seen[x.itid])return;seen[x.itid]=1;var o=document.createElement("option");o.value=String(x.itid);o.textContent=(getItemName(x.itid)||("ITID "+x.itid))+" #"+x.itid+" ×"+x.count;sel.appendChild(o);});}catch(e){}if(cur&&!seen[cur]){var o2=document.createElement("option");o2.value=String(cur);o2.textContent=arrowItemName(cur)+"（当前配置）";sel.appendChild(o2);}sel.value=cur?String(cur):"";}
   // V2.36.13 boss 粘性 + 目标防抖：无限初级这类随机刷新图上，目标一抖就换箭会把箭换乱
   var arrowStickyBoss=null,arrowStableKey="",arrowStableAt=0,ARROW_STABLE_MS=1500,ARROW_BOSS_KEEP_MS=30000;
+  // V2.36.13：这只怪还在不在场（「打完了」判定用）。实体列表读不到或为空时返回 false，退化成原来的 15 秒超时口径，绝不误判。
+  function arrowMobGone(mid){try{var m=arrowPos(mid);if(!m)return false;var em=CLIENT.EM||(window.require&&window.require("Renderer/EntityManager"));if(!em||!em.forEach)return false;var any=false,found=false;em.forEach(function(e){if(!e)return;any=true;if(Number(e.objecttype)!==5)return;var j=Number(e._job!=null?e._job:(e.job!=null?e.job:e.mobId));if(j===m)found=true;});return any&&!found;}catch(e){return false;}}
   function arrowBossAlive(mid,gid){try{var em=CLIENT.EM||(window.require&&window.require("Renderer/EntityManager")),found=false;if(!em||!em.forEach)return false;em.forEach(function(e){if(found||!e)return;if(Number(e.objecttype)!==5)return;var j=Number(e._job!=null?e._job:(e.job!=null?e.job:e.mobId));if((mid&&j===mid)||(gid&&gidInt(e.GID)===gid))found=true;});return found;}catch(e){return false;}}
   function arrowEffectiveMid(mid,gid,now){var m=arrowPos(mid);if(m&&arrowBoss(m))arrowStickyBoss={mid:m,gid:gidInt(gid)||0,at:now};if(arrowStickyBoss&&now-arrowStickyBoss.at<=ARROW_BOSS_KEEP_MS){var b=arrowStickyBoss;if(b.mid===m){b.at=now;if(gid)b.gid=gidInt(gid)||b.gid;}else if(arrowBossAlive(b.mid,b.gid)){b.at=now;return {mid:b.mid,sticky:true};}else arrowStickyBoss=null;}return {mid:m,sticky:false};}
   function arrowStableGate(key,now){if(arrowStableKey!==key){arrowStableKey=key;arrowStableAt=now;arrowPending=null;arrowSelfPending=null;return false;}return now-arrowStableAt>=ARROW_STABLE_MS;}
@@ -14361,7 +14368,7 @@
   function arrowMobName(mid){try{var m=(getMobDb()||{})[arrowPos(mid)];return m?(m.kName||m.name||m.Name||("怪物 #"+mid)):("怪物 #"+mid);}catch(e){return "怪物 #"+mid;}}
   function arrowItemName(itid){try{return (getItemName(itid)||("ITID "+itid))+" #"+itid;}catch(e){return "ITID "+itid;}}
   function arrowFillMobs(s,q){if(!s)return;var old=s.value,db=getMobDb()||{},needle=String(q||"").trim().toLowerCase(),keys=[];Object.keys(db).forEach(function(k){if(!arrowPos(k))return;if(needle&&arrowMobName(k).toLowerCase().indexOf(needle)<0&&String(k).indexOf(needle)<0)return;keys.push(k);});keys.sort(function(a,b){return Number(a)-Number(b);});s.innerHTML='<option value="">选择怪物（可先搜索）</option>';keys.forEach(function(k){var m=db[k]||{},o=document.createElement("option");o.value=k;o.textContent=arrowMobName(k)+" #"+k+(Number(m.MvpDropsNum)>0?" [Boss]":"");s.appendChild(o);});if(old&&keys.indexOf(old)>=0)s.value=old;}
-  function arrowRenderCfg(){var box=$id("dsh-arrow-rules-list");if(!box)return;box.innerHTML="";var def=arrowPos(arrowRules.defaultItid),r0=document.createElement("div");r0.className="row";var s0=document.createElement("span");s0.style.cssText="flex:1 1 auto";s0.textContent="默认箭："+(def?arrowItemName(def):"未设置（不换箭，保持当前装备）");r0.appendChild(s0);box.appendChild(r0);var head=document.createElement("div");head.className="st";head.textContent="属性 → 箭（按当前攻击目标的属性自动换；留空=不强制；优先级 属性箭 > 指定怪箭 > 默认箭）";box.appendChild(head);ARROW_ELEM_ORDER.forEach(function(en){var row=document.createElement("div");row.className="row";var lb=document.createElement("span");lb.style.cssText="flex:0 0 auto;min-width:26px";lb.textContent=en;row.appendChild(lb);var sel=document.createElement("select");sel.style.cssText="flex:1 1 auto";arrowFillElemSelect(sel,arrowPos(arrowRules.byElem[en]));sel.addEventListener("change",function(){var v=arrowPos(this.value);if(v)arrowRules.byElem[en]=v;else delete arrowRules.byElem[en];arrowSave();arrowSay(v?("属性箭已保存："+en+" → "+arrowItemName(v)):("已清空"+en+"属性箭"));});row.appendChild(sel);if(arrowPos(arrowRules.byElem[en])){var clr=document.createElement("button");clr.className="ghost";clr.textContent="清";clr.style.cssText="flex:0 0 auto;padding:1px 6px;font-size:11px";clr.addEventListener("click",function(){delete arrowRules.byElem[en];arrowSave();arrowRenderCfg();arrowSay("已清空"+en+"属性箭");});row.appendChild(clr);}box.appendChild(row);});var ids=Object.keys(arrowRules.byMid).map(function(k){return arrowPos(k);}).filter(function(x){return !!x;});ids.sort(function(a,b){return a-b;});if(!ids.length){var e=document.createElement("span");e.className="st";e.textContent="未指定怪物：没配过的怪一律用属性箭/默认箭。";box.appendChild(e);return;}ids.forEach(function(mid){var row=document.createElement("div");row.className="row";var t=document.createElement("span");t.style.cssText="flex:1 1 auto";t.textContent=arrowMobName(mid)+" #"+mid+" → "+arrowItemName(arrowRules.byMid[mid])+(mobElemName(mid)?(" · "+mobElemName(mid)+"属性"):"");row.appendChild(t);var b=document.createElement("button");b.className="ghost";b.textContent="删除";b.style.cssText="flex:0 0 auto;padding:1px 8px;font-size:11px";b.addEventListener("click",function(){delete arrowRules.byMid[mid];arrowSave();arrowRenderCfg();arrowSay("已删除指定怪 #"+mid);});row.appendChild(b);box.appendChild(row);});}
+  function arrowRenderCfg(){var box=$id("dsh-arrow-rules-list");if(!box)return;box.innerHTML="";var def=arrowPos(arrowRules.defaultItid),r0=document.createElement("div");r0.className="row";var s0=document.createElement("span");s0.style.cssText="flex:1 1 auto";s0.textContent="默认箭："+(def?arrowItemName(def)+"（打完后自动换回这支）":"未设置（不换箭，保持当前装备）");r0.appendChild(s0);box.appendChild(r0);var head=document.createElement("div");head.className="st";head.textContent="属性 → 箭（按当前攻击目标的属性自动换；留空=不强制；优先级 属性箭 > 指定怪箭 > 默认箭）";box.appendChild(head);ARROW_ELEM_ORDER.forEach(function(en){var row=document.createElement("div");row.className="row";var lb=document.createElement("span");lb.style.cssText="flex:0 0 auto;min-width:26px";lb.textContent=en;row.appendChild(lb);var sel=document.createElement("select");sel.style.cssText="flex:1 1 auto";arrowFillElemSelect(sel,arrowPos(arrowRules.byElem[en]));sel.addEventListener("change",function(){var v=arrowPos(this.value);if(v)arrowRules.byElem[en]=v;else delete arrowRules.byElem[en];arrowSave();arrowSay(v?("属性箭已保存："+en+" → "+arrowItemName(v)):("已清空"+en+"属性箭"));});row.appendChild(sel);if(arrowPos(arrowRules.byElem[en])){var clr=document.createElement("button");clr.className="ghost";clr.textContent="清";clr.style.cssText="flex:0 0 auto;padding:1px 6px;font-size:11px";clr.addEventListener("click",function(){delete arrowRules.byElem[en];arrowSave();arrowRenderCfg();arrowSay("已清空"+en+"属性箭");});row.appendChild(clr);}box.appendChild(row);});var ids=Object.keys(arrowRules.byMid).map(function(k){return arrowPos(k);}).filter(function(x){return !!x;});ids.sort(function(a,b){return a-b;});if(!ids.length){var e=document.createElement("span");e.className="st";e.textContent="未指定怪物：没配过的怪一律用属性箭/默认箭。";box.appendChild(e);return;}ids.forEach(function(mid){var row=document.createElement("div");row.className="row";var t=document.createElement("span");t.style.cssText="flex:1 1 auto";t.textContent=arrowMobName(mid)+" #"+mid+" → "+arrowItemName(arrowRules.byMid[mid])+(mobElemName(mid)?(" · "+mobElemName(mid)+"属性"):"");row.appendChild(t);var b=document.createElement("button");b.className="ghost";b.textContent="删除";b.style.cssText="flex:0 0 auto;padding:1px 8px;font-size:11px";b.addEventListener("click",function(){delete arrowRules.byMid[mid];arrowSave();arrowRenderCfg();arrowSay("已删除指定怪 #"+mid);});row.appendChild(b);box.appendChild(row);});}
   function arrowCurrentMid(){try{var gid=gidInt(zLock&&zLock.gid);if(!gid){var me=CLIENT.SS&&CLIENT.SS.Entity;gid=gidInt(me&&me.targetGID);}if(!gid&&dps&&dps.cur&&Number(dps.cur.lastAt)&&Date.now()-Number(dps.cur.lastAt)<15000)gid=gidInt(dps.cur.gid);if(!gid)return 0;var list=apiEntities();for(var i=0;i<list.length;i++){if(list[i].gid===gid&&list[i].type===5&&list[i].mid)return list[i].mid;}}catch(e){}return 0;}
   var arrowSelfPending=null,arrowSelfSaid="",arrowQuiverAt=0;
   function arrowSelfSay(s){s=String(s);if(s===arrowSelfSaid)return;arrowSelfSaid=s;arrowSay(s);}
@@ -14373,7 +14380,30 @@
   function arrowSelfWanted(){try{if(!arrowRules.enabled)return false;var mid=arrowCurrentMid();if(!mid)return false;var list=arrowCandidates(mid,arrowRules),ammo=readEquippedAmmo(),bag=readBagArrows();for(var i=0;i<list.length;i++){if(ammo&&Number(ammo.itid)===list[i].itid&&Number(ammo.count)>0)return true;for(var j=0;j<bag.length;j++){if(Number(bag[j].itid)===list[i].itid)return true;}}return false;}catch(e){return false;}}
   function arrowSelfTick(now){try{
     if(!arrowRules.enabled||arrowTarget||externalAutomationOwns("arrow")||!clientReady())return;
-    var mid0=arrowCurrentMid();if(!mid0)return;var eff=arrowEffectiveMid(mid0,0,now),mid=eff.mid||mid0;
+    var mid0=arrowCurrentMid();
+    if(mid0&&arrowMobGone(mid0))mid0=0; // V2.36.13：目标怪已经不在场 = 打完了
+    // V2.36.13：打完后自动换回「默认箭」（默认箭在换箭设置里配；没配就什么都不做，保持当前装备）
+    if(!mid0){
+      arrowStickyBoss=null;
+      var defIdle=arrowPos(arrowRules.defaultItid);if(!defIdle)return;
+      if(!arrowStableGate("s#idle",now)){arrowSelfSay("战斗结束，等 1.5 秒确认后换回默认箭");return;}
+      var ammoI=readEquippedAmmo();
+      if(ammoI&&Number(ammoI.itid)===defIdle&&Number(ammoI.count)>0){arrowSelfPending=null;arrowSelfSay("已换回默认箭："+arrowItemName(defIdle));return;}
+      var bagI=readBagArrows(),rowI=null,jI=0;
+      for(jI=0;jI<bagI.length;jI++){if(Number(bagI[jI].itid)===defIdle){rowI=bagI[jI];break;}}
+      if(rowI){
+        var pI=arrowSelfPending;
+        if(pI&&pI.itid===defIdle){if(now<pI.confirmUntil)return;if(!pI.retryAt){pI.retryAt=now+3000;arrowSelfSay("换回默认箭确认超时，3 秒后重试");return;}if(now<pI.retryAt)return;}
+        if(equipArrow(rowI.index)){arrowSelfPending={itid:defIdle,confirmUntil:now+5000,retryAt:0};arrowSelfSay("战斗结束，换回默认箭："+arrowItemName(defIdle));}
+        return;
+      }
+      var qI=arrowUseQuiver(defIdle);
+      arrowSelfPending=null;
+      if(qI&&qI.used){arrowSelfSay("战斗结束，背包缺"+arrowItemName(defIdle)+"，已使用"+qI.q.name+"…");return;}
+      arrowSelfSay("战斗结束，背包缺"+arrowItemName(defIdle)+"（默认箭），保持当前箭");
+      return;
+    }
+    var eff=arrowEffectiveMid(mid0,0,now),mid=eff.mid||mid0;
     if(!arrowStableGate("s"+mid,now)){arrowSelfSay("目标刚换，等 1.5 秒确认："+arrowMobName(mid)+(eff.sticky?"[BOSS粘性]":""));return;}
     var list=arrowCandidates(mid,arrowRules);if(!list.length)return;
     var tag=arrowMobName(mid)+(arrowBoss(mid)?"[BOSS]":"")+(eff.sticky?"[BOSS粘性]":""),ammo=readEquippedAmmo(),bag=readBagArrows(),i=0,j=0,row=null;
@@ -14402,7 +14432,7 @@
       + '<div class="row"><span class="lb" style="min-width:52px">该怪箭</span><select id="dsh-arrow-rules-mobitem"></select><button class="green" id="dsh-arrow-rules-mobsave">保存指定怪箭</button></div>'
       + '<div class="box"><div class="b-hd">已配置</div><div id="dsh-arrow-rules-list" style="font-size:11px;max-height:104px;overflow:auto"></div></div>'
       + '<div id="dsh-arrow-rules-status" class="st"></div>'
-      + '<div class="log">规则：优先级 属性箭（按目标属性）&gt; 指定怪箭 &gt; 默认箭；之后才是下面的说明。按你当前攻击的那只怪换箭（助手挂机、内挂、手动打的都算）→ 属性配过的先按属性换；这只怪单独配过就用指定怪箭；都没配就用默认箭；背包里没有要用的箭就用默认箭兜底；默认箭也没设 → 不换箭（保持当前装备）。道场脚本报的怪优先。大 MVP（MvpDropsNum>0）30 秒内还在实体列表里就保持它的箭（boss 粘性）；目标刚换会先等 1.5 秒确认再换，随机刷新图不再乱换。</div>'
+      + '<div class="log">规则：优先级 属性箭（按目标属性）&gt; 指定怪箭 &gt; 默认箭；之后才是下面的说明。按你当前攻击的那只怪换箭（助手挂机、内挂、手动打的都算）→ 属性配过的先按属性换；这只怪单独配过就用指定怪箭；都没配就用默认箭；背包里没有要用的箭就用默认箭兜底；默认箭也没设 → 就不动（保持当前装备）；一场打完（没有攻击目标、或目标怪已消失）会自动换回默认箭，先等 1.5 秒确认。道场脚本报的怪优先。大 MVP（MvpDropsNum>0）30 秒内还在实体列表里就保持它的箭（boss 粘性）；目标刚换会先等 1.5 秒确认再换，随机刷新图不再乱换。</div>'
       + '<div class="log">属性 → 箭：火/水/风/地/毒/圣/暗/念/不死/无 十行，留空=不强制；怪物属性取自内嵌的全量怪物表（2471 只）。真实换箭仍要求背包里有这支箭，否则按默认箭兜底。</div>'
       + '<div class="log">背包里一支箭都没有时会自动打开对应箭矢筒（风灵箭矢 → 风灵箭矢筒 / 魔法风灵箭矢筒）；连箭矢筒也没有就只提示，不乱换。</div>';
     dock.appendChild(h);
@@ -14603,6 +14633,123 @@
   apiNoticeWatch();setTimeout(function(){apiEmit("ready",{protocol:API_PROTOCOL,assistantVersion:VER});},0);
   setInterval(function(){apiBattleTick();if(apiLease)apiEmit("state",{owner:apiLease.owner});},250);
 
+  // ================= V2.36.13 连续死亡自动下线（默认开：5 分钟内死 3 次） =================
+  // 用户口径（2026-10-02）：连续死亡就自动下线，且必须走「正确下线方式」；阈值 5 分钟内 3 次。
+  // 正确下线方式（客户端源码已核对）：地图内 ESC → 点「选择角色」→ 角色选择界面右下角「取消」→ 弹出的确认框点「确定（ok）」结束游戏。
+  //   ① Escape 窗口 .charselect → Escape.onCharSelectionRequest → CZ.RESTART type=1（回角色服）
+  //   ② CharSelect 的 Cancel 按钮 → cancel() → UIManager.showPromptBox(msg17,'ok','cancel', onYes)
+  //   ③ WinPrompt 里第一颗按钮（data-background=btn_ok.bmp）→ Component.onExitRequest() → 真正下线
+  // 只在「活着 → 死亡」那一刻计一次；只统计助手或内挂在跑时的死亡（手动玩不计数，避免误下线）。
+  var DEATH_GUARD_WINDOW = 300000, DEATH_GUARD_LIMIT = 3;
+  var deathGuardAt = [], deathGuardDead = false, deathGuardRun = null, deathGuardDone = false;
+  function deathGuardOn() {
+    var el = $id("dsh-z-deathguard");
+    return !el || el.checked === true; // 控件缺失时按默认开（与界面默认勾选一致）
+  }
+  function deathGuardSay(s, kind) {
+    try { setStatus("连续死亡守卫：" + s, kind || "warn"); } catch (e) {}
+  }
+  function deathGuardNotify(text) {
+    try { notifyPush(text); } catch (e) {}
+    try { roFeedback(text, "warn"); } catch (e2) {}
+    try { tlog("death-guard " + text); } catch (e3) {}
+  }
+  function deathGuardCount(now) {
+    deathGuardAt = deathGuardAt.filter(function (x) { return now - x <= DEATH_GUARD_WINDOW; });
+    deathGuardAt.push(now);
+    return deathGuardAt.length;
+  }
+  // 真实按钮优先（与手点同一条路径）；取不到再发同一个包。
+  function deathGuardCharSelect() {
+    try {
+      var host = document.getElementById("Escape");
+      var btn = host && host.shadowRoot && host.shadowRoot.querySelector(".charselect");
+      if (btn) { btn.click(); return true; }
+    } catch (e) {}
+    try { var pkt = new CLIENT.PS.CZ.RESTART(); pkt.type = 1; CLIENT.NM.sendPacket(pkt); return true; } catch (e2) {}
+    return false;
+  }
+  function deathGuardCharSelectHost() {
+    var ids = ["CharSelectV4", "CharSelect", "CharSelectV3", "CharSelectV2", "CharSelectV5"];
+    for (var i = 0; i < ids.length; i++) {
+      var h = document.getElementById(ids[i]);
+      if (h && h.shadowRoot) return h;
+    }
+    return null;
+  }
+  function deathGuardCancelBtn() {
+    var h = deathGuardCharSelectHost();
+    if (!h) return null;
+    try { return h.shadowRoot.querySelector(".btn.cancel") || h.shadowRoot.querySelector(".cancel"); } catch (e) { return null; }
+  }
+  function deathGuardPromptOk() {
+    var h = document.getElementById("WinPrompt");
+    if (!h || !h.shadowRoot) return null;
+    try {
+      var btns = h.shadowRoot.querySelectorAll(".btns .btn");
+      for (var i = 0; i < btns.length; i++) {
+        var bg = btns[i].dataset ? String(btns[i].dataset.background || "") : "";
+        if (bg === "btn_ok.bmp") return btns[i];
+      }
+      return btns.length ? btns[0] : null;
+    } catch (e) { return null; }
+  }
+  function deathGuardStep(now) {
+    var r = deathGuardRun;
+    if (!r) return;
+    if (now > r.until) { // 每一步都留重试点；仍走不完就明确交给用户手动
+      if (r.phase === "charselect" && (r.tries || 0) < 2) { r.tries = (r.tries || 0) + 1; r.until = now + 8000; deathGuardCharSelect(); return; }
+      if (r.phase === "cancel" && (r.tries || 0) < 2) { r.tries = (r.tries || 0) + 1; r.until = now + 8000; var cb = deathGuardCancelBtn(); if (cb) { try { cb.click(); } catch (e) {} } return; }
+      deathGuardRun = null;
+      deathGuardSay("自动下线没走完，请手动下线：ESC → 选择角色 → 右下角「取消」→ 确认结束游戏", "err");
+      deathGuardNotify("连续死亡：自动下线未完成，请手动下线");
+      return;
+    }
+    if (r.phase === "charselect") {
+      var btn = deathGuardCancelBtn();
+      if (!btn) return;
+      try { btn.click(); } catch (e) {}
+      r.phase = "cancel"; r.tries = 0; r.until = now + 8000;
+      deathGuardSay("已点「取消」，等待确认结束游戏…", "warn");
+      return;
+    }
+    if (r.phase === "cancel") {
+      var ok = deathGuardPromptOk();
+      if (!ok) return;
+      try { ok.click(); } catch (e2) {}
+      deathGuardRun = null; deathGuardDone = true;
+      deathGuardSay("已确认结束游戏，角色下线", "ok");
+      deathGuardNotify("连续死亡：已自动下线（" + DEATH_GUARD_LIMIT + " 次 / " + Math.round(DEATH_GUARD_WINDOW / 60000) + " 分钟）");
+    }
+  }
+  function deathGuardTrigger(now) {
+    var mins = Math.round(DEATH_GUARD_WINDOW / 60000);
+    deathGuardRun = { phase: "charselect", until: now + 8000, tries: 0, at: now };
+    try { deathReturnCancel("连续死亡自动下线"); } catch (e) {}
+    try { stopZhu(); } catch (e1) {}
+    try { if (npBattleState() === true) npRequestBattle(false, "death-guard", true, null); } catch (e2) {}
+    deathGuardSay("最近 " + mins + " 分钟内死亡 " + deathGuardAt.length + " 次：已停助手/内挂，按正确方式自动下线", "err");
+    deathGuardNotify("连续死亡（" + mins + " 分钟 " + deathGuardAt.length + " 次）：已停止挂机并自动下线");
+    deathGuardCharSelect();
+  }
+  function deathGuardTick() {
+    try {
+      var now = Date.now();
+      if (deathGuardRun) { deathGuardStep(now); return; }
+      var ent = CLIENT.SS && CLIENT.SS.Entity, gid = ent && gidInt(ent.GID);
+      var dead = !!(ent && (ent.isDeath || (ent.ACTION && ent.action === ent.ACTION.DIE)));
+      if (!dead) { deathGuardDead = false; return; }
+      if (deathGuardDead) return;
+      deathGuardDead = true;
+      if (deathGuardDone || !deathGuardOn() || !clientReady() || !(gid > 0) || gid !== lastCharGid || charNameOf(ent) !== lastCharName) return;
+      if (!(zRunning === true || npBattleState() === true)) return;
+      var n = deathGuardCount(now), mins = Math.round(DEATH_GUARD_WINDOW / 60000);
+      if (n < DEATH_GUARD_LIMIT) { deathGuardSay("最近 " + mins + " 分钟内第 " + n + " 次死亡（满 " + DEATH_GUARD_LIMIT + " 次自动下线）", "warn"); return; }
+      deathGuardTrigger(now);
+    } catch (e) {}
+  }
+  masterTickReg(function () { deathGuardTick(); });
+
   // Session-only intent: no stale recovery after reload or role switch.
   var deathReturn = null, deathReturnStopping = false, deathReturnProbeAt = 0, deathReturnNoModeSaid = false;
   function deathReturnCancel(reason) {
@@ -14657,6 +14804,7 @@
     deathReturn = null;
   }
   function deathReturnTick() {
+    if (deathGuardRun || deathGuardDone) { deathReturnCancel("连续死亡自动下线"); return; } // V2.36.13：连续死亡守卫接管后不再布防
     var opt = $id("dsh-z-deathreturn"), target = deathReturnKey("dsh-z-returnmap"), now = Date.now();
     if (!opt || !opt.checked || !profUIApplied || !target) { deathReturnCancel("设置不完整"); return; }
     var ent = CLIENT.SS && CLIENT.SS.Entity, life = ent && ent.life, gid = ent && gidInt(ent.GID), map = normMapKey(getMapName());

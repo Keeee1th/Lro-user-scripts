@@ -25,7 +25,7 @@ test('death return clicks restart, retries while HP is zero, and auto-hangs only
       $id:id=>controls[id],normMapKey:m=>String(m||'').replace(/\.(gat|rsw)$/,'').toLowerCase(),getMapName:()=>map,
       gidInt:Number,clientReady:()=>true,apiLease:null,scrRun:{running:false},dojoRun:{on:false},bagClean:{busy:false},moveXY:{busy:false},escapePending:()=>false,
       zRunning:true,npBattleState:()=>mode,npRequestBattle:(want)=>{mode=want;return 'sent';},stopZhu(){stops++;context.zRunning=false;mode=false},startZhu(){starts++;context.zRunning=true},
-      sendSit:x=>{sits.push(x);ent.action=x?2:0;},isSitting:()=>ent.action===2,isWinOpen:()=>false,gptTeleport:x=>{teleports.push(x);return true},setStatus(){},masterTickReg(fn){context.tick=fn}};
+      sendSit:x=>{sits.push(x);ent.action=x?2:0;},isSitting:()=>ent.action===2,isWinOpen:()=>false,gptTeleport:x=>{teleports.push(x);return true},setStatus(){},deathGuardRun:null,deathGuardDone:false,masterTickReg(fn){context.tick=fn}};
     vm.createContext(context);vm.runInContext(src.slice(start,end),context);
     context.tick();assert.equal(stops,0);assert.equal(teleports.length,0);
     map='prontera';context.tick();assert.equal(stops,0); // 不在目标图不布防
@@ -793,8 +793,8 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
   // 1) 版本号：稳定版与实验版都必须是 2.36.1（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.13', name + ' @version 必须是 2.36.13');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.13', name + ' 运行时常量 VER 必须是 2.36.13');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.14', name + ' @version 必须是 2.36.14');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.14', name + ' 运行时常量 VER 必须是 2.36.14');
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
   const stripHead = (s) => s.replace(/\r\n/g,'\n').split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
@@ -1166,8 +1166,8 @@ test('V2.34.5 战斗诊断快照 prof 字段已就位（不改既有字段）', 
 // ================= V2.34.5：配置自动备份（两代）/ 黄金副本找回（纯函数真值表 / 按钮 / 键隔离）=================
 test('V2.34.5 版本号升到 2.34.5（@version 与运行时常量一致，两文件同步）', () => {
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.13', name + ' @version 必须是 2.36.13');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.13', name + ' 运行时常量 VER 必须是 2.36.13');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.14', name + ' @version 必须是 2.36.14');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.14', name + ' 运行时常量 VER 必须是 2.36.14');
   }
 });
 
@@ -1411,7 +1411,7 @@ test('bagClean v2 UI and storage contract is lockstep and documents unsupported 
 
 // ================= V2.35.1 assistant API + standalone dojo =================
 const splitSources=[['stable',source],['exp',expSource]];
-test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.36\.13/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
+test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.36\.14/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
 test('V2.35.1 public API uses owner-only external signatures and validates the current lease owner',()=>{for(const[,s]of splitSources){assert.ok(s.includes('/^[A-Za-z0-9_.:-]{8,128}$/'));assert.ok(s.includes('dojo:1,battle:1,movement:1,dialog:1,arrow:1,fly:1'));assert.ok(s.includes('if(apiLease&&apiLease.owner!==owner)'));for(const sig of ['apiHas(owner,scope)','apiSnapshot(owner)','apiRelease(owner)','apiContact(owner,gid)','apiWalk(owner,payload)','apiChoose(owner,payload)','apiBattle(owner,on)','apiSetArrow(owner,target)','apiClearArrow(owner)','apiFly(owner,payload)'])assert.ok(s.includes('function '+sig),sig);assert.ok(s.includes('apiLease.generation===generation'));assert.ok(!s.includes('apiHas(owner,generation'));}});
 test('V2.35.1 snapshot and battle/menu ownership contracts are explicit',()=>{for(const[,s]of splitSources){for(const key of ['ready:','map:','player:','mobs:','npcs:','target:','inDojoMap:','dialogOpen:','menu:','battleState:','busy:','arrow:'])assert.ok(s.includes(key),key);assert.ok(s.includes('if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"}'));assert.ok(s.includes('b.state="pending-on"'));assert.ok(s.includes('if(b.state!=="owned")return {ok:true,result:"not-owned"}'));assert.ok(s.includes('l.battle.state==="owned"||l.battle.state==="pending-off"'));assert.ok(s.includes('if(s!==false)return {ok:true,result:s===true?"preexisting":"unknown"}'));}});
 test('V2.36.11 arrow rules use a per-monster table plus a default arrow',()=>{for(const[name,s]of splitSources){
@@ -2073,3 +2073,127 @@ test('V2.36.13 换箭防抖 1.5 秒 + 大 MVP 30 秒粘性',()=>{for(const[name,
   assert.ok(s.includes('if(!arrowStableGate("s"+mid,now))'),name+' 助手换箭要过防抖门');
   assert.ok(s.includes('if(!arrowStableGate("t"+midUse+"@"+arrowTarget.gid,now))'),name+' 道场/外部换箭也要过防抖门');
 }});
+
+test('V2.36.14 换箭打完后自动换回默认箭（默认箭可设置 · 实体列表不可用不得误判）', () => {
+  const src = expExtract('  function arrowSelfTick(now){', '  function arrowEnsureHost(){');
+  assert.ok(src.includes('if(mid0&&arrowMobGone(mid0))mid0=0;'), '目标怪已从实体列表消失必须按「打完了」处理');
+  assert.ok(src.includes('if(!mid0){'), '必须有无目标分支');
+  assert.ok(src.includes('arrowStableGate("s#idle"'), '打完后换默认箭必须先过 1.5 秒稳定门（防目标抖动）');
+  assert.ok(src.includes('var defIdle=arrowPos(arrowRules.defaultItid)'), '默认箭取自换箭设置里可设置的「默认箭」');
+  assert.ok(src.includes('if(!defIdle)return;'), '没配默认箭就什么都不做（保持当前装备）');
+  assert.ok(src.includes('if(equipArrow(rowI.index)){arrowSelfPending={itid:defIdle'), '打完必须自动装回默认箭');
+  assert.ok(src.includes('var qI=arrowUseQuiver(defIdle);'), '默认箭不在背包时仍按箭矢筒兜底');
+  assert.ok(src.includes('arrowStickyBoss=null;'), '打完要清掉 boss 粘性，下一场重新判定');
+  const gone = expExtract('  function arrowMobGone(mid){', '  function arrowBossAlive(mid,gid){');
+  assert.ok(gone.includes('if(!em||!em.forEach)return false;'), '实体列表不可用时不得判定为已消失（否则会把属性箭全换成默认箭）');
+  assert.ok(gone.includes('return any&&!found;'), '只有列表可用且列表里找不到这只怪才算消失');
+  assert.ok(extract('  function arrowMobGone(mid){', '  function arrowBossAlive(mid,gid){').includes('return any&&!found;'), '稳定版必须同步');
+  // vm 实跑：默认箭在包里 → 无目标时自动装回；没配默认箭 → 什么都不做；实体列表不可用 → 不误判
+  const code = expExtract('  function arrowSelfTick(now){', '  function arrowEnsureHost(){');
+  let clock = 10000, escaped = [];
+  const ctx = {
+    Number, String, Date: { now: () => clock },
+    arrowRules: { enabled: true, defaultItid: 1802, byMid: {}, byElem: {} },
+    arrowTarget: null, arrowSelfPending: null, arrowStickyBoss: null,
+    externalAutomationOwns: () => false, clientReady: () => true,
+    arrowCurrentMid: () => ctx.__mid, arrowMobGone: (m) => !!ctx.__gone,
+    arrowPos: (v) => { const n = Number(v); return Number.isInteger(n) && n > 0 ? n : null; },
+    arrowStableGate: (key, now) => { if (ctx.__gk !== key) { ctx.__gk = key; ctx.__ga = now; return false; } return now - ctx.__ga >= 1500; },
+    readEquippedAmmo: () => ctx.__ammo, readBagArrows: () => ctx.__bag,
+    equipArrow: (i) => { escaped.push(i); return true; },
+    arrowItemName: (i) => 'IT' + i, arrowSelfSay: (s) => { ctx.__said = s; }, arrowSay: () => {},
+    arrowUseQuiver: () => null, arrowEffectiveMid: (mid) => ({ mid, sticky: false }),
+    arrowMobName: () => '怪', arrowBoss: () => false, arrowKindName: (k) => k, arrowCandidates: () => [],
+    __mid: 0, __gone: false, __ammo: null, __bag: [], __gk: '', __ga: 0,
+  };
+  ctx.context = ctx; vm.createContext(ctx); vm.runInContext(code, ctx);
+  ctx.__ammo = { itid: 1757, count: 50 }; ctx.__bag = [{ index: 7, itid: 1802, count: 30 }];
+  ctx.arrowSelfTick(clock);            // 第一拍只起稳定门
+  assert.deepEqual(escaped, [], '稳定门内不得换箭');
+  ctx.arrowSelfTick(clock + 1600);     // 过门 → 装回默认箭
+  assert.equal(JSON.stringify(escaped), '[7]', '打完后必须自动装回默认箭（背包里的那个 index）');
+  assert.equal(JSON.stringify(ctx.arrowSelfPending), JSON.stringify({ itid: 1802, confirmUntil: clock + 1600 + 5000, retryAt: 0 }), '换回默认箭后要等确认回执');
+  ctx.arrowRules.defaultItid = null; ctx.__ammo = { itid: 1757, count: 50 }; escaped = []; ctx.__gk = '';
+  ctx.arrowSelfTick(clock + 4000); ctx.arrowSelfTick(clock + 6000);
+  assert.deepEqual(escaped, [], '没配默认箭就不得动装备');
+  ctx.arrowRules.defaultItid = 1802; ctx.__mid = 1002; ctx.__gone = true; ctx.__gk = ''; ctx.__ammo = { itid: 1757, count: 50 }; escaped = []; ctx.arrowSelfPending = null;
+  ctx.arrowSelfTick(clock + 8000); ctx.arrowSelfTick(clock + 9700);
+  assert.equal(JSON.stringify(escaped), '[7]', '目标怪已消失 = 打完了，也必须换回默认箭');
+});
+
+test('V2.36.14 连续死亡自动下线：5 分钟 3 次走「ESC→选择角色→取消→确认结束游戏」', () => {
+  const gsrc = expExtract('  var DEATH_GUARD_WINDOW = 300000, DEATH_GUARD_LIMIT = 3;', '  masterTickReg(function () { deathGuardTick(); });');
+  assert.ok(gsrc.includes('DEATH_GUARD_WINDOW = 300000, DEATH_GUARD_LIMIT = 3'), '阈值必须是 5 分钟 3 次');
+  assert.ok(gsrc.includes('.charselect'), '必须点客户端真实按钮「选择角色」');
+  assert.ok(gsrc.includes('pkt.type = 1'), '按钮取不到时发的是 CZ.RESTART type=1（回角色服）');
+  assert.ok(gsrc.includes('CharSelectV4') && gsrc.includes('.btn.cancel'), '角色选择界面的「取消」按钮必须点到');
+  assert.ok(gsrc.includes('WinPrompt') && gsrc.includes('btn_ok.bmp'), '确认框必须点第一颗 ok 按钮（真正下线）');
+  assert.ok(gsrc.includes('stopZhu()') && gsrc.includes('npRequestBattle(false'), '下线前必须停助手并关内挂');
+  assert.ok(gsrc.includes('deathReturnCancel("连续死亡自动下线")'), '必须接管死亡回图布防（不能一边回图一边下线）');
+  assert.ok(gsrc.includes('zRunning === true || npBattleState() === true'), '只统计助手或内挂在跑时的死亡');
+  assert.ok(gsrc.includes('gid !== lastCharGid'), '必须确认是自己的角色');
+  assert.ok(gsrc.includes('请手动下线'), '走不完必须明确提示手动下线');
+  assert.ok(source.includes('DEATH_GUARD_WINDOW = 300000, DEATH_GUARD_LIMIT = 3'), '稳定版必须同步');
+  assert.ok(expSource.includes('id="dsh-z-deathguard"'), '必须有关闭开关');
+  assert.ok(expSource.includes('["dsh-z-deathguard", "c"]'), '开关必须进角色档案存档表');
+  assert.ok(expSource.includes('连续死亡自动下线：5 分钟内死亡 3 次'), '设置页必须写明口径');
+  assert.ok(expExtract('  function deathReturnTick() {', '    var opt = $id("dsh-z-deathreturn")').includes('deathGuardRun || deathGuardDone'), 'deathReturnTick 必须先让位给连续死亡守卫');
+  // vm 实跑：手动玩不计数 / 助手在跑 5 分钟 3 次 → 停助手 + 三步下线
+  let clock = 1000000, stops = 0, cancels = [], packets = [], statuses = [], notes = [];
+  const promptOk = { dataset: { background: 'btn_ok.bmp' }, click: () => { ctx.okClicks++; } };
+  const cancelBtn = { click: () => { ctx.cancelClicks++; } };
+  const ctx = {
+    Number, String, Math, Date: { now: () => clock },
+    $id: (id) => (id === 'dsh-z-deathguard' ? { checked: ctx.__guard } : null),
+    setStatus: (s) => statuses.push(s), notifyPush: (s) => notes.push(s), roFeedback: (s) => notes.push(s), tlog: () => {},
+    clientReady: () => true, gidInt: Number, charNameOf: () => '测试角色', lastCharGid: 42, lastCharName: '测试角色',
+    zRunning: false, npBattleState: () => false,
+    npRequestBattle: (w) => { cancels.push('np' + w); return 'sent'; },
+    stopZhu: () => { stops++; }, deathReturnCancel: (r) => { cancels.push(r); },
+    masterTickReg: (fn) => { ctx.tick = fn; },
+    CLIENT: { SS: { Entity: { GID: 42, isDeath: false, life: { hp: 100, hp_max: 100 }, ACTION: { DIE: 9 }, action: 0 } },
+      PS: { CZ: { RESTART: function () { this.type = 0; } } }, NM: { sendPacket: (p) => packets.push(p.type) } },
+    __guard: true, __charlist: false, __prompt: false, escapes: 0, cancelClicks: 0, okClicks: 0,
+    document: { getElementById: (id) => {
+      if (id === 'Escape') return { shadowRoot: { querySelector: () => ({ click: () => { ctx.escapes++; } }) } };
+      if (id === 'CharSelectV4' && ctx.__charlist) return { shadowRoot: { querySelector: (s) => (s === '.btn.cancel' ? cancelBtn : null) } };
+      if (id === 'WinPrompt' && ctx.__prompt) return { shadowRoot: { querySelectorAll: () => [promptOk] } };
+      return null;
+    } },
+  };
+  vm.createContext(ctx); vm.runInContext(gsrc, ctx);
+  const live = () => { ctx.CLIENT.SS.Entity.isDeath = false; clock += 1000; ctx.deathGuardTick(); };
+  const die = () => { ctx.CLIENT.SS.Entity.isDeath = true; clock += 1000; ctx.deathGuardTick(); };
+  ctx.zRunning = false;
+  for (let i = 0; i < 3; i++) { live(); die(); }
+  assert.equal(stops, 0, '手动玩（助手没跑、内挂没开）时不得自动下线');
+  assert.equal(ctx.deathGuardAt.length, 0, '手动玩不计数');
+  ctx.zRunning = true;
+  for (let i = 0; i < 3; i++) { live(); die(); }
+  assert.equal(stops, 1, '助手在跑时 5 分钟 3 次死亡必须停助手');
+  assert.equal(cancels.indexOf('连续死亡自动下线') >= 0, true, '必须取消死亡回图布防');
+  assert.equal(ctx.escapes >= 1, true, '必须点真实按钮「选择角色」（不裸发包）');
+  assert.equal(JSON.stringify(packets), '[]', 'ESC 窗口能点时不得发包');
+  assert.equal(ctx.deathGuardRun.phase, 'charselect');
+  ctx.deathGuardTick();
+  assert.equal(ctx.deathGuardRun.phase, 'charselect', '角色选择界面还没出来时不得乱点');
+  ctx.__charlist = true; clock += 500; ctx.deathGuardTick();
+  assert.equal(ctx.cancelClicks, 1, '角色选择界面出现后必须点「取消」');
+  assert.equal(ctx.deathGuardRun.phase, 'cancel');
+  ctx.__prompt = true; clock += 500; ctx.deathGuardTick();
+  assert.equal(ctx.okClicks, 1, '确认框必须点 ok（真正下线）');
+  assert.equal(ctx.deathGuardDone, true, '走完必须锁定，不得重复下线');
+  assert.ok(notes.join('|').includes('已自动下线'), '必须有一次下线通知');
+  // 5 分钟窗口外的旧死亡不计数
+  ctx.deathGuardAt = [clock - 400000, clock - 350000]; stops = 0; statuses = []; ctx.deathGuardDone = false;
+  live(); die();
+  assert.equal(stops, 0, '窗口外的旧死亡不得算进阈值');
+  assert.equal(ctx.deathGuardAt.length, 1, '过窗记录必须被清掉');
+  // 下线走不完 → 提示手动，且不误标完成
+  ctx.deathGuardDone = false; ctx.deathGuardRun = null; ctx.deathGuardAt = []; ctx.__charlist = false; ctx.__prompt = false; statuses = [];
+  for (let i = 0; i < 3; i++) { live(); die(); }
+  for (let i = 0; i < 3; i++) { clock += 9000; ctx.deathGuardTick(); }
+  assert.equal(ctx.deathGuardDone, false, '走不完不得标成已下线');
+  assert.equal(statuses.join('|').includes('请手动下线'), true, '走不完必须提示手动下线');
+  assert.equal(JSON.stringify([]), '[]');
+});

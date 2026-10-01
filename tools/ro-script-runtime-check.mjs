@@ -791,8 +791,8 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
   // 1) 版本号：稳定版与实验版都必须是 2.36.1（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.11', name + ' @version 必须是 2.36.11');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.11', name + ' 运行时常量 VER 必须是 2.36.11');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.12', name + ' @version 必须是 2.36.12');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.12', name + ' 运行时常量 VER 必须是 2.36.12');
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
   const stripHead = (s) => s.replace(/\r\n/g,'\n').split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
@@ -1164,8 +1164,8 @@ test('V2.34.5 战斗诊断快照 prof 字段已就位（不改既有字段）', 
 // ================= V2.34.5：配置自动备份（两代）/ 黄金副本找回（纯函数真值表 / 按钮 / 键隔离）=================
 test('V2.34.5 版本号升到 2.34.5（@version 与运行时常量一致，两文件同步）', () => {
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.11', name + ' @version 必须是 2.36.11');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.11', name + ' 运行时常量 VER 必须是 2.36.11');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.12', name + ' @version 必须是 2.36.12');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.12', name + ' 运行时常量 VER 必须是 2.36.12');
   }
 });
 
@@ -1409,12 +1409,12 @@ test('bagClean v2 UI and storage contract is lockstep and documents unsupported 
 
 // ================= V2.35.1 assistant API + standalone dojo =================
 const splitSources=[['stable',source],['exp',expSource]];
-test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.36\.11/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
+test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.36\.12/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
 test('V2.35.1 public API uses owner-only external signatures and validates the current lease owner',()=>{for(const[,s]of splitSources){assert.ok(s.includes('/^[A-Za-z0-9_.:-]{8,128}$/'));assert.ok(s.includes('dojo:1,battle:1,movement:1,dialog:1,arrow:1,fly:1'));assert.ok(s.includes('if(apiLease&&apiLease.owner!==owner)'));for(const sig of ['apiHas(owner,scope)','apiSnapshot(owner)','apiRelease(owner)','apiContact(owner,gid)','apiWalk(owner,payload)','apiChoose(owner,payload)','apiBattle(owner,on)','apiSetArrow(owner,target)','apiClearArrow(owner)','apiFly(owner,payload)'])assert.ok(s.includes('function '+sig),sig);assert.ok(s.includes('apiLease.generation===generation'));assert.ok(!s.includes('apiHas(owner,generation'));}});
 test('V2.35.1 snapshot and battle/menu ownership contracts are explicit',()=>{for(const[,s]of splitSources){for(const key of ['ready:','map:','player:','mobs:','npcs:','target:','inDojoMap:','dialogOpen:','menu:','battleState:','busy:','arrow:'])assert.ok(s.includes(key),key);assert.ok(s.includes('if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"}'));assert.ok(s.includes('b.state="pending-on"'));assert.ok(s.includes('if(b.state!=="owned")return {ok:true,result:"not-owned"}'));assert.ok(s.includes('l.battle.state==="owned"||l.battle.state==="pending-off"'));assert.ok(s.includes('if(s!==false)return {ok:true,result:s===true?"preexisting":"unknown"}'));}});
 test('V2.36.11 arrow rules use a per-monster table plus a default arrow',()=>{for(const[name,s]of splitSources){
   assert.ok(s.includes('function arrowDecision(mid,cfg)'),name+' 决策改为按怪物 id');
-  assert.ok(s.includes('if(itid)return {kind:"mob",itid:itid}'),name+' 指定怪箭优先');
+  assert.ok(s.includes('if(itid)out.push({kind:"mob",itid:itid})'),name+' 指定怪箭优先');
   assert.ok(s.includes('var def=arrowPos(cfg.defaultItid)'),name+' 回退默认箭');
   assert.ok(s.includes('defaultItid=arrowPos(r.defaultItid)||arrowPos(r.neutralItid)'),name+' 旧无属性箭迁移为默认箭');
   assert.ok(s.includes('legacy=r.byMid&&typeof r.byMid==="object"?r.byMid'),name+' 旧 Boss 箭表迁移');
@@ -1425,8 +1425,8 @@ test('V2.36.11 arrow rules use a per-monster table plus a default arrow',()=>{fo
   assert.ok(!s.includes('ghostItid')&&!s.includes('if(type===8&&level===3)')&&!s.includes('arrowFillBosses'),name+' 旧念3/念4与内挂 Boss 规则必须移除');
   assert.ok(s.includes('confirmUntil:now+5000')&&s.includes('p.retryAt=now+3000'),name+' 换箭确认重试保留');
 }});
-test('V2.36.11 arrow decision picks the override then the default and stays silent when nothing is configured',()=>{
-  const code=extract('  function arrowPos(v)','  function arrowLoad(){')+extract('  function arrowDecision(mid,cfg)','  function arrowSay(');
+test('V2.36.12 arrow decision picks the override then the default and stays silent when nothing is configured',()=>{
+  const code=extract('  function arrowPos(v)','  function arrowLoad(){')+extract('  function arrowBoss(mid)','  function arrowSay(');
   const ctx={};vm.createContext(ctx);vm.runInContext(code+';this.decide=arrowDecision',ctx);
   assert.equal(ctx.decide(1002,{byMid:{},defaultItid:null}),null,'没配置任何箭 → 不换箭');
   assert.equal(JSON.stringify(ctx.decide(1002,{byMid:{1002:1751},defaultItid:1750})),JSON.stringify({kind:'mob',itid:1751}),'指定怪优先');
@@ -1434,6 +1434,64 @@ test('V2.36.11 arrow decision picks the override then the default and stays sile
   assert.equal(JSON.stringify(ctx.decide(1002,{byMid:{1002:{itid:1752}},defaultItid:null})),JSON.stringify({kind:'mob',itid:1752}),'旧 {itid} 结构兼容');
   assert.equal(ctx.decide(0,{byMid:{},defaultItid:null}),null,'非法 mid 不报错');
   assert.equal(JSON.stringify(ctx.decide(0,{byMid:{},defaultItid:1750})),JSON.stringify({kind:'default',itid:1750}),'mid 未知也能用默认箭');
+});
+test('V2.36.12 换箭跟随当前攻击目标：助手锁定 → 客户端锁定 → 最近打伤',()=>{for(const[name,s]of splitSources){
+  assert.ok(s.includes('function arrowCurrentMid(){try{var gid=gidInt(zLock&&zLock.gid);if(!gid){var me=CLIENT.SS&&CLIENT.SS.Entity;gid=gidInt(me&&me.targetGID);}'),name+' 助手锁定优先，其次客户端锁定');
+  assert.ok(s.includes('dps.cur&&Number(dps.cur.lastAt)')&&s.includes('dps.cur.gid'),name+' 最近打伤的怪兜底');
+  assert.ok(s.includes('function arrowSelfTick(now)'),name+' 必须有按目标换箭实现');
+  assert.ok(s.includes('if(!arrowRules.enabled||arrowTarget||externalAutomationOwns("arrow")||!clientReady())return;'),name+' 道场租约优先让位');
+  assert.ok(s.includes('arrowSelfWanted()) return;'),name+' 通用耗尽换箭必须让位给按怪换箭');
+  assert.ok(s.includes('try{arrowTargetTick(t);}catch(e){}try{arrowSelfTick(t);}catch(e){}'),name+' 必须挂到 250ms 周期');
+}});
+test('V2.36.12 缺箭兜底 + 箭矢筒按当前箭矢匹配',()=>{for(const[name,s]of splitSources){
+  assert.ok(s.includes('function arrowCandidates(mid,cfg)'),name+' 候选箭列表');
+  assert.ok(s.includes('if(def&&def!==itid)out.push({kind:"default",itid:def})'),name+' 默认箭兜底');
+  assert.ok(s.includes('function arrowQuiverFor(itid)'),name+' 必须有箭矢筒匹配');
+  assert.ok(s.includes('/[筒袋囊]$/'),name+' 只认箭矢筒/袋/囊');
+  assert.ok(s.includes('base==="魔法"+want'),name+' 魔法前缀箭矢筒要认');
+  assert.ok(s.includes('if (quiver && quiver.used)'),name+' 耗尽换箭也要用对应箭矢筒');
+  assert.ok(s.includes('箭矢筒（风灵箭矢 → 风灵箭矢筒'),name+' 窗口说明要写箭矢筒');
+}});
+test('V2.36.12 按目标换箭行为：换指定箭 / 缺箭用默认箭 / 没配不动 / 缺箭开对应箭矢筒',()=>{
+  const code=extract('  function arrowPos(v)','  function arrowLoad(){')+extract('  function arrowBoss(mid)','  function arrowSay(')+extract('  var arrowSelfPending=null,arrowSelfSaid="",arrowQuiverAt=0;','  function arrowEnsureHost(){');
+  const names={1750:'弓箭',1751:'银箭矢',1755:'风灵箭矢',1757:'无形箭矢',12010:'风灵箭矢筒',22107:'魔法风灵箭矢筒',22119:'魔法无形箭矢筒'};
+  function mk(cfg,mid,ammo,bag,inv){
+    const ctx={};vm.createContext(ctx);
+    vm.runInContext('this.getMobDb=function(){return {};};this.arrowRules='+JSON.stringify(cfg)+';this.arrowTarget=null;this.curMid='+mid+';'
+      +'this.ammo='+JSON.stringify(ammo)+';this.bag='+JSON.stringify(bag)+';this.inv='+JSON.stringify(inv||[])+';'
+      +'this.getItemName=function(i){return ('+JSON.stringify(names)+')[i]||"";};'
+      +'this.findInventory=function(){return inv;};this.useItemById=function(i){used.push(i);return true;};'
+      +'this.clientReady=function(){return true;};this.equipArrow=function(i){equipped.push(i);return true;};'
+      +'this.readEquippedAmmo=function(){return ammo;};this.readBagArrows=function(){return bag;};'
+      +'this.arrowCurrentMid=function(){return curMid;};this.arrowSay=function(s){said.push(s);};'
+      +'this.externalAutomationOwns=function(){return false;};'
+      +'this.arrowKindName=function(k){return k==="mob"?"指定怪箭":"默认箭";};this.arrowMobName=function(m){return "怪"+m;};this.arrowItemName=function(i){return "箭"+i;};'
+      +'this.used=[];this.equipped=[];this.said=[];'
+      +code+';this.tick=arrowSelfTick;this.quiver=arrowQuiverFor;this.want=arrowSelfWanted;',ctx);
+    return ctx;
+  }
+  let c=mk({enabled:true,defaultItid:1750,byMid:{1002:1751}},1002,{index:9,itid:1750,count:100},[{index:5,itid:1751,count:500}]);
+  c.tick(1000);assert.equal(JSON.stringify(c.equipped),'[5]','目标怪配过箭 → 换成它');
+  c=mk({enabled:true,defaultItid:1750,byMid:{1002:1751}},1002,{index:9,itid:1751,count:0},[{index:6,itid:1750,count:100}]);
+  c.tick(1000);assert.equal(JSON.stringify(c.equipped),'[6]','配的箭背包里没有 → 默认箭兜底');
+  c=mk({enabled:false,defaultItid:1750,byMid:{1002:1751}},1002,{index:9,itid:1750,count:100},[{index:5,itid:1751,count:500}]);
+  c.tick(1000);assert.equal(c.equipped.length,0,'换箭没开 → 不动');
+  c=mk({enabled:true,defaultItid:null,byMid:{}},1002,{index:9,itid:1750,count:100},[{index:5,itid:1751,count:500}]);
+  c.tick(1000);assert.equal(c.equipped.length,0,'什么都没配 → 不动');
+  c=mk({enabled:true,defaultItid:1750,byMid:{1002:1751}},1002,{index:9,itid:1751,count:12},[{index:5,itid:1751,count:500}]);
+  c.tick(1000);assert.equal(c.equipped.length,0,'已经装对了 → 不重复换');
+  assert.ok(String(c.said[c.said.length-1]).indexOf('已按目标换好')>=0,'已经装对了要报状态');
+  c=mk({enabled:true,defaultItid:null,byMid:{1004:1755}},1004,{index:9,itid:1750,count:0},[],[{index:7,ITID:12010,count:1},{index:8,ITID:22107,count:1}]);
+  c.tick(1000);assert.equal(JSON.stringify(c.used),'[12010]','缺箭 → 开对应箭矢筒（精确名优先于魔法前缀）');
+  c=mk({enabled:true,defaultItid:null,byMid:{1004:1755}},1004,{index:9,itid:1750,count:0},[],[{index:8,ITID:22107,count:1},{index:7,ITID:12010,count:0}]);
+  assert.equal(Number((c.quiver(1755)||{}).itid),22107,'数量为 0 的箭矢筒不算数');
+  c=mk({enabled:true,defaultItid:null,byMid:{1004:1757}},1004,{index:9,itid:1750,count:0},[],[{index:8,ITID:22119,count:3}]);
+  assert.equal(Number((c.quiver(1757)||{}).itid),22119,'只有魔法前缀箭矢筒时也能认');
+  c.tick(1000);assert.equal(JSON.stringify(c.used),'[22119]','缺箭时用对应箭矢筒补充');
+  c=mk({enabled:true,defaultItid:1750,byMid:{1002:1751}},1002,{index:9,itid:1750,count:100},[{index:5,itid:1751,count:500}]);
+  assert.equal(c.want(),true,'有可用候选箭时通用耗尽换箭让位');
+  c=mk({enabled:true,defaultItid:null,byMid:{1004:1755}},1004,{index:9,itid:1750,count:0},[],[{index:7,ITID:12010,count:1}]);
+  assert.equal(c.want(),false,'只有箭矢筒时不许拦通用耗尽换箭（免得站着不射）');
 });
 test('V2.36.11 script window imports from file and exports every script',()=>{for(const[name,s]of splitSources){
   assert.ok(s.includes('id="dsh-scr-file">从文件导入…'),name+' 必须提供从文件导入');

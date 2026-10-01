@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.36.11
+// @version      2.36.12
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -113,6 +113,13 @@
 // 3) 自启配置不完整：用脚本 DEFAULTS 自启缺少新引擎必需的 lastroProtocol / lastroCustomPackets / 各 charset / packetKeys / servers(数组) 等字段，
 //    引擎在模块初始化 hook NOTIFY_LOADINFO 抛 Packet not yet register "LoadInfo" 后中断启动，依旧黑屏。改为以宿主页 window.ROConfigBase 为基底自启。
 // 原站 post.lastro.cn / game.lastro.cn 的启动判据、注入方式与配置来源全部保持不变。
+// ---------------- V2.36.12 变更摘要 ----------------
+// 1. 换箭改成按「当前攻击的那只怪」换：不再只有道场生效——助手挂机的锁定目标优先，其次客户端锁定的那只怪（内挂自动战斗、手动普攻都是它），
+//    最后是最近被我打伤的怪（技能伤害也算）。野外图、野外 Boss、Boss 副本都能按怪换箭。
+// 2. 缺箭兜底：目标怪配过的箭背包里没有 → 自动改用默认箭；默认箭也没有 → 保持当前箭不乱换，只在状态里提示。道场脚本报的怪优先级不变。
+// 3. 箭矢筒按箭矢匹配：箭矢耗尽时不再固定用魔法箭袋(2000030)，改为按「当前装在的箭矢」找对应的箭矢筒（风灵箭矢 → 风灵箭矢筒 / 魔法风灵箭矢筒，精确名优先），
+//    找不到对应的才退回旧的魔法箭袋。换成什么箭，补的就是什么箭。
+// 4. 换箭窗口说明同步改写；既有配置（指定怪箭表 + 默认箭）不变，不需要重配。
 // ---------------- V2.36.11 变更摘要 ----------------
 // 1. 换箭设置重做：删掉「念3/念4 + 内挂 Boss」的属性优先级那套，改为「指定怪箭表 + 默认箭」——先看当前这只怪有没有单独配过箭，配过就用它；没配过就用默认箭；默认箭不设 = 不换箭（保持当前装备，即你说的默认无属性箭）。
 //    窗口里可搜索怪物、点「取当前目标」直接抓当前锁定的怪、已配置列表可单条删除；旧配置自动迁移（旧无属性箭→默认箭，旧 Boss 箭→指定怪箭）。
@@ -156,7 +163,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.36.11"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.36.12"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -5065,7 +5072,7 @@
   }
   function tickArrow() {
     try {
-      if (externalAutomationOwns("arrow") || arrowTarget) return; // V2.35.1 外部目标换箭让通用耗尽换箭让位
+      if (externalAutomationOwns("arrow") || arrowTarget || arrowSelfWanted()) return; // V2.35.1/V2.36.12 外部目标或按怪换箭接管时，通用耗尽换箭让位
       if (!clientReady()) return;
       var en = $id("dsh-arrowen");
       if (!en || !en.checked) { setArrowLog("未启用"); return; }
@@ -5088,12 +5095,16 @@
         if (equipArrow(arrows[0].index)) { zArrow.lastEquip = now; setArrowLog("箭矢耗尽，已请求装上背包箭矢（余 " + bagN + " 支）"); }
         return;
       }
-      // 背包无箭矢 → 用魔法箭袋(2000030)放箭
+      // V2.36.12 背包无箭矢 → 先开「当前这支箭」对应的箭矢筒（风灵箭矢筒 / 魔法风灵箭矢筒），再退回旧的魔法箭袋
       if (now - zArrow.lastBag < 2000) return; // 2s 节流
-      if (useItemById(2000030)) { zArrow.lastBag = now; zArrow.failBag = 0; setArrowLog("箭矢耗尽且背包无箭，使用魔法箭袋(2000030)…"); }
+      var needItid = (ammo && arrowPos(ammo.itid)) || arrowPos(arrowRules.defaultItid) || null;
+      var quiver = needItid ? arrowUseQuiver(needItid) : null;
+      if (quiver && quiver.used) { zArrow.lastBag = now; zArrow.failBag = 0; setArrowLog("箭矢耗尽，已使用" + quiver.q.name + "补充" + arrowItemName(needItid) + "…"); }
+      else if (quiver && quiver.q) { zArrow.lastBag = now; setArrowLog("箭矢耗尽，等" + quiver.q.name + "生效（" + arrowItemName(needItid) + "）"); }
+      else if (useItemById(2000030)) { zArrow.lastBag = now; zArrow.failBag = 0; setArrowLog("箭矢耗尽且背包无箭，使用魔法箭袋(2000030)…"); }
       else {
         zArrow.failBag++;
-        setArrowLog(zArrow.failBag >= 3 ? "背包无箭矢且无魔法箭袋(2000030)，请准备箭袋" : "背包无箭矢，魔法箭袋(2000030)未找到");
+        setArrowLog(zArrow.failBag >= 3 ? ("背包无箭矢，也没有" + (needItid ? arrowItemName(needItid) : "当前箭矢") + "对应的箭矢筒，请准备箭矢筒") : "背包无箭矢，箭矢筒未找到");
       }
     } catch (e) {}
   }
@@ -14150,7 +14161,9 @@
   function arrowLoad(){var d=arrowDefaults(),r=null,raw=null;try{raw=localStorage.getItem(ARROW_RULES_KEY);r=JSON.parse(raw||"null");}catch(e){}if(raw==null){try{var oldc=JSON.parse(localStorage.getItem(CHALLENGE_KEY)||"null");if(oldc&&typeof oldc==="object"){r={enabled:oldc.arrowOn===true,defaultItid:oldc.neutralItid,byMid:oldc.bossByMid};localStorage.setItem(ARROW_RULES_KEY,JSON.stringify(r));}}catch(e2){}}if(!r||typeof r!=="object")return d;d.enabled=r.enabled===true;d.defaultItid=arrowPos(r.defaultItid)||arrowPos(r.neutralItid);var legacy=r.byMid&&typeof r.byMid==="object"?r.byMid:(r.bossByMid&&typeof r.bossByMid==="object"?r.bossByMid:null);if(legacy)Object.keys(legacy).forEach(function(k){var mid=arrowPos(k),v=legacy[k],itid=arrowPos(v&&v.itid!=null?v.itid:v);if(mid&&itid)d.byMid[mid]=itid;});return d;}
   var arrowRules=arrowLoad(),arrowTarget=null,arrowPending=null,arrowStatus="未启用",arrowBlocked=false,arrowReady=false;
   function arrowSave(){try{localStorage.setItem(ARROW_RULES_KEY,JSON.stringify(arrowRules));}catch(e){}}
-  function arrowDecision(mid,cfg){cfg=cfg||arrowRules;var m=arrowPos(mid),v=m&&cfg.byMid?cfg.byMid[m]:null,itid=arrowPos(v&&v.itid!=null?v.itid:v);if(itid)return {kind:"mob",itid:itid};var def=arrowPos(cfg.defaultItid);return def?{kind:"default",itid:def}:null;}
+  function arrowBoss(mid){try{var m=(getMobDb()||{})[arrowPos(mid)];return !!(m&&Number(m.MvpDropsNum)>0);}catch(e){return false;}}
+  function arrowCandidates(mid,cfg){cfg=cfg||arrowRules;var out=[],m=arrowPos(mid),v=m&&cfg.byMid?cfg.byMid[m]:null,itid=arrowPos(v&&v.itid!=null?v.itid:v);if(itid)out.push({kind:"mob",itid:itid});var def=arrowPos(cfg.defaultItid);if(def&&def!==itid)out.push({kind:"default",itid:def});return out;}
+  function arrowDecision(mid,cfg){var c=arrowCandidates(mid,cfg);return c.length?c[0]:null;}
   function arrowSay(s){arrowStatus=String(s);var e=$id("dsh-arrow-rules-status");if(e)e.textContent=arrowStatus;apiEmit("notice",{kind:"arrow",message:arrowStatus});}
   function arrowFill(s){if(!s)return;var old=s.value;s.innerHTML='<option value="">选择背包 type10 箭矢</option>';readBagArrows().forEach(function(x){var o=document.createElement("option");o.value=x.itid;o.textContent=(getItemName(x.itid)||("ITID "+x.itid))+" #"+x.itid+" ×"+x.count;s.appendChild(o);});s.value=old;}
   function arrowKindName(k){return k==="mob"?"指定怪箭":"默认箭";}
@@ -14158,7 +14171,37 @@
   function arrowItemName(itid){try{return (getItemName(itid)||("ITID "+itid))+" #"+itid;}catch(e){return "ITID "+itid;}}
   function arrowFillMobs(s,q){if(!s)return;var old=s.value,db=getMobDb()||{},needle=String(q||"").trim().toLowerCase(),keys=[];Object.keys(db).forEach(function(k){if(!arrowPos(k))return;if(needle&&arrowMobName(k).toLowerCase().indexOf(needle)<0&&String(k).indexOf(needle)<0)return;keys.push(k);});keys.sort(function(a,b){return Number(a)-Number(b);});s.innerHTML='<option value="">选择怪物（可先搜索）</option>';keys.forEach(function(k){var m=db[k]||{},o=document.createElement("option");o.value=k;o.textContent=arrowMobName(k)+" #"+k+(Number(m.MvpDropsNum)>0?" [Boss]":"");s.appendChild(o);});if(old&&keys.indexOf(old)>=0)s.value=old;}
   function arrowRenderCfg(){var box=$id("dsh-arrow-rules-list");if(!box)return;box.innerHTML="";var def=arrowPos(arrowRules.defaultItid),r0=document.createElement("div");r0.className="row";var s0=document.createElement("span");s0.style.cssText="flex:1 1 auto";s0.textContent="默认箭："+(def?arrowItemName(def):"未设置（不换箭，保持当前装备）");r0.appendChild(s0);box.appendChild(r0);var ids=Object.keys(arrowRules.byMid).map(function(k){return arrowPos(k);}).filter(function(x){return !!x;});ids.sort(function(a,b){return a-b;});if(!ids.length){var e=document.createElement("span");e.className="st";e.textContent="未指定怪物：没配过的怪一律用默认箭。";box.appendChild(e);return;}ids.forEach(function(mid){var row=document.createElement("div");row.className="row";var t=document.createElement("span");t.style.cssText="flex:1 1 auto";t.textContent=arrowMobName(mid)+" #"+mid+" → "+arrowItemName(arrowRules.byMid[mid]);row.appendChild(t);var b=document.createElement("button");b.className="ghost";b.textContent="删除";b.style.cssText="flex:0 0 auto;padding:1px 8px;font-size:11px";b.addEventListener("click",function(){delete arrowRules.byMid[mid];arrowSave();arrowRenderCfg();arrowSay("已删除指定怪 #"+mid);});row.appendChild(b);box.appendChild(row);});}
-  function arrowCurrentMid(){try{var gid=gidInt(zLock&&zLock.gid);if(!gid)return 0;var list=apiEntities();for(var i=0;i<list.length;i++){if(list[i].gid===gid&&list[i].type===5&&list[i].mid)return list[i].mid;}}catch(e){}return 0;}
+  function arrowCurrentMid(){try{var gid=gidInt(zLock&&zLock.gid);if(!gid){var me=CLIENT.SS&&CLIENT.SS.Entity;gid=gidInt(me&&me.targetGID);}if(!gid&&dps&&dps.cur&&Number(dps.cur.lastAt)&&Date.now()-Number(dps.cur.lastAt)<15000)gid=gidInt(dps.cur.gid);if(!gid)return 0;var list=apiEntities();for(var i=0;i<list.length;i++){if(list[i].gid===gid&&list[i].type===5&&list[i].mid)return list[i].mid;}}catch(e){}return 0;}
+  var arrowSelfPending=null,arrowSelfSaid="",arrowQuiverAt=0;
+  function arrowSelfSay(s){s=String(s);if(s===arrowSelfSaid)return;arrowSelfSaid=s;arrowSay(s);}
+  function arrowQuiverName(itid){try{return String(getItemName(itid)||"").replace(/\s+/g,"");}catch(e){return "";}}
+  // V2.36.12 箭矢筒识别：名字去掉结尾的 筒/袋/囊 后要和箭矢名对得上（风灵箭矢筒→风灵箭矢；魔法风灵箭矢筒→魔法+风灵箭矢）
+  function arrowQuiverFor(itid){var want=arrowQuiverName(itid);if(!want)return null;var best=null;try{var inv=findInventory();if(!inv)return null;for(var i=0;i<inv.length;i++){var it=inv[i]||{},iid=it.ITID!=null?it.ITID:it.itemid,cnt=it.count!=null?it.count:(it.amount!=null?it.amount:0);if(Number(cnt)<=0)continue;var nm=arrowQuiverName(iid);if(!nm||!/[筒袋囊]$/.test(nm))continue;var base=nm.slice(0,-1),rank=0;if(base===want)rank=1;else if(base==="魔法"+want)rank=2;else if(base.length>want.length&&base.slice(-want.length)===want)rank=3;if(!rank)continue;if(!best||rank<best.rank||(rank===best.rank&&base.length<best.base.length))best={itid:iid,index:it.index!=null?it.index:i,name:nm,rank:rank,base:base};}}catch(e){}return best;}
+  function arrowUseQuiver(itid){var q=arrowQuiverFor(itid);if(!q)return null;var now=Date.now();if(now-(arrowQuiverAt||0)<3000)return {q:q,used:false};var ok=false;try{ok=useItemById(q.itid);}catch(e){ok=false;}if(ok)arrowQuiverAt=now;return {q:q,used:ok};}
+  // V2.36.12 按当前攻击目标换箭：目标 = 助手锁定优先 → 客户端锁定的怪（内挂/手动普攻）→ 最近被我打伤的怪（技能也算）
+  function arrowSelfWanted(){try{if(!arrowRules.enabled)return false;var mid=arrowCurrentMid();if(!mid)return false;var list=arrowCandidates(mid,arrowRules),ammo=readEquippedAmmo(),bag=readBagArrows();for(var i=0;i<list.length;i++){if(ammo&&Number(ammo.itid)===list[i].itid&&Number(ammo.count)>0)return true;for(var j=0;j<bag.length;j++){if(Number(bag[j].itid)===list[i].itid)return true;}}return false;}catch(e){return false;}}
+  function arrowSelfTick(now){try{
+    if(!arrowRules.enabled||arrowTarget||externalAutomationOwns("arrow")||!clientReady())return;
+    var mid=arrowCurrentMid();if(!mid)return;
+    var list=arrowCandidates(mid,arrowRules);if(!list.length)return;
+    var tag=arrowMobName(mid)+(arrowBoss(mid)?"[BOSS]":""),ammo=readEquippedAmmo(),bag=readBagArrows(),i=0,j=0,row=null;
+    for(i=0;i<list.length;i++){
+      var same=!!(ammo&&Number(ammo.itid)===list[i].itid);
+      if(same&&Number(ammo.count)>0){arrowSelfPending=null;arrowSelfSay("已按目标换好"+arrowKindName(list[i].kind)+"："+tag+" → "+arrowItemName(list[i].itid));return;}
+      row=null;for(j=0;j<bag.length;j++){if(Number(bag[j].itid)===list[i].itid){row=bag[j];break;}}
+      if(row){
+        var p=arrowSelfPending;
+        if(p&&p.itid===list[i].itid){if(now<p.confirmUntil)return;if(!p.retryAt){p.retryAt=now+3000;arrowSelfSay("确认超时，3秒后重试："+tag);return;}if(now<p.retryAt)return;}
+        if(equipArrow(row.index)){arrowSelfPending={itid:list[i].itid,confirmUntil:now+5000,retryAt:0};arrowSelfSay("换成"+arrowKindName(list[i].kind)+"："+tag+" → "+arrowItemName(list[i].itid));}
+        return;
+      }
+    }
+    var need=list[0].itid,qu=arrowUseQuiver(need);
+    arrowSelfPending=null;
+    if(qu&&qu.used){arrowSelfSay("背包缺"+arrowItemName(need)+"，已使用"+qu.q.name+"…");return;}
+    if(qu&&qu.q){arrowSelfSay("背包缺"+arrowItemName(need)+"，等"+qu.q.name+"生效…");return;}
+    arrowSelfSay("背包缺"+arrowItemName(need)+"且无对应箭矢筒（保持当前箭）："+tag);
+  }catch(e){}}
   function arrowEnsureHost(){var h=$id("dsh-fw-arrowrules");if(h){arrowFill($id("dsh-arrow-rules-item"));arrowFill($id("dsh-arrow-rules-mobitem"));arrowFillMobs($id("dsh-arrow-rules-mob"),$id("dsh-arrow-rules-find")?$id("dsh-arrow-rules-find").value:"");arrowRenderCfg();return h;}var dock=$id("dsh-arrow-rules-dock");if(!dock){dock=document.createElement("div");dock.id="dsh-arrow-rules-dock";dock.style.display="none";document.documentElement.appendChild(dock);}h=document.createElement("div");h.id="dsh-fw-arrowrules";
     h.innerHTML='<div class="sec">换箭设置</div>'
       + '<label><input id="dsh-arrow-rules-enabled" type="checkbox">自动换箭（默认关闭）</label>'
@@ -14167,7 +14210,8 @@
       + '<div class="row"><span class="lb" style="min-width:52px">该怪箭</span><select id="dsh-arrow-rules-mobitem"></select><button class="green" id="dsh-arrow-rules-mobsave">保存指定怪箭</button></div>'
       + '<div class="box"><div class="b-hd">已配置</div><div id="dsh-arrow-rules-list" style="font-size:11px;max-height:104px;overflow:auto"></div></div>'
       + '<div id="dsh-arrow-rules-status" class="st"></div>'
-      + '<div class="log">规则：当前怪配过 → 用指定怪箭；没配过 → 用默认箭；默认箭没设 → 不换箭（保持当前装备）。外部目标换箭会暂时压住通用耗尽换箭。</div>';
+      + '<div class="log">规则：按你当前攻击的那只怪换箭（助手挂机、内挂、手动打的都算）→ 配过的怪用你配的箭；没配过的用默认箭；背包里没有要用的箭就用默认箭兜底；默认箭也没设 → 不换箭（保持当前装备）。道场脚本报的怪优先。</div>'
+      + '<div class="log">背包里一支箭都没有时会自动打开对应箭矢筒（风灵箭矢 → 风灵箭矢筒 / 魔法风灵箭矢筒）；连箭矢筒也没有就只提示，不乱换。</div>';
     dock.appendChild(h);
     var en=$id("dsh-arrow-rules-enabled"),item=$id("dsh-arrow-rules-item"),mob=$id("dsh-arrow-rules-mob"),mobItem=$id("dsh-arrow-rules-mobitem"),find=$id("dsh-arrow-rules-find");
     en.checked=arrowRules.enabled;arrowFill(item);arrowFill(mobItem);arrowFillMobs(mob,"");arrowRenderCfg();
@@ -14177,8 +14221,8 @@
     $id("dsh-arrow-rules-cur").onclick=function(){var mid=arrowCurrentMid();if(!mid){arrowSay("取不到当前目标（先锁定或攻击一只怪）");return;}if(find)find.value="";arrowFillMobs(mob,"");if(!mob.querySelector('option[value="'+mid+'"]')){var o=document.createElement("option");o.value=String(mid);o.textContent=arrowMobName(mid)+" #"+mid;mob.appendChild(o);}mob.value=String(mid);arrowSay("已选中 "+arrowMobName(mid)+" #"+mid);};
     $id("dsh-arrow-rules-mobsave").onclick=function(){var mid=arrowPos(mob.value),itid=arrowPos(mobItem.value);if(!mid||!itid){arrowSay("请选择怪物与箭矢");return;}arrowRules.byMid[mid]=itid;arrowSave();arrowRenderCfg();arrowSay("已保存 "+arrowMobName(mid)+" → "+arrowItemName(itid));};
     arrowSay(arrowStatus);return h;}
-  function arrowTargetTick(now){arrowReady=false;arrowBlocked=!!arrowTarget;if(!arrowTarget||!arrowRules.enabled){arrowBlocked=!!arrowTarget&&arrowRules.enabled;return arrowBlocked;}var d=arrowDecision(arrowTarget.mid,arrowRules);if(!d||!d.itid){arrowPending=null;arrowBlocked=false;arrowReady=true;arrowSay("未配置箭矢，保持当前箭");return false;}var ammo=readEquippedAmmo();if(ammo&&Number(ammo.itid)===d.itid){arrowPending=null;arrowBlocked=false;arrowReady=true;arrowSay("已装备"+arrowKindName(d.kind)+" #"+d.itid);return false;}var row=readBagArrows().filter(function(x){return Number(x.itid)===d.itid;})[0],p=arrowPending;if(!row){arrowSay("阻塞：背包缺少 #"+d.itid);return true;}if(p&&p.itid===d.itid){if(now<p.confirmUntil)return true;if(!p.retryAt){p.retryAt=now+3000;arrowSay("确认超时，3秒后重试");return true;}if(now<p.retryAt)return true;}if(equipArrow(row.index)){arrowPending={itid:d.itid,confirmUntil:now+5000,retryAt:0};arrowSay("换箭中"+arrowKindName(d.kind)+" #"+d.itid);return true;}arrowSay("阻塞：装备请求失败");return true;}
-  setInterval(function(){try{arrowTargetTick(Date.now());}catch(e){}},250);
+  function arrowTargetTick(now){arrowReady=false;arrowBlocked=!!arrowTarget;if(!arrowTarget||!arrowRules.enabled){arrowBlocked=!!arrowTarget&&arrowRules.enabled;return arrowBlocked;}var list=arrowCandidates(arrowTarget.mid,arrowRules),ammo=readEquippedAmmo(),bag=readBagArrows(),pick=null,i=0,j=0;for(i=0;i<list.length;i++){if(ammo&&Number(ammo.itid)===list[i].itid&&Number(ammo.count)>0){pick=list[i];break;}for(j=0;j<bag.length;j++){if(Number(bag[j].itid)===list[i].itid){pick={kind:list[i].kind,itid:list[i].itid,index:bag[j].index};break;}}if(pick)break;}if(!list.length){arrowPending=null;arrowBlocked=false;arrowReady=true;arrowSay("未配置箭矢，保持当前箭");return false;}if(ammo&&pick&&Number(ammo.itid)===pick.itid&&Number(ammo.count)>0){arrowPending=null;arrowBlocked=false;arrowReady=true;arrowSay("已装备"+arrowKindName(pick.kind)+" #"+pick.itid);return false;}if(!pick){var q=arrowUseQuiver(list[0].itid);arrowSay(q&&q.q?("背包缺少"+arrowItemName(list[0].itid)+"，已尝试"+q.q.name):("阻塞：背包缺少 #"+list[0].itid));return true;}var p=arrowPending;if(p&&p.itid===pick.itid){if(now<p.confirmUntil)return true;if(!p.retryAt){p.retryAt=now+3000;arrowSay("确认超时，3秒后重试");return true;}if(now<p.retryAt)return true;}if(equipArrow(pick.index)){arrowPending={itid:pick.itid,confirmUntil:now+5000,retryAt:0};arrowSay("换箭中"+arrowKindName(pick.kind)+" #"+pick.itid);return true;}arrowSay("阻塞：装备请求失败");return true;}
+  setInterval(function(){var t=Date.now();try{arrowTargetTick(t);}catch(e){}try{arrowSelfTick(t);}catch(e){}},250);
 
   var API_PROTOCOL=1,apiGeneration=0,apiLease=null,apiMenuUsed="",apiNoticeObserver=null;
   function apiEmit(kind,detail){try{window.dispatchEvent(new CustomEvent("dsh-ro-assist-"+kind,{detail:detail||{}}));}catch(e){}}

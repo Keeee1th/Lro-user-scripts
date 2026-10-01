@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手 · 实验版）
 // @namespace    dsh.ro-plugin
-// @version      2.36.4
+// @version      2.36.8
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -100,6 +100,21 @@
 // 2. 追怪候选同口径：锁定怪追怪池同样按「已攻击 > 身侧 > 血少 > 距离」排序，与索敌一致。
 // ---------------- V2.36.4 变更摘要 ----------------
 // 1. 脚本执行改为表单式设置：点「执行」弹出该脚本的设置界面（道馆=难度下拉 + 100轮暂停/无怪飞行/紧急飞行 三个开关 + 循环方式/次数/时长/条件 + 优先级/顺序），确认后保存并入队执行，不再只靠纯文字 JSON。
+// ---------------- V2.36.6 变更摘要 ----------------
+// 修复 MVP 计时器初始化顺序导致的崩溃，MVP 日志计时恢复可用（mvpEnsureState 惰性初始化，任意调用顺序都成立）。
+// ---------------- V2.36.7 变更摘要 ----------------
+// 修复本机私有客户端（127.0.0.1:8971/client/api.html）直接打开整页黑屏、控制台无引擎报错。同一入口三处根因，缺一即黑：
+// 1) 启动判定误判：宿主页 client/Config.js 预置占位 window.ROConfig（application=1 + roeHost=true，语义是「宿主页在」而非「引擎已启动」），
+//    旧判据 detectWrapperBoot() 见到 ROConfig.application 即认定宿主已启动并 return；直接打开（无父窗口/opener）时既没有启动器
+//    postMessage 启动配置、脚本也不再自启 Online.js，引擎永不启动 = 纯黑且无任何引擎异常。改为只认真实启动证据（页面已出现
+//    Online(_mn).js 脚本标签 / window.__roeLocalClient.started / 已收到 ready），且仅本机私有入口生效：有启动器宽限 6s、直开宽限 1.5s。
+// 2) 注入类型错误：本机 Online.js 是含 import.meta 的 ESM 构建，按经典脚本注入抛 SyntaxError: Cannot use 'import.meta' outside a module。
+//    本机私有入口改为与宿主页 api.html 同款 type="module" 注入；原站维持 text/javascript 不变。
+// 3) 自启配置不完整：用脚本 DEFAULTS 自启缺少新引擎必需的 lastroProtocol / lastroCustomPackets / 各 charset / packetKeys / servers(数组) 等字段，
+//    引擎在模块初始化 hook NOTIFY_LOADINFO 抛 Packet not yet register "LoadInfo" 后中断启动，依旧黑屏。改为以宿主页 window.ROConfigBase 为基底自启。
+// 原站 post.lastro.cn / game.lastro.cn 的启动判据、注入方式与配置来源全部保持不变。
+// ---------------- V2.36.8 变更摘要 ----------------
+// 辅助→战斗辅助新增默认关闭的「死亡回城满血返回」：在目标图运行自动战斗并目睹死亡后，回指定城市坐下回血；确认满血、传送到目标地图再恢复此前战斗。城市与目标地图各有一个「取当前」按钮直接填入当前地图，不必手写地图 key。角色、地图、生命、租约或传送状态不确定时停止。
 
 
 
@@ -114,6 +129,10 @@
   var SERVER_IDS = [3, 5];
   // 手机版检测：post.lastro.cn/?r=mn/index（同客户端 Online_mn.js + 同数据，触摸事件驱动）
   var IS_MN = /[?&]r=mn/.test(location.search);
+  // V2.36.7：本机私有客户端入口（127.0.0.1:8971 / localhost:8971）。该宿主页 Config.js 预置占位
+  // window.ROConfig(application=1,roeHost=true)，而 api.html 只认「父窗口/opener postMessage」启动，
+  // 直接打开时无人启动，需由脚本自启。原站入口不设此旗标，判据与行为保持不变。
+  var IS_LOCAL_HOST = /^(127\.0\.0\.1|localhost)$/.test(location.hostname) && location.port === "8971";
   // 手机版页面路径：/?r=mn/index（PC 版为 /ro/api.html）
   var MN_PATH = "/?r=mn/index";
   var PC_PATH = "/ro/api.html";
@@ -127,7 +146,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.36.4"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.36.8"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -364,7 +383,19 @@
   function buildConfig() {
     var cfg = {};
     var k;
-    for (k in DEFAULTS) cfg[k] = DEFAULTS[k];
+    // V2.36.7：本机私有入口优先以宿主页自己的 window.ROConfigBase（client/Config.js）为基底——
+    // 它含新引擎必需的 lastroProtocol / lastroCustomPackets / networkCharset / resourcePathCharset /
+    // lastroDataCharset / statusDescriptionCharset / packetKeys / servers(数组) 等字段。
+    // 若仍用 DEFAULTS 自启会缺这些字段：新引擎在模块初始化阶段 hook NOTIFY_LOADINFO 会抛
+    // NetworkManager::HookPacket() - Packet not yet register "LoadInfo" 并中断启动 → 依然是纯黑屏。
+    var hostBase = null;
+    if (IS_LOCAL_HOST) { try { hostBase = window.ROConfigBase || null; } catch (e) {} }
+    if (hostBase) {
+      for (k in hostBase) cfg[k] = hostBase[k];
+      cfg.application = 1; // 与宿主页 api.html 的 boot() 一致（数值 1 = 在线模式）
+    } else {
+      for (k in DEFAULTS) cfg[k] = DEFAULTS[k];
+    }
     cfg.version = version;
     cfg.remoteClient = useLocalData ? LOCAL_DATA : REMOTE_DATA;
     cfg.pushplusToken = notifyLoadToken(); // V2.36.0：沿用 DEFAULTS/buildConfig 约定，token 读自全局键
@@ -417,7 +448,10 @@
       try {
         window.ROConfig = cfg;
         var app = document.createElement("script");
-        app.type = "text/javascript";
+        // V2.36.7：本机私有宿主的 Online.js 是含 import.meta 的 ESM 构建（13MB rolldown 产物），
+        // 按经典脚本注入会抛 SyntaxError: Cannot use 'import.meta' outside a module → 白屏/黑屏无引擎画面。
+        // 与宿主页 api.html 同款：本机私有入口必须按 module 注入；原站维持 text/javascript 不变。
+        app.type = IS_LOCAL_HOST ? "module" : "text/javascript";
         app.src = "Online.js?" + version;
         document.getElementsByTagName("head")[0].appendChild(app);
         directInjected = true;
@@ -971,6 +1005,13 @@
       '<div class="row"><span class="st" style="font-size:10px">V2.16.27：仅当手持弓/乐器/鞭子时生效（其它职业没有箭矢槽，避免白耗箭袋）</span></div>' +
       '<div class="row"><span class="st" id="dsh-arrowlog" style="font-size:10px">未启用</span></div>' +
       '</div>' +
+      '<div class="sec">死亡回城恢复 · 目标地图</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-z-deathreturn" type="checkbox">死亡回城满血返回（默认关）</label></div>' +
+      '<div class="row"><span class="lb">回城地图</span><input id="dsh-z-returncity" type="text" placeholder="如 prontera" style="flex:1;min-width:80px">' +
+      '<button class="ghost" id="dsh-z-returncity-get" style="flex:0 0 auto">取当前</button></div>' +
+      '<div class="row"><span class="lb">目标地图</span><input id="dsh-z-returnmap" type="text" placeholder="练级地图 key" style="flex:1;min-width:80px">' +
+      '<button class="ghost" id="dsh-z-returnmap-get" style="flex:0 0 auto">取当前</button></div>' +
+      '<div class="log">仅在目标图已开启战斗并亲眼观测死亡、同角色回到指定城后执行；传送只尝试一次，超时停用。</div>' +
       '<div class="sec">背包快照定期上报（V2.15.27）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-invshot" type="checkbox" checked>开启定期上报</label>' +
       '<span class="lb" style="margin-left:8px">间隔</span><input id="dsh-invshotint" type="number" value="120" style="flex:0 0 44px"><span style="color:#5a6b7f">秒</span></div>' +
@@ -3598,6 +3639,7 @@
     ["dsh-z-hpfly", "v"], ["dsh-z-spfly", "v"], ["dsh-z-hpout", "v"], ["dsh-z-keep", "v"],
     ["dsh-z-sit", "c"], ["dsh-z-sithplo", "v"], ["dsh-z-sithphi", "v"], ["dsh-z-sitsplo", "v"], ["dsh-z-sitsphi", "v"],
     ["dsh-z-sitxw", "v"], ["dsh-z-sitback", "c"], ["dsh-z-sitnofight", "c"],
+    ["dsh-z-deathreturn", "c"], ["dsh-z-returncity", "v"], ["dsh-z-returnmap", "v"],
     ["dsh-z-attint", "v"], ["dsh-z-range", "v"], ["dsh-z-pmrange", "v"], ["dsh-z-mgrange", "v"], ["dsh-z-minrange", "v"], ["dsh-z-mapbound", "c"], ["dsh-z-mapbound-r", "v"], ["dsh-z-mapbound-edge", "v"],
     ["dsh-z-switchdelay", "v"], ["dsh-z-walkint", "v"], ["dsh-z-chaseint", "v"], ["dsh-z-huntmode", "v"], ["dsh-z-takeover", "v"], ["dsh-z-follow", "c"], ["dsh-z-next", "c"],
     ["dsh-arrowen", "c"], ["dsh-invshot", "c"], ["dsh-invshotint", "v"],
@@ -3728,6 +3770,7 @@
         }
       } catch (me) {}
       if (activeProfileKey() === key && lastCharGid === gid) return;
+      try { deathReturnCancel("切换角色"); } catch (e0) {}
       try { npResetBattleState(); } catch (e0) {} // 换角色：旧角色排队意图绝不能落到新角色
       try { dojoStop("换角色"); } catch (e5) {} // V2.36.0：换角色立即停止内置道馆并释放租约
       if (typeof selfSpirits !== "undefined") selfSpirits = { aid: 0, num: 0, map: "" };
@@ -7536,6 +7579,7 @@
     setStatus("助手模式已启动（扫描+攻击）", "ok");
   }
   function stopZhu() {
+    if (!deathReturnStopping) deathReturnCancel("手动停止战斗");
     zRunning = false;
     stopScan();
     if (zAttTimer) { clearInterval(zAttTimer); zAttTimer = null; }
@@ -12740,12 +12784,20 @@
 
   // ---------------- 启动逻辑 ----------------
   function detectWrapperBoot() {
-    try {
-      if (window.ROConfig && window.ROConfig.application) return true;
-    } catch (e) {}
+    // V2.36.7：真实启动证据优先——引擎脚本标签 / 宿主启动标记 / 已收到 ready
     var scripts = document.getElementsByTagName("script");
     for (var i = 0; i < scripts.length; i++) {
       if (/Online(_mn)?\.js/.test(scripts[i].src)) return true;
+    }
+    try { if (window.__roeLocalClient && window.__roeLocalClient.started) return true; } catch (e) {}
+    try { if (state.ready) return true; } catch (e) {}
+    // 原站（post.lastro.cn / game.lastro.cn）保持原判据不变。
+    // 本机私有入口不能用它：Config.js 的占位对象同样带 application=1/roeHost=true，
+    // 直接打开 api.html 时据此判定会静默黑屏（引擎永不启动、控制台无引擎报错）。
+    if (!IS_LOCAL_HOST) {
+      try {
+        if (window.ROConfig && window.ROConfig.application) return true;
+      } catch (e) {}
     }
     return false;
   }
@@ -13256,17 +13308,43 @@
       tlog("wrapper-boot-detected");
       return;
     }
-    detectDataServer(function () {
-      setStatus("正在启动客户端…", "warn");
-      setTimeout(boot, 300);
-      setTimeout(function () {
-        if (!state.ready && !state.bootedByPlugin) {
-          setStatus("未检测到客户端，尝试启动…", "warn");
-          tlog("retry-boot");
-          boot();
+    var beginSelfBoot = function () {
+      detectDataServer(function () {
+        setStatus("正在启动客户端…", "warn");
+        setTimeout(boot, 300);
+        setTimeout(function () {
+          if (!state.ready && !state.bootedByPlugin) {
+            setStatus("未检测到客户端，尝试启动…", "warn");
+            tlog("retry-boot");
+            boot();
+          }
+        }, 3500);
+      });
+    };
+    if (IS_LOCAL_HOST) {
+      // V2.36.7：本机私有入口——有启动器（父窗口/opener）时宽限 6s 等它 postMessage 启动配置（实测约 0.4s），
+      // 无启动器（用户直接打开 api.html）时宽限 1.5s；宽限内出现真实启动证据就交还宿主，否则自启。
+      var hasStarter = false;
+      try { hasStarter = (window.self !== window.top) || !!window.opener; } catch (e) { hasStarter = true; }
+      var graceMs = hasStarter ? 6000 : 1500;
+      var graceT0 = Date.now();
+      var graceTimer = setInterval(function () {
+        if (detectWrapperBoot()) {
+          clearInterval(graceTimer);
+          state.bootedByWrapper = true;
+          setStatus("原站模式运行中", "ok");
+          tlog("wrapper-boot-detected-late");
+          return;
         }
-      }, 3500);
-    });
+        if (Date.now() - graceT0 > graceMs) {
+          clearInterval(graceTimer);
+          tlog("local-host-selfboot hasStarter=" + hasStarter);
+          beginSelfBoot();
+        }
+      }, 150);
+      return;
+    }
+    beginSelfBoot();
   }
 
   // ---------------- V2.7.0 脚本执行器（导入 JSON 模板 · 白名单 8 类动作） ----------------
@@ -14213,6 +14291,87 @@
   apiNoticeWatch();setTimeout(function(){apiEmit("ready",{protocol:API_PROTOCOL,assistantVersion:VER});},0);
   setInterval(function(){apiBattleTick();if(apiLease)apiEmit("state",{owner:apiLease.owner});},250);
 
+  // Session-only intent: no stale recovery after reload or role switch.
+  var deathReturn = null, deathReturnStopping = false;
+  function deathReturnCancel(reason) {
+    if (deathReturn) { deathReturn = null; setStatus("死亡回图停止：" + reason, "warn"); }
+  }
+  function deathReturnKey(id) {
+    var el = $id(id), v = el && String(el.value || "").trim();
+    return v && /^[a-zA-Z0-9_]+(?:\.(?:gat|rsw))?$/.test(v) ? normMapKey(v) : "";
+  }
+  // 取当前地图填入（普通用户不必手写地图 key；捕获阶段监听，绕开面板浮窗的冒泡隔离）
+  function deathReturnFillMap(id) {
+    var el = $id(id), map = normMapKey(getMapName());
+    if (!el) return;
+    if (!map) { setStatus("读取当前地图失败", "warn"); return; }
+    el.value = map;
+    try { captureAll(); } catch (e) {}
+    setStatus("已填入当前地图：" + map, "ok");
+  }
+  try {
+    document.addEventListener("click", function (e) {
+      var t = e.target, id = t && t.id;
+      if (id === "dsh-z-returncity-get") deathReturnFillMap("dsh-z-returncity");
+      else if (id === "dsh-z-returnmap-get") deathReturnFillMap("dsh-z-returnmap");
+    }, true);
+  } catch (e) {}
+  function deathReturnTick() {
+    var opt = $id("dsh-z-deathreturn"), city = deathReturnKey("dsh-z-returncity"), target = deathReturnKey("dsh-z-returnmap"), now = Date.now();
+    if (!opt || !opt.checked || !profUIApplied || !city || !target || city === target) { deathReturnCancel("设置不完整"); return; }
+    var ent = CLIENT.SS && CLIENT.SS.Entity, life = ent && ent.life, gid = ent && gidInt(ent.GID), map = normMapKey(getMapName());
+    var hp = life && Number(life.hp), max = life && Number(life.hp_max);
+    var dead = !!(ent && (ent.isDeath || (ent.ACTION && ent.action === ent.ACTION.DIE)));
+    if (!clientReady() || !(gid > 0) || gid !== lastCharGid || charNameOf(ent) !== lastCharName || activeProfileKey() === "default" || !map || !life || life.hp == null || life.hp_max == null || !Number.isFinite(hp) || !Number.isFinite(max) || max <= 0 || hp < 0 || hp > max || apiLease || scrRun.running || dojoRun.on || bagClean.busy || moveXY.busy || escapePending()) { deathReturnCancel("角色、生命或操作权不确定"); return; }
+    var mode = zRunning ? "assistant" : npBattleState() === true ? "builtin" : "";
+    if (!deathReturn) {
+      if (map === target && !dead && hp > 0 && npBattleState() !== null && mode) deathReturn = { gid: gid, profile: activeProfileKey(), city: city, target: target, mode: mode, phase: "armed" };
+      return;
+    }
+    var r = deathReturn;
+    if (r.gid !== gid || r.profile !== activeProfileKey() || r.city !== city || r.target !== target) { deathReturnCancel("角色或设置变化"); return; }
+    if (r.phase === "armed") {
+      if (map !== target || (!dead && hp > 0 && (r.mode === "assistant" ? !zRunning : npBattleState() !== true))) { deathReturnCancel("离图或战斗模式变化"); return; }
+      if (!dead) { if (hp <= 0) deathReturnCancel("死亡状态尚未确认"); return; }
+      r.phase = "city"; r.until = now + 120000; r.stoppedAt = now;
+      if (r.mode === "assistant") { deathReturnStopping = true; try { stopZhu(); } finally { deathReturnStopping = false; } }
+      else if (npBattleState() === true) npRequestBattle(false, "death-return", true, function () { return deathReturn === r && !apiLease && activeProfileKey() === r.profile; });
+      setStatus("检测死亡：等待回到指定城市", "warn");
+      return;
+    }
+    if (now > r.until) { deathReturnCancel("超时"); return; }
+    if (zRunning || (r.phase !== "resuming" && npBattleState() !== false && !(r.phase === "city" && now - (r.stoppedAt || 0) < 2000 && npBattleState() === true))) { deathReturnCancel("战斗已被接管或状态不确定"); return; }
+    if (r.phase === "city") {
+      if (map !== target && map !== city) { deathReturnCancel("未返回指定城市"); return; }
+      if (map !== city || dead || hp <= 0) return;
+      r.phase = "healing";
+    }
+    if (r.phase === "healing") {
+      if (map !== city || dead || hp <= 0) { deathReturnCancel("城市或复活状态变化"); return; }
+      if (hp < max) { if (!isSitting() && !isWinOpen() && now - (r.sitAt || 0) >= 3000) { r.sitAt = now; sendSit(true); } return; }
+      if (isSitting()) { if (now - (r.standAt || 0) >= 3000) { r.standAt = now; sendSit(false); } return; }
+      if (ent.action == null || isWinOpen()) return;
+      if (!gptTeleport(r.target)) { deathReturnCancel("GPT 提交失败"); return; }
+      r.phase = "teleport"; r.until = now + 20000;
+      return;
+    }
+    if (r.phase === "resuming") { if (map !== target || dead || hp !== max || isSitting()) { deathReturnCancel("恢复时离图或生命异常"); return; } if (npBattleState() === true) deathReturn = null; return; }
+    if (r.phase === "teleport") {
+      if (map === city) return;
+      if (map !== target || dead || hp !== max || isSitting() || isWinOpen()) { deathReturnCancel("传送落地状态不安全"); return; }
+      // 落地后先等换图事件结算（换图处理会停战斗），再恢复，避免刚开打就被换图逻辑关掉
+      if (!r.arrivedAt) { r.arrivedAt = now; return; }
+      if (now - r.arrivedAt < 2500) return;
+      if (r.mode === "assistant") startZhu();
+      else {
+        var result = npRequestBattle(true, "death-return", true, function () { return deathReturn === r && !apiLease && activeProfileKey() === r.profile && normMapKey(getMapName()) === r.target; });
+        if (result === "queued") { r.phase = "resuming"; r.until = now + 3000; return; }
+      }
+      deathReturn = null;
+    }
+  }
+  masterTickReg(function () { try { deathReturnTick(); } catch (e) { deathReturnCancel("状态读取失败"); } });
+
   // ================= 无限道场（脚本系统承载 · dojoStart/dojoWait/dojoStop 动作走公共 API 与同一租约） =================
   // V2.36.2：道馆移出主脚本菜单，改为「脚本执行」浮窗导入任务脚本运行；此处保留 dojoStart/dojoTick/dojoStop 等动作实现。
   var DOJO_OWNER="builtin-dojo",DOJO_KEY="dsh-ro-infinite-dojo-v1";
@@ -14297,10 +14456,17 @@
 
 
 // MVP_TIMER_START: 公告栏剩余时间以接收时刻为基准，关闭窗口不停止计时。
-  var mvpStoreKey = "dsh_mvp_timer_v1_cv_" + pickCv();
-  var mvpRecords = {};
-  try { mvpRecords = JSON.parse(localStorage.getItem(mvpStoreKey) || "{}"); } catch (e) {}
-  if (!mvpRecords || typeof mvpRecords !== "object" || Array.isArray(mvpRecords)) mvpRecords = {};
+  // V2.36.6：状态惰性初始化——mvpInit 在文件前段就被调用，此处（var 提升后）原先形同未初始化。
+  var mvpStoreKey = "", mvpRecords = null, mvpStateReady = false;
+  function mvpEnsureState() {
+    if (mvpStateReady) return; // 已初始化则直接返回，不重复读盘覆盖内存中的新数据
+    if (!mvpStoreKey) mvpStoreKey = "dsh_mvp_timer_v1_cv_" + pickCv();
+    var data = {};
+    try { data = JSON.parse(localStorage.getItem(mvpStoreKey) || "{}"); } catch (e) {}
+    if (!data || typeof data !== "object" || Array.isArray(data)) data = {};
+    mvpRecords = data; mvpStateReady = true;
+  }
+  mvpEnsureState();
   var mvpRecent = {}, mvpTimerBody = null, mvpActionStatus = null;
   function mvpParse(text, now) {
     var clean = String(text).replace(/\^[0-9a-f]{6}/gi, "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ");
@@ -14325,6 +14491,7 @@
     return rows;
   }
   function mvpReceive(text, force) {
+    mvpEnsureState();
     console.log('[MVP-DEBUG] mvpReceive called, text length:', text ? text.length : 0);
     var now = Date.now(), rows = mvpParse(text, now);
     console.log('[MVP-DEBUG] mvpParse returned rows:', rows.length);
@@ -14403,6 +14570,7 @@
     mvpScanDom(); setInterval(queue, 1500);
   }
   function mvpRender() {
+    mvpEnsureState();
     if (!mvpTimerBody || mvpTimerBody.hidden) return;
     mvpTimerBody.textContent = "";
     var rows = Object.keys(mvpRecords).map(function (k) { return mvpRecords[k]; }).filter(function (r) {
@@ -14439,6 +14607,7 @@
     } catch (e) { status("传送失败：" + e.message); }
   }
   function mvpInit() {
+    mvpEnsureState();
     var key = "dsh_mvp_window_v3", prefs = {};
     try { prefs = JSON.parse(localStorage.getItem(key) || "{}") || {}; } catch (e) {}
     function number(v, fallback, min, max) { return typeof v === "number" && isFinite(v) ? Math.max(min, Math.min(max, v)) : fallback; }
@@ -15229,6 +15398,63 @@
     try { kvSyncLoop(); } catch (e) {}
     setInterval(function () { try { kvSyncLoop(); } catch (e) {} }, 5000);
   }, 2500);
+  // ================= V2.36.5 任务采集（只读：读客户端 Quest 组件任务列表 → 本机 8899 kv）=================
+  // 纯只读上报：只读 Quest 组件 .list（服务器 0x09f8/0x9f9/0x9fa 实时维护），不接取/不放弃/不刷新。
+  // 上报键 quest:<account>；8899 不可用一律 try/catch 静默跳过，绝不影响其它功能。
+  var questSyncPrev = null;
+  function readQuestSnapshot() {
+    try {
+      var Quest = null;
+      try { Quest = window.requirejs && window.requirejs("UI/Components/Quest/Quest"); } catch (e1) {}
+      if (!Quest || !Array.isArray(Quest.list)) { try { Quest = window.require && window.require("UI/Components/Quest/Quest"); } catch (e2) {} }
+      if (!Quest || !Array.isArray(Quest.list)) return null;
+      var DB = CLIENT.DB || (window.require && window.require("DB/DBManager")) || (window.requirejs && window.requirejs("DB/DBManager"));
+      var account = getInventoryAccount();
+      var charName = getCurrentCharName();
+      var tasks = [];
+      for (var i = 0; i < Quest.list.length; i++) {
+        var q = Quest.list[i] || {};
+        var info = null;
+        try { info = (DB && typeof DB.getQuestInfo === "function") ? DB.getQuestInfo(q.questID) : null; } catch (e) {}
+        var hunt = [];
+        var hh = q.hunt || [];
+        for (var j = 0; j < hh.length; j++) {
+          var h = hh[j] || {};
+          hunt.push({ mobName: h.mobName || "", mobGID: h.mobGID || null, huntCount: h.huntCount || 0, maxCount: h.maxCount || 0 });
+        }
+        tasks.push({
+          questID: q.questID,
+          active: q.active,
+          title: (info && info.name) ? String(info.name) : ("任务#" + q.questID),
+          type: (info && info.type != null) ? info.type : null,
+          endTime: q.quest_endTime || 0,
+          hunt: hunt
+        });
+      }
+      return { account: account, charName: charName, map: getMapName(), tasks: tasks };
+    } catch (e) { return null; }
+  }
+  function questSyncTick() {
+    try {
+      if (typeof fetch !== "function") return;
+      var snap = readQuestSnapshot();
+      if (!snap || !snap.account) return;
+      var key = "quest:" + snap.account;
+      var sig = JSON.stringify(snap);
+      if (sig === questSyncPrev) return;
+      questSyncPrev = sig;
+      fetch("http://127.0.0.1:8899/api/kv/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: key, value: sig, ts: Date.now() })
+      }).catch(function () {});
+    } catch (e) {}
+  }
+  setTimeout(function () {
+    try { questSyncTick(); } catch (e) {}
+    setInterval(function () { try { questSyncTick(); } catch (e) {} }, 5000);
+  }, 4000);
+
   // ================= V2.34.5 黄金副本（本机 8899 显式读写 · 该键严禁加入 KV_KEYS）=================
   // dsh_ro_profiles_v2.golden 不参与 5 秒轮询自动同步（一旦进 KV_KEYS 会导致两个入口自动互相覆盖）。
   var PROF_GOLDEN_KEY = PROF_KEY + ".golden";

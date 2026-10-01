@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.36.8
+// @version      2.36.9
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -113,8 +113,10 @@
 // 3) 自启配置不完整：用脚本 DEFAULTS 自启缺少新引擎必需的 lastroProtocol / lastroCustomPackets / 各 charset / packetKeys / servers(数组) 等字段，
 //    引擎在模块初始化 hook NOTIFY_LOADINFO 抛 Packet not yet register "LoadInfo" 后中断启动，依旧黑屏。改为以宿主页 window.ROConfigBase 为基底自启。
 // 原站 post.lastro.cn / game.lastro.cn 的启动判据、注入方式与配置来源全部保持不变。
+// ---------------- V2.36.9 变更摘要 ----------------
+// 死亡后返回目标地图：去掉「回城地图」设置项——回城点就是角色寄存点，点「重新开始」自然到达，既不记录也不参与判定；只需填目标地图。
 // ---------------- V2.36.8 变更摘要 ----------------
-// 辅助→战斗辅助新增默认关闭的「死亡回城满血返回」：在目标图运行自动战斗并目睹死亡后，回指定城市坐下回血；确认满血、传送到目标地图再恢复此前战斗。城市与目标地图各有一个「取当前」按钮直接填入当前地图，不必手写地图 key。角色、地图、生命、租约或传送状态不确定时停止。
+// 辅助→战斗辅助新增默认关闭的「死亡后返回目标地图」：只需设置一个目标地图（带「取当前」按钮）。在目标图开着自动战斗时若角色死亡，助手立即停手等你点「重新开始」回城复活，自动坐下回满血，再传回目标地图继续开打。回城点即角色寄存点，不需设置也不参与判定。角色、生命、地图、租约或传送状态不确定时停止。
 
 
 
@@ -146,7 +148,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.36.8"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.36.9"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -1005,13 +1007,11 @@
       '<div class="row"><span class="st" style="font-size:10px">V2.16.27：仅当手持弓/乐器/鞭子时生效（其它职业没有箭矢槽，避免白耗箭袋）</span></div>' +
       '<div class="row"><span class="st" id="dsh-arrowlog" style="font-size:10px">未启用</span></div>' +
       '</div>' +
-      '<div class="sec">死亡回城恢复 · 目标地图</div>' +
-      '<div class="row"><label class="switch"><input id="dsh-z-deathreturn" type="checkbox">死亡回城满血返回（默认关）</label></div>' +
-      '<div class="row"><span class="lb">回城地图</span><input id="dsh-z-returncity" type="text" placeholder="如 prontera" style="flex:1;min-width:80px">' +
-      '<button class="ghost" id="dsh-z-returncity-get" style="flex:0 0 auto">取当前</button></div>' +
-      '<div class="row"><span class="lb">目标地图</span><input id="dsh-z-returnmap" type="text" placeholder="练级地图 key" style="flex:1;min-width:80px">' +
+      '<div class="sec">死亡后返回目标地图</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-z-deathreturn" type="checkbox">死亡后返回目标地图（默认关）</label></div>' +
+      '<div class="row"><span class="lb">目标地图（死亡后返回）</span><input id="dsh-z-returnmap" type="text" placeholder="练级地图 key" style="flex:1;min-width:80px">' +
       '<button class="ghost" id="dsh-z-returnmap-get" style="flex:0 0 auto">取当前</button></div>' +
-      '<div class="log">仅在目标图已开启战斗并亲眼观测死亡、同角色回到指定城后执行；传送只尝试一次，超时停用。</div>' +
+      '<div class="log">在目标图开着自动战斗时若角色死亡：等你点「重新开始」回城复活后自动坐下回满血，再传回目标地图继续开打。传送只提交一次，状态不确定或超时即停。</div>' +
       '<div class="sec">背包快照定期上报（V2.15.27）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-invshot" type="checkbox" checked>开启定期上报</label>' +
       '<span class="lb" style="margin-left:8px">间隔</span><input id="dsh-invshotint" type="number" value="120" style="flex:0 0 44px"><span style="color:#5a6b7f">秒</span></div>' +
@@ -3639,7 +3639,7 @@
     ["dsh-z-hpfly", "v"], ["dsh-z-spfly", "v"], ["dsh-z-hpout", "v"], ["dsh-z-keep", "v"],
     ["dsh-z-sit", "c"], ["dsh-z-sithplo", "v"], ["dsh-z-sithphi", "v"], ["dsh-z-sitsplo", "v"], ["dsh-z-sitsphi", "v"],
     ["dsh-z-sitxw", "v"], ["dsh-z-sitback", "c"], ["dsh-z-sitnofight", "c"],
-    ["dsh-z-deathreturn", "c"], ["dsh-z-returncity", "v"], ["dsh-z-returnmap", "v"],
+    ["dsh-z-deathreturn", "c"], ["dsh-z-returnmap", "v"],
     ["dsh-z-attint", "v"], ["dsh-z-range", "v"], ["dsh-z-pmrange", "v"], ["dsh-z-mgrange", "v"], ["dsh-z-minrange", "v"], ["dsh-z-mapbound", "c"], ["dsh-z-mapbound-r", "v"], ["dsh-z-mapbound-edge", "v"],
     ["dsh-z-switchdelay", "v"], ["dsh-z-walkint", "v"], ["dsh-z-chaseint", "v"], ["dsh-z-huntmode", "v"], ["dsh-z-takeover", "v"], ["dsh-z-follow", "c"], ["dsh-z-next", "c"],
     ["dsh-arrowen", "c"], ["dsh-invshot", "c"], ["dsh-invshotint", "v"],
@@ -14312,62 +14312,62 @@
   try {
     document.addEventListener("click", function (e) {
       var t = e.target, id = t && t.id;
-      if (id === "dsh-z-returncity-get") deathReturnFillMap("dsh-z-returncity");
-      else if (id === "dsh-z-returnmap-get") deathReturnFillMap("dsh-z-returnmap");
+      if (id === "dsh-z-returnmap-get") deathReturnFillMap("dsh-z-returnmap");
     }, true);
   } catch (e) {}
+  // 回到目标图后，按死亡前的方式恢复战斗（助手模式 / 内挂模式）
+  function deathReturnResume(r, now) {
+    if (r.mode === "assistant") startZhu();
+    else {
+      var result = npRequestBattle(true, "death-return", true, function () { return deathReturn === r && !apiLease && activeProfileKey() === r.profile && normMapKey(getMapName()) === r.target; });
+      if (result === "queued") { r.phase = "resuming"; r.until = now + 3000; return; }
+    }
+    deathReturn = null;
+  }
   function deathReturnTick() {
-    var opt = $id("dsh-z-deathreturn"), city = deathReturnKey("dsh-z-returncity"), target = deathReturnKey("dsh-z-returnmap"), now = Date.now();
-    if (!opt || !opt.checked || !profUIApplied || !city || !target || city === target) { deathReturnCancel("设置不完整"); return; }
+    var opt = $id("dsh-z-deathreturn"), target = deathReturnKey("dsh-z-returnmap"), now = Date.now();
+    if (!opt || !opt.checked || !profUIApplied || !target) { deathReturnCancel("设置不完整"); return; }
     var ent = CLIENT.SS && CLIENT.SS.Entity, life = ent && ent.life, gid = ent && gidInt(ent.GID), map = normMapKey(getMapName());
     var hp = life && Number(life.hp), max = life && Number(life.hp_max);
     var dead = !!(ent && (ent.isDeath || (ent.ACTION && ent.action === ent.ACTION.DIE)));
     if (!clientReady() || !(gid > 0) || gid !== lastCharGid || charNameOf(ent) !== lastCharName || activeProfileKey() === "default" || !map || !life || life.hp == null || life.hp_max == null || !Number.isFinite(hp) || !Number.isFinite(max) || max <= 0 || hp < 0 || hp > max || apiLease || scrRun.running || dojoRun.on || bagClean.busy || moveXY.busy || escapePending()) { deathReturnCancel("角色、生命或操作权不确定"); return; }
     var mode = zRunning ? "assistant" : npBattleState() === true ? "builtin" : "";
     if (!deathReturn) {
-      if (map === target && !dead && hp > 0 && npBattleState() !== null && mode) deathReturn = { gid: gid, profile: activeProfileKey(), city: city, target: target, mode: mode, phase: "armed" };
+      if (map === target && !dead && hp > 0 && npBattleState() !== null && mode) deathReturn = { gid: gid, profile: activeProfileKey(), target: target, mode: mode, phase: "armed" };
       return;
     }
     var r = deathReturn;
-    if (r.gid !== gid || r.profile !== activeProfileKey() || r.city !== city || r.target !== target) { deathReturnCancel("角色或设置变化"); return; }
+    if (r.gid !== gid || r.profile !== activeProfileKey() || r.target !== target) { deathReturnCancel("角色或设置变化"); return; }
     if (r.phase === "armed") {
       if (map !== target || (!dead && hp > 0 && (r.mode === "assistant" ? !zRunning : npBattleState() !== true))) { deathReturnCancel("离图或战斗模式变化"); return; }
       if (!dead) { if (hp <= 0) deathReturnCancel("死亡状态尚未确认"); return; }
-      r.phase = "city"; r.until = now + 120000; r.stoppedAt = now;
+      r.phase = "healing"; r.until = now + 180000; r.stoppedAt = now;
       if (r.mode === "assistant") { deathReturnStopping = true; try { stopZhu(); } finally { deathReturnStopping = false; } }
       else if (npBattleState() === true) npRequestBattle(false, "death-return", true, function () { return deathReturn === r && !apiLease && activeProfileKey() === r.profile; });
-      setStatus("检测死亡：等待回到指定城市", "warn");
+      setStatus("检测死亡：等待回城复活并回满血后返回目标地图", "warn");
       return;
     }
     if (now > r.until) { deathReturnCancel("超时"); return; }
-    if (zRunning || (r.phase !== "resuming" && npBattleState() !== false && !(r.phase === "city" && now - (r.stoppedAt || 0) < 2000 && npBattleState() === true))) { deathReturnCancel("战斗已被接管或状态不确定"); return; }
-    if (r.phase === "city") {
-      if (map !== target && map !== city) { deathReturnCancel("未返回指定城市"); return; }
-      if (map !== city || dead || hp <= 0) return;
-      r.phase = "healing";
-    }
+    if (zRunning || (r.phase !== "resuming" && npBattleState() !== false && !(r.phase === "healing" && now - (r.stoppedAt || 0) < 2000 && npBattleState() === true))) { deathReturnCancel("战斗已被接管或状态不确定"); return; }
     if (r.phase === "healing") {
-      if (map !== city || dead || hp <= 0) { deathReturnCancel("城市或复活状态变化"); return; }
+      // 死亡后需玩家点「重新开始」回到寄存点城市；复活点若就在目标图，直接交回原有寻怪/坐下逻辑
+      if (dead || hp <= 0) return;
       if (hp < max) { if (!isSitting() && !isWinOpen() && now - (r.sitAt || 0) >= 3000) { r.sitAt = now; sendSit(true); } return; }
       if (isSitting()) { if (now - (r.standAt || 0) >= 3000) { r.standAt = now; sendSit(false); } return; }
       if (ent.action == null || isWinOpen()) return;
+      if (map === target) { deathReturnResume(r, now); return; } // 寄存点就在目标图：满血直接开打
       if (!gptTeleport(r.target)) { deathReturnCancel("GPT 提交失败"); return; }
-      r.phase = "teleport"; r.until = now + 20000;
+      r.phase = "teleport"; r.until = now + 25000; r.arrivedAt = 0;
       return;
     }
-    if (r.phase === "resuming") { if (map !== target || dead || hp !== max || isSitting()) { deathReturnCancel("恢复时离图或生命异常"); return; } if (npBattleState() === true) deathReturn = null; return; }
+    if (r.phase === "resuming") { if (map !== target || dead || hp <= 0) { deathReturnCancel("恢复时离图或生命异常"); return; } if (npBattleState() === true) deathReturn = null; return; }
     if (r.phase === "teleport") {
-      if (map === city) return;
-      if (map !== target || dead || hp !== max || isSitting() || isWinOpen()) { deathReturnCancel("传送落地状态不安全"); return; }
+      if (map !== target) return; // 传送中（可能仍停留在出发地）
+      if (dead || hp <= 0 || isSitting() || isWinOpen()) { deathReturnCancel("传送落地状态不安全"); return; }
       // 落地后先等换图事件结算（换图处理会停战斗），再恢复，避免刚开打就被换图逻辑关掉
       if (!r.arrivedAt) { r.arrivedAt = now; return; }
       if (now - r.arrivedAt < 2500) return;
-      if (r.mode === "assistant") startZhu();
-      else {
-        var result = npRequestBattle(true, "death-return", true, function () { return deathReturn === r && !apiLease && activeProfileKey() === r.profile && normMapKey(getMapName()) === r.target; });
-        if (result === "queued") { r.phase = "resuming"; r.until = now + 3000; return; }
-      }
-      deathReturn = null;
+      deathReturnResume(r, now);
     }
   }
   masterTickReg(function () { try { deathReturnTick(); } catch (e) { deathReturnCancel("状态读取失败"); } });

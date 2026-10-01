@@ -791,8 +791,8 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
   // 1) 版本号：稳定版与实验版都必须是 2.36.1（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.10', name + ' @version 必须是 2.36.10');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.10', name + ' 运行时常量 VER 必须是 2.36.10');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.11', name + ' @version 必须是 2.36.11');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.11', name + ' 运行时常量 VER 必须是 2.36.11');
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
   const stripHead = (s) => s.replace(/\r\n/g,'\n').split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
@@ -1164,8 +1164,8 @@ test('V2.34.5 战斗诊断快照 prof 字段已就位（不改既有字段）', 
 // ================= V2.34.5：配置自动备份（两代）/ 黄金副本找回（纯函数真值表 / 按钮 / 键隔离）=================
 test('V2.34.5 版本号升到 2.34.5（@version 与运行时常量一致，两文件同步）', () => {
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.10', name + ' @version 必须是 2.36.10');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.10', name + ' 运行时常量 VER 必须是 2.36.10');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.11', name + ' @version 必须是 2.36.11');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.11', name + ' 运行时常量 VER 必须是 2.36.11');
   }
 });
 
@@ -1409,10 +1409,43 @@ test('bagClean v2 UI and storage contract is lockstep and documents unsupported 
 
 // ================= V2.35.1 assistant API + standalone dojo =================
 const splitSources=[['stable',source],['exp',expSource]];
-test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.36\.10/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
+test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.36\.11/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
 test('V2.35.1 public API uses owner-only external signatures and validates the current lease owner',()=>{for(const[,s]of splitSources){assert.ok(s.includes('/^[A-Za-z0-9_.:-]{8,128}$/'));assert.ok(s.includes('dojo:1,battle:1,movement:1,dialog:1,arrow:1,fly:1'));assert.ok(s.includes('if(apiLease&&apiLease.owner!==owner)'));for(const sig of ['apiHas(owner,scope)','apiSnapshot(owner)','apiRelease(owner)','apiContact(owner,gid)','apiWalk(owner,payload)','apiChoose(owner,payload)','apiBattle(owner,on)','apiSetArrow(owner,target)','apiClearArrow(owner)','apiFly(owner,payload)'])assert.ok(s.includes('function '+sig),sig);assert.ok(s.includes('apiLease.generation===generation'));assert.ok(!s.includes('apiHas(owner,generation'));}});
 test('V2.35.1 snapshot and battle/menu ownership contracts are explicit',()=>{for(const[,s]of splitSources){for(const key of ['ready:','map:','player:','mobs:','npcs:','target:','inDojoMap:','dialogOpen:','menu:','battleState:','busy:','arrow:'])assert.ok(s.includes(key),key);assert.ok(s.includes('if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"}'));assert.ok(s.includes('b.state="pending-on"'));assert.ok(s.includes('if(b.state!=="owned")return {ok:true,result:"not-owned"}'));assert.ok(s.includes('l.battle.state==="owned"||l.battle.state==="pending-off"'));assert.ok(s.includes('if(s!==false)return {ok:true,result:s===true?"preexisting":"unknown"}'));}});
-test('V2.35.1 arrow decision priority and confirmation retry remain assistant-owned',()=>{for(const[,s]of splitSources){assert.ok(s.includes('if(type===8&&level===3)'));assert.ok(s.includes('if(isBoss)return boss||neutral'));assert.ok(s.includes('if(type===8&&level===4)'));assert.ok(s.includes('confirmUntil:now+5000'));assert.ok(s.includes('p.retryAt=now+3000'));}});
+test('V2.36.11 arrow rules use a per-monster table plus a default arrow',()=>{for(const[name,s]of splitSources){
+  assert.ok(s.includes('function arrowDecision(mid,cfg)'),name+' 决策改为按怪物 id');
+  assert.ok(s.includes('if(itid)return {kind:"mob",itid:itid}'),name+' 指定怪箭优先');
+  assert.ok(s.includes('var def=arrowPos(cfg.defaultItid)'),name+' 回退默认箭');
+  assert.ok(s.includes('defaultItid=arrowPos(r.defaultItid)||arrowPos(r.neutralItid)'),name+' 旧无属性箭迁移为默认箭');
+  assert.ok(s.includes('legacy=r.byMid&&typeof r.byMid==="object"?r.byMid'),name+' 旧 Boss 箭表迁移');
+  assert.ok(s.includes('id="dsh-arrow-rules-default"'),name+' 默认箭按钮');
+  assert.ok(s.includes('id="dsh-arrow-rules-mobsave"'),name+' 指定怪箭保存按钮');
+  assert.ok(s.includes('id="dsh-arrow-rules-cur"'),name+' 取当前目标按钮');
+  assert.ok(s.includes('id="dsh-arrow-rules-mobitem"'),name+' 指定怪箭矢下拉');
+  assert.ok(!s.includes('ghostItid')&&!s.includes('if(type===8&&level===3)')&&!s.includes('arrowFillBosses'),name+' 旧念3/念4与内挂 Boss 规则必须移除');
+  assert.ok(s.includes('confirmUntil:now+5000')&&s.includes('p.retryAt=now+3000'),name+' 换箭确认重试保留');
+}});
+test('V2.36.11 arrow decision picks the override then the default and stays silent when nothing is configured',()=>{
+  const code=extract('  function arrowPos(v)','  function arrowLoad(){')+extract('  function arrowDecision(mid,cfg)','  function arrowSay(');
+  const ctx={};vm.createContext(ctx);vm.runInContext(code+';this.decide=arrowDecision',ctx);
+  assert.equal(ctx.decide(1002,{byMid:{},defaultItid:null}),null,'没配置任何箭 → 不换箭');
+  assert.equal(JSON.stringify(ctx.decide(1002,{byMid:{1002:1751},defaultItid:1750})),JSON.stringify({kind:'mob',itid:1751}),'指定怪优先');
+  assert.equal(JSON.stringify(ctx.decide(1003,{byMid:{1002:1751},defaultItid:1750})),JSON.stringify({kind:'default',itid:1750}),'没配过的怪用默认箭');
+  assert.equal(JSON.stringify(ctx.decide(1002,{byMid:{1002:{itid:1752}},defaultItid:null})),JSON.stringify({kind:'mob',itid:1752}),'旧 {itid} 结构兼容');
+  assert.equal(ctx.decide(0,{byMid:{},defaultItid:null}),null,'非法 mid 不报错');
+  assert.equal(JSON.stringify(ctx.decide(0,{byMid:{},defaultItid:1750})),JSON.stringify({kind:'default',itid:1750}),'mid 未知也能用默认箭');
+});
+test('V2.36.11 script window imports from file and exports every script',()=>{for(const[name,s]of splitSources){
+  assert.ok(s.includes('id="dsh-scr-file">从文件导入…'),name+' 必须提供从文件导入');
+  assert.ok(s.includes('id="dsh-scr-fileinput" type="file"'),name+' 必须有隐藏 file input');
+  assert.ok(s.includes('id="dsh-scr-backup">备份全部脚本到文件'),name+' 必须提供整表备份');
+  assert.ok(s.includes('>导入上面的 JSON<'),name+' 粘贴导入按钮改名');
+  assert.ok(s.includes('rd.readAsText(f, "utf-8")'),name+' 文件读取走 FileReader');
+  assert.ok(s.includes('Array.isArray(obj) ? obj : [obj]'),name+' 导入支持一次多条');
+  assert.ok(s.includes('function scrExportAll()'),name+' 必须有导出实现');
+  assert.ok(s.includes('expB.textContent = "导出"'),name+' 每条脚本必须有导出按钮');
+  assert.ok(s.includes('$id("dsh-scr-backup").onclick = function () { scrExportAll(); };'),name+' 备份按钮必须接上导出');
+}});
 
 
 // ================= V2.36.0 内置道馆并入主脚本 + 新门面能力 =================

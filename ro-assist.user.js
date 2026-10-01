@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.36.10
+// @version      2.36.11
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -113,6 +113,10 @@
 // 3) 自启配置不完整：用脚本 DEFAULTS 自启缺少新引擎必需的 lastroProtocol / lastroCustomPackets / 各 charset / packetKeys / servers(数组) 等字段，
 //    引擎在模块初始化 hook NOTIFY_LOADINFO 抛 Packet not yet register "LoadInfo" 后中断启动，依旧黑屏。改为以宿主页 window.ROConfigBase 为基底自启。
 // 原站 post.lastro.cn / game.lastro.cn 的启动判据、注入方式与配置来源全部保持不变。
+// ---------------- V2.36.11 变更摘要 ----------------
+// 1. 换箭设置重做：删掉「念3/念4 + 内挂 Boss」的属性优先级那套，改为「指定怪箭表 + 默认箭」——先看当前这只怪有没有单独配过箭，配过就用它；没配过就用默认箭；默认箭不设 = 不换箭（保持当前装备，即你说的默认无属性箭）。
+//    窗口里可搜索怪物、点「取当前目标」直接抓当前锁定的怪、已配置列表可单条删除；旧配置自动迁移（旧无属性箭→默认箭，旧 Boss 箭→指定怪箭）。
+// 2. 脚本执行窗口补通用导入导出：新增「从文件导入…」（选 .json 直接导入，也支持一次导入多条数组）、每条脚本的「导出」按钮（放到输入框方便复制）、「备份全部脚本到文件」；粘贴 JSON 的按钮改名「导入上面的 JSON」。
 // ---------------- V2.36.10 变更摘要 ----------------
 // 1. 死亡回图：死亡菜单的「重新开始」（回到寄存点）改由助手点选——优先点客户端真实的 .savepoint 按钮，取不到按钮就发同一个
 //    CZ.RESTART type=0 包（与手动点击完全等价）。点了没反应会按 4 秒重试，最多 4 次，之后仍等你手点，绝不冒险乱发。
@@ -152,7 +156,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.36.10"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.36.11"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -13411,7 +13415,7 @@
       if (cnt) cnt.textContent = String(list.length);
       if (!box) return;
       box.innerHTML = "";
-      if (!list.length) { box.innerHTML = '<span class="st">空（粘贴 JSON 后点「导入校验」）</span>'; return; }
+      if (!list.length) { box.innerHTML = '<span class="st">空（粘贴 JSON → 点「导入上面的 JSON」；或用「从文件导入…」／「导入道馆脚本」）</span>'; return; }
       list.forEach(function (it, i) {
         var row = document.createElement("div");
         row.style.cssText = "display:flex;align-items:center;gap:6px;padding:3px 4px;border-bottom:1px solid #eef2f6";
@@ -13428,6 +13432,18 @@
         delB.textContent = "删除";
         delB.style.cssText = "flex:0 0 auto;padding:1px 8px;font-size:11px;background:#fff;color:#b91c1c;border:1px solid #e5b3b3";
         delB.addEventListener("click", function () { var a = scrLoad(); a.splice(i, 1); scrSave(a); scrRenderList(); });
+        var expB = document.createElement("button");
+        expB.textContent = "导出";
+        expB.style.cssText = "flex:0 0 auto;padding:1px 8px;font-size:11px;background:#fff";
+        expB.addEventListener("click", function () {
+          var cur = scrLoad()[i];
+          if (!cur) return;
+          var j = $id("dsh-scr-json"), n = $id("dsh-scr-name"), m = $id("dsh-scr-msg");
+          if (j) j.value = JSON.stringify(cur);
+          if (n) n.value = cur.name || cur.templateId || "";
+          if (m) m.textContent = "已放到上面的输入框（可 Ctrl+C 复制）";
+        });
+        row.appendChild(expB);
         row.appendChild(delB);
         box.appendChild(row);
       });
@@ -13937,14 +13953,33 @@
     if (!raw) { if (msg) msg.textContent = "请粘贴 JSON 模板"; return; }
     var obj = null;
     try { obj = JSON.parse(raw); } catch (e) { if (msg) msg.textContent = "JSON 解析失败: " + e.message; return; }
-    var v = scrValidate(obj);
-    if (!v.ok) { if (msg) msg.textContent = v.err; return; }
-    var list = scrLoad();
-    v.script.name = name || v.script.templateId || ("脚本" + (list.length + 1));
-    list.push(v.script);
-    scrSave(list);
-    scrRenderList();
-    if (msg) msg.textContent = "已导入 " + list.length + " 个";
+    var items = Array.isArray(obj) ? obj : [obj], list = scrLoad(), ok = 0, err = "";
+    items.forEach(function (src, n) {
+      var v = scrValidate(src);
+      if (!v.ok) { if (!err) err = "第 " + (n + 1) + " 条：" + v.err; return; }
+      if (items.length === 1) v.script.name = name || v.script.name || v.script.templateId || ("脚本" + (list.length + 1));
+      else v.script.name = v.script.name || v.script.templateId || ("脚本" + (list.length + 1));
+      list.push(v.script);
+      ok++;
+    });
+    if (ok) { scrSave(list); scrRenderList(); }
+    if (msg) msg.textContent = ok ? ("已导入 " + ok + " 个，共 " + list.length + " 个脚本" + (err ? "；" + err : "")) : (err || "没有可导入的脚本");
+  }
+  // V2.36.11：脚本只存在浏览器 localStorage，清缓存即丢——支持整表导出为 .json 备份
+  function scrExportAll() {
+    var msg = $id("dsh-scr-msg");
+    try {
+      var list = scrLoad();
+      if (!list.length) { if (msg) msg.textContent = "没有可导出的脚本"; return; }
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(list, null, 2)], { type: "application/json" }));
+      a.download = "dsh-scripts-" + new Date().toISOString().slice(0, 10) + ".json";
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { try { document.body.removeChild(a); URL.revokeObjectURL(a.href); } catch (e) {} }, 1500);
+      if (msg) msg.textContent = "已导出 " + list.length + " 个脚本：" + a.download;
+    } catch (e) { if (msg) msg.textContent = "导出失败: " + e.message; }
   }
   function scrEnsureHost() {
     var h = $id("dsh-fw-scr");
@@ -13955,15 +13990,28 @@
     h.innerHTML = '<div class="sec">脚本执行（导入 JSON 模板 · 串行按优先级）</div>'
       + '<div class="row"><span class="lb" style="min-width:42px">脚本名</span><input id="dsh-scr-name" type="text" placeholder="如：无限道场" style="flex:1 1 90px"></div>'
       + '<textarea id="dsh-scr-json" rows="4" placeholder=\'JSON 模板：{"templateId":"daily","version":1,"steps":[{"action":"walk","params":{"x":100,"y":80}}]}\'></textarea>'
-      + '<div class="row"><button id="dsh-scr-imp">导入校验</button><button class="green" id="dsh-scr-tpl-dojo">导入道馆脚本</button><button class="ghost" id="dsh-scr-clear">清空输入</button><span class="st" id="dsh-scr-msg" style="font-size:10px"></span></div>'
+      + '<div class="row"><button id="dsh-scr-imp">导入上面的 JSON</button><button class="ghost" id="dsh-scr-file">从文件导入…</button><button class="green" id="dsh-scr-tpl-dojo">导入道馆脚本</button><span class="st" id="dsh-scr-msg" style="font-size:10px"></span></div>'
+      + '<div class="row"><button class="ghost" id="dsh-scr-clear">清空输入</button><button class="ghost" id="dsh-scr-backup">备份全部脚本到文件</button></div>'
+      + '<input id="dsh-scr-fileinput" type="file" accept=".json,application/json,text/plain" style="display:none">'
       + '<div class="box"><div class="b-hd">已导入脚本 <span class="tag green" id="dsh-scr-count" style="float:right">0</span></div>'
-      + '<div id="dsh-scr-list" style="font-size:11px;max-height:130px;overflow:auto"><span class="st">空（粘贴 JSON 后点「导入校验」）</span></div></div>'
+      + '<div id="dsh-scr-list" style="font-size:11px;max-height:130px;overflow:auto"><span class="st">空（粘贴 JSON → 点「导入上面的 JSON」；或用「从文件导入…」）</span></div></div>'
       + '<div class="row"><span class="lb" style="min-width:42px">运行</span><span class="st" id="dsh-scr-state" style="font-size:11px">未运行</span><button class="ghost" id="dsh-scr-stop" style="flex:0 0 auto;color:#b91c1c;border-color:#e5b3b3">停止</button></div>'
       + '<div class="row"><input id="dsh-scr-pptoken" type="password" placeholder="pushplus token（100轮暂停推送）" autocomplete="off" style="flex:1 1 90px"><button class="green" id="dsh-scr-ppsave" style="flex:0 0 auto">保存推送</button></div>'
       + '<label class="switch"><input id="dsh-scr-ppen" type="checkbox">启用推送</label>'
-      + '<div class="log" id="dsh-scr-log" style="font-size:10px;max-height:72px;overflow:auto">动作：teleport/walk/battleOn/battleOff/useItem/stopMove/check/talk/store/loop/ifWeight/dojoStart/dojoWait/dojoStop；顶层可配 type(dojo)/priority/order/loop(count|duration|until)；HP&lt;25% 自动停手。</div>';
+      + '<div class="log" id="dsh-scr-log" style="font-size:10px;max-height:72px;overflow:auto">动作：teleport/walk/battleOn/battleOff/useItem/stopMove/check/talk/store/loop/ifWeight/dojoStart/dojoWait/dojoStop；顶层可配 type(dojo)/priority/order/loop(count|duration|until)；HP&lt;25% 自动停手。导入：粘贴 JSON 点「导入上面的 JSON」，或用「从文件导入…」选 .json（支持一次多条）；脚本只存在本机浏览器，换电脑前先点「备份全部脚本到文件」。</div>';
     dock.appendChild(h);
     $id("dsh-scr-imp").onclick = function () { var v = $id("dsh-scr-json").value; scrImportRaw(($id("dsh-scr-name").value || "").trim(), v); if (v) $id("dsh-scr-json").value = ""; };
+    $id("dsh-scr-file").onclick = function () { var f = $id("dsh-scr-fileinput"); if (f) f.click(); };
+    $id("dsh-scr-fileinput").onchange = function () {
+      var f = this.files && this.files[0], msg = $id("dsh-scr-msg");
+      if (!f) return;
+      var rd = new FileReader();
+      rd.onload = function () { scrImportRaw(String(f.name || "").replace(/\.json$/i, ""), String(rd.result || "")); };
+      rd.onerror = function () { if (msg) msg.textContent = "文件读取失败"; };
+      try { rd.readAsText(f, "utf-8"); } catch (e) { if (msg) msg.textContent = "文件读取失败: " + e.message; }
+      this.value = "";
+    };
+    $id("dsh-scr-backup").onclick = function () { scrExportAll(); };
     $id("dsh-scr-tpl-dojo").onclick = function () { scrImportRaw("无限道场", JSON.stringify(DOJO_SCRIPT_TPL)); };
     $id("dsh-scr-clear").onclick = function () { $id("dsh-scr-json").value = ""; $id("dsh-scr-name").value = ""; };
     $id("dsh-scr-stop").onclick = function () { scrQueue = []; scrRun.stop = true; scrRun.running = false; if (scrRun.timer) { clearInterval(scrRun.timer); scrRun.timer = null; } try { stopWalkXY(); } catch (e) {} scrSetState("已停止", "warn"); scrLogLine("手动停止"); };
@@ -14098,16 +14146,38 @@
   function arrowPos(v){v=Number(v);return Number.isInteger(v)&&v>0?v:null;}
   // V2.36.0：旧挑战/道场迁移键（arrowLoad 与内置道馆 dojoLoad 共用，保证字面量只有一处）
   var CHALLENGE_KEY="dsh-ro-challenge-v1";
-  function arrowDefaults(){return {enabled:false,neutralItid:null,ghostItid:null,bossByMid:{}};}
-  function arrowLoad(){var d=arrowDefaults(),r=null,raw=null;try{raw=localStorage.getItem(ARROW_RULES_KEY);r=JSON.parse(raw||"null");}catch(e){}if(raw==null){try{var old=JSON.parse(localStorage.getItem(CHALLENGE_KEY)||"null");if(old&&typeof old==="object"){r={enabled:old.arrowOn===true,neutralItid:old.neutralItid,ghostItid:old.ghostItid,bossByMid:old.bossByMid};localStorage.setItem(ARROW_RULES_KEY,JSON.stringify(r));}}catch(e2){}}if(!r||typeof r!=="object")return d;d.enabled=r.enabled===true;d.neutralItid=arrowPos(r.neutralItid);d.ghostItid=arrowPos(r.ghostItid);if(r.bossByMid&&typeof r.bossByMid==="object")Object.keys(r.bossByMid).forEach(function(k){var mid=arrowPos(k),v=r.bossByMid[k],itid=arrowPos(v&&v.itid!=null?v.itid:v);if(mid&&itid)d.bossByMid[mid]=itid;});return d;}
+  function arrowDefaults(){return {enabled:false,defaultItid:null,byMid:{}};}
+  function arrowLoad(){var d=arrowDefaults(),r=null,raw=null;try{raw=localStorage.getItem(ARROW_RULES_KEY);r=JSON.parse(raw||"null");}catch(e){}if(raw==null){try{var oldc=JSON.parse(localStorage.getItem(CHALLENGE_KEY)||"null");if(oldc&&typeof oldc==="object"){r={enabled:oldc.arrowOn===true,defaultItid:oldc.neutralItid,byMid:oldc.bossByMid};localStorage.setItem(ARROW_RULES_KEY,JSON.stringify(r));}}catch(e2){}}if(!r||typeof r!=="object")return d;d.enabled=r.enabled===true;d.defaultItid=arrowPos(r.defaultItid)||arrowPos(r.neutralItid);var legacy=r.byMid&&typeof r.byMid==="object"?r.byMid:(r.bossByMid&&typeof r.bossByMid==="object"?r.bossByMid:null);if(legacy)Object.keys(legacy).forEach(function(k){var mid=arrowPos(k),v=legacy[k],itid=arrowPos(v&&v.itid!=null?v.itid:v);if(mid&&itid)d.byMid[mid]=itid;});return d;}
   var arrowRules=arrowLoad(),arrowTarget=null,arrowPending=null,arrowStatus="未启用",arrowBlocked=false,arrowReady=false;
   function arrowSave(){try{localStorage.setItem(ARROW_RULES_KEY,JSON.stringify(arrowRules));}catch(e){}}
-  function arrowDecision(raw,isBoss,mid,cfg){raw=Number(raw);if(!Number.isInteger(raw)||raw<0)return null;cfg=cfg||arrowRules;var type=raw%20,level=Math.floor(raw/20),neutral=arrowPos(cfg.neutralItid),ghost=arrowPos(cfg.ghostItid),v=cfg.bossByMid&&cfg.bossByMid[mid],boss=arrowPos(v&&v.itid!=null?v.itid:v);if(type===8&&level===3)return ghost?{kind:"ghost3",itid:ghost}:null;if(isBoss)return boss||neutral?{kind:boss?"boss":"neutral",itid:boss||neutral}:null;if(type===8&&level===4)return ghost?{kind:"ghost4",itid:ghost}:null;return neutral?{kind:"neutral",itid:neutral}:null;}
+  function arrowDecision(mid,cfg){cfg=cfg||arrowRules;var m=arrowPos(mid),v=m&&cfg.byMid?cfg.byMid[m]:null,itid=arrowPos(v&&v.itid!=null?v.itid:v);if(itid)return {kind:"mob",itid:itid};var def=arrowPos(cfg.defaultItid);return def?{kind:"default",itid:def}:null;}
   function arrowSay(s){arrowStatus=String(s);var e=$id("dsh-arrow-rules-status");if(e)e.textContent=arrowStatus;apiEmit("notice",{kind:"arrow",message:arrowStatus});}
   function arrowFill(s){if(!s)return;var old=s.value;s.innerHTML='<option value="">选择背包 type10 箭矢</option>';readBagArrows().forEach(function(x){var o=document.createElement("option");o.value=x.itid;o.textContent=(getItemName(x.itid)||("ITID "+x.itid))+" #"+x.itid+" ×"+x.count;s.appendChild(o);});s.value=old;}
-  function arrowFillBosses(s){if(!s)return;var old=s.value,db=getMobDb()||{};s.innerHTML='<option value="">选择 mob_db Boss</option>';Object.keys(db).filter(function(k){return db[k]&&Number(db[k].MvpDropsNum)>0;}).forEach(function(k){var o=document.createElement("option");o.value=k;o.textContent=(db[k].kName||db[k].name||db[k].Name||"Boss")+" #"+k;s.appendChild(o);});s.value=old;}
-  function arrowEnsureHost(){var h=$id("dsh-fw-arrowrules");if(h){arrowFill($id("dsh-arrow-rules-item"));arrowFillBosses($id("dsh-arrow-rules-boss"));return h;}var dock=$id("dsh-arrow-rules-dock");if(!dock){dock=document.createElement("div");dock.id="dsh-arrow-rules-dock";dock.style.display="none";document.documentElement.appendChild(dock);}h=document.createElement("div");h.id="dsh-fw-arrowrules";h.innerHTML='<div class="sec">换箭设置</div><label><input id="dsh-arrow-rules-enabled" type="checkbox">按目标属性自动换箭（默认关闭）</label><div class="row"><select id="dsh-arrow-rules-item"></select><button id="dsh-arrow-rules-neutral">设无属性</button><button id="dsh-arrow-rules-ghost">设念属性</button></div><div class="row"><select id="dsh-arrow-rules-boss"></select><button id="dsh-arrow-rules-bosssave">保存 Boss 箭</button></div><div id="dsh-arrow-rules-status" class="st"></div><div class="log">优先级：念3 → Boss专用/无属性 → 非Boss念4 → 无属性。外部目标换箭会暂时压住通用耗尽换箭。</div>';dock.appendChild(h);var en=$id("dsh-arrow-rules-enabled"),item=$id("dsh-arrow-rules-item"),boss=$id("dsh-arrow-rules-boss");en.checked=arrowRules.enabled;arrowFill(item);arrowFillBosses(boss);en.onchange=function(){arrowRules.enabled=en.checked;arrowSave();arrowSay(en.checked?"已启用":"已关闭");};$id("dsh-arrow-rules-neutral").onclick=function(){arrowRules.neutralItid=arrowPos(item.value);arrowSave();arrowSay("无属性箭已保存");};$id("dsh-arrow-rules-ghost").onclick=function(){arrowRules.ghostItid=arrowPos(item.value);arrowSave();arrowSay("念属性箭已保存");};$id("dsh-arrow-rules-bosssave").onclick=function(){var mid=arrowPos(boss.value),itid=arrowPos(item.value);if(mid&&itid)arrowRules.bossByMid[mid]=itid;arrowSave();arrowSay(mid&&itid?"Boss 箭已保存":"请选择 Boss 与箭矢");};arrowSay(arrowStatus);return h;}
-  function arrowTargetTick(now){arrowReady=false;arrowBlocked=!!arrowTarget;if(!arrowTarget||!arrowRules.enabled){arrowBlocked=!!arrowTarget&&arrowRules.enabled;return arrowBlocked;}var db=getMobDb(),m=db&&db[arrowTarget.mid];if(!m){arrowSay("阻塞：目标属性未知");return true;}var d=arrowDecision(m.Element!=null?m.Element:m.element,Number(m.MvpDropsNum)>0,arrowTarget.mid,arrowRules);if(!d||!d.itid){arrowSay("阻塞：所需箭矢未配置");return true;}var ammo=readEquippedAmmo();if(ammo&&Number(ammo.itid)===d.itid){arrowPending=null;arrowBlocked=false;arrowReady=true;arrowSay("已装备 "+d.kind+" #"+d.itid);return false;}var row=readBagArrows().filter(function(x){return Number(x.itid)===d.itid;})[0],p=arrowPending;if(!row){arrowSay("阻塞：背包缺少 #"+d.itid);return true;}if(p&&p.itid===d.itid){if(now<p.confirmUntil)return true;if(!p.retryAt){p.retryAt=now+3000;arrowSay("确认超时，3秒后重试");return true;}if(now<p.retryAt)return true;}if(equipArrow(row.index)){arrowPending={itid:d.itid,confirmUntil:now+5000,retryAt:0};arrowSay("换箭中 #"+d.itid);return true;}arrowSay("阻塞：装备请求失败");return true;}
+  function arrowKindName(k){return k==="mob"?"指定怪箭":"默认箭";}
+  function arrowMobName(mid){try{var m=(getMobDb()||{})[arrowPos(mid)];return m?(m.kName||m.name||m.Name||("怪物 #"+mid)):("怪物 #"+mid);}catch(e){return "怪物 #"+mid;}}
+  function arrowItemName(itid){try{return (getItemName(itid)||("ITID "+itid))+" #"+itid;}catch(e){return "ITID "+itid;}}
+  function arrowFillMobs(s,q){if(!s)return;var old=s.value,db=getMobDb()||{},needle=String(q||"").trim().toLowerCase(),keys=[];Object.keys(db).forEach(function(k){if(!arrowPos(k))return;if(needle&&arrowMobName(k).toLowerCase().indexOf(needle)<0&&String(k).indexOf(needle)<0)return;keys.push(k);});keys.sort(function(a,b){return Number(a)-Number(b);});s.innerHTML='<option value="">选择怪物（可先搜索）</option>';keys.forEach(function(k){var m=db[k]||{},o=document.createElement("option");o.value=k;o.textContent=arrowMobName(k)+" #"+k+(Number(m.MvpDropsNum)>0?" [Boss]":"");s.appendChild(o);});if(old&&keys.indexOf(old)>=0)s.value=old;}
+  function arrowRenderCfg(){var box=$id("dsh-arrow-rules-list");if(!box)return;box.innerHTML="";var def=arrowPos(arrowRules.defaultItid),r0=document.createElement("div");r0.className="row";var s0=document.createElement("span");s0.style.cssText="flex:1 1 auto";s0.textContent="默认箭："+(def?arrowItemName(def):"未设置（不换箭，保持当前装备）");r0.appendChild(s0);box.appendChild(r0);var ids=Object.keys(arrowRules.byMid).map(function(k){return arrowPos(k);}).filter(function(x){return !!x;});ids.sort(function(a,b){return a-b;});if(!ids.length){var e=document.createElement("span");e.className="st";e.textContent="未指定怪物：没配过的怪一律用默认箭。";box.appendChild(e);return;}ids.forEach(function(mid){var row=document.createElement("div");row.className="row";var t=document.createElement("span");t.style.cssText="flex:1 1 auto";t.textContent=arrowMobName(mid)+" #"+mid+" → "+arrowItemName(arrowRules.byMid[mid]);row.appendChild(t);var b=document.createElement("button");b.className="ghost";b.textContent="删除";b.style.cssText="flex:0 0 auto;padding:1px 8px;font-size:11px";b.addEventListener("click",function(){delete arrowRules.byMid[mid];arrowSave();arrowRenderCfg();arrowSay("已删除指定怪 #"+mid);});row.appendChild(b);box.appendChild(row);});}
+  function arrowCurrentMid(){try{var gid=gidInt(zLock&&zLock.gid);if(!gid)return 0;var list=apiEntities();for(var i=0;i<list.length;i++){if(list[i].gid===gid&&list[i].type===5&&list[i].mid)return list[i].mid;}}catch(e){}return 0;}
+  function arrowEnsureHost(){var h=$id("dsh-fw-arrowrules");if(h){arrowFill($id("dsh-arrow-rules-item"));arrowFill($id("dsh-arrow-rules-mobitem"));arrowFillMobs($id("dsh-arrow-rules-mob"),$id("dsh-arrow-rules-find")?$id("dsh-arrow-rules-find").value:"");arrowRenderCfg();return h;}var dock=$id("dsh-arrow-rules-dock");if(!dock){dock=document.createElement("div");dock.id="dsh-arrow-rules-dock";dock.style.display="none";document.documentElement.appendChild(dock);}h=document.createElement("div");h.id="dsh-fw-arrowrules";
+    h.innerHTML='<div class="sec">换箭设置</div>'
+      + '<label><input id="dsh-arrow-rules-enabled" type="checkbox">自动换箭（默认关闭）</label>'
+      + '<div class="row"><span class="lb" style="min-width:52px">默认箭</span><select id="dsh-arrow-rules-item"></select><button id="dsh-arrow-rules-default">设为默认</button></div>'
+      + '<div class="row"><span class="lb" style="min-width:52px">怪物</span><input id="dsh-arrow-rules-find" type="text" placeholder="搜索名字/ID" style="flex:0 0 76px"><select id="dsh-arrow-rules-mob"></select><button class="ghost" id="dsh-arrow-rules-cur">取当前目标</button></div>'
+      + '<div class="row"><span class="lb" style="min-width:52px">该怪箭</span><select id="dsh-arrow-rules-mobitem"></select><button class="green" id="dsh-arrow-rules-mobsave">保存指定怪箭</button></div>'
+      + '<div class="box"><div class="b-hd">已配置</div><div id="dsh-arrow-rules-list" style="font-size:11px;max-height:104px;overflow:auto"></div></div>'
+      + '<div id="dsh-arrow-rules-status" class="st"></div>'
+      + '<div class="log">规则：当前怪配过 → 用指定怪箭；没配过 → 用默认箭；默认箭没设 → 不换箭（保持当前装备）。外部目标换箭会暂时压住通用耗尽换箭。</div>';
+    dock.appendChild(h);
+    var en=$id("dsh-arrow-rules-enabled"),item=$id("dsh-arrow-rules-item"),mob=$id("dsh-arrow-rules-mob"),mobItem=$id("dsh-arrow-rules-mobitem"),find=$id("dsh-arrow-rules-find");
+    en.checked=arrowRules.enabled;arrowFill(item);arrowFill(mobItem);arrowFillMobs(mob,"");arrowRenderCfg();
+    en.onchange=function(){arrowRules.enabled=en.checked;arrowSave();arrowSay(en.checked?"已启用":"已关闭");};
+    $id("dsh-arrow-rules-default").onclick=function(){arrowRules.defaultItid=arrowPos(item.value);arrowSave();arrowRenderCfg();arrowSay(arrowRules.defaultItid?"默认箭已保存":"默认箭已清空（不换箭）");};
+    if(find)find.oninput=function(){arrowFillMobs(mob,find.value);};
+    $id("dsh-arrow-rules-cur").onclick=function(){var mid=arrowCurrentMid();if(!mid){arrowSay("取不到当前目标（先锁定或攻击一只怪）");return;}if(find)find.value="";arrowFillMobs(mob,"");if(!mob.querySelector('option[value="'+mid+'"]')){var o=document.createElement("option");o.value=String(mid);o.textContent=arrowMobName(mid)+" #"+mid;mob.appendChild(o);}mob.value=String(mid);arrowSay("已选中 "+arrowMobName(mid)+" #"+mid);};
+    $id("dsh-arrow-rules-mobsave").onclick=function(){var mid=arrowPos(mob.value),itid=arrowPos(mobItem.value);if(!mid||!itid){arrowSay("请选择怪物与箭矢");return;}arrowRules.byMid[mid]=itid;arrowSave();arrowRenderCfg();arrowSay("已保存 "+arrowMobName(mid)+" → "+arrowItemName(itid));};
+    arrowSay(arrowStatus);return h;}
+  function arrowTargetTick(now){arrowReady=false;arrowBlocked=!!arrowTarget;if(!arrowTarget||!arrowRules.enabled){arrowBlocked=!!arrowTarget&&arrowRules.enabled;return arrowBlocked;}var d=arrowDecision(arrowTarget.mid,arrowRules);if(!d||!d.itid){arrowPending=null;arrowBlocked=false;arrowReady=true;arrowSay("未配置箭矢，保持当前箭");return false;}var ammo=readEquippedAmmo();if(ammo&&Number(ammo.itid)===d.itid){arrowPending=null;arrowBlocked=false;arrowReady=true;arrowSay("已装备"+arrowKindName(d.kind)+" #"+d.itid);return false;}var row=readBagArrows().filter(function(x){return Number(x.itid)===d.itid;})[0],p=arrowPending;if(!row){arrowSay("阻塞：背包缺少 #"+d.itid);return true;}if(p&&p.itid===d.itid){if(now<p.confirmUntil)return true;if(!p.retryAt){p.retryAt=now+3000;arrowSay("确认超时，3秒后重试");return true;}if(now<p.retryAt)return true;}if(equipArrow(row.index)){arrowPending={itid:d.itid,confirmUntil:now+5000,retryAt:0};arrowSay("换箭中"+arrowKindName(d.kind)+" #"+d.itid);return true;}arrowSay("阻塞：装备请求失败");return true;}
   setInterval(function(){try{arrowTargetTick(Date.now());}catch(e){}},250);
 
   var API_PROTOCOL=1,apiGeneration=0,apiLease=null,apiMenuUsed="",apiNoticeObserver=null;

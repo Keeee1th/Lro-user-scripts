@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.36.5
+// @version      2.36.6
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -100,6 +100,8 @@
 // 2. 追怪候选同口径：锁定怪追怪池同样按「已攻击 > 身侧 > 血少 > 距离」排序，与索敌一致。
 // ---------------- V2.36.4 变更摘要 ----------------
 // 1. 脚本执行改为表单式设置：点「执行」弹出该脚本的设置界面（道馆=难度下拉 + 100轮暂停/无怪飞行/紧急飞行 三个开关 + 循环方式/次数/时长/条件 + 优先级/顺序），确认后保存并入队执行，不再只靠纯文字 JSON。
+// ---------------- V2.36.6 变更摘要 ----------------
+// 修复 MVP 计时器初始化顺序导致的崩溃，MVP 日志计时恢复可用（mvpEnsureState 惰性初始化，任意调用顺序都成立）。
 
 
 
@@ -127,7 +129,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.36.5"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.36.6"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -14297,10 +14299,17 @@
 
 
 // MVP_TIMER_START: 公告栏剩余时间以接收时刻为基准，关闭窗口不停止计时。
-  var mvpStoreKey = "dsh_mvp_timer_v1_cv_" + pickCv();
-  var mvpRecords = {};
-  try { mvpRecords = JSON.parse(localStorage.getItem(mvpStoreKey) || "{}"); } catch (e) {}
-  if (!mvpRecords || typeof mvpRecords !== "object" || Array.isArray(mvpRecords)) mvpRecords = {};
+  // V2.36.6：状态惰性初始化——mvpInit 在文件前段就被调用，此处（var 提升后）原先形同未初始化。
+  var mvpStoreKey = "", mvpRecords = null, mvpStateReady = false;
+  function mvpEnsureState() {
+    if (mvpStateReady) return; // 已初始化则直接返回，不重复读盘覆盖内存中的新数据
+    if (!mvpStoreKey) mvpStoreKey = "dsh_mvp_timer_v1_cv_" + pickCv();
+    var data = {};
+    try { data = JSON.parse(localStorage.getItem(mvpStoreKey) || "{}"); } catch (e) {}
+    if (!data || typeof data !== "object" || Array.isArray(data)) data = {};
+    mvpRecords = data; mvpStateReady = true;
+  }
+  mvpEnsureState();
   var mvpRecent = {}, mvpTimerBody = null, mvpActionStatus = null;
   function mvpParse(text, now) {
     var clean = String(text).replace(/\^[0-9a-f]{6}/gi, "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ");
@@ -14325,6 +14334,7 @@
     return rows;
   }
   function mvpReceive(text, force) {
+    mvpEnsureState();
     console.log('[MVP-DEBUG] mvpReceive called, text length:', text ? text.length : 0);
     var now = Date.now(), rows = mvpParse(text, now);
     console.log('[MVP-DEBUG] mvpParse returned rows:', rows.length);
@@ -14403,6 +14413,7 @@
     mvpScanDom(); setInterval(queue, 1500);
   }
   function mvpRender() {
+    mvpEnsureState();
     if (!mvpTimerBody || mvpTimerBody.hidden) return;
     mvpTimerBody.textContent = "";
     var rows = Object.keys(mvpRecords).map(function (k) { return mvpRecords[k]; }).filter(function (r) {
@@ -14439,6 +14450,7 @@
     } catch (e) { status("传送失败：" + e.message); }
   }
   function mvpInit() {
+    mvpEnsureState();
     var key = "dsh_mvp_window_v3", prefs = {};
     try { prefs = JSON.parse(localStorage.getItem(key) || "{}") || {}; } catch (e) {}
     function number(v, fallback, min, max) { return typeof v === "number" && isFinite(v) ? Math.max(min, Math.min(max, v)) : fallback; }

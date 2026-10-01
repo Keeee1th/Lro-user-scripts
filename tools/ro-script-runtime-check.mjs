@@ -679,16 +679,18 @@ test('exp 助手页三个窗口 DOM 归属正确且旧页签 UI 已移除', () =
   assert.ok(!(anc['dsh-scanen'] || '').includes('dsh-fw-zhu2'), '侦查扫描行必须自战斗设置移出');
 });
 
-test('exp 攻击名单与物品窗口拆分：mlock 独立、掉落树随 mlock、白名单/背包归 item', () => {
+test('exp 攻击名单与物品窗口拆分：mlock 独立、掉落树已随白名单回 item 页、白名单/背包归 item', () => {
   const html = expHtmlByAttr('data-subpage="ap-item"', '// 子页9');
   const anc = expAncestors(html);
   assert.ok(html.includes('id="dsh-fw-item"') && html.includes('id="dsh-fw-mlock"'));
   assert.ok(!(anc['dsh-fw-mlock'] || '').includes('dsh-fw-item'), '#dsh-fw-mlock 不得嵌套在 #dsh-fw-item 内');
-  assert.ok((anc['dsh-drop-tree'] || '').includes('dsh-fw-mlock'), '怪物掉落树应留在攻击名单窗口');
+  assert.ok((anc['dsh-drop-tree'] || '').includes('dsh-fw-item'), 'V2.36.13：怪物掉落树随「拾取白名单」回到物品拾取页');
   assert.ok((anc['dsh-z-maplock'] || '').includes('dsh-fw-mlock'), '本图攻击名单应在 mlock');
   assert.ok((anc['dsh-locklist'] || '').includes('dsh-fw-mlock'), '攻击名单列表应在 mlock');
   assert.ok((anc['dsh-lockcount'] || '').includes('dsh-fw-mlock'));
-  assert.ok((anc['dsh-mobsearch'] || '').includes('dsh-fw-mlock'), '怪物搜索（掉落树搜索）归攻击名单窗口');
+  assert.ok((anc['dsh-mobsearch'] || '').includes('dsh-fw-item'), 'V2.36.13：怪物搜索（掉落树搜索）随掉落树回物品拾取页');
+  assert.ok((anc['dsh-locksearch'] || '').includes('dsh-fw-mlock'), 'V2.36.13：攻击名单窗口的怪物搜索归 mlock');
+  assert.ok((anc['dsh-lockhits'] || '').includes('dsh-fw-mlock'), 'V2.36.13：攻击名单搜索结果区归 mlock');
   for (const id of ['dsh-wllist', 'dsh-wlcount', 'dsh-bag-state', 'dsh-bag-clean', 'dsh-picken', 'dsh-pickwalk', 'dsh-picksafe', 'dsh-pickmap', 'dsh-pickmapbtn']) assert.ok((anc[id] || '').includes('dsh-fw-item'), id + ' 应在 #dsh-fw-item');
 });
 
@@ -791,8 +793,8 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
   // 1) 版本号：稳定版与实验版都必须是 2.36.1（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.12', name + ' @version 必须是 2.36.12');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.12', name + ' 运行时常量 VER 必须是 2.36.12');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.13', name + ' @version 必须是 2.36.13');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.13', name + ' 运行时常量 VER 必须是 2.36.13');
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
   const stripHead = (s) => s.replace(/\r\n/g,'\n').split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
@@ -1164,8 +1166,8 @@ test('V2.34.5 战斗诊断快照 prof 字段已就位（不改既有字段）', 
 // ================= V2.34.5：配置自动备份（两代）/ 黄金副本找回（纯函数真值表 / 按钮 / 键隔离）=================
 test('V2.34.5 版本号升到 2.34.5（@version 与运行时常量一致，两文件同步）', () => {
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.12', name + ' @version 必须是 2.36.12');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.12', name + ' 运行时常量 VER 必须是 2.36.12');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.13', name + ' @version 必须是 2.36.13');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.13', name + ' 运行时常量 VER 必须是 2.36.13');
   }
 });
 
@@ -1283,7 +1285,7 @@ test('V2.34.5 备份轮转：首轮写 .bak/.bak2、同一次加载第二次不�
 function battleVm(){let now=0,id=1;const timers=new Map(),packets=[];const code=extract('  function npBattleState() {','  $id("dsh-battleon")');const ctx={Math,Date:{now:()=>now},npBattleKnown:false,npHuntOn:false,npBattleLastSentAt:-Infinity,npBattleConfirmedAt:0,npBattleCandidate:null,npBattleExplicit:null,npBattleExplicitTimer:null,setTimeout(fn,ms){const n=id++;timers.set(n,{fn,at:now+ms});return n},clearTimeout(n){timers.delete(n)},npToggleHunt(){packets.push(ctx.want);return ctx.send!==false},npSyncBattleCheckbox(){},tlog(){}};vm.createContext(ctx);vm.runInContext(code+';this.req=npRequestBattle;this.reset=npResetBattleState',ctx);return{ctx,packets,req(w,s,i){ctx.want=w;return ctx.req(w,s,i)},tick(ms){now+=ms;for(const[n,t]of[...timers])if(t.at<=now){timers.delete(n);t.fn()}},pending:()=>timers.size}}
 test('V2.34.6 VM auto debounce stability oscillation and liveness',()=>{let h=battleVm();h.req(true,'auto',false);h.tick(800);h.req(true,'auto',false);for(let i=0;i<20;i++){h.tick(250);h.req(true,'auto',false)}assert.deepEqual(h.packets,[true]);h=battleVm();for(let i=0;i<40;i++){h.req(i%2===0,'auto',false);h.tick(250)}assert.equal(h.packets.length,0);h=battleVm();h.req(true,'auto',false);h.tick(800);h.req(true,'auto',false);h.req(false,'auto',false);h.tick(800);h.req(false,'auto',false);assert.deepEqual(h.packets,[true,false])});
 test('V2.34.6 VM explicit latest wins finite queue failure and reset',()=>{let h=battleVm();h.req(true,'click',true);h.tick(100);h.req(false,'click',true);h.tick(100);assert.equal(h.req(true,'click',true),'already');h.tick(500);assert.deepEqual(h.packets,[true]);assert.equal(h.pending(),0);h=battleVm();h.ctx.send=false;assert.equal(h.req(true,'click',true),'failed');assert.equal(h.ctx.npBattleKnown,false);assert.equal(h.ctx.npBattleLastSentAt,-Infinity);h=battleVm();h.req(true,'click',true);h.tick(100);h.req(false,'click',true);h.ctx.reset();h.tick(1000);assert.deepEqual(h.packets,[true]);assert.equal(h.pending(),0)});
-test('V2.34.6 structure guards shared entry points incremental receipt and local display',()=>{for(const src of[source,expSource]){const btn=src.slice(src.indexOf('$id("dsh-np-atk")'),src.indexOf('$id("dsh-np-pick")'));assert.ok(btn.includes('setBattle(true)'));assert.doesNotMatch(btn,/npCmd|npToggleHunt/);const hk=src.slice(src.indexOf('  function npToggleFight()'),src.indexOf('  // 助手自动战斗快捷键'));assert.ok(hk.includes('npRequestBattle(want, "hotkey", true)'));assert.equal((src.match(/npToggleHunt\(\)/g)||[]).length,2);const paint=src.slice(src.indexOf('  function qswPaint()'),src.indexOf('  try {',src.indexOf('  function qswPaint()')+10));assert.doesNotMatch(paint,/npReadPanelState|npHuntOn\s*=/);assert.ok(src.includes('npResetBattleState(); } catch (e0) {} // 换角色'));assert.ok(src.includes('npChatSeen.has(p)'));assert.ok(src.includes('var bsLocal = npBattleState(), bsPanel = npReadPanelState()'))}});
+test('V2.34.6 structure guards shared entry points incremental receipt and local display',()=>{for(const src of[source,expSource]){const btn=src.slice(src.indexOf('$id("dsh-np-atk")'),src.indexOf('$id("dsh-np-pick")'));assert.ok(btn.includes('setBattle(true)'));assert.doesNotMatch(btn,/npCmd|npToggleHunt/);const hk=src.slice(src.indexOf('  function npToggleFight()'),src.indexOf('  // 助手自动战斗快捷键'));assert.ok(hk.includes('npRequestBattle(want, "hotkey", true)'));assert.equal((src.match(/npToggleHunt\(\)/g)||[]).length,3);const paint=src.slice(src.indexOf('  function qswPaint()'),src.indexOf('  try {',src.indexOf('  function qswPaint()')+10));assert.doesNotMatch(paint,/npReadPanelState|npHuntOn\s*=/);assert.ok(src.includes('npResetBattleState(); } catch (e0) {} // 换角色'));assert.ok(src.includes('npChatSeen.has(p)'));assert.ok(src.includes('var bsLocal = npBattleState(), bsPanel = npReadPanelState()'))}});
 
 test('V2.34.6 explicit OFF after ON waits remainder then sends once',()=>{const h=battleVm();h.req(true,'on',true);h.tick(100);assert.equal(h.req(false,'off',true),'queued');h.tick(249);assert.deepEqual(h.packets,[true]);h.tick(1);assert.deepEqual(h.packets,[true,false]);assert.equal(h.pending(),0)});
 test('V2.34.6 failed explicit timer clears without periodic retry',()=>{const h=battleVm();h.req(true,'on',true);h.tick(100);h.ctx.send=false;h.req(false,'off',true);h.tick(250);assert.equal(h.pending(),0);assert.equal(h.ctx.npBattleExplicit,null);h.tick(30000);assert.equal(h.packets.length,2)});
@@ -1409,13 +1411,13 @@ test('bagClean v2 UI and storage contract is lockstep and documents unsupported 
 
 // ================= V2.35.1 assistant API + standalone dojo =================
 const splitSources=[['stable',source],['exp',expSource]];
-test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.36\.12/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
+test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.36\.13/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
 test('V2.35.1 public API uses owner-only external signatures and validates the current lease owner',()=>{for(const[,s]of splitSources){assert.ok(s.includes('/^[A-Za-z0-9_.:-]{8,128}$/'));assert.ok(s.includes('dojo:1,battle:1,movement:1,dialog:1,arrow:1,fly:1'));assert.ok(s.includes('if(apiLease&&apiLease.owner!==owner)'));for(const sig of ['apiHas(owner,scope)','apiSnapshot(owner)','apiRelease(owner)','apiContact(owner,gid)','apiWalk(owner,payload)','apiChoose(owner,payload)','apiBattle(owner,on)','apiSetArrow(owner,target)','apiClearArrow(owner)','apiFly(owner,payload)'])assert.ok(s.includes('function '+sig),sig);assert.ok(s.includes('apiLease.generation===generation'));assert.ok(!s.includes('apiHas(owner,generation'));}});
 test('V2.35.1 snapshot and battle/menu ownership contracts are explicit',()=>{for(const[,s]of splitSources){for(const key of ['ready:','map:','player:','mobs:','npcs:','target:','inDojoMap:','dialogOpen:','menu:','battleState:','busy:','arrow:'])assert.ok(s.includes(key),key);assert.ok(s.includes('if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"}'));assert.ok(s.includes('b.state="pending-on"'));assert.ok(s.includes('if(b.state!=="owned")return {ok:true,result:"not-owned"}'));assert.ok(s.includes('l.battle.state==="owned"||l.battle.state==="pending-off"'));assert.ok(s.includes('if(s!==false)return {ok:true,result:s===true?"preexisting":"unknown"}'));}});
 test('V2.36.11 arrow rules use a per-monster table plus a default arrow',()=>{for(const[name,s]of splitSources){
   assert.ok(s.includes('function arrowDecision(mid,cfg)'),name+' 决策改为按怪物 id');
-  assert.ok(s.includes('if(itid)out.push({kind:"mob",itid:itid})'),name+' 指定怪箭优先');
-  assert.ok(s.includes('var def=arrowPos(cfg.defaultItid)'),name+' 回退默认箭');
+  assert.ok(s.includes('add("elem",ev)')&&s.includes('add("mob",v&&v.itid!=null?v.itid:v)'),name+' 属性箭 > 指定怪箭');
+  assert.ok(s.includes('add("default",cfg.defaultItid)'),name+' 回退默认箭');
   assert.ok(s.includes('defaultItid=arrowPos(r.defaultItid)||arrowPos(r.neutralItid)'),name+' 旧无属性箭迁移为默认箭');
   assert.ok(s.includes('legacy=r.byMid&&typeof r.byMid==="object"?r.byMid'),name+' 旧 Boss 箭表迁移');
   assert.ok(s.includes('id="dsh-arrow-rules-default"'),name+' 默认箭按钮');
@@ -1426,7 +1428,7 @@ test('V2.36.11 arrow rules use a per-monster table plus a default arrow',()=>{fo
   assert.ok(s.includes('confirmUntil:now+5000')&&s.includes('p.retryAt=now+3000'),name+' 换箭确认重试保留');
 }});
 test('V2.36.12 arrow decision picks the override then the default and stays silent when nothing is configured',()=>{
-  const code=extract('  function arrowPos(v)','  function arrowLoad(){')+extract('  function arrowBoss(mid)','  function arrowSay(');
+  const code=extract('  function arrowPos(v)','  function arrowLoad(){')+extract('  function arrowBoss(mid)','  function arrowFill(s)');
   const ctx={};vm.createContext(ctx);vm.runInContext(code+';this.decide=arrowDecision',ctx);
   assert.equal(ctx.decide(1002,{byMid:{},defaultItid:null}),null,'没配置任何箭 → 不换箭');
   assert.equal(JSON.stringify(ctx.decide(1002,{byMid:{1002:1751},defaultItid:1750})),JSON.stringify({kind:'mob',itid:1751}),'指定怪优先');
@@ -1445,7 +1447,7 @@ test('V2.36.12 换箭跟随当前攻击目标：助手锁定 → 客户端锁定
 }});
 test('V2.36.12 缺箭兜底 + 箭矢筒按当前箭矢匹配',()=>{for(const[name,s]of splitSources){
   assert.ok(s.includes('function arrowCandidates(mid,cfg)'),name+' 候选箭列表');
-  assert.ok(s.includes('if(def&&def!==itid)out.push({kind:"default",itid:def})'),name+' 默认箭兜底');
+  assert.ok(s.includes('function add(kind,itid){itid=arrowPos(itid);if(!itid||seen[itid])return'),name+' 默认箭兜底');
   assert.ok(s.includes('function arrowQuiverFor(itid)'),name+' 必须有箭矢筒匹配');
   assert.ok(s.includes('/[筒袋囊]$/'),name+' 只认箭矢筒/袋/囊');
   assert.ok(s.includes('base==="魔法"+want'),name+' 魔法前缀箭矢筒要认');
@@ -1453,7 +1455,7 @@ test('V2.36.12 缺箭兜底 + 箭矢筒按当前箭矢匹配',()=>{for(const[nam
   assert.ok(s.includes('箭矢筒（风灵箭矢 → 风灵箭矢筒'),name+' 窗口说明要写箭矢筒');
 }});
 test('V2.36.12 按目标换箭行为：换指定箭 / 缺箭用默认箭 / 没配不动 / 缺箭开对应箭矢筒',()=>{
-  const code=extract('  function arrowPos(v)','  function arrowLoad(){')+extract('  function arrowBoss(mid)','  function arrowSay(')+extract('  var arrowSelfPending=null,arrowSelfSaid="",arrowQuiverAt=0;','  function arrowEnsureHost(){');
+  const code=extract('  function arrowPos(v)','  function arrowLoad(){')+extract('  function arrowBoss(mid)','  function arrowFill(s)')+extract('  var arrowSelfPending=null,arrowSelfSaid="",arrowQuiverAt=0;','  function arrowEnsureHost(){');
   const names={1750:'弓箭',1751:'银箭矢',1755:'风灵箭矢',1757:'无形箭矢',12010:'风灵箭矢筒',22107:'魔法风灵箭矢筒',22119:'魔法无形箭矢筒'};
   function mk(cfg,mid,ammo,bag,inv){
     const ctx={};vm.createContext(ctx);
@@ -1467,7 +1469,7 @@ test('V2.36.12 按目标换箭行为：换指定箭 / 缺箭用默认箭 / 没�
       +'this.externalAutomationOwns=function(){return false;};'
       +'this.arrowKindName=function(k){return k==="mob"?"指定怪箭":"默认箭";};this.arrowMobName=function(m){return "怪"+m;};this.arrowItemName=function(i){return "箭"+i;};'
       +'this.used=[];this.equipped=[];this.said=[];'
-      +code+';this.tick=arrowSelfTick;this.quiver=arrowQuiverFor;this.want=arrowSelfWanted;',ctx);
+      +code+';this.tick=function(t){arrowSelfTick(t);arrowSelfTick(t+2000);};this.quiver=arrowQuiverFor;this.want=arrowSelfWanted;',ctx);
     return ctx;
   }
   let c=mk({enabled:true,defaultItid:1750,byMid:{1002:1751}},1002,{index:9,itid:1750,count:100},[{index:5,itid:1751,count:500}]);
@@ -2015,3 +2017,59 @@ test('v2.36.4 脚本执行：点「执行」弹表单设置界面', () => {
     assert.ok(s.includes('scrRunScript(idx)'), name + ' 确认后入队执行');
   }
 });
+
+
+// ================= V2.36.13 走路拾取下线 / 内挂校对 / 属性箭 / 防抖粘性 =================
+test('V2.36.13 走路拾取暂时下线：三条拾取路径都被同一个开关挡住，界面标注暂时下线',()=>{for(const[name,s]of splitSources){
+  assert.ok(s.includes('var PICKUP_WALK_OFF = true;'),name+' 总开关必须存在且默认下线');
+  assert.ok(s.includes('if (!PICKUP_WALK_OFF && wl[String(itid)]'),name+' 掉落钩子路径已挡');
+  assert.ok(s.includes('var en = !PICKUP_WALK_OFF && $id("dsh-picken")'),name+' 5 秒轮询路径已挡');
+  assert.ok(s.includes('if (PICKUP_WALK_OFF) return;'),name+' 走过去拾取已挡');
+  assert.ok(s.includes('id="dsh-pickoff"'),name+' 界面必须标注暂时下线');
+  assert.ok(s.includes('id="dsh-wllist"'),name+' 白名单数据/界面保留（只是走路拾取下线）');
+}});
+test('V2.36.13 攻击名单怪物搜索：整行点选加入 + 跳转（游戏内导航魔物搜索）/小册子两个入口',()=>{for(const[name,s]of splitSources){
+  assert.ok(s.includes('function renderLockHits(kw)'),name+' 搜索结果渲染');
+  assert.ok(s.includes('data-lockadd='),name+' 整行可点加入名单');
+  assert.ok(s.includes('data-mobgoto='),name+' 行尾跳转入口');
+  assert.ok(s.includes('requireDB("UI/Components/Navigation")'),name+' 跳转用客户端导航窗口');
+  assert.ok(s.includes('Nav.onSearch()'),name+' 直接调用客户端搜索（不是自己造协议）');
+  const ref=s.slice(s.indexOf('function mobRefLinksHtml(mid)'),s.indexOf('function mobRefLinksHtml(mid)')+600);
+  assert.ok(!/ro321/i.test(ref),name+' 旧 RO321「数量」外链必须从攻击名单入口移除');
+  assert.ok(ref.includes('小册子'),name+' 小册子外链保留');
+}});
+test('V2.36.13 内挂状态快速校对：回执优先 → 关；读到开启立刻关回去；超时宽松兜底',()=>{for(const[name,s]of splitSources){
+  assert.ok(s.includes('function npProbeBattle(reason, done)'),name+' 校对实现');
+  assert.ok(s.includes('if (npBattleConfirmedAt >= from) return cb(!!npHuntOn);'),name+' 聊天回执是权威');
+  assert.ok(s.includes('tap("restore");'),name+' 读到开启必须立刻关回去');
+  assert.ok(s.includes('tap("restore-timeout");'),name+' 读不到回执也要再关一次');
+  assert.ok(s.includes('id="dsh-np-probe"'),name+' 功能菜单里能手动点');
+  assert.ok(s.includes('npApplyBattleState(false, "probe")'),name+' 校对结束必须落成关闭态');
+}});
+test('V2.36.13 死亡回图布防：助手模式不再依赖内挂状态，读不到就校对一次/明确不布防',()=>{for(const[name,s]of splitSources){
+  assert.ok(s.includes('var mode = zRunning ? "assistant" : npNow === true ? "builtin" : "";'),name+' 助手模式只认助手在跑');
+  assert.ok(s.includes('npProbeBattle("death-arm"'),name+' 读不到内挂状态时自动校对一次');
+  assert.ok(s.includes('内挂状态未知：发起一次快速校对'),name+' 必须明确提示，不能静默');
+  assert.ok(s.includes('本图没在挂战斗（助手没跑、内挂也没开），暂不布防'),name+' 无战斗模式时如实提示');
+  assert.ok(s.includes('var npBusy = r.mode === "assistant" ? false :'),name+' 助手模式不再把未知态当异常取消');
+}});
+test('V2.36.13 属性→箭：十属性表 + 优先级 属性箭>指定怪箭>默认箭 + 元素码表',()=>{for(const[name,s]of splitSources){
+  assert.ok(s.includes('var ARROW_ELEM_ORDER=["火","水","风","地","毒","圣","暗","念","不死","无"]'),name+' 十个属性');
+  assert.ok(s.includes('var MOB_ELEM_RAW="'),name+' 内嵌元素表');
+  assert.ok(s.includes('add("elem",ev)'),name+' 属性箭优先级最高');
+  assert.ok(s.includes('add("mob",v&&v.itid!=null?v.itid:v)'),name+' 指定怪箭第二');
+  assert.ok(s.includes('add("default",cfg.defaultItid)'),name+' 默认箭兜底');
+  assert.ok(s.includes('k==="elem"?"属性箭"'),name+' 状态文案要有属性箭');
+  assert.ok(s.includes('arrowFillElemSelect(sel,arrowPos(arrowRules.byElem[en]))'),name+' 十行下拉都要能配');
+  assert.ok(s.includes('byMid:{},byElem:{}'),name+' 配置结构含 byElem');
+  assert.ok(s.includes('if(ARROW_ELEM_ORDER.indexOf(String(k))>=0&&eit)d.byElem[String(k)]=eit;'),name+' 读取时校验属性名');
+}});
+test('V2.36.13 换箭防抖 1.5 秒 + 大 MVP 30 秒粘性',()=>{for(const[name,s]of splitSources){
+  assert.ok(s.includes('ARROW_STABLE_MS=1500'),name+' 1.5 秒防抖');
+  assert.ok(s.includes('ARROW_BOSS_KEEP_MS=30000'),name+' boss 粘性 30 秒');
+  assert.ok(s.includes('function arrowStableGate(key,now)'),name+' 防抖实现');
+  assert.ok(s.includes('function arrowEffectiveMid(mid,gid,now)'),name+' 有效目标（含粘性）');
+  assert.ok(s.includes('function arrowBossAlive(mid,gid)'),name+' 粘性要求 boss 还在实体列表');
+  assert.ok(s.includes('if(!arrowStableGate("s"+mid,now))'),name+' 助手换箭要过防抖门');
+  assert.ok(s.includes('if(!arrowStableGate("t"+midUse+"@"+arrowTarget.gid,now))'),name+' 道场/外部换箭也要过防抖门');
+}});

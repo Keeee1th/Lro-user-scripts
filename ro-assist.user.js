@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.36.12
+// @version      2.36.13
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -30,7 +30,7 @@
 //     window storage 事件跨标签页实时刷新；新增 fwReg 传送点悬浮条（点击直传，保持无确认）。
 // 5.  队伍血条重做：团本式职业色块 2 列矩阵（名字+HP 压块上、白字四向黑描边、选中=放大+光晕+名字变金），
 //     点击色块锁定该队友（写 zLock + 发一次 REQUEST_ACT action=7；拖拽位移>3px 不触发选中）。
-// 8.  攻击名单/本图怪物/掉落树按怪物ID加外链：「数量」→RO321 re_mob_db、「资料」→ro.dvg.cn monsterinfo。
+// 8.  攻击名单的怪物搜索：每行一只怪，点整行直接加入名单；行尾「跳转」=打开游戏内导航·魔物搜索该怪，「小册子」=ro.dvg.cn 资料外链（旧「数量」RO321 外链已移除）。
 // 6.  tools/progress.mjs 8898 服务新增 GET /monster-sprites/by-id/<id>.png（前缀匹配 mob_<id>_*.png，未命中回 1x1 透明 png，id 仅数字防目录遍历）。
 
 // ---------------- V2.30.0 变更摘要 ----------------
@@ -113,6 +113,17 @@
 // 3) 自启配置不完整：用脚本 DEFAULTS 自启缺少新引擎必需的 lastroProtocol / lastroCustomPackets / 各 charset / packetKeys / servers(数组) 等字段，
 //    引擎在模块初始化 hook NOTIFY_LOADINFO 抛 Packet not yet register "LoadInfo" 后中断启动，依旧黑屏。改为以宿主页 window.ROConfigBase 为基底自启。
 // 原站 post.lastro.cn / game.lastro.cn 的启动判据、注入方式与配置来源全部保持不变。
+// ---------------- V2.36.13 变更摘要 ----------------
+// 本地数据源探测改三层（顺序固定）：① 页面同源（宿主页由 ro-helper 提供，端口任意，无跨域）→ ② 固定端口 127.0.0.1:8971 → ③ 都失败才回落原站 /ro/client_re/；探测失败不抛异常、不中断启动。
+// 2. 走路拾取暂时下线：掉落钩子 / 5 秒轮询 / 走过去拾取三条路径被同一个开关挡住，界面标注「暂时下线」；白名单数据与掉落树保留，掉落树移回「物品拾取」页。
+// 3. 内挂自动战斗新增「校对内挂状态」按钮：快速点一次内挂开关并读聊天回执——读到「关闭自动战斗」就停；读到「开启自动战斗」立刻再关回去；1.5 秒读不到回执就用面板 checked 宽松兜底（读不到也再关一次）。
+//    结束状态固定为关闭，悬浮球 [内] 同步刷新；整个流程 ≤4 秒，不做严格前置判定。
+// 4. 死亡后返回目标地图：助手模式只认「助手在跑」，不再要求内挂状态可读（原先内挂未知就不布防 = 静默失效）；非助手模式读不到内挂状态时自动做一次快速校对，仍未知则明确提示「本图不布防」。
+// 5. 攻击名单窗口新增怪物搜索：一行一只怪，点整行直接加入名单（已在名单的显示「已在名单」，解除仍在名单行操作）；行尾两个入口——「跳转」打开游戏内导航的魔物搜索（DB.searchNavigation(name,'MOB')），
+//    「小册子」=DVG 资料外链；旧的「数量」RO321 外链移除。
+// 6. 换箭新增「属性 → 箭」：火/水/风/地/毒/圣/暗/念/不死/无 十行，留空=不强制；优先级 属性箭 > 指定怪箭 > 默认箭，都没有则保持当前箭。元素表内嵌全量怪物属性（2471 只），
+//    真实换箭仍要求背包里有这支箭。
+// 7. 换箭防抖 + boss 粘性：目标刚换先等 1.5 秒确认再换；大 MVP（MvpDropsNum>0）30 秒内还在实体列表里就保持它的箭，随机刷新图不再乱换。
 // ---------------- V2.36.12 变更摘要 ----------------
 // 1. 换箭改成按「当前攻击的那只怪」换：不再只有道场生效——助手挂机的锁定目标优先，其次客户端锁定的那只怪（内挂自动战斗、手动普攻都是它），
 //    最后是最近被我打伤的怪（技能伤害也算）。野外图、野外 Boss、Boss 副本都能按怪换箭。
@@ -163,7 +174,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.36.12"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.36.13"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -327,7 +338,16 @@
     ClientVer: pickCv(),
     pushplusToken: null // V2.36.0：全局键 dsh_ro_plugin_v1 的新字段（pushplus 推送 token，空=未配置）
   };
-  var LOCAL_DATA = "http://127.0.0.1:8973/ro/client_re/"; // 本地镜像（毫秒级，避免原站数据卡死）
+  // V2.36.13：本地数据源三层探测候选（顺序固定）——① 页面同源（宿主页由 ro-helper 提供，端口任意，同源无跨域）
+  // ② 固定端口 8971（ro-helper 默认页端口）；两者都不可用才回落下方 REMOTE_DATA 原站。
+  var DATA_CANDIDATES = (function () {
+    var list = [];
+    function push(u) { if (list.indexOf(u) < 0) list.push(u); }
+    try { if (/^(127\.0\.0\.1|localhost)$/.test(location.hostname)) push(location.origin + "/client_re/"); } catch (e) {}
+    push("http://127.0.0.1:8971/client_re/");
+    return list;
+  })();
+  var LOCAL_DATA = ""; // 本地镜像根：探测命中后写入选中候选（毫秒级，避免原站数据卡死）
   var REMOTE_DATA = "/ro/client_re/";                        // 原站数据
   var useLocalData = false;
 
@@ -432,20 +452,33 @@
 
   // 探测本地数据服务器是否可用（带 1.5s 超时），可用则数据走本地（秒开，不卡加载）
   function detectDataServer(cb) {
-    try {
-      var xhr = new XMLHttpRequest();
-      xhr.open("GET", LOCAL_DATA + "data/clientinfo.xml", true);
-      xhr.timeout = 1500;
-      xhr.onload = function () {
-        useLocalData = xhr.status === 200 && xhr.responseText.indexOf("clientinfo") !== -1;
-        if (useLocalData) setStatus("本地数据源（加载秒开）", "ok");
-        tlog("detect=" + (useLocalData ? "local" : "remote-fallback") + " status=" + xhr.status);
-        cb();
-      };
-      xhr.onerror = function () { useLocalData = false; tlog("detect=error"); cb(); };
-      xhr.ontimeout = function () { useLocalData = false; tlog("detect=timeout"); cb(); };
-      xhr.send();
-    } catch (e) { useLocalData = false; cb(); }
+    useLocalData = false;
+    var ci = 0;
+    function finish() { try { cb(); } catch (e) {} } // 任何一层失败都不抛异常、不中断启动
+    function tryNext() {
+      if (ci >= DATA_CANDIDATES.length) { tlog("detect=remote-fallback candidates=" + DATA_CANDIDATES.length); return finish(); }
+      var base = DATA_CANDIDATES[ci++];
+      try {
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", base + "data/clientinfo.xml", true);
+        xhr.timeout = 1500;
+        xhr.onload = function () {
+          if (xhr.status === 200 && xhr.responseText.indexOf("clientinfo") !== -1) {
+            useLocalData = true;
+            LOCAL_DATA = base;
+            setStatus("本地数据源（加载秒开）", "ok");
+            tlog("detect=local status=" + xhr.status + " base=" + base);
+            return finish();
+          }
+          tlog("detect=candidate-fail status=" + xhr.status + " base=" + base);
+          tryNext();
+        };
+        xhr.onerror = function () { tlog("detect=error base=" + base); tryNext(); };
+        xhr.ontimeout = function () { tlog("detect=timeout base=" + base); tryNext(); };
+        xhr.send();
+      } catch (e) { tlog("detect=exception base=" + base); tryNext(); }
+    }
+    tryNext();
   }
 
   function boot() {
@@ -846,7 +879,8 @@
       '<div class="sec">快速开关（直接发包给服务器，不依赖内挂窗口是否打开）</div>' +
       '<div class="row"><button id="dsh-np-atk" style="flex:0 0 auto">开自动战斗</button>' +
       '<button class="ghost" id="dsh-np-pick" style="flex:0 0 auto">开自动拾取</button>' +
-      '<button class="ghost" id="dsh-np-eat" style="flex:0 0 auto">开自动吃药</button></div>' +
+      '<button class="ghost" id="dsh-np-probe" style="flex:0 0 auto">校对内挂状态</button></div>' +
+      '<div class="row"><span class="st" style="font-size:10px">校对=快速点一次内挂开关并读回执：读到「关闭」就停；读到「开启」立刻关回去（结束一定=关闭，同步悬浮球[内]开关显示）。</span></div>' +
       '<div class="row"><span class="lb">寻怪模式</span><select id="dsh-np-huntmode" style="flex:0 0 96px">' +
       '<option value="0" selected>移动寻怪</option><option value="1">范围寻怪</option><option value="2">原地寻怪</option></select>' +
       '<button class="ghost" id="dsh-np-hunt" style="flex:0 0 auto">发送寻怪模式</button></div>' +
@@ -1092,7 +1126,7 @@
       '<button class="ghost" id="dsh-lootread" style="flex:0 0 auto">读内挂设置</button>' +
       '<button class="ghost" id="dsh-lootwrite" style="flex:0 0 auto">写回内挂</button></div>' +
       '<div class="log">数值直接读取/写回游戏内挂的拾取设置（#lootProbability + .openpick），拾取由内挂自己跑。</div>' +
-      '<div class="sec">② 指定 ID 拾取（怪物掉落树 · 点选物品加入）</div>' +
+      '<div class="sec">② 指定 ID 拾取（走路拾取 · 暂时下线；掉落树仍可查掉落并加白名单）</div>' +
       '<div class="row"><span class="lb">当前地图</span><span class="st" id="dsh-pickmap" style="flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—（未进图）</span>' +
       '<button class="ghost" id="dsh-pickmapbtn" style="flex:0 0 auto">本图怪物掉落</button></div>' +
       '<div class="box"><div class="b-hd">当前白名单 <span class="tag green" id="dsh-wlcount" style="float:right">0 个物品ID</span></div>' +
@@ -1100,10 +1134,15 @@
       '<div class="row" style="margin-top:2px"><span class="lb">物品ID</span><input id="dsh-wlid" type="text" placeholder="数字ID" style="flex:0 0 88px">' +
       '<button class="ghost" id="dsh-wladdbtn" style="flex:0 0 auto">＋加入</button><span class="st" style="font-size:10px">手动加ID到白名单（替代原「搜物品」）</span></div>' +
       '</div>' +
-      '<div class="row"><label class="switch"><input id="dsh-picken" type="checkbox">启用指定ID自动拾取</label><span class="st" id="dsh-pickstate" style="margin-left:auto"></span><span class="st" id="dsh-picklog"></span></div>' +
-      '<div class="row"><label class="switch"><input id="dsh-pickwalk" type="checkbox" checked>距离不足自动走过去捡</label></div>' +
-      '<div class="row"><label class="switch"><input id="dsh-picksafe" type="checkbox" checked>危险时不走过去捡（Boss/低血/低SP 在场）</label></div>' +
-      '<div class="log">白名单=指定ID自动拾取要捡的物品ID（掉落树勾选或上方输入ID「＋加入」）；物品一落地即检测白名单并自动拾取（15格内）。「本图怪物掉落」在攻击名单窗口的掉落树里展开勾选。</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-picken" type="checkbox" disabled>启用指定ID自动拾取（走路拾取）</label><span class="tag" id="dsh-pickoff" style="flex:0 0 auto">暂时下线</span><span class="st" id="dsh-pickstate" style="margin-left:auto"></span><span class="st" id="dsh-picklog"></span></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-pickwalk" type="checkbox" checked disabled>距离不足自动走过去捡</label></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-picksafe" type="checkbox" checked disabled>危险时不走过去捡（Boss/低血/低SP 在场）</label></div>' +
+      '<div class="log">走路拾取（指定ID自动拾取）已暂时下线：白名单里已选好的物品ID会保留，但脚本不会再去捡、也不会走过去捡。掉落树放在这里方便你查掉落、先把物品ID加进白名单，功能恢复后立即生效。白名单与下方「背包整理 / 丢弃黑名单」是两件事。</div>' +
+      '<div class="row"><input id="dsh-mobsearch" type="text" placeholder="搜索怪物名/ID…（全量图鉴）">' +
+      '<button class="ghost" id="dsh-mobsearchbtn" style="flex:0 0 auto">搜索</button>' +
+      '<button class="ghost" id="dsh-mobsearchclr" style="flex:0 0 auto">清空</button></div>' +
+      '<div id="dsh-drop-tree" style="font-size:11px;max-height:200px;overflow:auto">' +
+      '<div class="st">怪物掉落树：点「本图怪物掉落」直接看当前地图怪 → 展开勾选物品加入白名单；也可搜索。</div></div>' +
       '<div class="sec">背包整理（丢弃黑名单 · 类别规则）</div>' +
       '<div class="row"><span class="st" id="dsh-bag-state" style="font-size:10px">未初始化（登录后自动就绪）</span></div>' +
       '<div id="dsh-bag-clean" style="font-size:11px"></div>' +
@@ -1116,12 +1155,12 @@
       '<div class="box" style="margin-top:2px"><div id="dsh-z-maplock" style="font-size:11px;max-height:120px;overflow:auto"><span class="st">读取当前地图怪物表（换图自动刷新）</span></div></div></details>' +
       '<div class="box"><div class="b-hd">攻击名单 <button class="ghost" id="dsh-lockclear" style="flex:0 0 auto;padding:0 8px;font-size:11px">清空名单</button><span class="tag green" id="dsh-lockcount" style="float:right">0 种</span></div><div id="dsh-locklist" style="font-size:11px">名单为空（勾选本图怪物或侦查扫描到的怪）</div>' +
       '<div class="log" style="margin-top:2px">锁定后自动切换目标：优先级=勾选怪 &gt; 最近 &gt; 血最少</div></div>' +
-      '<div class="row"><input id="dsh-mobsearch" type="text" placeholder="搜索怪物名/ID…（全量图鉴）">' +
-      '<button class="ghost" id="dsh-mobsearchbtn" style="flex:0 0 auto">搜索</button>' +
-      '<button class="ghost" id="dsh-mobsearchclr" style="flex:0 0 auto">清空</button></div>' +
-      '<div id="dsh-drop-tree" style="font-size:11px;max-height:200px;overflow:auto">' +
-      '<div class="st">怪物掉落树：点「本图怪物掉落」直接看当前地图怪 → 展开勾选物品加入白名单；也可搜索。</div></div>' +
-      '<div class="log">怪物=当前地图表联动（同内挂检测目标）+挂机实测自动入列；掉落=mob_db 全量数据零网络。勾选物品→自动加入白名单并保存；物品一落地即检测白名单并自动拾取（15格内）。「本图锁定目录」=读本图怪物表生成锁定列表（勾选进战斗锁定目录，换图自动刷新）。</div>' +
+      '<div class="row"><input id="dsh-locksearch" type="text" placeholder="搜索怪物名/ID…（全量图鉴 · 点一行即加入名单）">' +
+      '<button class="ghost" id="dsh-locksearchbtn" style="flex:0 0 auto">搜索</button>' +
+      '<button class="ghost" id="dsh-locksearchclr" style="flex:0 0 auto">清空</button></div>' +
+      '<div id="dsh-lockhits" style="font-size:11px;max-height:200px;overflow:auto">' +
+      '<div class="st">搜索怪物名/ID → 点一整行直接加入上方攻击名单；「跳转」=打开游戏内导航（魔物）搜索该怪名；「小册子」=外部怪物资料页。</div></div>' +
+      '<div class="log">怪物=当前地图表联动（同内挂检测目标）；「本图锁定目录」=读本图怪物表生成锁定列表（勾选进战斗锁定目录，换图自动刷新）；掉落树已移回「物品拾取」窗口（本窗口只管攻击名单）。</div>' +
       '</div>' +
       // 子页9：战斗统计（伤害统计 + 首领警报，V2.28.0）
       '<div class="sub-page" data-subpage="ap-dps">' +
@@ -6233,6 +6272,7 @@
   $id("dsh-np-atk").addEventListener("click", function () { setBattle(true); });
   $id("dsh-np-pick").addEventListener("click", function () { npCmd("开自动拾取", "NPC:setautopick", 35, 1); });
   $id("dsh-np-eat").addEventListener("click", function () { npCmd("开自动吃药", "NPC:setautoeat", 36, 1); });
+  $id("dsh-np-probe").addEventListener("click", function () { npProbeBattle("manual"); });
   $id("dsh-np-hunt").addEventListener("click", function () {
     var v = parseInt($id("dsh-np-huntmode").value, 10);
     if (isNaN(v)) v = 0;
@@ -6459,7 +6499,7 @@
     var html = "";
     ids.forEach(function (id) {
       html += '<div class="list-item"><span>' + (lockList[id].name || ("ID" + id)) + ' · ID' + id + '</span>' +
-        mobRefLinksHtml(id) + // V2.29.0：任务目标怪外链（数量→RO321 / 资料→DVG，按怪物ID）
+        mobRefLinksHtml(id) + // V2.36.13：任务目标怪入口（跳转=游戏内导航魔物搜索 / 小册子=DVG 资料）
         '<button class="ghost" data-unlock="' + id + '" style="flex:0 0 auto;padding:0 8px;font-size:11px">解除</button></div>';
     });
     el.innerHTML = html;
@@ -6491,6 +6531,41 @@
     try { renderMapLock($id("dsh-z-maplock")); } catch (e) {}
     try { renderMapMobs(); } catch (e) {}
     setStatus("已清空怪物锁定目录", "ok");
+  });
+  // V2.36.13：攻击名单窗口的怪物搜索——一行一怪，点整行即加入名单；两个入口=「跳转」（游戏内导航·魔物搜索）/「小册子」（外部资料页）
+  function renderLockHits(kw) {
+    var el = $id("dsh-lockhits");
+    if (!el) return;
+    var mobDB = getMobDb();
+    if (!mobDB) { el.innerHTML = '<div class="st">怪物库未就绪（客户端加载后重试）</div>'; return; }
+    kw = String(kw || "").trim();
+    if (!kw) { el.innerHTML = '<div class="st">输入怪物名或ID → 点一整行直接加入攻击名单。</div>'; return; }
+    var hits = [];
+    if (/^\d+$/.test(kw)) { var one = mobDB[parseInt(kw, 10)]; if (one) hits.push({ id: kw, m: one }); }
+    if (!hits.length) Object.keys(mobDB).forEach(function (id) { var m = mobDB[id]; if (m && m.kName && String(m.kName).indexOf(kw) !== -1) hits.push({ id: id, m: m }); });
+    if (!hits.length) { el.innerHTML = '<div class="st">未找到怪物</div>'; setStatus("未找到怪物「" + kw + "」", "err"); return; }
+    var html = "";
+    hits.slice(0, 10).forEach(function (it) {
+      var m = it.m, name = String(m.kName || m.name || ("ID" + it.id)), inList = !!lockList[String(it.id)];
+      html += '<div class="list-item" data-lockadd="' + it.id + '" data-lockname="' + name.replace(/"/g, "&quot;") + '" style="cursor:pointer" title="点击加入攻击名单">' +
+        '<span>' + name + ' · ID' + it.id + ' · LV' + (m.LV || m.lv || "?") + (inList ? ' <span class="tag green" style="font-size:10px">已在名单</span>' : "") + '</span>' +
+        mobRefLinksHtml(it.id) + '</div>';
+    });
+    el.innerHTML = html + (hits.length > 10 ? '<div class="st">共 ' + hits.length + ' 条，只显示前 10 条（名字写全一点可缩小范围）</div>' : "");
+    setStatus("找到 " + hits.length + " 只怪" + (hits.length > 10 ? "，显示前 10" : ""), "ok");
+  }
+  $id("dsh-locksearchbtn").addEventListener("click", function () { renderLockHits($id("dsh-locksearch").value); });
+  $id("dsh-locksearch").addEventListener("keypress", function (e) { if (e.key === "Enter") renderLockHits(this.value); });
+  $id("dsh-locksearchclr").addEventListener("click", function () { $id("dsh-locksearch").value = ""; renderLockHits(""); });
+  $id("dsh-lockhits").addEventListener("click", function (e) {
+    if (e.target.closest && e.target.closest("a")) return; // 点「小册子」外链不加入名单
+    var row = e.target.closest && e.target.closest("[data-lockadd]");
+    if (!row) return;
+    var id = row.getAttribute("data-lockadd");
+    if (lockList[String(id)]) { setStatus("ID" + id + " 已在攻击名单里（上方名单点「解除」可移除）", "st"); return; }
+    addLock(id, row.getAttribute("data-lockname"));
+    setStatus("已加入攻击名单：" + (row.getAttribute("data-lockname") || id), "ok");
+    renderLockHits($id("dsh-locksearch").value);
   });
 
   // 内挂模式页「当前地图怪物」：同内挂检测目标方式——直接读地图怪物表
@@ -7550,6 +7625,64 @@
   // ---- 助手攻击循环 ----
   // 内挂面板开关读取：vbk 面板 .openattack checkbox（自动战斗）当前勾选状态 = 服务器内挂实际开关
   // toggle 语义下必须与服务器同步，否则发错次数会反相；用户可能手动在内挂面板点过 → 启动时校准
+  // V2.36.13：内挂状态「快速校对」——快速点一次内挂开关，用聊天回执确认状态：
+  //   读到「关闭自动战斗」= 原本开着、已被关掉 → 直接结束；
+  //   读到「开启自动战斗」= 原本关着、被我们打开了 → 立刻再关回去；
+  //   1.5 秒读不到回执 → 宽松兜底：读面板 checked，开着/读不到都再关一次（保守）。
+  // 结束状态固定为「内挂关闭」并同步悬浮球/面板显示；整个流程 ≤4 秒，不做严格前置判定、不阻塞其它逻辑。
+  var npProbeBusy = false;
+  function npProbeBattle(reason, done) {
+    if (npProbeBusy) { try { setStatus("内挂状态校对进行中…", "st"); } catch (e) {} return; }
+    npProbeBusy = true;
+    var before = npBattleKnown ? !!npHuntOn : null, taps = 0;
+    try { npClearBattleIntent(); } catch (e) {}
+    function say(msg, kind) { try { setStatus(msg, kind || "st"); } catch (e) {} try { npLog(msg); } catch (e2) {} try { tlog("np-probe " + msg); } catch (e3) {} }
+    function tap(tag) { taps++; try { npToggleHunt(); } catch (e) {} npBattleLastSentAt = Date.now(); try { tlog("np-probe tap#" + taps + " " + tag + " reason=" + (reason || "")); } catch (e) {} }
+    function waitState(ms, cb) {
+      var from = Date.now();
+      (function poll() {
+        if (npBattleConfirmedAt >= from) return cb(!!npHuntOn);
+        if (Date.now() - from >= ms) return cb(null);
+        setTimeout(poll, 120);
+      })();
+    }
+    function panelState() { try { return npReadPanelState(); } catch (e) { return null; } }
+    function finish(state, why) {
+      npProbeBusy = false;
+      if (state === false) { try { npApplyBattleState(false, "probe"); } catch (e) {} }
+      else { try { npBattleKnown = false; npHuntOn = false; qswPaint(); } catch (e) {} }
+      var tag = state === false ? "内挂自动战斗：关闭" : "内挂自动战斗：状态未知";
+      say("内挂校对完成（" + tag + "；原本" + (before === null ? "未知" : (before ? "开着" : "关着")) + "，点了 " + taps + " 次）· " + why, state === false ? "ok" : "warn");
+      if (typeof done === "function") { try { done(state, before, taps); } catch (e) {} }
+    }
+    tap("probe");
+    say("内挂校对：已点一次开关，正在读回执…", "st");
+    waitState(1500, function (after) {
+      if (after === false) return finish(false, "读到「关闭自动战斗」");
+      if (after === true) {
+        say("内挂校对：原本关着、刚被打开 → 立刻关回去", "st");
+        tap("restore");
+        return waitState(1500, function (after2) {
+          if (after2 === false) return finish(false, "已关回去");
+          if (panelState() === false) return finish(false, "面板显示已关闭");
+          tap("restore-again");
+          return waitState(1500, function (after3) {
+            if (after3 === false) return finish(false, "再关一次成功");
+            return finish(panelState() === false ? false : null, panelState() === false ? "面板显示已关闭" : "回执未知，已再关一次");
+          });
+        });
+      }
+      var panel = panelState();
+      if (panel === false) return finish(false, "回执缺失，但面板显示已关闭");
+      say("内挂校对：没读到聊天回执" + (panel === true ? "（面板显示开着）" : "") + " → 再关一次", "st");
+      tap("restore-timeout");
+      return waitState(1500, function (after3) {
+        if (after3 === false) return finish(false, "已关回去");
+        return finish(panelState() === false ? false : null, panelState() === false ? "面板显示已关闭" : "回执未知，已再关一次");
+      });
+    });
+  }
+  // 内挂面板开关读取：vbk 面板 .openattack checkbox 的当前勾选状态（读不到 = null 未知）
   function npReadPanelState() {
     try {
       var el = document.querySelector("#vbk input.openattack");
@@ -9883,6 +10016,8 @@
   });
 
   // ---------------- 指定ID拾取：怪物掉落树 ----------------
+  // V2.36.13：走路拾取（指定ID自动拾取）暂时下线——true = 只保留白名单配置与掉落树，不再自动捡/走过去捡
+  var PICKUP_WALK_OFF = true;
   var wl = (function () { try { return JSON.parse(localStorage.getItem("dsh_ro_whitelist")) || {}; } catch (e) { return {}; } })();
   function renderWl() {
     var el = $id("dsh-wllist");
@@ -10056,9 +10191,9 @@
     }
     if (!list.length) { setStatus("该图怪物库无匹配数据", "err"); return; }
     renderDropTree(list);
-    // V2.34.0：掉落树已随「攻击名单」窗口独立出去，这里顺手把该窗口打开，按钮点下去才看得到树
-    try { if (!fwActualOpen("mlock")) roModOpen("mlock"); } catch (e) {}
-    setStatus("已显示「" + info.name + "」的 " + list.length + " 只怪掉落（攻击名单窗口）", "ok");
+    // V2.36.13：掉落树已搬回「物品拾取」窗口本体，不再跳到攻击名单窗口
+    try { var treeEl = document.getElementById("dsh-drop-tree"); if (treeEl && treeEl.scrollIntoView) treeEl.scrollIntoView({ block: "nearest" }); } catch (e) {}
+    setStatus("已显示「" + info.name + "」的 " + list.length + " 只怪掉落（物品拾取窗口）", "ok");
   });
   // 指定ID拾取轮询
   function parseIds(txt) {
@@ -10079,7 +10214,8 @@
         try {
           ita2itid[String(itaid)] = itid;
           // V1.9.4：开关统一——「启用指定ID自动拾取」关 = 只记录映射不拾取（修复白名单加入即自动拾取、开关无效）
-          if (wl[String(itid)] && $id("dsh-picken") && $id("dsh-picken").checked) tryPickupIta(itaid, x, y);
+          // V2.36.13：走路拾取暂时下线（PICKUP_WALK_OFF）→ 只记录 ITAID→ITID 映射，不触发拾取
+          if (!PICKUP_WALK_OFF && wl[String(itid)] && $id("dsh-picken") && $id("dsh-picken").checked) tryPickupIta(itaid, x, y);
         } catch (e) {}
         return origAdd.apply(this, arguments);
       };
@@ -10132,6 +10268,8 @@
   }
   function tryPickupIta(itaid, x, y) {
     try {
+      if (PICKUP_WALK_OFF) return; // V2.36.13 走路拾取暂时下线
+      if (!clientReady()) return;
       if (!clientReady()) return;
       var ent = CLIENT.SS && CLIENT.SS.Entity;
       // 距离限制：15 格内直接捡（曼哈顿）；超出 = V1.8.5 走过去捡（开关开 + 安全才走，否则维持放弃）
@@ -10153,7 +10291,7 @@
   }
   setInterval(function () {
     try {
-      var en = $id("dsh-picken") && $id("dsh-picken").checked;
+      var en = !PICKUP_WALK_OFF && $id("dsh-picken") && $id("dsh-picken").checked;
       if (!en) return;
       if (!clientReady()) return;
       hookItemObjects();
@@ -10228,7 +10366,7 @@
       for (var i = 0; i < subs.length; i++) if (subs[i].classList.contains("active")) active = subs[i].getAttribute("data-sub");
       var it = tbl[catMap[active]] && tbl[catMap[active]][key];
       if (!it) { setStatus("书本条目不存在", "err"); return; }
-      // 书本坐标统一交给 GPT 传送；不再发送私人飞艇包。
+      // 书本坐标统一交给 GPT 传送（不再自行构造私人飞艇包）。注意：只有城镇目的地传送不消耗传送卷轴；非城镇目的地（野外/洞窟）仍消耗 1 张传送卷轴 14527。
       if (it.outset && it.outset.length >= 3 && clientReady()) {
         if (gptTeleport(it.outset[0], it.outset[1], it.outset[2])) {
           setStatus("书本前往: " + (it.npc || "") + "（GPT 指定坐标）", "ok");
@@ -11820,13 +11958,46 @@
   }
   function fmtK(n) { n = Math.floor(Number(n) || 0); return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
   // 按怪物ID的外链：「数量」→RO321 re_mob_db、「资料」→DVG monsterinfo（不依赖中文名）
+  // V2.36.13：按怪物ID的两个入口——「跳转」=打开游戏内导航窗口，切「魔物」并搜索该怪名；「小册子」=外部 DVG 怪物资料页
   function mobRefLinksHtml(mid) {
-    var ru = mobRefUrl("ro321", mid), du = mobRefUrl("dvg", mid);
-    if (!ru && !du) return "";
+    var du = mobRefUrl("dvg", mid);
     return '<span style="flex:0 0 auto;font-size:10px;white-space:nowrap">' +
-      (ru ? '<a href="' + ru + '" target="_blank" rel="noopener noreferrer">数量</a>' : "") +
-      (du ? ' <a href="' + du + '" target="_blank" rel="noopener noreferrer">资料</a>' : "") + '</span>';
+      '<button class="ghost" data-mobgoto="' + mid + '" style="flex:0 0 auto;padding:0 6px;font-size:10px" title="打开游戏内导航 · 魔物搜索该怪">跳转</button>' +
+      (du ? ' <a href="' + du + '" target="_blank" rel="noopener noreferrer">小册子</a>' : "") + '</span>';
   }
+  // V2.36.13：「跳转」=客户端导航窗口的「魔物」搜索（DB.searchNavigation(name,'MOB')），不联网、不自己造协议
+  function mobGotoSearch(mid, name) {
+    try {
+      var Nav = requireDB("UI/Components/Navigation");
+      if (!Nav || typeof Nav.getRoot !== "function") { setStatus("导航窗口不可用（客户端还没加载完）", "err"); return false; }
+      if (!Nav.getRoot() && typeof Nav.append === "function") Nav.append();
+      if (typeof Nav.show === "function") Nav.show();
+      var root = Nav.getRoot();
+      if (!root) { setStatus("导航窗口打不开", "err"); return false; }
+      var m = (getMobDb() || {})[String(mid)] || {};
+      var nm = String(name || m.kName || m.name || "").trim();
+      if (nm.length < 2) { setStatus("怪名太短，导航搜索至少要 2 个字", "err"); return false; }
+      var sel = root.querySelector(".search-type"); if (sel) sel.value = "MOB";
+      var inp = root.querySelector(".search-input");
+      if (!inp) { setStatus("导航搜索框没找到", "err"); return false; }
+      function hitsOk() { var box = root.querySelector(".search-results"); return !!(box && !box.querySelector(".no-results")); }
+      inp.value = nm;
+      if (typeof Nav.onSearch === "function") Nav.onSearch();
+      var ok = hitsOk();
+      var en = String(m.name || "").trim();
+      if (!ok && en && en !== nm) { inp.value = en; if (typeof Nav.onSearch === "function") Nav.onSearch(); ok = hitsOk(); } // 中文名搜不到 → 退回精灵名再搜一次
+      setStatus(ok ? ("已在导航「魔物」搜索：" + inp.value) : ("导航没搜到「" + nm + "」，可换写法再试"), ok ? "ok" : "err");
+      return ok;
+    } catch (e) { try { setStatus("跳转失败：" + (e && e.message), "err"); } catch (e2) {} return false; }
+  }
+  // 「跳转」按钮全局委托：捕获阶段先拦下，避免在 <summary> 里点按钮连带动开合
+  document.addEventListener("click", function (e) {
+    var b = e.target && e.target.closest && e.target.closest("[data-mobgoto]");
+    if (!b) return;
+    e.preventDefault();
+    e.stopPropagation();
+    mobGotoSearch(b.getAttribute("data-mobgoto"), "");
+  }, true);
   // ---- 目标锁定条 ----
   var dshTgtBar = null;
   function ensureTgtBar() {
@@ -14157,20 +14328,40 @@
   function arrowPos(v){v=Number(v);return Number.isInteger(v)&&v>0?v:null;}
   // V2.36.0：旧挑战/道场迁移键（arrowLoad 与内置道馆 dojoLoad 共用，保证字面量只有一处）
   var CHALLENGE_KEY="dsh-ro-challenge-v1";
-  function arrowDefaults(){return {enabled:false,defaultItid:null,byMid:{}};}
-  function arrowLoad(){var d=arrowDefaults(),r=null,raw=null;try{raw=localStorage.getItem(ARROW_RULES_KEY);r=JSON.parse(raw||"null");}catch(e){}if(raw==null){try{var oldc=JSON.parse(localStorage.getItem(CHALLENGE_KEY)||"null");if(oldc&&typeof oldc==="object"){r={enabled:oldc.arrowOn===true,defaultItid:oldc.neutralItid,byMid:oldc.bossByMid};localStorage.setItem(ARROW_RULES_KEY,JSON.stringify(r));}}catch(e2){}}if(!r||typeof r!=="object")return d;d.enabled=r.enabled===true;d.defaultItid=arrowPos(r.defaultItid)||arrowPos(r.neutralItid);var legacy=r.byMid&&typeof r.byMid==="object"?r.byMid:(r.bossByMid&&typeof r.bossByMid==="object"?r.bossByMid:null);if(legacy)Object.keys(legacy).forEach(function(k){var mid=arrowPos(k),v=legacy[k],itid=arrowPos(v&&v.itid!=null?v.itid:v);if(mid&&itid)d.byMid[mid]=itid;});return d;}
+  // V2.36.13：属性箭的元素顺序（元素码 = 下标）。arrowLoad 在 IIFE 初始化时就要用，必须声明在它前面。
+  var ARROW_ELEM_ORDER=["火","水","风","地","毒","圣","暗","念","不死","无"];
+  function arrowDefaults(){return {enabled:false,defaultItid:null,byMid:{},byElem:{}};}
+  function arrowLoad(){var d=arrowDefaults(),r=null,raw=null;try{raw=localStorage.getItem(ARROW_RULES_KEY);r=JSON.parse(raw||"null");}catch(e){}if(raw==null){try{var oldc=JSON.parse(localStorage.getItem(CHALLENGE_KEY)||"null");if(oldc&&typeof oldc==="object"){r={enabled:oldc.arrowOn===true,defaultItid:oldc.neutralItid,byMid:oldc.bossByMid};localStorage.setItem(ARROW_RULES_KEY,JSON.stringify(r));}}catch(e2){}}if(!r||typeof r!=="object")return d;d.enabled=r.enabled===true;d.byElem={};if(r.byElem&&typeof r.byElem==="object")Object.keys(r.byElem).forEach(function(k){var eit=arrowPos(r.byElem[k]);if(ARROW_ELEM_ORDER.indexOf(String(k))>=0&&eit)d.byElem[String(k)]=eit;});d.defaultItid=arrowPos(r.defaultItid)||arrowPos(r.neutralItid);var legacy=r.byMid&&typeof r.byMid==="object"?r.byMid:(r.bossByMid&&typeof r.bossByMid==="object"?r.bossByMid:null);if(legacy)Object.keys(legacy).forEach(function(k){var mid=arrowPos(k),v=legacy[k],itid=arrowPos(v&&v.itid!=null?v.itid:v);if(mid&&itid)d.byMid[mid]=itid;});return d;}
   var arrowRules=arrowLoad(),arrowTarget=null,arrowPending=null,arrowStatus="未启用",arrowBlocked=false,arrowReady=false;
   function arrowSave(){try{localStorage.setItem(ARROW_RULES_KEY,JSON.stringify(arrowRules));}catch(e){}}
   function arrowBoss(mid){try{var m=(getMobDb()||{})[arrowPos(mid)];return !!(m&&Number(m.MvpDropsNum)>0);}catch(e){return false;}}
-  function arrowCandidates(mid,cfg){cfg=cfg||arrowRules;var out=[],m=arrowPos(mid),v=m&&cfg.byMid?cfg.byMid[m]:null,itid=arrowPos(v&&v.itid!=null?v.itid:v);if(itid)out.push({kind:"mob",itid:itid});var def=arrowPos(cfg.defaultItid);if(def&&def!==itid)out.push({kind:"default",itid:def});return out;}
+  function arrowCandidates(mid,cfg){cfg=cfg||arrowRules;var out=[],seen={},m=arrowPos(mid);
+    function add(kind,itid){itid=arrowPos(itid);if(!itid||seen[itid])return;seen[itid]=1;out.push({kind:kind,itid:itid});}
+    var en=m?mobElemName(m):"",ev=en&&cfg.byElem?arrowPos(cfg.byElem[en]):null;if(ev)add("elem",ev); // 优先级 1：属性箭
+    var v=m&&cfg.byMid?cfg.byMid[m]:null;add("mob",v&&v.itid!=null?v.itid:v); // 优先级 2：指定怪箭
+    add("default",cfg.defaultItid); // 优先级 3：默认箭
+    return out;}
   function arrowDecision(mid,cfg){var c=arrowCandidates(mid,cfg);return c.length?c[0]:null;}
   function arrowSay(s){arrowStatus=String(s);var e=$id("dsh-arrow-rules-status");if(e)e.textContent=arrowStatus;apiEmit("notice",{kind:"arrow",message:arrowStatus});}
+  // V2.36.13：属性 → 箭。元素数据取自本机全量 mobStats（2471 只，与运行时 mob_db 零缺失），压缩成 "怪ID:元素码" 串。
+  var MOB_ELEM_RAW="1001:0,1002:1,1004:2,1005:6,1007:3,1008:3,1009:2,1010:3,1011:2,1012:1,1013:3,1014:1,1015:8,1016:8,1018:2,1019:0,1020:3,1023:3,1024:3,1025:3,1026:8,1028:8,1029:6,1030:4,1031:4,1032:8,1033:0,1034:1,1035:2,1036:8,1037:4,1038:8,1039:6,1040:9,1041:8,1042:2,1044:1,1045:1,1046:6,1047:9,1048:6,1049:0,1050:0,1051:9,1052:3,1053:6,1054:6,1055:3,1056:3,1057:3,1058:0,1059:2,1060:3,1061:7,1062:5,1063:9,1064:8,1065:1,1066:1,1067:1,1068:1,1069:1,1070:1,1071:8,1072:0,1073:1,1074:1,1076:8,1077:4,1078:3,1079:3,1080:3,1081:3,1082:3,1083:5,1084:3,1085:3,1086:0,1087:3,1088:3,1089:1,1090:1,1091:2,1092:3,1093:9,1094:1,1095:3,1096:5,1097:9,1098:8,1099:4,1100:4,1101:6,1102:6,1103:3,1104:3,1105:3,1106:0,1107:0,1108:1,1109:6,1110:6,1111:6,1112:8,1113:0,1114:2,1115:0,1116:7,1117:8,1118:3,1119:0,1120:7,1121:3,1122:2,1123:0,1124:4,1125:3,1126:1,1127:3,1128:3,1129:0,1130:0,1131:2,1132:8,1133:2,1134:4,1135:0,1136:4,1137:0,1138:1,1139:3,1140:0,1141:1,1142:1,1143:7,1144:1,1145:3,1146:6,1147:3,1148:9,1149:0,1150:0,1151:4,1152:8,1153:8,1154:0,1155:3,1156:2,1157:6,1158:1,1159:9,1160:3,1161:1,1162:3,1163:6,1164:6,1165:3,1166:3,1167:3,1169:8,1170:1,1174:2,1175:6,1176:3,1177:6,1178:0,1179:7,1180:0,1182:3,1183:2,1184:3,1185:7,1186:7,1188:8,1189:3,1190:3,1191:9,1192:8,1193:9,1194:3,1195:9,1196:8,1197:8,1198:8,1199:2,1200:9,1201:9,1202:9,1203:6,1204:6,1205:6,1206:1,1207:3,1208:2,1209:4,1211:0,1212:9,1213:0,1214:0,1215:2,1216:4,1219:6,1220:0,1221:3,1229:3,1230:3,1231:2,1232:9,1234:3,1235:3,1236:9,1237:3,1238:3,1239:3,1240:0,1241:0,1242:1,1243:9,1244:0,1245:2,1246:5,1247:5,1248:9,1249:9,1250:0,1251:2,1252:1,1253:2,1254:2,1255:3,1256:6,1257:6,1258:4,1259:2,1260:6,1261:2,1262:0,1263:2,1264:1,1265:9,1266:3,1267:2,1268:6,1269:3,1270:9,1271:1,1272:8,1273:3,1274:9,1275:9,1276:6,1277:0,1278:9,1279:3,1280:2,1281:9,1282:0,1283:0,1285:9,1286:9,1287:9,1288:5,1289:3,1290:8,1291:8,1292:6,1293:2,1294:3,1295:9,1296:2,1297:8,1298:8,1299:2,1300:3,1301:6,1302:8,1303:2,1304:4,1305:4,1306:3,1307:0,1308:2,1309:0,1310:0,1311:3,1312:3,1313:9,1314:9,1315:2,1316:3,1317:1,1318:0,1319:1,1320:9,1321:2,1322:3,1323:1,1324:9,1325:9,1326:9,1327:9,1328:9,1329:9,1330:9,1331:9,1332:9,1333:9,1334:9,1335:9,1336:9,1337:9,1338:9,1339:9,1340:9,1341:9,1342:9,1343:9,1344:9,1345:9,1346:9,1347:9,1348:9,1349:9,1350:9,1351:9,1352:9,1353:9,1354:9,1355:9,1356:9,1357:9,1358:9,1359:9,1360:9,1361:9,1362:9,1363:9,1364:2,1365:9,1366:0,1367:0,1368:3,1369:0,1370:6,1371:5,1372:0,1373:6,1374:6,1375:9,1376:2,1377:9,1378:4,1379:6,1380:3,1381:0,1382:6,1383:0,1384:0,1385:0,1386:3,1387:0,1388:5,1389:6,1390:9,1391:3,1392:2,1393:8,1394:8,1395:9,1396:9,1397:9,1398:9,1399:6,1400:9,1401:6,1402:4,1403:8,1404:6,1405:3,1406:1,1408:2,1409:9,1410:3,1412:9,1413:0,1415:7,1416:6,1417:6,1418:7,1419:6,1420:8,1421:6,1422:2,1423:8,1424:4,1425:1,1426:1,1427:7,1428:4,1429:4,1430:4,1431:6,1432:0,1433:6,1434:6,1435:8,1436:0,1437:2,1438:8,1439:0,1440:2,1441:4,1442:9,1443:9,1444:0,1445:2,1446:6,1447:2,1448:6,1449:0,1450:2,1451:1,1452:3,1453:6,1454:3,1455:0,1456:0,1457:3,1458:0,1459:7,1460:6,1461:0,1462:8,1463:8,1464:0,1465:3,1466:2,1467:6,1468:6,1469:8,1470:0,1471:0,1472:8,1473:3,1474:9,1475:8,1476:9,1477:3,1478:9,1479:8,1480:8,1481:2,1482:9,1483:9,1484:9,1485:6,1486:6,1487:6,1488:1,1489:3,1490:2,1491:6,1492:6,1493:3,1494:3,1495:0,1497:3,1498:3,1499:0,1500:2,1502:4,1503:6,1504:8,1505:6,1506:3,1507:6,1508:8,1509:8,1510:6,1511:3,1512:8,1513:2,1514:2,1515:1,1516:3,1517:3,1518:2,1519:9,1520:1,1521:9,1522:8,1523:8,1524:7,1525:6,1526:2,1527:9,1528:3,1529:7,1530:6,1531:9,1532:0,1533:1,1534:2,1535:0,1536:4,1537:3,1538:1,1539:2,1540:9,1541:0,1542:6,1543:1,1544:9,1545:2,1546:4,1547:0,1548:2,1549:0,1550:3,1551:1,1552:6,1553:4,1554:6,1555:2,1556:4,1557:2,1558:3,1559:0,1560:6,1561:3,1562:8,1563:3,1564:6,1565:0,1566:8,1567:4,1568:5,1569:6,1570:4,1571:1,1572:0,1573:9,1574:0,1575:3,1576:7,1577:4,1578:0,1579:1,1580:6,1581:3,1582:6,1583:9,1584:6,1585:1,1586:3,1587:7,1588:3,1589:3,1590:3,1591:9,1592:9,1593:8,1594:1,1595:1,1596:6,1597:2,1598:0,1599:7,1600:0,1601:9,1602:3,1603:3,1604:2,1605:8,1606:1,1607:2,1608:6,1609:2,1610:8,1611:8,1612:8,1613:9,1614:9,1615:3,1616:3,1617:9,1618:4,1619:3,1620:7,1621:4,1622:9,1623:9,1624:9,1625:3,1626:8,1627:2,1628:3,1629:2,1630:2,1631:2,1632:6,1633:2,1634:0,1635:4,1636:1,1637:5,1638:2,1639:7,1640:0,1641:4,1642:3,1643:5,1644:2,1645:7,1646:0,1647:4,1648:3,1649:5,1650:2,1651:7,1652:0,1653:4,1654:3,1655:5,1656:2,1657:7,1658:0,1659:4,1660:3,1661:5,1662:2,1663:7,1664:9,1665:9,1666:9,1667:9,1668:9,1669:9,1670:2,1671:1,1672:3,1673:0,1674:0,1675:0,1676:9,1677:2,1678:3,1679:1,1680:2,1681:1,1682:8,1683:0,1684:9,1685:5,1686:3,1687:3,1688:2,1689:2,1690:9,1691:7,1692:2,1693:7,1694:0,1695:3,1696:6,1697:1,1698:9,1699:9,1700:9,1701:5,1702:6,1703:5,1704:7,1705:7,1706:7,1707:7,1708:7,1709:7,1710:7,1711:7,1712:7,1713:5,1714:0,1715:9,1716:2,1717:3,1718:9,1719:6,1720:6,1721:9,1722:0,1723:2,1724:9,1725:1,1726:9,1727:3,1728:0,1729:6,1730:6,1731:7,1732:9,1733:6,1734:6,1735:9,1736:9,1737:9,1738:6,1739:9,1740:9,1741:5,1742:2,1743:9,1744:2,1745:6,1746:9,1747:3,1748:4,1749:9,1750:3,1751:5,1752:6,1753:6,1754:5,1755:5,1756:6,1757:5,1758:0,1759:2,1760:3,1761:6,1762:6,1763:5,1764:5,1765:5,1766:5,1767:5,1768:7,1769:9,1770:9,1771:9,1772:9,1773:6,1774:2,1775:1,1776:1,1777:1,1778:1,1779:1,1780:3,1781:3,1782:2,1783:2,1784:3,1785:6,1786:9,1787:9,1788:1,1789:1,1790:3,1791:2,1792:9,1793:9,1794:2,1795:7,1796:9,1797:9,1798:9,1799:0,1800:4,1801:3,1802:5,1803:2,1804:7,1805:0,1806:4,1807:1,1808:5,1809:2,1810:7,1811:3,1812:8,1813:7,1814:0,1815:9,1816:9,1817:7,1818:9,1819:6,1820:3,1821:0,1822:6,1823:1,1824:1,1825:2,1826:4,1827:9,1828:3,1829:9,1830:9,1831:0,1832:0,1833:0,1834:0,1835:0,1836:0,1837:0,1838:3,1839:9,1840:3,1841:3,1842:4,1843:4,1844:6,1845:9,1846:5,1847:7,1848:6,1849:8,1850:3,1851:9,1852:5,1853:5,1854:3,1855:4,1856:1,1857:1,1858:1,1859:3,1860:3,1861:0,1862:3,1863:3,1864:8,1865:8,1866:6,1867:6,1868:6,1869:7,1870:8,1871:6,1872:9,1873:7,1874:7,1875:8,1876:6,1877:9,1878:5,1879:9,1880:3,1881:3,1882:1,1883:1,1884:3,1885:3,1886:3,1887:1,1888:1,1889:1,1890:3,1891:5,1892:6,1893:6,1894:1,1895:0,1896:7,1897:6,1898:8,1899:9,1900:9,1901:5,1902:5,1903:5,1904:9,1905:9,1906:9,1907:9,1908:9,1909:9,1910:9,1911:9,1912:9,1913:9,1914:9,1915:9,1916:6,1917:6,1918:6,1919:6,1920:8,1921:7,1922:6,1923:6,1924:8,1925:7,1926:0,1927:7,1928:6,1929:6,1930:9,1931:7,1932:3,1933:9,1934:3,1935:3,1936:3,1937:6,1938:9,1939:9,1940:9,1941:9,1942:9,1943:9,1944:9,1945:9,1946:9,1947:9,1948:0,1949:9,1950:9,1951:9,1952:9,1953:9,1954:9,1955:9,1956:7,1957:6,1958:6,1959:7,1960:6,1961:6,1962:9,1963:9,1964:7,1965:2,1966:6,1967:0,1968:1,1969:1,1970:1,1971:1,1972:1,1973:1,1974:6,1975:2,1976:9,1977:9,1978:9,1979:9,1980:3,1981:0,1982:3,1983:8,1984:3,1985:6,1986:3,1987:4,1988:4,1989:3,1990:3,1991:3,1992:5,1993:3,1994:2,1995:3,1997:3,1998:3,1999:4,2000:9,2001:9,2002:3,2003:1,2004:6,2005:1,2006:6,2007:0,2008:7,2009:7,2010:7,2011:8,2012:8,2013:3,2014:3,2015:4,2016:1,2017:3,2018:3,2019:3,2020:1,2021:1,2022:6,2023:6,2024:3,2025:9,2026:6,2027:6,2030:8,2031:6,2032:6,2033:3,2034:0,2035:3,2036:8,2037:5,2038:5,2039:6,2040:6,2041:6,2042:9,2043:0,2044:1,2045:3,2046:2,2047:3,2048:4,2049:3,2050:1,2052:8,2057:4,2058:9,2059:3,2060:9,2066:2,2067:2,2068:0,2069:1,2070:1,2071:0,2072:3,2073:2,2074:3,2075:9,2076:2,2077:6,2078:6,2079:9,2080:9,2081:1,2082:1,2083:3,2084:3,2085:3,2086:3,2087:3,2088:9,2089:9,2090:9,2091:9,2092:1,2093:5,2094:3,2095:0,2096:8,2097:6,2098:6,2099:2,2100:6,2101:6,2102:8,2103:1,2104:7,2105:3,2106:5,2107:6,2108:7,2109:5,2110:0,2111:3,2112:0,2113:4,2126:2,2127:2,2128:2,2129:2,2130:2,2131:6,2132:3,2133:3,2134:3,2135:3,2136:2,2137:9,2138:9,2139:9,2140:9,2141:9,2142:9,2143:9,2144:3,2145:3,2146:6,2147:9,2148:9,2149:9,2150:1,2151:3,2152:4,2153:2,2154:0,2155:0,2156:6,2157:0,2158:2,2159:2,2160:2,2161:3,2162:3,2163:3,2164:3,2165:3,2166:3,2167:3,2168:3,2169:3,2170:3,2171:3,2172:3,2173:3,2174:1,2175:1,2176:1,2177:1,2178:1,2179:1,2180:1,2181:1,2182:1,2183:1,2184:1,2185:1,2186:1,2187:1,2188:1,2189:1,2190:1,2191:1,2192:1,2193:1,2194:1,2195:1,2196:1,2197:1,2198:1,2199:1,2200:9,2201:1,2202:1,2203:1,2204:1,2206:1,2208:1,2209:9,2210:9,2211:9,2212:2,2213:2,2214:6,2215:0,2216:0,2217:9,2218:1,2219:1,2220:8,2221:5,2222:0,2223:7,2224:1,2225:4,2226:2,2227:2,2228:5,2229:0,2230:7,2231:1,2232:4,2233:2,2234:2,2235:5,2236:0,2237:7,2238:1,2239:4,2240:2,2241:2,2242:9,2243:9,2244:1,2245:1,2246:0,2247:3,2248:1,2249:0,2250:0,2251:2,2252:2,2253:3,2254:2,2255:6,2256:5,2257:9,2258:9,2259:9,2260:9,2261:9,2262:9,2263:9,2264:9,2265:9,2266:9,2267:9,2268:9,2269:9,2270:9,2271:9,2272:9,2273:9,2274:9,2275:9,2276:9,2277:0,2278:2,2279:2,2280:5,2281:6,2282:6,2283:8,2284:2,2285:4,2286:0,2287:0,2288:5,2289:9,2290:9,2291:9,2292:9,2293:9,2294:9,2295:9,2296:9,2297:9,2298:9,2299:9,2300:9,2301:9,2302:9,2303:9,2304:9,2305:9,2306:0,2307:9,2308:5,2309:3,2310:9,2311:6,2312:9,2313:2,2314:6,2315:6,2316:3,2317:6,2318:6,2319:1,2320:1,2321:1,2322:1,2323:9,2324:4,2325:6,2326:3,2327:6,2328:9,2329:9,2330:3,2331:1,2332:1,2333:1,2334:6,2335:5,2336:3,2337:7,2338:6,2339:9,2340:6,2341:5,2342:6,2343:7,2344:6,2345:6,2346:6,2347:6,2348:6,2349:6,2350:6,2351:6,2352:9,2353:0,2354:8,2355:8,2356:9,2357:9,2358:3,2359:3,2360:8,2361:8,2362:3,2363:2,2364:2,2365:2,2366:9,2367:1,2368:7,2369:0,2370:3,2371:9,2372:3,2373:3,2374:3,2375:8,2376:6,2377:9,2378:3,2379:3,2380:3,2398:1,2401:1,2402:4,2403:4,2404:8,2405:8,2406:8,2407:8,2408:9,2409:9,2410:9,2411:9,2413:0,2415:0,2416:4,2417:1,2418:2,2419:7,2420:5,2421:0,2422:4,2423:3,2424:2,2425:2,2426:7,2427:5,2428:0,2429:4,2430:1,2431:2,2432:7,2433:5,2434:0,2435:4,2436:3,2437:2,2438:2,2439:7,2440:5,2441:0,2442:0,2443:0,2444:7,2445:3,2446:2,2447:1,2448:6,2449:4,2450:1,2451:1,2452:9,2453:9,2454:9,2455:9,2456:9,2457:9,2458:9,2459:9,2460:9,2461:9,2462:9,2464:8,2465:8,2466:8,2467:3,2468:6,2469:6,2470:6,2471:8,2472:6,2473:8,2474:8,2475:3,2476:8,2477:2,2478:9,2479:9,2480:8,2481:8,2483:6,2484:6,2485:0,2528:4,2529:4,2530:4,2531:4,2532:0,2533:3,2534:1,2535:2,2536:7,2537:7,2539:7,2540:4,2541:4,2542:9,2543:9,2544:9,2545:3,2546:0,2549:9,2550:9,2551:9,2552:9,2553:9,2554:9,2555:9,2556:7,2557:9,2558:9,2559:9,2560:9,2561:9,2562:7,2563:7,2564:7,2565:3,2566:3,2567:9,2568:9,2569:2,2570:2,2571:0,2572:3,2573:2,2574:2,2575:3,2576:2,2577:3,2578:3,2579:6,2580:0,2581:8,2582:9,2583:3,2584:9,2585:3,2586:3,2587:3,2588:3,2589:4,2590:3,2591:3,2592:1,2593:1,2594:1,2595:2,2596:3,2597:2,2598:4,2599:1,2600:3,2601:3,2602:6,2603:8,2604:8,2605:8,2606:8,2607:9,2608:3,2609:3,2610:3,2611:0,2612:3,2613:3,2614:2,2615:3,2616:2,2617:6,2618:7,2619:8,2620:2,2621:9,2622:9,2623:9,2624:4,2625:9,2626:1,2627:9,2628:1,2629:4,2630:2,2631:6,2632:9,2633:9,2634:9,2635:1,2636:9,2637:3,2638:6,2639:6,2640:3,2641:2,2642:2,2643:3,2644:9,2645:2,2646:1,2647:3,2648:8,2649:8,2650:5,2651:1,2652:1,2653:3,2654:3,2655:3,2656:3,2657:6,2658:8,2659:8,2660:8,2661:1,2662:4,2663:4,2664:6,2665:5,2666:1,2667:2,2668:1,2669:1,2670:0,2671:3,2672:3,2673:3,2674:3,2675:0,2676:8,2677:2,2678:1,2679:1,2680:3,2681:9,2682:9,2683:9,2684:6,2685:6,2686:6,2687:6,2688:8,2689:1,2690:6,2691:6,2692:7,2693:3,2694:2,2695:3,2696:1,2697:1,2698:1,2699:1,2700:3,2701:4,2702:4,2703:4,2704:4,2705:4,2706:7,2707:1,2708:3,2709:1,2710:4,2711:3,2712:0,2713:1,2714:3,2715:3,2716:4,2717:4,2718:0,2719:0,2720:2,2721:9,2722:3,2723:8,2724:8,2725:3,2726:9,2727:7,2728:9,2729:9,2730:9,2731:9,2732:6,2733:8,2734:2,2735:4,2736:8,2737:9,2738:3,2739:8,2740:8,2741:3,2742:6,2743:6,2744:6,2745:3,2746:6,2747:0,2748:0,2749:0,2750:9,2751:9,2752:9,2753:9,2754:0,2755:9,2756:9,2757:1,2758:2,2759:9,2760:3,2761:7,2762:1,2763:0,2764:3,2765:3,2766:6,2767:0,2768:1,2769:0,2770:9,2771:9,2772:8,2773:2,2774:6,2775:3,2776:1,2777:2,2778:3,2779:3,2780:3,2781:3,2782:4,2783:4,2784:0,2785:2,2786:3,2787:3,2788:0,2789:9,2790:6,2791:9,2792:6,2793:3,2794:1,2795:1,2796:8,2797:2,2798:2,2799:3,2800:3,2801:6,2802:3,2803:2,2804:2,2805:0,2806:2,2807:2,2808:3,2809:0,2810:0,2811:0,2812:9,2813:2,2814:2,2815:0,2816:0,2817:4,2818:4,2819:6,2820:6,2821:2,2822:8,2823:8,2824:3,2825:3,2826:2,2827:2,2828:2,2829:1,2830:1,2831:1,2832:3,2833:6,2834:5,2835:3,2836:3,2837:0,2838:8,2839:0,2840:0,2841:9,2842:2,2843:3,2844:3,2845:0,2846:3,2847:6,2848:2,2849:3,2850:1,2851:6,2852:3,2853:2,2854:6,2855:0,2856:0,2857:3,2858:9,2859:9,2860:9,2861:8,2862:2,2863:2,2864:1,2865:9,2866:6,2867:4,2868:3,2869:3,2870:3,2871:3,2872:2,2873:4,2874:2,2875:7,2876:3,2877:2,2878:3,2879:3,2880:2,2881:2,2882:3,2883:2,2884:3,2885:6,2886:6,2887:6,2888:0,2889:2,2890:4,2891:4,2892:4,2893:3,2894:3,2895:9,2896:3,2897:9,2898:9,2899:1,2900:3,2901:3,2902:3,2903:9,2904:4,2905:1,2906:3,2907:1,2908:9,2909:9,2910:9,2911:9,2912:2,2913:2,2914:9,2916:3,2917:9,2918:9,2919:2,2920:9,2921:9,2922:9,2923:9,2924:0,2925:3,2926:2,2927:9,2928:6,2929:3,2930:5,2931:9,2932:4,2933:6,2934:5,2935:9,2936:9,2937:9,2938:9,2939:6,2940:6,2941:6,2942:6,2943:7,2948:8,2949:6,2950:6,2951:7,2952:2,2953:8,2954:8,2955:8,2956:8,2957:8,2958:6,2959:3,2960:7,2961:3,2987:8,2988:6,2989:6,2990:8,2991:6,2992:6,2993:6,2994:7,2995:8,2996:7,2997:7,2998:9,2999:9,3000:3,3001:9,3002:9,3003:9,3004:9,3005:9,3006:9,3007:9,3008:9,3010:3,3011:0,3012:1,3013:3,3014:0,3015:1,3016:8,3017:8,3018:8,3020:0,3021:0,3022:0,3023:0,3026:8,3027:8,3028:8,3029:8,3038:7,3039:6,3040:6,3041:1,3061:9,3069:3,3070:1,3071:1,3072:3,3073:8,3074:9,3075:5,3076:5,3077:5,3078:5,3079:5,3080:5,3081:5,3082:5,3083:5,3084:5,3085:7,3086:9,3087:9,3088:9,3089:6,3090:6,3091:1,3092:0,3096:5,3097:6,3098:6,3099:6,3101:9,3102:9,3103:9,3105:0,3106:7,3108:8,3109:8,3122:3,3123:3,3124:9,3125:9,3126:9,3127:9,3128:9,3153:9,3154:9,3155:2,3156:9,3157:9,3158:9,3159:9,3161:6,3169:2,3170:2,3175:2,3176:6,3177:6,3178:6,3179:2,3180:6,3181:6,3190:9,3191:6,3192:6,3193:6,3194:6,3195:6,3196:6,3197:2,3198:2,3199:0,3200:0,3202:9,3203:9,3208:4,3209:5,3210:7,3211:2,3212:1,3213:0,3214:4,3215:5,3216:7,3217:2,3218:3,3219:0,3220:4,3221:5,3222:2,3223:1,3224:7,3225:0,3226:5,3227:0,3228:7,3229:1,3230:4,3231:2,3232:2,3233:5,3234:0,3235:7,3236:1,3237:4,3238:2,3239:2,3240:5,3241:0,3242:7,3243:1,3244:4,3245:2,3246:2,3247:2,3248:9,3249:9,3250:9,3251:6,3252:6,3253:6,3254:6,3255:2,3256:9,3384:1,3385:9,3386:3,3387:0,3388:2,3389:3,3390:1,3391:4,3392:3,3393:6,3394:3,3395:3,3396:3,3397:3,3398:4,3399:1,3400:3,3401:0,3402:3,3403:3,3404:3,3405:9,3406:0,3407:2,3408:0,3409:3,3410:2,3411:2,3412:3,3413:1,3414:3,3415:1,3416:1,3417:8,3418:3,3419:9,3420:3,3421:1,3422:3,3423:3,3424:9,3425:0,3426:0,3427:8,3428:9,3429:3,3430:9,3431:1,3432:3,3433:3,3434:9,3435:2,3436:3,3437:8,3438:3,3439:0,3440:9,3442:1,3443:3,3444:2,3445:8,3446:8,3447:8,3448:8,3449:8,3450:8,3451:8,3452:8,3454:6,3455:9,3473:8,3474:6,3475:2,3476:8,3477:8,3478:8,3479:8,3480:8,3481:6,3482:6,3483:6,3484:8,3485:8,3487:8,3488:8,3489:8,3490:8,3494:9,3495:3,3496:9,3497:3,3498:2,3499:1,3500:0,3501:1,3502:3,3503:3,3504:3,3505:3,3506:3,3507:3,3508:3,3510:9,3511:9,3512:9,3513:0,3514:9,3515:1,3516:1,3517:1,3518:9,3519:9,3520:9,3521:0,3522:9,3523:1,3524:9,3525:1,3526:1,3527:5,3528:5,3569:5,3570:5,3621:6,3622:0,3623:0,3624:3,3625:1,3626:6,3627:6,3628:6,3629:7,3630:2,3631:9,3632:0,3633:4,3636:6,3637:8,3638:8,3639:8,3640:8,3641:8,3642:8,3643:6,3644:6,3645:6,3646:6,3647:6,3648:6,3649:8,3650:8,3651:8,3652:8,3653:8,3654:8,3658:8,3659:8,3660:7,3661:7,3662:0,3663:0,3664:8,3665:8,3666:6,3667:6,3669:6,3670:0,3736:0,3737:0,3738:0,3739:3,3740:4,3741:9,3742:9,3743:9,3744:0,3745:0,3746:0,3747:0,3748:0,3749:0,3750:6,3751:8,3752:8,3753:8,3754:7,3755:3,3756:8,3757:6,3758:0,3759:0,3760:8,3761:8,3762:1,3763:8,3764:6,3765:8,3787:3,3788:4,3790:0,3792:1,3793:1,3794:1,3795:1,3796:1,3797:9,3798:9,3799:2,3800:9,3801:1,3802:3,3803:0,3804:3,3810:9,3811:5,3812:4,3813:0,3814:2,3815:3,3816:1,3896:2,20255:0,20256:2,20257:4,20258:9,20259:1,20260:5,20261:3,20262:9,20263:3,20269:9,20270:3,20271:9,20272:9,20273:9,20274:0,20275:3,20276:0,20277:0,20278:9,20279:3,20280:0,20340:9,20341:9,20342:9,20343:1,20344:4,20345:9,20346:2,20347:2,20348:6,20349:4,20350:9,20351:9,20352:4,20353:9,20355:9,20356:9,20357:9,20358:6,20359:9,20360:9,20361:4,20362:4,20363:4,20364:9,20365:6,20366:6,20367:6,20368:6,20369:1,20370:3,20371:8,20372:9,20373:6,20374:9,20375:9,20376:9,20377:6,20378:9,20379:1,20380:0,20381:9,20382:9,20419:0,20420:2,20421:6,20422:8,20543:9,20560:9,20592:7,20593:4,20594:9,20595:9,20596:9,20597:9,20598:9,20599:9,20600:9,20601:9,20602:3,20603:9,20620:0,20621:6,20622:9,20623:9,20624:3,20625:3,20626:4,20627:4,20628:9,20629:9,20630:9,20631:0,20632:0,20633:9,20634:9,20635:9,20636:9,20637:9,20638:6,20639:2,20640:9,20641:9,20642:9,20643:1,20644:1,20645:1,20646:1,20647:1,20648:0,20649:0,20650:2,20651:1,20652:4,20653:3,20654:0,20655:2,20656:1,20657:4,20658:3,20659:0,20660:0,20661:2,20662:1,20663:4,20664:3,20665:4,20666:4,20667:6,20668:6,20669:6,20670:6,20671:0,20672:0,20673:0,20674:1,20675:1,20676:1,20677:1,20678:0,20679:9,20680:9,20681:9,20682:6,20683:3,20684:9,20685:6,20686:4,20687:4,20688:7,20689:7,20690:7,20691:4,20692:5,20693:7,20694:7,20696:9,20697:9,20698:9,20699:7,20700:0,20801:1,20802:1,20803:1,20804:1,20805:1,20806:2,20807:1,20808:1,20809:1,20810:1,20811:1,20834:9,20835:9,20836:9,20837:9,20843:6,20848:3,20849:3,20850:3,20851:9,20920:0,20921:1,20922:2,20923:3,20924:3,20925:2,20926:0,20927:1,20928:9,20929:9,20930:4,20931:9,20932:6,20933:4,20934:6,20935:9,20936:8,20937:9,20938:8,20939:8,20940:1,20941:3,20942:6,20943:6,21064:9,21065:9,21066:9,21067:9,21068:9,21069:9,21070:9,21071:9,21072:9,21073:9,21074:9,21075:9,21076:9,21077:9,21078:1,21079:3,21080:0,21081:2,21082:4,21083:5,21084:6,21085:7,21086:8,21386:3,21387:3,21388:3,21389:3,21390:3,21391:9,21392:6,21393:6,21394:4,21395:9";
+  var MOB_ELEM_MAP=null;
+  function arrowElemLoad(){if(MOB_ELEM_MAP)return MOB_ELEM_MAP;MOB_ELEM_MAP={};try{MOB_ELEM_RAW.split(",").forEach(function(p){var i=p.indexOf(":");if(i<=0)return;var id=p.slice(0,i),c=Number(p.slice(i+1));if(!id||!isFinite(c))return;var n=ARROW_ELEM_ORDER[c];if(n)MOB_ELEM_MAP[id]=n;});}catch(e){}return MOB_ELEM_MAP;}
+  function mobElemName(mid){try{var m=arrowPos(mid);return m?(arrowElemLoad()[String(m)]||""):"";}catch(e){return "";}}
+  // 常用属性箭建议（背包里没有也能先配上；真正换箭仍要求背包里有这支箭，否则按默认箭兜底）
+  var ARROW_ELEM_SUGGEST=[[1757,"无形箭矢（念）"],[1753,"钢铁箭矢（无）"],[1762,"铁锈箭矢（毒）"],[1766,"破魔箭矢（圣）"],[1767,"影子箭矢（暗）"],[1770,"铁箭矢（无）"]];
+  function arrowFillElemSelect(sel,cur){if(!sel)return;sel.innerHTML="";var o0=document.createElement("option");o0.value="";o0.textContent="不强制";sel.appendChild(o0);var seen={};ARROW_ELEM_SUGGEST.forEach(function(x){if(seen[x[0]])return;seen[x[0]]=1;var o=document.createElement("option");o.value=String(x[0]);o.textContent=x[1]+" #"+x[0];sel.appendChild(o);});try{readBagArrows().forEach(function(x){if(seen[x.itid])return;seen[x.itid]=1;var o=document.createElement("option");o.value=String(x.itid);o.textContent=(getItemName(x.itid)||("ITID "+x.itid))+" #"+x.itid+" ×"+x.count;sel.appendChild(o);});}catch(e){}if(cur&&!seen[cur]){var o2=document.createElement("option");o2.value=String(cur);o2.textContent=arrowItemName(cur)+"（当前配置）";sel.appendChild(o2);}sel.value=cur?String(cur):"";}
+  // V2.36.13 boss 粘性 + 目标防抖：无限初级这类随机刷新图上，目标一抖就换箭会把箭换乱
+  var arrowStickyBoss=null,arrowStableKey="",arrowStableAt=0,ARROW_STABLE_MS=1500,ARROW_BOSS_KEEP_MS=30000;
+  function arrowBossAlive(mid,gid){try{var em=CLIENT.EM||(window.require&&window.require("Renderer/EntityManager")),found=false;if(!em||!em.forEach)return false;em.forEach(function(e){if(found||!e)return;if(Number(e.objecttype)!==5)return;var j=Number(e._job!=null?e._job:(e.job!=null?e.job:e.mobId));if((mid&&j===mid)||(gid&&gidInt(e.GID)===gid))found=true;});return found;}catch(e){return false;}}
+  function arrowEffectiveMid(mid,gid,now){var m=arrowPos(mid);if(m&&arrowBoss(m))arrowStickyBoss={mid:m,gid:gidInt(gid)||0,at:now};if(arrowStickyBoss&&now-arrowStickyBoss.at<=ARROW_BOSS_KEEP_MS){var b=arrowStickyBoss;if(b.mid===m){b.at=now;if(gid)b.gid=gidInt(gid)||b.gid;}else if(arrowBossAlive(b.mid,b.gid)){b.at=now;return {mid:b.mid,sticky:true};}else arrowStickyBoss=null;}return {mid:m,sticky:false};}
+  function arrowStableGate(key,now){if(arrowStableKey!==key){arrowStableKey=key;arrowStableAt=now;arrowPending=null;arrowSelfPending=null;return false;}return now-arrowStableAt>=ARROW_STABLE_MS;}
   function arrowFill(s){if(!s)return;var old=s.value;s.innerHTML='<option value="">选择背包 type10 箭矢</option>';readBagArrows().forEach(function(x){var o=document.createElement("option");o.value=x.itid;o.textContent=(getItemName(x.itid)||("ITID "+x.itid))+" #"+x.itid+" ×"+x.count;s.appendChild(o);});s.value=old;}
-  function arrowKindName(k){return k==="mob"?"指定怪箭":"默认箭";}
+  function arrowKindName(k){return k==="elem"?"属性箭":(k==="mob"?"指定怪箭":"默认箭");}
   function arrowMobName(mid){try{var m=(getMobDb()||{})[arrowPos(mid)];return m?(m.kName||m.name||m.Name||("怪物 #"+mid)):("怪物 #"+mid);}catch(e){return "怪物 #"+mid;}}
   function arrowItemName(itid){try{return (getItemName(itid)||("ITID "+itid))+" #"+itid;}catch(e){return "ITID "+itid;}}
   function arrowFillMobs(s,q){if(!s)return;var old=s.value,db=getMobDb()||{},needle=String(q||"").trim().toLowerCase(),keys=[];Object.keys(db).forEach(function(k){if(!arrowPos(k))return;if(needle&&arrowMobName(k).toLowerCase().indexOf(needle)<0&&String(k).indexOf(needle)<0)return;keys.push(k);});keys.sort(function(a,b){return Number(a)-Number(b);});s.innerHTML='<option value="">选择怪物（可先搜索）</option>';keys.forEach(function(k){var m=db[k]||{},o=document.createElement("option");o.value=k;o.textContent=arrowMobName(k)+" #"+k+(Number(m.MvpDropsNum)>0?" [Boss]":"");s.appendChild(o);});if(old&&keys.indexOf(old)>=0)s.value=old;}
-  function arrowRenderCfg(){var box=$id("dsh-arrow-rules-list");if(!box)return;box.innerHTML="";var def=arrowPos(arrowRules.defaultItid),r0=document.createElement("div");r0.className="row";var s0=document.createElement("span");s0.style.cssText="flex:1 1 auto";s0.textContent="默认箭："+(def?arrowItemName(def):"未设置（不换箭，保持当前装备）");r0.appendChild(s0);box.appendChild(r0);var ids=Object.keys(arrowRules.byMid).map(function(k){return arrowPos(k);}).filter(function(x){return !!x;});ids.sort(function(a,b){return a-b;});if(!ids.length){var e=document.createElement("span");e.className="st";e.textContent="未指定怪物：没配过的怪一律用默认箭。";box.appendChild(e);return;}ids.forEach(function(mid){var row=document.createElement("div");row.className="row";var t=document.createElement("span");t.style.cssText="flex:1 1 auto";t.textContent=arrowMobName(mid)+" #"+mid+" → "+arrowItemName(arrowRules.byMid[mid]);row.appendChild(t);var b=document.createElement("button");b.className="ghost";b.textContent="删除";b.style.cssText="flex:0 0 auto;padding:1px 8px;font-size:11px";b.addEventListener("click",function(){delete arrowRules.byMid[mid];arrowSave();arrowRenderCfg();arrowSay("已删除指定怪 #"+mid);});row.appendChild(b);box.appendChild(row);});}
+  function arrowRenderCfg(){var box=$id("dsh-arrow-rules-list");if(!box)return;box.innerHTML="";var def=arrowPos(arrowRules.defaultItid),r0=document.createElement("div");r0.className="row";var s0=document.createElement("span");s0.style.cssText="flex:1 1 auto";s0.textContent="默认箭："+(def?arrowItemName(def):"未设置（不换箭，保持当前装备）");r0.appendChild(s0);box.appendChild(r0);var head=document.createElement("div");head.className="st";head.textContent="属性 → 箭（按当前攻击目标的属性自动换；留空=不强制；优先级 属性箭 > 指定怪箭 > 默认箭）";box.appendChild(head);ARROW_ELEM_ORDER.forEach(function(en){var row=document.createElement("div");row.className="row";var lb=document.createElement("span");lb.style.cssText="flex:0 0 auto;min-width:26px";lb.textContent=en;row.appendChild(lb);var sel=document.createElement("select");sel.style.cssText="flex:1 1 auto";arrowFillElemSelect(sel,arrowPos(arrowRules.byElem[en]));sel.addEventListener("change",function(){var v=arrowPos(this.value);if(v)arrowRules.byElem[en]=v;else delete arrowRules.byElem[en];arrowSave();arrowSay(v?("属性箭已保存："+en+" → "+arrowItemName(v)):("已清空"+en+"属性箭"));});row.appendChild(sel);if(arrowPos(arrowRules.byElem[en])){var clr=document.createElement("button");clr.className="ghost";clr.textContent="清";clr.style.cssText="flex:0 0 auto;padding:1px 6px;font-size:11px";clr.addEventListener("click",function(){delete arrowRules.byElem[en];arrowSave();arrowRenderCfg();arrowSay("已清空"+en+"属性箭");});row.appendChild(clr);}box.appendChild(row);});var ids=Object.keys(arrowRules.byMid).map(function(k){return arrowPos(k);}).filter(function(x){return !!x;});ids.sort(function(a,b){return a-b;});if(!ids.length){var e=document.createElement("span");e.className="st";e.textContent="未指定怪物：没配过的怪一律用属性箭/默认箭。";box.appendChild(e);return;}ids.forEach(function(mid){var row=document.createElement("div");row.className="row";var t=document.createElement("span");t.style.cssText="flex:1 1 auto";t.textContent=arrowMobName(mid)+" #"+mid+" → "+arrowItemName(arrowRules.byMid[mid])+(mobElemName(mid)?(" · "+mobElemName(mid)+"属性"):"");row.appendChild(t);var b=document.createElement("button");b.className="ghost";b.textContent="删除";b.style.cssText="flex:0 0 auto;padding:1px 8px;font-size:11px";b.addEventListener("click",function(){delete arrowRules.byMid[mid];arrowSave();arrowRenderCfg();arrowSay("已删除指定怪 #"+mid);});row.appendChild(b);box.appendChild(row);});}
   function arrowCurrentMid(){try{var gid=gidInt(zLock&&zLock.gid);if(!gid){var me=CLIENT.SS&&CLIENT.SS.Entity;gid=gidInt(me&&me.targetGID);}if(!gid&&dps&&dps.cur&&Number(dps.cur.lastAt)&&Date.now()-Number(dps.cur.lastAt)<15000)gid=gidInt(dps.cur.gid);if(!gid)return 0;var list=apiEntities();for(var i=0;i<list.length;i++){if(list[i].gid===gid&&list[i].type===5&&list[i].mid)return list[i].mid;}}catch(e){}return 0;}
   var arrowSelfPending=null,arrowSelfSaid="",arrowQuiverAt=0;
   function arrowSelfSay(s){s=String(s);if(s===arrowSelfSaid)return;arrowSelfSaid=s;arrowSay(s);}
@@ -14182,9 +14373,10 @@
   function arrowSelfWanted(){try{if(!arrowRules.enabled)return false;var mid=arrowCurrentMid();if(!mid)return false;var list=arrowCandidates(mid,arrowRules),ammo=readEquippedAmmo(),bag=readBagArrows();for(var i=0;i<list.length;i++){if(ammo&&Number(ammo.itid)===list[i].itid&&Number(ammo.count)>0)return true;for(var j=0;j<bag.length;j++){if(Number(bag[j].itid)===list[i].itid)return true;}}return false;}catch(e){return false;}}
   function arrowSelfTick(now){try{
     if(!arrowRules.enabled||arrowTarget||externalAutomationOwns("arrow")||!clientReady())return;
-    var mid=arrowCurrentMid();if(!mid)return;
+    var mid0=arrowCurrentMid();if(!mid0)return;var eff=arrowEffectiveMid(mid0,0,now),mid=eff.mid||mid0;
+    if(!arrowStableGate("s"+mid,now)){arrowSelfSay("目标刚换，等 1.5 秒确认："+arrowMobName(mid)+(eff.sticky?"[BOSS粘性]":""));return;}
     var list=arrowCandidates(mid,arrowRules);if(!list.length)return;
-    var tag=arrowMobName(mid)+(arrowBoss(mid)?"[BOSS]":""),ammo=readEquippedAmmo(),bag=readBagArrows(),i=0,j=0,row=null;
+    var tag=arrowMobName(mid)+(arrowBoss(mid)?"[BOSS]":"")+(eff.sticky?"[BOSS粘性]":""),ammo=readEquippedAmmo(),bag=readBagArrows(),i=0,j=0,row=null;
     for(i=0;i<list.length;i++){
       var same=!!(ammo&&Number(ammo.itid)===list[i].itid);
       if(same&&Number(ammo.count)>0){arrowSelfPending=null;arrowSelfSay("已按目标换好"+arrowKindName(list[i].kind)+"："+tag+" → "+arrowItemName(list[i].itid));return;}
@@ -14210,7 +14402,8 @@
       + '<div class="row"><span class="lb" style="min-width:52px">该怪箭</span><select id="dsh-arrow-rules-mobitem"></select><button class="green" id="dsh-arrow-rules-mobsave">保存指定怪箭</button></div>'
       + '<div class="box"><div class="b-hd">已配置</div><div id="dsh-arrow-rules-list" style="font-size:11px;max-height:104px;overflow:auto"></div></div>'
       + '<div id="dsh-arrow-rules-status" class="st"></div>'
-      + '<div class="log">规则：按你当前攻击的那只怪换箭（助手挂机、内挂、手动打的都算）→ 配过的怪用你配的箭；没配过的用默认箭；背包里没有要用的箭就用默认箭兜底；默认箭也没设 → 不换箭（保持当前装备）。道场脚本报的怪优先。</div>'
+      + '<div class="log">规则：优先级 属性箭（按目标属性）&gt; 指定怪箭 &gt; 默认箭；之后才是下面的说明。按你当前攻击的那只怪换箭（助手挂机、内挂、手动打的都算）→ 属性配过的先按属性换；这只怪单独配过就用指定怪箭；都没配就用默认箭；背包里没有要用的箭就用默认箭兜底；默认箭也没设 → 不换箭（保持当前装备）。道场脚本报的怪优先。大 MVP（MvpDropsNum>0）30 秒内还在实体列表里就保持它的箭（boss 粘性）；目标刚换会先等 1.5 秒确认再换，随机刷新图不再乱换。</div>'
+      + '<div class="log">属性 → 箭：火/水/风/地/毒/圣/暗/念/不死/无 十行，留空=不强制；怪物属性取自内嵌的全量怪物表（2471 只）。真实换箭仍要求背包里有这支箭，否则按默认箭兜底。</div>'
       + '<div class="log">背包里一支箭都没有时会自动打开对应箭矢筒（风灵箭矢 → 风灵箭矢筒 / 魔法风灵箭矢筒）；连箭矢筒也没有就只提示，不乱换。</div>';
     dock.appendChild(h);
     var en=$id("dsh-arrow-rules-enabled"),item=$id("dsh-arrow-rules-item"),mob=$id("dsh-arrow-rules-mob"),mobItem=$id("dsh-arrow-rules-mobitem"),find=$id("dsh-arrow-rules-find");
@@ -14221,7 +14414,7 @@
     $id("dsh-arrow-rules-cur").onclick=function(){var mid=arrowCurrentMid();if(!mid){arrowSay("取不到当前目标（先锁定或攻击一只怪）");return;}if(find)find.value="";arrowFillMobs(mob,"");if(!mob.querySelector('option[value="'+mid+'"]')){var o=document.createElement("option");o.value=String(mid);o.textContent=arrowMobName(mid)+" #"+mid;mob.appendChild(o);}mob.value=String(mid);arrowSay("已选中 "+arrowMobName(mid)+" #"+mid);};
     $id("dsh-arrow-rules-mobsave").onclick=function(){var mid=arrowPos(mob.value),itid=arrowPos(mobItem.value);if(!mid||!itid){arrowSay("请选择怪物与箭矢");return;}arrowRules.byMid[mid]=itid;arrowSave();arrowRenderCfg();arrowSay("已保存 "+arrowMobName(mid)+" → "+arrowItemName(itid));};
     arrowSay(arrowStatus);return h;}
-  function arrowTargetTick(now){arrowReady=false;arrowBlocked=!!arrowTarget;if(!arrowTarget||!arrowRules.enabled){arrowBlocked=!!arrowTarget&&arrowRules.enabled;return arrowBlocked;}var list=arrowCandidates(arrowTarget.mid,arrowRules),ammo=readEquippedAmmo(),bag=readBagArrows(),pick=null,i=0,j=0;for(i=0;i<list.length;i++){if(ammo&&Number(ammo.itid)===list[i].itid&&Number(ammo.count)>0){pick=list[i];break;}for(j=0;j<bag.length;j++){if(Number(bag[j].itid)===list[i].itid){pick={kind:list[i].kind,itid:list[i].itid,index:bag[j].index};break;}}if(pick)break;}if(!list.length){arrowPending=null;arrowBlocked=false;arrowReady=true;arrowSay("未配置箭矢，保持当前箭");return false;}if(ammo&&pick&&Number(ammo.itid)===pick.itid&&Number(ammo.count)>0){arrowPending=null;arrowBlocked=false;arrowReady=true;arrowSay("已装备"+arrowKindName(pick.kind)+" #"+pick.itid);return false;}if(!pick){var q=arrowUseQuiver(list[0].itid);arrowSay(q&&q.q?("背包缺少"+arrowItemName(list[0].itid)+"，已尝试"+q.q.name):("阻塞：背包缺少 #"+list[0].itid));return true;}var p=arrowPending;if(p&&p.itid===pick.itid){if(now<p.confirmUntil)return true;if(!p.retryAt){p.retryAt=now+3000;arrowSay("确认超时，3秒后重试");return true;}if(now<p.retryAt)return true;}if(equipArrow(pick.index)){arrowPending={itid:pick.itid,confirmUntil:now+5000,retryAt:0};arrowSay("换箭中"+arrowKindName(pick.kind)+" #"+pick.itid);return true;}arrowSay("阻塞：装备请求失败");return true;}
+  function arrowTargetTick(now){arrowReady=false;arrowBlocked=!!arrowTarget;if(!arrowTarget||!arrowRules.enabled){arrowBlocked=!!arrowTarget&&arrowRules.enabled;return arrowBlocked;}var eff=arrowEffectiveMid(arrowTarget.mid,arrowTarget.gid,now),midUse=eff.mid||arrowTarget.mid;if(!arrowStableGate("t"+midUse+"@"+arrowTarget.gid,now)){arrowBlocked=true;return true;}var list=arrowCandidates(midUse,arrowRules),ammo=readEquippedAmmo(),bag=readBagArrows(),pick=null,i=0,j=0;for(i=0;i<list.length;i++){if(ammo&&Number(ammo.itid)===list[i].itid&&Number(ammo.count)>0){pick=list[i];break;}for(j=0;j<bag.length;j++){if(Number(bag[j].itid)===list[i].itid){pick={kind:list[i].kind,itid:list[i].itid,index:bag[j].index};break;}}if(pick)break;}if(!list.length){arrowPending=null;arrowBlocked=false;arrowReady=true;arrowSay("未配置箭矢，保持当前箭");return false;}if(ammo&&pick&&Number(ammo.itid)===pick.itid&&Number(ammo.count)>0){arrowPending=null;arrowBlocked=false;arrowReady=true;arrowSay("已装备"+arrowKindName(pick.kind)+" #"+pick.itid);return false;}if(!pick){var q=arrowUseQuiver(list[0].itid);arrowSay(q&&q.q?("背包缺少"+arrowItemName(list[0].itid)+"，已尝试"+q.q.name):("阻塞：背包缺少 #"+list[0].itid));return true;}var p=arrowPending;if(p&&p.itid===pick.itid){if(now<p.confirmUntil)return true;if(!p.retryAt){p.retryAt=now+3000;arrowSay("确认超时，3秒后重试");return true;}if(now<p.retryAt)return true;}if(equipArrow(pick.index)){arrowPending={itid:pick.itid,confirmUntil:now+5000,retryAt:0};arrowSay("换箭中"+arrowKindName(pick.kind)+" #"+pick.itid);return true;}arrowSay("阻塞：装备请求失败");return true;}
   setInterval(function(){var t=Date.now();try{arrowTargetTick(t);}catch(e){}try{arrowSelfTick(t);}catch(e){}},250);
 
   var API_PROTOCOL=1,apiGeneration=0,apiLease=null,apiMenuUsed="",apiNoticeObserver=null;
@@ -14411,7 +14604,7 @@
   setInterval(function(){apiBattleTick();if(apiLease)apiEmit("state",{owner:apiLease.owner});},250);
 
   // Session-only intent: no stale recovery after reload or role switch.
-  var deathReturn = null, deathReturnStopping = false;
+  var deathReturn = null, deathReturnStopping = false, deathReturnProbeAt = 0, deathReturnNoModeSaid = false;
   function deathReturnCancel(reason) {
     if (deathReturn) { deathReturn = null; setStatus("死亡回图停止：" + reason, "warn"); }
   }
@@ -14470,9 +14663,19 @@
     var hp = life && Number(life.hp), max = life && Number(life.hp_max);
     var dead = !!(ent && (ent.isDeath || (ent.ACTION && ent.action === ent.ACTION.DIE)));
     if (!clientReady() || !(gid > 0) || gid !== lastCharGid || charNameOf(ent) !== lastCharName || activeProfileKey() === "default" || !map || !life || life.hp == null || life.hp_max == null || !Number.isFinite(hp) || !Number.isFinite(max) || max <= 0 || hp < 0 || hp > max || apiLease || scrRun.running || dojoRun.on || bagClean.busy || moveXY.busy || escapePending()) { deathReturnCancel("角色、生命或操作权不确定"); return; }
-    var mode = zRunning ? "assistant" : npBattleState() === true ? "builtin" : "";
+    // V2.36.13：助手模式只认「助手在跑」，不再要求内挂状态可读（用户在线挂机只用助手模式）；
+    // 非助手模式才需要内挂状态：读不到就先做一次「快速校对」拿状态（校对结束一定是关闭），仍未知就明确说一句，不静默。
+    var npNow = npBattleState();
+    var mode = zRunning ? "assistant" : npNow === true ? "builtin" : "";
     if (!deathReturn) {
-      if (map === target && !dead && hp > 0 && npBattleState() !== null && mode) deathReturn = { gid: gid, profile: activeProfileKey(), target: target, mode: mode, phase: "armed" };
+      if (map === target && !dead && hp > 0 && mode) { deathReturnNoModeSaid = false; deathReturn = { gid: gid, profile: activeProfileKey(), target: target, mode: mode, phase: "armed" }; return; }
+      if (map === target && !dead && hp > 0 && !mode && !npProbeBusy && now - deathReturnProbeAt >= 60000) {
+        deathReturnProbeAt = now;
+        setStatus("内挂状态未知：发起一次快速校对（点一次开关读回执，结束=关闭）", "st");
+        npProbeBattle("death-arm", function () { try { deathReturnTick(); } catch (e) {} });
+        return;
+      }
+      if (map === target && !dead && hp > 0 && !mode && !deathReturnNoModeSaid) { deathReturnNoModeSaid = true; setStatus("本图没在挂战斗（助手没跑、内挂也没开），暂不布防", "st"); }
       return;
     }
     var r = deathReturn;
@@ -14490,7 +14693,10 @@
       return;
     }
     if (now > r.until) { deathReturnCancel("超时"); return; }
-    if (zRunning || (r.phase !== "resuming" && npBattleState() !== false && !(r.phase === "healing" && now - (r.stoppedAt || 0) < 2000 && npBattleState() === true))) { deathReturnCancel("战斗已被接管或状态不确定"); return; }
+    var npLive = npBattleState();
+    // 助手模式：死亡时助手已被我们停掉，只有 zRunning 才算「战斗被接管」；未知态不再当异常（原先会立刻取消）。
+    var npBusy = r.mode === "assistant" ? false : (npLive !== false && !(r.phase === "healing" && now - (r.stoppedAt || 0) < 2000 && npLive === true));
+    if (zRunning || (r.phase !== "resuming" && npBusy)) { deathReturnCancel("战斗已被接管或状态不确定"); return; }
     if (r.phase === "healing") {
       // 「重新开始」没点成（客户端没反应/被拒）时重试，只在本体 HP 仍为 0 时发，复活后绝不再发第二次
       if (dead || hp <= 0) {

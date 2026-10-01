@@ -3,42 +3,71 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const source=fs.readFileSync(new URL('../ro-assist.user.js',import.meta.url),'utf8');
-test('death return needs witnessed death, same role, full HP before teleport and confirmed return',()=>{
+test('death return clicks restart, retries while HP is zero, and auto-hangs only when the switch is on',()=>{
   for(const file of ['ro-assist.user.js','ro-assist-exp.user.js']){
     const src=fs.readFileSync(new URL('../'+file,import.meta.url),'utf8');
     assert.doesNotMatch(src,/dsh-z-returncity/,'回城点即寄存点，不得再有回城地图设置项');
+    assert.ok(src.includes('id="dsh-z-returnauto"'),'必须有「回到目标图自动开启助手挂机」开关');
+    assert.ok(src.includes('["dsh-z-returnauto", "c"]'),'开关必须进角色档案存档表');
+    assert.ok(src.includes('new CLIENT.PS.CZ.RESTART()'),'助手必须能自己点「重新开始」回寄存点');
     const start=src.indexOf('  // Session-only intent: no stale recovery');
     const end=src.indexOf('  // ================= 无限道场',start);
     assert.ok(start>0&&end>start);
-    const controls={ 'dsh-z-deathreturn':{checked:true},'dsh-z-returnmap':{value:'pay_fild01'} };
+    const controls={ 'dsh-z-deathreturn':{checked:true},'dsh-z-returnmap':{value:'pay_fild01'},'dsh-z-returnauto':{checked:true} };
     const ent={GID:42,display:{name:'测试角色'},life:{hp:70,hp_max:100},action:0,ACTION:{DIE:9,SIT:2}};
-    let map='pay_fild01',clock=100000,mode=true,stops=0,starts=0,sits=[],teleports=[];
-    const context={Date:{now:()=>clock},Number,String,activeProfileKey:()=> 'hero_42',lastCharGid:42,lastCharName:'测试角色',charNameOf:e=>e.display.name,profUIApplied:true,
+    let map='pay_fild01',clock=100000,mode=true,stops=0,starts=0,sits=[],teleports=[],packets=[];
+    const saveButton={clicked:0,getClientRects:()=>[{}],click(){this.clicked++;}};
+    let escapeHost=null;
+    const context={Date:{now:()=>clock},Number,String,
+      document:{getElementById:id=>id==='Escape'?escapeHost:null},
+      CLIENT:{SS:{Entity:ent},PS:{CZ:{RESTART:function(){this.type=0;}}},NM:{sendPacket:p=>packets.push(p.type)}},
+      activeProfileKey:()=> 'hero_42',lastCharGid:42,lastCharName:'测试角色',charNameOf:e=>e.display.name,profUIApplied:true,
       $id:id=>controls[id],normMapKey:m=>String(m||'').replace(/\.(gat|rsw)$/,'').toLowerCase(),getMapName:()=>map,
-      CLIENT:{SS:{Entity:ent}},gidInt:Number,clientReady:()=>true,apiLease:null,scrRun:{running:false},dojoRun:{on:false},bagClean:{busy:false},moveXY:{busy:false},escapePending:()=>false,
+      gidInt:Number,clientReady:()=>true,apiLease:null,scrRun:{running:false},dojoRun:{on:false},bagClean:{busy:false},moveXY:{busy:false},escapePending:()=>false,
       zRunning:true,npBattleState:()=>mode,npRequestBattle:(want)=>{mode=want;return 'sent';},stopZhu(){stops++;context.zRunning=false;mode=false},startZhu(){starts++;context.zRunning=true},
       sendSit:x=>{sits.push(x);ent.action=x?2:0;},isSitting:()=>ent.action===2,isWinOpen:()=>false,gptTeleport:x=>{teleports.push(x);return true},setStatus(){},masterTickReg(fn){context.tick=fn}};
     vm.createContext(context);vm.runInContext(src.slice(start,end),context);
     context.tick();assert.equal(stops,0);assert.equal(teleports.length,0);
     map='prontera';context.tick();assert.equal(stops,0); // 不在目标图不布防
     map='pay_fild01';context.tick();                       // 目标图 + 战斗中 → 布防
+    // 死亡菜单开着：先点客户端真实按钮（与手动点击同一条路径），不发裸包
+    escapeHost={shadowRoot:{querySelector:()=>saveButton}};
     ent.life.hp=0;ent.isDeath=true;context.tick();assert.equal(stops,1); // 亲眼目睹死亡才停手
-    context.tick();assert.deepEqual(sits,[]);             // 还没点「重新开始」→ 什么都不做
+    assert.equal(saveButton.clicked,1);assert.deepEqual(packets,[]);
+    clock+=4000;context.tick();assert.equal(saveButton.clicked,2);       // HP 仍为 0 → 重试
+    clock+=4000;context.tick();clock+=4000;context.tick();assert.equal(saveButton.clicked,4); // 上限 4 次（首发 + 3 次重试）
+    clock+=4000;context.tick();assert.equal(saveButton.clicked,4);       // 不再发，等你手点
+    escapeHost=null;
     map='prontera';ent.isDeath=false;ent.life.hp=70;context.tick();assert.deepEqual(sits,[true]); // 回城坐下回血
     ent.life.hp=99;clock+=3000;context.tick();assert.deepEqual(sits,[true]);assert.equal(teleports.length,0);
     ent.life.hp=100;clock+=3000;context.tick();assert.deepEqual(sits,[true,false]); // 满血站起
     context.tick();assert.deepEqual(teleports,['pay_fild01']); // 满血后才提交传送
     map='pay_fild01';context.tick();assert.equal(starts,0);      // 换图结算期内不恢复，避免刚开打就被换图逻辑停掉
     clock+=2500;context.tick();assert.equal(starts,1);
-    // 寄存点正好是目标图：满血直接开打，不传送
+    // 死亡菜单取不到按钮（客户端换了实现）→ 直接发同一个 CZ.RESTART type=0 包
     context.zRunning=false;mode=false;context.tick();context.zRunning=true;mode=true;context.tick();
-    ent.life.hp=0;ent.isDeath=true;context.tick();assert.equal(stops,2);
-    ent.isDeath=false;ent.life.hp=55;context.tick();assert.equal(starts,1); // 未满血不开打
-    ent.life.hp=100;context.tick();assert.equal(starts,1); // 满血先站起
-    context.tick();assert.equal(starts,2);assert.equal(teleports.length,1); // 寄存点就在目标图 → 不传送，直接开打
+    ent.life.hp=0;ent.isDeath=true;context.tick();assert.deepEqual(packets,[0]);
+    ent.isDeath=false;ent.life.hp=55;context.tick(); // 未满血不开打
+    ent.life.hp=100;context.tick();context.tick();
+    assert.equal(teleports.length,1); // 寄存点就在目标图 → 不传送
+    assert.equal(saveButton.clicked,4); // 复活（HP>0）后绝不再补发「重新开始」
+    // 内挂模式死亡 + 开关开着 → 回图后无条件开助手挂机，不恢复内挂
+    let stopsBefore=stops,startsBefore=starts;
+    context.zRunning=false;mode=true;context.tick(); // 内挂运行中 → 布防（builtin）
+    ent.life.hp=0;ent.isDeath=true;context.tick();assert.equal(mode,false);assert.equal(stops,stopsBefore); // 内挂由 npRequestBattle 关，不走 stopZhu
+    ent.isDeath=false;ent.life.hp=100;context.tick();
+    assert.equal(starts,startsBefore+1);assert.equal(context.zRunning,true); // 助手挂机被自动拉起
+    // 开关关掉 → 回图按死亡前的方式恢复（内挂开回来）
+    stopsBefore=stops;startsBefore=starts;
+    controls['dsh-z-returnauto'].checked=false;
+    context.zRunning=false;mode=true;context.tick();
+    ent.life.hp=0;ent.isDeath=true;context.tick();assert.equal(mode,false);assert.equal(stops,stopsBefore);
+    ent.isDeath=false;ent.life.hp=100;context.tick();
+    assert.equal(mode,true);assert.equal(starts,startsBefore); // 开关关 → 内挂照旧开回来
+    controls['dsh-z-returnauto'].checked=true;
     // 冲突租约：取消而不是动作；取消后不得自动恢复
     context.zRunning=false;mode=false;context.tick();context.zRunning=true;mode=true;context.tick();
-    const stopsBefore=stops,startsBefore=starts;
+    stopsBefore=stops;startsBefore=starts;
     ent.life.hp=0;ent.isDeath=true;context.apiLease={owner:'other'};context.tick();assert.equal(stops,stopsBefore);
     context.apiLease=null;ent.isDeath=false;ent.life.hp=70;context.tick();assert.equal(starts,startsBefore);assert.equal(teleports.length,1);
     // 未填目标地图：一律不动作
@@ -762,8 +791,8 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
   // 1) 版本号：稳定版与实验版都必须是 2.36.1（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.9', name + ' @version 必须是 2.36.9');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.9', name + ' 运行时常量 VER 必须是 2.36.9');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.10', name + ' @version 必须是 2.36.10');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.10', name + ' 运行时常量 VER 必须是 2.36.10');
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
   const stripHead = (s) => s.replace(/\r\n/g,'\n').split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
@@ -1135,8 +1164,8 @@ test('V2.34.5 战斗诊断快照 prof 字段已就位（不改既有字段）', 
 // ================= V2.34.5：配置自动备份（两代）/ 黄金副本找回（纯函数真值表 / 按钮 / 键隔离）=================
 test('V2.34.5 版本号升到 2.34.5（@version 与运行时常量一致，两文件同步）', () => {
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.9', name + ' @version 必须是 2.36.9');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.9', name + ' 运行时常量 VER 必须是 2.36.9');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.10', name + ' @version 必须是 2.36.10');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.10', name + ' 运行时常量 VER 必须是 2.36.10');
   }
 });
 
@@ -1380,7 +1409,7 @@ test('bagClean v2 UI and storage contract is lockstep and documents unsupported 
 
 // ================= V2.35.1 assistant API + standalone dojo =================
 const splitSources=[['stable',source],['exp',expSource]];
-test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.36\.9/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
+test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.36\.10/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
 test('V2.35.1 public API uses owner-only external signatures and validates the current lease owner',()=>{for(const[,s]of splitSources){assert.ok(s.includes('/^[A-Za-z0-9_.:-]{8,128}$/'));assert.ok(s.includes('dojo:1,battle:1,movement:1,dialog:1,arrow:1,fly:1'));assert.ok(s.includes('if(apiLease&&apiLease.owner!==owner)'));for(const sig of ['apiHas(owner,scope)','apiSnapshot(owner)','apiRelease(owner)','apiContact(owner,gid)','apiWalk(owner,payload)','apiChoose(owner,payload)','apiBattle(owner,on)','apiSetArrow(owner,target)','apiClearArrow(owner)','apiFly(owner,payload)'])assert.ok(s.includes('function '+sig),sig);assert.ok(s.includes('apiLease.generation===generation'));assert.ok(!s.includes('apiHas(owner,generation'));}});
 test('V2.35.1 snapshot and battle/menu ownership contracts are explicit',()=>{for(const[,s]of splitSources){for(const key of ['ready:','map:','player:','mobs:','npcs:','target:','inDojoMap:','dialogOpen:','menu:','battleState:','busy:','arrow:'])assert.ok(s.includes(key),key);assert.ok(s.includes('if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"}'));assert.ok(s.includes('b.state="pending-on"'));assert.ok(s.includes('if(b.state!=="owned")return {ok:true,result:"not-owned"}'));assert.ok(s.includes('l.battle.state==="owned"||l.battle.state==="pending-off"'));assert.ok(s.includes('if(s!==false)return {ok:true,result:s===true?"preexisting":"unknown"}'));}});
 test('V2.35.1 arrow decision priority and confirmation retry remain assistant-owned',()=>{for(const[,s]of splitSources){assert.ok(s.includes('if(type===8&&level===3)'));assert.ok(s.includes('if(isBoss)return boss||neutral'));assert.ok(s.includes('if(type===8&&level===4)'));assert.ok(s.includes('confirmUntil:now+5000'));assert.ok(s.includes('p.retryAt=now+3000'));}});

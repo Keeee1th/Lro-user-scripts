@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手 · 实验版）
 // @namespace    dsh.ro-plugin
-// @version      2.36.9
+// @version      2.36.10
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -113,6 +113,10 @@
 // 3) 自启配置不完整：用脚本 DEFAULTS 自启缺少新引擎必需的 lastroProtocol / lastroCustomPackets / 各 charset / packetKeys / servers(数组) 等字段，
 //    引擎在模块初始化 hook NOTIFY_LOADINFO 抛 Packet not yet register "LoadInfo" 后中断启动，依旧黑屏。改为以宿主页 window.ROConfigBase 为基底自启。
 // 原站 post.lastro.cn / game.lastro.cn 的启动判据、注入方式与配置来源全部保持不变。
+// ---------------- V2.36.10 变更摘要 ----------------
+// 1. 死亡回图：死亡菜单的「重新开始」（回到寄存点）改由助手点选——优先点客户端真实的 .savepoint 按钮，取不到按钮就发同一个
+//    CZ.RESTART type=0 包（与手动点击完全等价）。点了没反应会按 4 秒重试，最多 4 次，之后仍等你手点，绝不冒险乱发。
+// 2. 新增「回到目标图自动开启助手挂机」（默认开，可关）：勾选 = 回到目标图后无条件开助手挂机；不勾 = 按死亡前的方式恢复（助手/内挂）。
 // ---------------- V2.36.9 变更摘要 ----------------
 // 死亡后返回目标地图：去掉「回城地图」设置项——回城点就是角色寄存点，点「重新开始」自然到达，既不记录也不参与判定；只需填目标地图。
 // ---------------- V2.36.8 变更摘要 ----------------
@@ -148,7 +152,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.36.9"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.36.10"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -1011,7 +1015,8 @@
       '<div class="row"><label class="switch"><input id="dsh-z-deathreturn" type="checkbox">死亡后返回目标地图（默认关）</label></div>' +
       '<div class="row"><span class="lb">目标地图（死亡后返回）</span><input id="dsh-z-returnmap" type="text" placeholder="练级地图 key" style="flex:1;min-width:80px">' +
       '<button class="ghost" id="dsh-z-returnmap-get" style="flex:0 0 auto">取当前</button></div>' +
-      '<div class="log">在目标图开着自动战斗时若角色死亡：等你点「重新开始」回城复活后自动坐下回满血，再传回目标地图继续开打。传送只提交一次，状态不确定或超时即停。</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-z-returnauto" type="checkbox" checked>回到目标图自动开启助手挂机（默认开）</label></div>' +
+      '<div class="log">在目标图开着自动战斗时若角色死亡：助手自动点「重新开始」回城复活（点不动会重试，最多 4 次，仍失败就等你手点），坐下回满血后传回目标地图。回图后按上面的开关继续：勾选=自动开助手挂机；不勾=按死亡前的方式恢复（助手/内挂）。状态不确定或超时即停。</div>' +
       '<div class="sec">背包快照定期上报（V2.15.27）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-invshot" type="checkbox" checked>开启定期上报</label>' +
       '<span class="lb" style="margin-left:8px">间隔</span><input id="dsh-invshotint" type="number" value="120" style="flex:0 0 44px"><span style="color:#5a6b7f">秒</span></div>' +
@@ -3639,7 +3644,7 @@
     ["dsh-z-hpfly", "v"], ["dsh-z-spfly", "v"], ["dsh-z-hpout", "v"], ["dsh-z-keep", "v"],
     ["dsh-z-sit", "c"], ["dsh-z-sithplo", "v"], ["dsh-z-sithphi", "v"], ["dsh-z-sitsplo", "v"], ["dsh-z-sitsphi", "v"],
     ["dsh-z-sitxw", "v"], ["dsh-z-sitback", "c"], ["dsh-z-sitnofight", "c"],
-    ["dsh-z-deathreturn", "c"], ["dsh-z-returnmap", "v"],
+    ["dsh-z-deathreturn", "c"], ["dsh-z-returnmap", "v"], ["dsh-z-returnauto", "c"],
     ["dsh-z-attint", "v"], ["dsh-z-range", "v"], ["dsh-z-pmrange", "v"], ["dsh-z-mgrange", "v"], ["dsh-z-minrange", "v"], ["dsh-z-mapbound", "c"], ["dsh-z-mapbound-r", "v"], ["dsh-z-mapbound-edge", "v"],
     ["dsh-z-switchdelay", "v"], ["dsh-z-walkint", "v"], ["dsh-z-chaseint", "v"], ["dsh-z-huntmode", "v"], ["dsh-z-takeover", "v"], ["dsh-z-follow", "c"], ["dsh-z-next", "c"],
     ["dsh-arrowen", "c"], ["dsh-invshot", "c"], ["dsh-invshotint", "v"],
@@ -14315,10 +14320,30 @@
       if (id === "dsh-z-returnmap-get") deathReturnFillMap("dsh-z-returnmap");
     }, true);
   } catch (e) {}
-  // 回到目标图后，按死亡前的方式恢复战斗（助手模式 / 内挂模式）
+  // 死亡菜单的「重新开始」（= 回到寄存点）：与玩家手点等价。
+  // 客户端实现在 UI/Components/Escape（Shadow DOM 里的 .savepoint 按钮），它的处理器发的就是 CZ.RESTART type=0；
+  // 所以先点真实按钮（客户端若加了自己的前置判断也跟着走），按钮取不到再发同一个包。
+  function deathReturnRestart() {
+    try {
+      var host = document.getElementById("Escape");
+      var btn = host && host.shadowRoot && host.shadowRoot.querySelector(".savepoint");
+      if (btn && btn.getClientRects && btn.getClientRects().length) { btn.click(); return true; }
+    } catch (e) {}
+    try {
+      var pkt = new CLIENT.PS.CZ.RESTART();
+      pkt.type = 0;
+      CLIENT.NM.sendPacket(pkt);
+      return true;
+    } catch (e2) { return false; }
+  }
+  function deathReturnAutoHang() {
+    var el = $id("dsh-z-returnauto");
+    return !!(el && el.checked);
+  }
+  // 回到目标图后恢复战斗：勾选「自动开启助手挂机」= 无条件开助手挂机；不勾 = 按死亡前的方式（助手 / 内挂）
   function deathReturnResume(r, now) {
-    if (r.mode === "assistant") startZhu();
-    else {
+    if (deathReturnAutoHang() || r.mode === "assistant") { startZhu(); deathReturn = null; return; }
+    {
       var result = npRequestBattle(true, "death-return", true, function () { return deathReturn === r && !apiLease && activeProfileKey() === r.profile && normMapKey(getMapName()) === r.target; });
       if (result === "queued") { r.phase = "resuming"; r.until = now + 3000; return; }
     }
@@ -14344,14 +14369,20 @@
       r.phase = "healing"; r.until = now + 180000; r.stoppedAt = now;
       if (r.mode === "assistant") { deathReturnStopping = true; try { stopZhu(); } finally { deathReturnStopping = false; } }
       else if (npBattleState() === true) npRequestBattle(false, "death-return", true, function () { return deathReturn === r && !apiLease && activeProfileKey() === r.profile; });
-      setStatus("检测死亡：等待回城复活并回满血后返回目标地图", "warn");
+      // 助手点「重新开始」回城复活；点了没反应在 healing 阶段按 4 秒重试，最多 4 次，之后仍等你手点
+      r.restartAt = now; r.restartTries = 1;
+      if (deathReturnRestart()) setStatus("检测死亡：已点「重新开始」，等待回城复活并回满血后返回目标地图", "warn");
+      else setStatus("检测死亡：自动点「重新开始」失败，请手动点，回满血后仍会自动返回目标地图", "warn");
       return;
     }
     if (now > r.until) { deathReturnCancel("超时"); return; }
     if (zRunning || (r.phase !== "resuming" && npBattleState() !== false && !(r.phase === "healing" && now - (r.stoppedAt || 0) < 2000 && npBattleState() === true))) { deathReturnCancel("战斗已被接管或状态不确定"); return; }
     if (r.phase === "healing") {
-      // 死亡后需玩家点「重新开始」回到寄存点城市；复活点若就在目标图，直接交回原有寻怪/坐下逻辑
-      if (dead || hp <= 0) return;
+      // 「重新开始」没点成（客户端没反应/被拒）时重试，只在本体 HP 仍为 0 时发，复活后绝不再发第二次
+      if (dead || hp <= 0) {
+        if (hp <= 0 && now - (r.restartAt || 0) >= 4000 && (r.restartTries || 0) < 4) { r.restartAt = now; r.restartTries = (r.restartTries || 0) + 1; deathReturnRestart(); }
+        return;
+      }
       if (hp < max) { if (!isSitting() && !isWinOpen() && now - (r.sitAt || 0) >= 3000) { r.sitAt = now; sendSit(true); } return; }
       if (isSitting()) { if (now - (r.standAt || 0) >= 3000) { r.standAt = now; sendSit(false); } return; }
       if (ent.action == null || isWinOpen()) return;

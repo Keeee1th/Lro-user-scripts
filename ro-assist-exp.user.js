@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手 · 实验版）
 // @namespace    dsh.ro-plugin
-// @version      2.36.14
+// @version      2.36.15
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -113,6 +113,10 @@
 // 3) 自启配置不完整：用脚本 DEFAULTS 自启缺少新引擎必需的 lastroProtocol / lastroCustomPackets / 各 charset / packetKeys / servers(数组) 等字段，
 //    引擎在模块初始化 hook NOTIFY_LOADINFO 抛 Packet not yet register "LoadInfo" 后中断启动，依旧黑屏。改为以宿主页 window.ROConfigBase 为基底自启。
 // 原站 post.lastro.cn / game.lastro.cn 的启动判据、注入方式与配置来源全部保持不变。
+// ---------------- V2.36.15 变更摘要 ----------------
+// 1. 战斗提示横条（功能菜单 → 提示 → 战斗提示横条）可拖动：按住横条拖到哪停哪，位置记在本机（dsh_ztip_pos），下次打开还在原位。
+// 2. 战斗监控横条改为默认关闭（同「首领警报」）：默认不显示也不创建那层浮层；要看就去 功能菜单 → 提示 → 战斗监控横条 勾上。
+// 3. 界面上的怪物距离一律只保留小数点前：战斗监控横条的「[X格]」、当前目标窗的「距离 Xm」、首领警报的「X 格」、附近怪物实时列表的「Xm」、混合寻怪的状态提示都按整数显示，不再出现 12.3 这种小数。
 // ---------------- V2.36.14 变更摘要 ----------------
 // 1. 换箭「打完后自动换回默认箭」：没有攻击目标（或目标怪已从实体列表消失）且稳定 1.5 秒后，自动装回换箭设置里的「默认箭」；默认箭没配就什么都不做（保持当前装备）。
 // 2. 连续死亡自动下线（默认开）：5 分钟内死亡 3 次 → 停助手/内挂并按「正确下线方式」自动下线（地图内 ESC →「选择角色」→ 角色选择界面右下角「取消」→ 确认结束游戏）；
@@ -178,7 +182,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.36.14"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.36.15"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -2108,7 +2112,7 @@
     { id: "boss",  name: "首领警报",        kind: "fw", sec: "战斗辅助", defOff: true },
     { id: "askcombo", name: "一键补 buff（技能+物品）", kind: "action", noToggle: true, sec: "战斗辅助" },
     { id: "item",  name: "物品 · 拾取与整理", kind: "fw", sec: "战斗辅助" },
-    { id: "zhud",  name: "战斗监控横条",    kind: "custom", sec: "提示" },
+    { id: "zhud",  name: "战斗监控横条",    kind: "custom", defOff: true, sec: "提示" }, // V2.36.15：默认关闭（同「首领警报」）
     { id: "ztip",  name: "战斗提示横条",    kind: "custom", noToggle: true, sec: "提示" },
     { id: "tgt",   name: "目标状态",        kind: "fw", sec: "提示" },
     { id: "znear", name: "附近怪物实时列表", kind: "fw", sec: "提示" },
@@ -6655,7 +6659,7 @@
         var mm = scanMobs[ni];
         nh += '<div class="list-item"><label class="switch"><input type="checkbox"' + (lockList[String(mm.mid)] ? " checked" : "") + ' data-lock="' + (mm.mid != null ? mm.mid : "") + '" data-nm="' + mm.name + '">' + mm.name +
           (mm.mid != null ? ' <span class="st">ID' + mm.mid + (mm.lv ? " · Lv" + mm.lv : "") + "</span>" : "") +
-          '</label><span style="color:#5a6b7f">' + (mm.dist >= 0 ? mm.dist + "m" : "?") + "</span></div>";
+          '</label><span style="color:#5a6b7f">' + (mm.dist >= 0 ? distInt(mm.dist) + "m" : "?") + "</span></div>";
       }
       nei.innerHTML = nh;
       nei.querySelectorAll("input[data-lock]").forEach(function (c) {
@@ -6722,7 +6726,7 @@
         var locked = m.mid != null && lockList[String(m.mid)] ? true : false;
         var inR = m.dist >= 0 && m.dist <= range;
         html += '<div class="list-item"><label class="switch"><input type="checkbox"' + (locked ? " checked" : "") + ' data-lock="' + (m.mid != null ? m.mid : "") + '" data-nm="' + m.name + '">' + m.name + (m.mid != null ? " · ID" + m.mid : "") + (m.lv ? ' <span class="st">Lv' + m.lv + "</span>" : "") + '</label>' +
-          '<span style="color:#5a6b7f">' + (m.dist >= 0 ? m.dist + "m" : "?") + (inR ? "" : " · 超出") + '</span></div>';
+          '<span style="color:#5a6b7f">' + (m.dist >= 0 ? distInt(m.dist) + "m" : "?") + (inR ? "" : " · 超出") + '</span></div>';
       }
       el.innerHTML = html || '<span class="st">附近没有怪物</span>';
       // 内挂模式页「当前地图怪物」：优先读地图表（getworldData().mobs，同内挂检测目标），失败回退侦查实体
@@ -8291,7 +8295,7 @@
                   setStatus("内挂未接管（" + (realNp === false ? "内挂实际关闭" : "2.5秒未移动") + "），助手自行接管…", "warn");
                 } else {
                   npEnsureHunt();
-                  setStatus("锁定怪距" + nearD + "格 > 接管距离" + takeD0 + "，内挂寻怪走路中…", "st");
+                  setStatus("锁定怪距" + distInt(nearD) + "格 > 接管距离" + takeD0 + "，内挂寻怪走路中…", "st");
                   return;
                 }
               }
@@ -11802,7 +11806,7 @@
   }
 
   // ---------------- 战斗监控浮层（游戏画面正上方，独立于助手面板） ----------------
-  // 固定在视口顶部居中，半透明深色底保证在游戏画面上可读；pointer-events:none 不挡游戏操作
+  // 半透明深色底保证在游戏画面上可读；事件已隔离不挡游戏操作（V2.36.15 起默认关闭，开关在 功能菜单 → 提示）
   var zHudEl = null;
   function ensureZHud() {
     if (zHudEl && zHudEl.parentNode) return;
@@ -11837,6 +11841,9 @@
       });
     } catch (e) {}
   }
+  // V2.36.15：界面上的怪物距离一律只保留小数点前（格子/米都是整数）
+  function distInt(v) { var n = Number(v); return isFinite(n) ? (n < 0 ? Math.ceil(n) : Math.floor(n)) : 0; }
+  function distIntTxt(v) { return (v == null || !isFinite(Number(v)) || Number(v) < 0 || Number(v) >= 1e8) ? null : distInt(v); }
   function renderZMonitor() {
     // V2.17.1 功能菜单总开关：关掉「战斗监控横条」后不再渲染（也不创建）
     if (!roModOn("zhud")) { try { if (zHudEl) zHudEl.style.display = "none"; } catch (e) {} return; }
@@ -11850,8 +11857,9 @@
         if (l.hp_max > 0) hpPct = Math.round(l.hp / l.hp_max * 100) + "%";
         if (l.sp_max > 0) spPct = Math.round(l.sp / l.sp_max * 100) + "%";
       }
+      var dTxt = distIntTxt(zLock.dist);
       var lockTxt = zLock.gid
-        ? ("锁定 " + (zLock.name || zLock.gid) + (zLock.dist != null ? " [" + zLock.dist + "格]" : ""))
+        ? ("锁定 " + (zLock.name || zLock.gid) + (dTxt != null ? " [" + dTxt + "格]" : ""))
         : (zLock.done ? "已击杀待命" : "未锁定");
       zHudEl.textContent = "锁定: " + lockTxt + " | 动作: " + zMon.action + " | HP " + hpPct + " SP " + spPct;
     } catch (e) {}
@@ -12073,8 +12081,9 @@
         var dist = null;
         try {
           var selfE = CLIENT.SS && CLIENT.SS.Entity;
-          if (ent && ent.position && selfE && selfE.position) dist = Math.round(Math.sqrt(Math.pow(ent.position[0] - selfE.position[0], 2) + Math.pow(ent.position[1] - selfE.position[1], 2)) * 10) / 10;
-          else if (gid && zLock.dist != null) dist = zLock.dist;
+          // V2.36.15：怪物的距离只保留小数点前（原来是四舍五入到 0.1m）
+          if (ent && ent.position && selfE && selfE.position) dist = Math.floor(Math.sqrt(Math.pow(ent.position[0] - selfE.position[0], 2) + Math.pow(ent.position[1] - selfE.position[1], 2)));
+          else if (gid) dist = distIntTxt(zLock.dist);
         } catch (e3) {}
         info.innerHTML = "Lv <b>" + fv(lv) + "</b> · 种族 <b>" + fv(race) + "</b> · 属性 <b>" + fv(elem) + "</b> · 形体 <b>" + fv(scale) + "</b> · 距离 <b>" + (dist != null ? dist + "m" : "--") + "</b>";
       }
@@ -12517,9 +12526,9 @@
         if (b.dist < 0 || b.dist > rng) continue;
         if (bossLast[b.mid] && now - bossLast[b.mid] < 60000) continue;  // 同一只 60 秒内只提醒一次
         bossLast[b.mid] = now;
-        bossLogs.unshift(new Date().toLocaleTimeString() + "　" + b.name + "　" + b.dist + " 格");
+        bossLogs.unshift(new Date().toLocaleTimeString() + "　" + b.name + "　" + distInt(b.dist) + " 格");
         if (bossLogs.length > 20) bossLogs.pop();
-        if (toast) { try { bossAlert("首领出现：" + b.name + " · " + b.dist + " 格"); } catch (e1) {} }
+        if (toast) { try { bossAlert("首领出现：" + b.name + " · " + distInt(b.dist) + " 格"); } catch (e1) {} }
         try { console.log("[BOSS] " + b.name + " mid=" + b.mid + " dist=" + b.dist); } catch (e2) {}
       }
       bossRender();
@@ -12537,7 +12546,7 @@
           var b = bossList[i];
           html += '<div class="list-item"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + roEscTxt(b.name) +
             '</span><span class="tag red" style="flex:0 0 auto">首领</span>' +
-            '<span style="flex:0 0 48px;text-align:right;color:#5a6b7f">' + (b.dist >= 0 ? b.dist + " 格" : "?") + '</span></div>';
+            '<span style="flex:0 0 48px;text-align:right;color:#5a6b7f">' + (b.dist >= 0 ? distInt(b.dist) + " 格" : "?") + '</span></div>';
         }
         el.innerHTML = html;
       }
@@ -12611,7 +12620,7 @@
 
   // ---------------- 主循环 ----------------
   // V1.7.6 悬浮动作提示：#dsh-ztip 镜像 setStatus 文本 + zMon.action + 动作停顿秒数
-  //   助手/内挂运行时常显（不挡游戏，pointer-events:none），全停自动隐藏
+  //   助手/内挂运行时常显（V2.36.15 起可拖动、位置持久化；事件已隔离，不挡游戏），全停自动隐藏
   var zTipEl = null, zTipLastAct = "", zTipActSince = Date.now();
   function ensureZTip() {
     if (zTipEl && zTipEl.parentNode) return;
@@ -12622,11 +12631,28 @@
         "position:fixed;left:12px;bottom:76px;max-width:min(520px,80vw);" +
         "background:rgba(0,0,0,0.72);color:#fff;padding:6px 12px;border-radius:10px;" +
         "font-size:12px;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" +
-        "z-index:2147483646;pointer-events:none;user-select:none;display:none;" +
+        "z-index:2147483646;cursor:move;user-select:none;display:none;" +
         "border:1px solid rgba(255,255,255,0.25);box-shadow:0 1px 8px rgba(0,0,0,0.5);" +
         "text-shadow:0 1px 2px rgba(0,0,0,0.6);";
       document.documentElement.appendChild(zTipEl);
       try { isolateEl(zTipEl); } catch (e) {}  // V2.17.0 公共层 D：统一打助手 UI 标记
+      // V2.36.15：战斗提示横条可拖动（拖到哪停哪，位置持久化在 dsh_ztip_pos）
+      try {
+        var tp = JSON.parse(localStorage.getItem("dsh_ztip_pos") || "null");
+        if (tp && tp.length === 2) {
+          zTipEl.style.left = tp[0] + "px"; zTipEl.style.top = tp[1] + "px";
+          zTipEl.style.bottom = "auto";
+        }
+      } catch (e1) {}
+      try {
+        dragEl(zTipEl, function (x, y) {
+          var nx = Math.max(-zTipEl.offsetWidth + 60, Math.min(roVw() - 60, x));
+          var ny = Math.max(0, Math.min(roVh() - 24, y));
+          zTipEl.style.left = nx + "px"; zTipEl.style.top = ny + "px";
+          zTipEl.style.bottom = "auto";
+          try { localStorage.setItem("dsh_ztip_pos", JSON.stringify([nx, ny])); } catch (err2) {}
+        });
+      } catch (e2) {}
     } catch (e) {}
   }
   function renderZTip() {

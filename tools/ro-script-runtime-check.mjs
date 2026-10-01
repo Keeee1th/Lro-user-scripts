@@ -793,8 +793,8 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
   // 1) 版本号：稳定版与实验版都必须是 2.36.1（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.14', name + ' @version 必须是 2.36.14');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.14', name + ' 运行时常量 VER 必须是 2.36.14');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.15', name + ' @version 必须是 2.36.15');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.15', name + ' 运行时常量 VER 必须是 2.36.15');
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
   const stripHead = (s) => s.replace(/\r\n/g,'\n').split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
@@ -1166,8 +1166,8 @@ test('V2.34.5 战斗诊断快照 prof 字段已就位（不改既有字段）', 
 // ================= V2.34.5：配置自动备份（两代）/ 黄金副本找回（纯函数真值表 / 按钮 / 键隔离）=================
 test('V2.34.5 版本号升到 2.34.5（@version 与运行时常量一致，两文件同步）', () => {
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.14', name + ' @version 必须是 2.36.14');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.14', name + ' 运行时常量 VER 必须是 2.36.14');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.15', name + ' @version 必须是 2.36.15');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.15', name + ' 运行时常量 VER 必须是 2.36.15');
   }
 });
 
@@ -1411,7 +1411,7 @@ test('bagClean v2 UI and storage contract is lockstep and documents unsupported 
 
 // ================= V2.35.1 assistant API + standalone dojo =================
 const splitSources=[['stable',source],['exp',expSource]];
-test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.36\.14/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
+test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.36\.15/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
 test('V2.35.1 public API uses owner-only external signatures and validates the current lease owner',()=>{for(const[,s]of splitSources){assert.ok(s.includes('/^[A-Za-z0-9_.:-]{8,128}$/'));assert.ok(s.includes('dojo:1,battle:1,movement:1,dialog:1,arrow:1,fly:1'));assert.ok(s.includes('if(apiLease&&apiLease.owner!==owner)'));for(const sig of ['apiHas(owner,scope)','apiSnapshot(owner)','apiRelease(owner)','apiContact(owner,gid)','apiWalk(owner,payload)','apiChoose(owner,payload)','apiBattle(owner,on)','apiSetArrow(owner,target)','apiClearArrow(owner)','apiFly(owner,payload)'])assert.ok(s.includes('function '+sig),sig);assert.ok(s.includes('apiLease.generation===generation'));assert.ok(!s.includes('apiHas(owner,generation'));}});
 test('V2.35.1 snapshot and battle/menu ownership contracts are explicit',()=>{for(const[,s]of splitSources){for(const key of ['ready:','map:','player:','mobs:','npcs:','target:','inDojoMap:','dialogOpen:','menu:','battleState:','busy:','arrow:'])assert.ok(s.includes(key),key);assert.ok(s.includes('if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"}'));assert.ok(s.includes('b.state="pending-on"'));assert.ok(s.includes('if(b.state!=="owned")return {ok:true,result:"not-owned"}'));assert.ok(s.includes('l.battle.state==="owned"||l.battle.state==="pending-off"'));assert.ok(s.includes('if(s!==false)return {ok:true,result:s===true?"preexisting":"unknown"}'));}});
 test('V2.36.11 arrow rules use a per-monster table plus a default arrow',()=>{for(const[name,s]of splitSources){
@@ -2196,4 +2196,59 @@ test('V2.36.14 连续死亡自动下线：5 分钟 3 次走「ESC→选择角色
   assert.equal(ctx.deathGuardDone, false, '走不完不得标成已下线');
   assert.equal(statuses.join('|').includes('请手动下线'), true, '走不完必须提示手动下线');
   assert.equal(JSON.stringify([]), '[]');
+});
+
+test('V2.36.15 战斗提示横条可拖动 + 战斗监控横条默认关闭 + 怪物距离只保留整数', () => {
+  // 1) 战斗提示横条：可拖动 + 位置持久化 + 不再 pointer-events:none
+  const tip = expExtract('  function ensureZTip() {', '  function renderZTip() {');
+  assert.ok(tip.includes('dragEl(zTipEl'), '战斗提示横条必须绑定拖动');
+  assert.ok(tip.includes('dsh_ztip_pos'), '拖动后位置必须持久化');
+  assert.ok(tip.includes('localStorage.setItem("dsh_ztip_pos"'), '松手要写回位置');
+  assert.ok(tip.includes('cursor:move'), '横条要显示可拖动光标');
+  assert.ok(!tip.includes('pointer-events:none'), '提示横条不能再是 pointer-events:none（否则拖不动）');
+  assert.ok(tip.includes('isolateEl(zTipEl)'), '拖动的横条仍必须做事件隔离，不能把点击漏给游戏');
+  assert.ok(extract('  function ensureZTip() {', '  function renderZTip() {').includes('dragEl(zTipEl'), '稳定版必须同步');
+  // 2) 战斗监控横条默认关闭（表里 defOff；ztip 不受影响）
+  const mods = expExtract('  var RO_MODULES = [', '  ];');
+  const zhudRow = mods.split('\n').find((l) => l.includes('id: "zhud"'));
+  assert.ok(zhudRow.includes('defOff: true'), '战斗监控横条必须 defOff（默认关闭）');
+  const ztipRow = mods.split('\n').find((l) => l.includes('id: "ztip"'));
+  assert.ok(!ztipRow.includes('defOff'), '战斗提示横条仍按原样（只改可拖动）');
+  assert.ok(source.includes('{ id: "zhud",  name: "战斗监控横条",    kind: "custom", defOff: true, sec: "提示" }'), '稳定版必须同步');
+  // 3) 距离取整：helper + 各处显示点
+  for (const [name, s] of [['stable', source], ['exp', expSource]]) {
+    assert.ok(s.includes('function distInt(v) {'), name + ' 必须有 distInt 取整 helper');
+    assert.ok(s.includes('? distInt(mm.dist) + "m"'), name + ' 回退列表距离要取整');
+    assert.ok(s.includes('? distInt(m.dist) + "m"'), name + ' 附近怪物列表距离要取整');
+    assert.ok(s.includes('+ distInt(b.dist) + " 格"'), name + ' 首领警报距离要取整');
+    assert.ok(s.includes('"锁定怪距" + distInt(nearD)'), name + ' 混合寻怪提示距离要取整');
+    assert.ok(!/Math\.round\(Math\.sqrt\([^;]*\* 10\) \/ 10/.test(s), name + ' 当前目标窗不得再四舍五入到 0.1m');
+    assert.ok(s.includes('dist = Math.floor(Math.sqrt('), name + ' 当前目标窗距离必须向下取整');
+  }
+  const zhud = expExtract('  function renderZMonitor() {', '  // ================= V2.23.0');
+  assert.ok(zhud.includes('var dTxt = distIntTxt(zLock.dist);'), '战斗监控横条的距离必须走取整 helper');
+  assert.ok(zhud.includes('" [" + dTxt + "格]"'), '战斗监控横条要显示取整后的格数');
+  // 4) vm 实跑：默认关闭语义 + 取整行为
+  let modCtx = {
+    Number, String, isFinite, JSON, console,
+    RO_MOD_KEY: 'dsh_ro_modules_v1', roModC: null,
+    RO_MODULES: [{ id: 'zhud', defOff: true }, { id: 'boss', defOff: true }, { id: 'ztip' }],
+    localStorage: { getItem: () => null, setItem: () => {} },
+    roMenuRender: () => {},
+  };
+  vm.createContext(modCtx);
+  vm.runInContext(expExtract('  function roMods() {', '  function roModPage(id) {'), modCtx);
+  assert.equal(modCtx.roModOn('zhud'), false, '没存过状态时战斗监控横条必须默认关');
+  assert.equal(modCtx.roModOn('ztip'), true, '战斗提示横条默认仍开');
+  modCtx.roMods().zhud = true;
+  assert.equal(modCtx.roModOn('zhud'), true, '手动开启后要生效（默认值不覆盖用户设置）');
+  const dCtx = { Number, String, isFinite, Math };
+  vm.createContext(dCtx);
+  vm.runInContext(expExtract('  function distInt(v) {', '  function renderZMonitor() {'), dCtx);
+  assert.equal(dCtx.distInt(12.7), 12, '12.7 格必须显示 12');
+  assert.equal(dCtx.distInt(3.999), 3, '3.999 必须显示 3');
+  assert.equal(dCtx.distInt(8), 8, '整数不变');
+  assert.equal(dCtx.distIntTxt(1e9), null, '未知距离（1e9）不得显示成天文数字');
+  assert.equal(dCtx.distIntTxt(null), null, '空距离不显示');
+  assert.equal(dCtx.distIntTxt(5.4), 5, '5.4 格必须显示 5');
 });

@@ -793,8 +793,8 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
   // 1) 版本号：稳定版与实验版都必须是 2.36.1（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.16', name + ' @version 必须是 2.36.16');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.16', name + ' 运行时常量 VER 必须是 2.36.16');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.17', name + ' @version 必须是 2.36.17');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.17', name + ' 运行时常量 VER 必须是 2.36.17');
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
   const stripHead = (s) => s.replace(/\r\n/g,'\n').split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
@@ -1166,8 +1166,8 @@ test('V2.34.5 战斗诊断快照 prof 字段已就位（不改既有字段）', 
 // ================= V2.34.5：配置自动备份（两代）/ 黄金副本找回（纯函数真值表 / 按钮 / 键隔离）=================
 test('V2.34.5 版本号升到 2.34.5（@version 与运行时常量一致，两文件同步）', () => {
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.16', name + ' @version 必须是 2.36.16');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.16', name + ' 运行时常量 VER 必须是 2.36.16');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.36.17', name + ' @version 必须是 2.36.17');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.36.17', name + ' 运行时常量 VER 必须是 2.36.17');
   }
 });
 
@@ -1411,7 +1411,7 @@ test('bagClean v2 UI and storage contract is lockstep and documents unsupported 
 
 // ================= V2.35.1 assistant API + standalone dojo =================
 const splitSources=[['stable',source],['exp',expSource]];
-test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.36\.16/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
+test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.36\.17/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
 test('V2.35.1 public API uses owner-only external signatures and validates the current lease owner',()=>{for(const[,s]of splitSources){assert.ok(s.includes('/^[A-Za-z0-9_.:-]{8,128}$/'));assert.ok(s.includes('dojo:1,battle:1,movement:1,dialog:1,arrow:1,fly:1'));assert.ok(s.includes('if(apiLease&&apiLease.owner!==owner)'));for(const sig of ['apiHas(owner,scope)','apiSnapshot(owner)','apiRelease(owner)','apiContact(owner,gid)','apiWalk(owner,payload)','apiChoose(owner,payload)','apiBattle(owner,on)','apiSetArrow(owner,target)','apiClearArrow(owner)','apiFly(owner,payload)'])assert.ok(s.includes('function '+sig),sig);assert.ok(s.includes('apiLease.generation===generation'));assert.ok(!s.includes('apiHas(owner,generation'));}});
 test('V2.35.1 snapshot and battle/menu ownership contracts are explicit',()=>{for(const[,s]of splitSources){for(const key of ['ready:','map:','player:','mobs:','npcs:','target:','inDojoMap:','dialogOpen:','menu:','battleState:','busy:','arrow:'])assert.ok(s.includes(key),key);assert.ok(s.includes('if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"}'));assert.ok(s.includes('b.state="pending-on"'));assert.ok(s.includes('if(b.state!=="owned")return {ok:true,result:"not-owned"}'));assert.ok(s.includes('l.battle.state==="owned"||l.battle.state==="pending-off"'));assert.ok(s.includes('if(s!==false)return {ok:true,result:s===true?"preexisting":"unknown"}'));}});
 test('V2.36.11 arrow rules use a per-monster table plus a default arrow',()=>{for(const[name,s]of splitSources){
@@ -2028,12 +2028,13 @@ test('V2.36.13 走路拾取暂时下线：三条拾取路径都被同一个开�
   assert.ok(s.includes('id="dsh-pickoff"'),name+' 界面必须标注暂时下线');
   assert.ok(s.includes('id="dsh-wllist"'),name+' 白名单数据/界面保留（只是走路拾取下线）');
 }});
-test('V2.36.13 攻击名单怪物搜索：整行点选加入 + 跳转（游戏内导航魔物搜索）/小册子两个入口',()=>{for(const[name,s]of splitSources){
+test('V2.36.13/17 攻击名单怪物搜索：整行点选加入 + 跳转（游戏内世界地图魔物搜索）/小册子两个入口',()=>{for(const[name,s]of splitSources){
   assert.ok(s.includes('function renderLockHits(kw)'),name+' 搜索结果渲染');
   assert.ok(s.includes('data-lockadd='),name+' 整行可点加入名单');
   assert.ok(s.includes('data-mobgoto='),name+' 行尾跳转入口');
-  assert.ok(s.includes('requireDB("UI/Components/Navigation")'),name+' 跳转用客户端导航窗口');
-  assert.ok(s.includes('Nav.onSearch()'),name+' 直接调用客户端搜索（不是自己造协议）');
+  assert.ok(s.includes('requireDB("UI/Components/WorldMap/WorldMap")'),name+' 跳转必须用客户端世界地图组件');
+  assert.ok(s.includes('WM.selectMob('),name+' 直接调用客户端自己的魔物搜索（不是自己造协议）');
+  assert.ok(!s.includes('requireDB("UI/Components/Navigation")'),name+' 客户端里不存在的 Navigation 模块不得再被 require');
   const ref=s.slice(s.indexOf('function mobRefLinksHtml(mid)'),s.indexOf('function mobRefLinksHtml(mid)')+600);
   assert.ok(!/ro321/i.test(ref),name+' 旧 RO321「数量」外链必须从攻击名单入口移除');
   assert.ok(ref.includes('小册子'),name+' 小册子外链保留');
@@ -2283,4 +2284,63 @@ test('V2.36.16 加载期空安全：内挂「开自动吃药」按钮回归 + �
   ctx.document.getElementById = () => fake;
   assert.equal(ctx.onId('dsh-x', 'click', () => {}), fake, '有元素时必须返回该元素');
   assert.equal(hit, 1, '有元素时必须真的调用 addEventListener');
+});
+
+test('V2.36.17 「跳转」改走客户端世界地图（select + selectMob）：中文名命中/精灵名兜底/ID 兜底/老客户端搜索框/窗口缺失', () => {
+  for (const [name, s] of [['stable', source], ['exp', expSource]]) {
+    assert.ok(s.includes('requireDB("UI/Components/WorldMap/WorldMap")'), name + ' 跳转必须用客户端世界地图组件');
+    assert.ok(s.includes('WM.select()'), name + ' 必须用客户端自己的 select() 打开世界地图');
+    assert.ok(s.includes('WM.selectMob('), name + ' 必须调用客户端自己的魔物搜索');
+    assert.ok(s.includes('selectMob(String(mid))'), name + ' 名字搜不到要按怪物 ID 兜底');
+    assert.ok(!s.includes('requireDB("UI/Components/Navigation")'), name + ' 客户端里不存在的 Navigation 模块不得再被 require');
+    assert.ok(s.includes('已打开游戏内搜索：魔物 · '), name + ' 成功时状态栏要说明打开了哪一页');
+  }
+  const code = extract('  function mobGotoSearch(mid, name) {', '  // 「跳转」按钮全局委托');
+  const status = [];
+  const build = (opts) => {
+    const calls = [];
+    let kw = '', hits = 0;
+    const ui = { parent: () => ({ length: 1 }), find(sel) {
+      if (sel.indexOf('mobtitle') >= 0) return { length: hits };
+      if (sel.indexOf('.msg') >= 0) return { length: 1, val(v) { if (v === undefined) return kw; kw = v; } };
+      if (sel.indexOf('search_btn') >= 0) return { length: opts.withBtn ? 1 : 0, trigger() { calls.push('btn'); } };
+      if (sel.indexOf('.stype') >= 0) return { length: 1, val(v) { calls.push('stype:' + v); } };
+      return { length: 0 };
+    } };
+    const WM = { ui, select() { calls.push('select'); } };
+    if (!opts.noSelectMob) WM.selectMob = function (n) { calls.push('mob:' + n); kw = n; hits = (opts.hitFor || []).indexOf(n) >= 0 ? 2 : 0; };
+    const ctx = {
+      requireDB: (n) => (n === 'UI/Components/WorldMap/WorldMap' ? (opts.noWindow ? null : WM) : null),
+      getMobDb: () => ({ '1002': { kName: '火焰龟', name: 'FLAME_TURTLE' } }),
+      setStatus: (m) => status.push(m),
+      document: { getElementById: () => ({ style: {} }) },
+    };
+    vm.createContext(ctx); vm.runInContext(code + ';this.mobGoto=mobGotoSearch', ctx);
+    return { ctx, calls };
+  };
+  status.length = 0;
+  // 1) 中文名命中：开窗口 + 搜魔物，状态栏如实说明
+  let r = build({ hitFor: ['火焰龟'] });
+  assert.equal(r.ctx.mobGoto(1002, ''), true);
+  assert.deepEqual(r.calls, ['select', 'mob:火焰龟']);
+  assert.ok(status[0].indexOf('已打开游戏内搜索：魔物 · 火焰龟') >= 0, '命中时状态=' + status[0]);
+  // 2) 中文名没命中 → 用精灵名再搜一次
+  r = build({ hitFor: ['FLAME_TURTLE'] });
+  r.ctx.mobGoto(1002, '');
+  assert.deepEqual(r.calls, ['select', 'mob:火焰龟', 'mob:FLAME_TURTLE']);
+  // 3) 两个名字都没命中 → 按怪物 ID 搜（必定命中那一只）
+  r = build({ hitFor: ['1002'] });
+  r.ctx.mobGoto(1002, '');
+  assert.deepEqual(r.calls, ['select', 'mob:火焰龟', 'mob:FLAME_TURTLE', 'mob:1002']);
+  assert.ok(status[status.length - 1].indexOf('魔物 · 1002') >= 0, 'ID 兜底状态=' + status[status.length - 1]);
+  // 4) 老客户端没有 selectMob → 按客户端自己的搜索框走（切「魔物」+ 填词 + 点搜索）
+  r = build({ noSelectMob: true, withBtn: true });
+  r.ctx.mobGoto(1002, '');
+  assert.ok(r.calls.indexOf('select') >= 0, '仍要先开窗口');
+  assert.ok(r.calls.indexOf('stype:0') >= 0, '必须切到「魔物」这一类');
+  assert.ok(r.calls.indexOf('btn') >= 0, '必须触发客户端的搜索按钮');
+  // 5) 客户端世界地图窗口不可用 → 如实报错、返回 false、不抛异常
+  r = build({ noWindow: true });
+  assert.equal(r.ctx.mobGoto(1002, ''), false);
+  assert.ok(status[status.length - 1].indexOf('世界地图窗口不可用') >= 0, '缺失时状态=' + status[status.length - 1]);
 });

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.36.16
+// @version      2.36.17
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -30,7 +30,7 @@
 //     window storage 事件跨标签页实时刷新；新增 fwReg 传送点悬浮条（点击直传，保持无确认）。
 // 5.  队伍血条重做：团本式职业色块 2 列矩阵（名字+HP 压块上、白字四向黑描边、选中=放大+光晕+名字变金），
 //     点击色块锁定该队友（写 zLock + 发一次 REQUEST_ACT action=7；拖拽位移>3px 不触发选中）。
-// 8.  攻击名单的怪物搜索：每行一只怪，点整行直接加入名单；行尾「跳转」=打开游戏内导航·魔物搜索该怪，「小册子」=ro.dvg.cn 资料外链（旧「数量」RO321 外链已移除）。
+// 8.  攻击名单的怪物搜索：每行一只怪，点整行直接加入名单；行尾「跳转」=打开游戏内世界地图·魔物搜索该怪，「小册子」=ro.dvg.cn 资料外链（旧「数量」RO321 外链已移除）。
 // 6.  tools/progress.mjs 8898 服务新增 GET /monster-sprites/by-id/<id>.png（前缀匹配 mob_<id>_*.png，未命中回 1x1 透明 png，id 仅数字防目录遍历）。
 
 // ---------------- V2.30.0 变更摘要 ----------------
@@ -113,6 +113,12 @@
 // 3) 自启配置不完整：用脚本 DEFAULTS 自启缺少新引擎必需的 lastroProtocol / lastroCustomPackets / 各 charset / packetKeys / servers(数组) 等字段，
 //    引擎在模块初始化 hook NOTIFY_LOADINFO 抛 Packet not yet register "LoadInfo" 后中断启动，依旧黑屏。改为以宿主页 window.ROConfigBase 为基底自启。
 // 原站 post.lastro.cn / game.lastro.cn 的启动判据、注入方式与配置来源全部保持不变。
+// ---------------- V2.36.17 变更摘要 ----------------
+// 修「跳转」：攻击名单（以及任务目标怪）行尾的「跳转」本意是打开游戏内那张怪物搜索页（世界地图 → 搜索 → 魔物），
+// 结果一直点不开——V2.36.13 用的是 UI/Components/Navigation（这个模块在当前客户端 Online.js 里根本不存在，0 处引用），只会得到「窗口不可用」。
+// 现在改走客户端自己的接口 UI/Components/WorldMap/WorldMap（与客户端内置的 SearchMob 同一条路径）：select() 开世界地图窗口 + selectMob(名字) 自动切「魔物」页并搜索。
+// 搜不到中文名时会自动改用精灵名再搜一次；仍搜不到就按怪物 ID 搜（必定命中那一只）。
+// 版本：@version 2.36.16 → 2.36.17（VER 同步）；实验版同步。
 // ---------------- V2.36.16 变更摘要 ----------------
 // 修复 V2.36.13 起「脚本加载即中断」的严重回归：内挂页改版时误删了「开自动吃药」按钮（id=dsh-np-eat），而绑定代码仍在，
 // 加载期 $id(...) 取到 null 抛 TypeError → 该行之后的全部代码一次都不执行（战斗监控/目标/状态刷新、本图怪名单、未鉴定装备浮层、init 等）。
@@ -134,7 +140,7 @@
 // 3. 内挂自动战斗新增「校对内挂状态」按钮：快速点一次内挂开关并读聊天回执——读到「关闭自动战斗」就停；读到「开启自动战斗」立刻再关回去；1.5 秒读不到回执就用面板 checked 宽松兜底（读不到也再关一次）。
 //    结束状态固定为关闭，悬浮球 [内] 同步刷新；整个流程 ≤4 秒，不做严格前置判定。
 // 4. 死亡后返回目标地图：助手模式只认「助手在跑」，不再要求内挂状态可读（原先内挂未知就不布防 = 静默失效）；非助手模式读不到内挂状态时自动做一次快速校对，仍未知则明确提示「本图不布防」。
-// 5. 攻击名单窗口新增怪物搜索：一行一只怪，点整行直接加入名单（已在名单的显示「已在名单」，解除仍在名单行操作）；行尾两个入口——「跳转」打开游戏内导航的魔物搜索（DB.searchNavigation(name,'MOB')），
+// 5. 攻击名单窗口新增怪物搜索：一行一只怪，点整行直接加入名单（已在名单的显示「已在名单」，解除仍在名单行操作）；行尾两个入口——「跳转」打开游戏内世界地图的「魔物」搜索（V2.36.17 改为 WorldMap.selectMob），
 //    「小册子」=DVG 资料外链；旧的「数量」RO321 外链移除。
 // 6. 换箭新增「属性 → 箭」：火/水/风/地/毒/圣/暗/念/不死/无 十行，留空=不强制；优先级 属性箭 > 指定怪箭 > 默认箭，都没有则保持当前箭。元素表内嵌全量怪物属性（2471 只），
 //    真实换箭仍要求背包里有这支箭；一场打完（没有攻击目标）会自动换回默认箭。
@@ -189,7 +195,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.36.16"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.36.17"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -1185,7 +1191,7 @@
       '<button class="ghost" id="dsh-locksearchbtn" style="flex:0 0 auto">搜索</button>' +
       '<button class="ghost" id="dsh-locksearchclr" style="flex:0 0 auto">清空</button></div>' +
       '<div id="dsh-lockhits" style="font-size:11px;max-height:200px;overflow:auto">' +
-      '<div class="st">搜索怪物名/ID → 点一整行直接加入上方攻击名单；「跳转」=打开游戏内导航（魔物）搜索该怪名；「小册子」=外部怪物资料页。</div></div>' +
+      '<div class="st">搜索怪物名/ID → 点一整行直接加入上方攻击名单；「跳转」=打开游戏内世界地图（魔物）搜索该怪名；「小册子」=外部怪物资料页。</div></div>' +
       '<div class="log">怪物=当前地图表联动（同内挂检测目标）；「本图锁定目录」=读本图怪物表生成锁定列表（勾选进战斗锁定目录，换图自动刷新）；掉落树已移回「物品拾取」窗口（本窗口只管攻击名单）。</div>' +
       '</div>' +
       // 子页9：战斗统计（伤害统计 + 首领警报，V2.28.0）
@@ -11988,36 +11994,48 @@
   }
   function fmtK(n) { n = Math.floor(Number(n) || 0); return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
   // 按怪物ID的外链：「数量」→RO321 re_mob_db、「资料」→DVG monsterinfo（不依赖中文名）
-  // V2.36.13：按怪物ID的两个入口——「跳转」=打开游戏内导航窗口，切「魔物」并搜索该怪名；「小册子」=外部 DVG 怪物资料页
+  // V2.36.17：按怪物ID的两个入口——「跳转」=打开游戏内世界地图窗口，切「魔物」并搜索该怪名；「小册子」=外部 DVG 怪物资料页
   function mobRefLinksHtml(mid) {
     var du = mobRefUrl("dvg", mid);
     return '<span style="flex:0 0 auto;font-size:10px;white-space:nowrap">' +
       '<button class="ghost" data-mobgoto="' + mid + '" style="flex:0 0 auto;padding:0 6px;font-size:10px" title="打开游戏内导航 · 魔物搜索该怪">跳转</button>' +
       (du ? ' <a href="' + du + '" target="_blank" rel="noopener noreferrer">小册子</a>' : "") + '</span>';
   }
-  // V2.36.13：「跳转」=客户端导航窗口的「魔物」搜索（DB.searchNavigation(name,'MOB')），不联网、不自己造协议
+  // V2.36.17：「跳转」=客户端世界地图窗口的「魔物」搜索（就是游戏里 地图 → 搜索 那一页，能搜名字/ID、能按种族筛）。
+  // 走客户端自己的 API：UI/Components/WorldMap/WorldMap 的 select()（开窗口）+ selectMob(名字)（切「魔物」页并搜索）。
+  // V2.36.13~16 用的是 UI/Components/Navigation——本客户端 Online.js 里根本没有这个模块（0 处引用），所以每次跳转都只会得到「窗口不可用」。
   function mobGotoSearch(mid, name) {
     try {
-      var Nav = requireDB("UI/Components/Navigation");
-      if (!Nav || typeof Nav.getRoot !== "function") { setStatus("导航窗口不可用（客户端还没加载完）", "err"); return false; }
-      if (!Nav.getRoot() && typeof Nav.append === "function") Nav.append();
-      if (typeof Nav.show === "function") Nav.show();
-      var root = Nav.getRoot();
-      if (!root) { setStatus("导航窗口打不开", "err"); return false; }
+      var WM = requireDB("UI/Components/WorldMap/WorldMap");
+      if (!WM || typeof WM.select !== "function") { setStatus("游戏内世界地图窗口不可用（客户端还没加载完）", "err"); return false; }
       var m = (getMobDb() || {})[String(mid)] || {};
-      var nm = String(name || m.kName || m.name || "").trim();
-      if (nm.length < 2) { setStatus("怪名太短，导航搜索至少要 2 个字", "err"); return false; }
-      var sel = root.querySelector(".search-type"); if (sel) sel.value = "MOB";
-      var inp = root.querySelector(".search-input");
-      if (!inp) { setStatus("导航搜索框没找到", "err"); return false; }
-      function hitsOk() { var box = root.querySelector(".search-results"); return !!(box && !box.querySelector(".no-results")); }
-      inp.value = nm;
-      if (typeof Nav.onSearch === "function") Nav.onSearch();
-      var ok = hitsOk();
+      var nm = String(name || m.kName || "").trim();
       var en = String(m.name || "").trim();
-      if (!ok && en && en !== nm) { inp.value = en; if (typeof Nav.onSearch === "function") Nav.onSearch(); ok = hitsOk(); } // 中文名搜不到 → 退回精灵名再搜一次
-      setStatus(ok ? ("已在导航「魔物」搜索：" + inp.value) : ("导航没搜到「" + nm + "」，可换写法再试"), ok ? "ok" : "err");
-      return ok;
+      if (nm.length < 2) { setStatus("怪名太短，游戏内搜索至少要 2 个字", "err"); return false; }
+      var ui = WM.ui;
+      function hitCount() { try { return ui.find(".scontainer .mobtitle").length; } catch (e0) { return 0; } }
+      try { if (WM.ui && !WM.ui.parent().length && typeof WM.append === "function") WM.append(); } catch (e4) {}  // 地图初始化还没跑过时先把窗口挂到 DOM
+      WM.select();                                    // 与游戏内快捷键同一条路径：打开世界地图并聚焦
+      if (typeof WM.selectMob === "function") {
+        WM.selectMob(nm);                                                       // 切到「魔物」页并搜索
+        if (!hitCount() && en && en !== nm) WM.selectMob(en);                   // 中文名没命中 → 拿精灵名再搜一次
+        if (!hitCount() && /^\d+$/.test(String(mid))) WM.selectMob(String(mid)); // 还没命中 → 按怪物 ID 搜（必定命中那一只）
+      } else {
+        var st = ui.find(".stype");                    // 老客户端没有 selectMob：按客户端自己的搜索框走一遍
+        if (st.length) st.val("0");
+        var inp = ui.find(".snav .msg");
+        if (!inp.length) { setStatus("世界地图搜索框没找到", "err"); return false; }
+        inp.val(nm);
+        var panel = document.getElementById("shMtip"); if (panel) panel.style.display = "";
+        var btn = ui.find(".search_btn");
+        if (btn.length) btn.trigger("click");
+        else if (typeof WM.onKeyDown === "function") WM.onKeyDown({ which: 13 });
+      }
+      var hits = hitCount();
+      var kw = nm;
+      try { var kwEl = ui.find(".snav .msg"); if (kwEl && kwEl.length) kw = kwEl.val() || nm; } catch (e1) {}
+      setStatus(hits > 0 ? ("已打开游戏内搜索：魔物 · " + kw) : ("游戏内没搜到「" + nm + "」，可在窗口里换个词"), hits > 0 ? "ok" : "err");
+      return true;
     } catch (e) { try { setStatus("跳转失败：" + (e && e.message), "err"); } catch (e2) {} return false; }
   }
   // 「跳转」按钮全局委托：捕获阶段先拦下，避免在 <summary> 里点按钮连带动开合

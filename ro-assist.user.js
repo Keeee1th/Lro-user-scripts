@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.36.6
+// @version      2.36.7
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -102,6 +102,17 @@
 // 1. 脚本执行改为表单式设置：点「执行」弹出该脚本的设置界面（道馆=难度下拉 + 100轮暂停/无怪飞行/紧急飞行 三个开关 + 循环方式/次数/时长/条件 + 优先级/顺序），确认后保存并入队执行，不再只靠纯文字 JSON。
 // ---------------- V2.36.6 变更摘要 ----------------
 // 修复 MVP 计时器初始化顺序导致的崩溃，MVP 日志计时恢复可用（mvpEnsureState 惰性初始化，任意调用顺序都成立）。
+// ---------------- V2.36.7 变更摘要 ----------------
+// 修复本机私有客户端（127.0.0.1:8971/client/api.html）直接打开整页黑屏、控制台无引擎报错。同一入口三处根因，缺一即黑：
+// 1) 启动判定误判：宿主页 client/Config.js 预置占位 window.ROConfig（application=1 + roeHost=true，语义是「宿主页在」而非「引擎已启动」），
+//    旧判据 detectWrapperBoot() 见到 ROConfig.application 即认定宿主已启动并 return；直接打开（无父窗口/opener）时既没有启动器
+//    postMessage 启动配置、脚本也不再自启 Online.js，引擎永不启动 = 纯黑且无任何引擎异常。改为只认真实启动证据（页面已出现
+//    Online(_mn).js 脚本标签 / window.__roeLocalClient.started / 已收到 ready），且仅本机私有入口生效：有启动器宽限 6s、直开宽限 1.5s。
+// 2) 注入类型错误：本机 Online.js 是含 import.meta 的 ESM 构建，按经典脚本注入抛 SyntaxError: Cannot use 'import.meta' outside a module。
+//    本机私有入口改为与宿主页 api.html 同款 type="module" 注入；原站维持 text/javascript 不变。
+// 3) 自启配置不完整：用脚本 DEFAULTS 自启缺少新引擎必需的 lastroProtocol / lastroCustomPackets / 各 charset / packetKeys / servers(数组) 等字段，
+//    引擎在模块初始化 hook NOTIFY_LOADINFO 抛 Packet not yet register "LoadInfo" 后中断启动，依旧黑屏。改为以宿主页 window.ROConfigBase 为基底自启。
+// 原站 post.lastro.cn / game.lastro.cn 的启动判据、注入方式与配置来源全部保持不变。
 
 
 
@@ -116,6 +127,10 @@
   var SERVER_IDS = [3, 5];
   // 手机版检测：post.lastro.cn/?r=mn/index（同客户端 Online_mn.js + 同数据，触摸事件驱动）
   var IS_MN = /[?&]r=mn/.test(location.search);
+  // V2.36.7：本机私有客户端入口（127.0.0.1:8971 / localhost:8971）。该宿主页 Config.js 预置占位
+  // window.ROConfig(application=1,roeHost=true)，而 api.html 只认「父窗口/opener postMessage」启动，
+  // 直接打开时无人启动，需由脚本自启。原站入口不设此旗标，判据与行为保持不变。
+  var IS_LOCAL_HOST = /^(127\.0\.0\.1|localhost)$/.test(location.hostname) && location.port === "8971";
   // 手机版页面路径：/?r=mn/index（PC 版为 /ro/api.html）
   var MN_PATH = "/?r=mn/index";
   var PC_PATH = "/ro/api.html";
@@ -129,7 +144,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.36.6"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.36.7"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -366,7 +381,19 @@
   function buildConfig() {
     var cfg = {};
     var k;
-    for (k in DEFAULTS) cfg[k] = DEFAULTS[k];
+    // V2.36.7：本机私有入口优先以宿主页自己的 window.ROConfigBase（client/Config.js）为基底——
+    // 它含新引擎必需的 lastroProtocol / lastroCustomPackets / networkCharset / resourcePathCharset /
+    // lastroDataCharset / statusDescriptionCharset / packetKeys / servers(数组) 等字段。
+    // 若仍用 DEFAULTS 自启会缺这些字段：新引擎在模块初始化阶段 hook NOTIFY_LOADINFO 会抛
+    // NetworkManager::HookPacket() - Packet not yet register "LoadInfo" 并中断启动 → 依然是纯黑屏。
+    var hostBase = null;
+    if (IS_LOCAL_HOST) { try { hostBase = window.ROConfigBase || null; } catch (e) {} }
+    if (hostBase) {
+      for (k in hostBase) cfg[k] = hostBase[k];
+      cfg.application = 1; // 与宿主页 api.html 的 boot() 一致（数值 1 = 在线模式）
+    } else {
+      for (k in DEFAULTS) cfg[k] = DEFAULTS[k];
+    }
     cfg.version = version;
     cfg.remoteClient = useLocalData ? LOCAL_DATA : REMOTE_DATA;
     cfg.pushplusToken = notifyLoadToken(); // V2.36.0：沿用 DEFAULTS/buildConfig 约定，token 读自全局键
@@ -419,7 +446,10 @@
       try {
         window.ROConfig = cfg;
         var app = document.createElement("script");
-        app.type = "text/javascript";
+        // V2.36.7：本机私有宿主的 Online.js 是含 import.meta 的 ESM 构建（13MB rolldown 产物），
+        // 按经典脚本注入会抛 SyntaxError: Cannot use 'import.meta' outside a module → 白屏/黑屏无引擎画面。
+        // 与宿主页 api.html 同款：本机私有入口必须按 module 注入；原站维持 text/javascript 不变。
+        app.type = IS_LOCAL_HOST ? "module" : "text/javascript";
         app.src = "Online.js?" + version;
         document.getElementsByTagName("head")[0].appendChild(app);
         directInjected = true;
@@ -12742,12 +12772,20 @@
 
   // ---------------- 启动逻辑 ----------------
   function detectWrapperBoot() {
-    try {
-      if (window.ROConfig && window.ROConfig.application) return true;
-    } catch (e) {}
+    // V2.36.7：真实启动证据优先——引擎脚本标签 / 宿主启动标记 / 已收到 ready
     var scripts = document.getElementsByTagName("script");
     for (var i = 0; i < scripts.length; i++) {
       if (/Online(_mn)?\.js/.test(scripts[i].src)) return true;
+    }
+    try { if (window.__roeLocalClient && window.__roeLocalClient.started) return true; } catch (e) {}
+    try { if (state.ready) return true; } catch (e) {}
+    // 原站（post.lastro.cn / game.lastro.cn）保持原判据不变。
+    // 本机私有入口不能用它：Config.js 的占位对象同样带 application=1/roeHost=true，
+    // 直接打开 api.html 时据此判定会静默黑屏（引擎永不启动、控制台无引擎报错）。
+    if (!IS_LOCAL_HOST) {
+      try {
+        if (window.ROConfig && window.ROConfig.application) return true;
+      } catch (e) {}
     }
     return false;
   }
@@ -13258,17 +13296,43 @@
       tlog("wrapper-boot-detected");
       return;
     }
-    detectDataServer(function () {
-      setStatus("正在启动客户端…", "warn");
-      setTimeout(boot, 300);
-      setTimeout(function () {
-        if (!state.ready && !state.bootedByPlugin) {
-          setStatus("未检测到客户端，尝试启动…", "warn");
-          tlog("retry-boot");
-          boot();
+    var beginSelfBoot = function () {
+      detectDataServer(function () {
+        setStatus("正在启动客户端…", "warn");
+        setTimeout(boot, 300);
+        setTimeout(function () {
+          if (!state.ready && !state.bootedByPlugin) {
+            setStatus("未检测到客户端，尝试启动…", "warn");
+            tlog("retry-boot");
+            boot();
+          }
+        }, 3500);
+      });
+    };
+    if (IS_LOCAL_HOST) {
+      // V2.36.7：本机私有入口——有启动器（父窗口/opener）时宽限 6s 等它 postMessage 启动配置（实测约 0.4s），
+      // 无启动器（用户直接打开 api.html）时宽限 1.5s；宽限内出现真实启动证据就交还宿主，否则自启。
+      var hasStarter = false;
+      try { hasStarter = (window.self !== window.top) || !!window.opener; } catch (e) { hasStarter = true; }
+      var graceMs = hasStarter ? 6000 : 1500;
+      var graceT0 = Date.now();
+      var graceTimer = setInterval(function () {
+        if (detectWrapperBoot()) {
+          clearInterval(graceTimer);
+          state.bootedByWrapper = true;
+          setStatus("原站模式运行中", "ok");
+          tlog("wrapper-boot-detected-late");
+          return;
         }
-      }, 3500);
-    });
+        if (Date.now() - graceT0 > graceMs) {
+          clearInterval(graceTimer);
+          tlog("local-host-selfboot hasStarter=" + hasStarter);
+          beginSelfBoot();
+        }
+      }, 150);
+      return;
+    }
+    beginSelfBoot();
   }
 
   // ---------------- V2.7.0 脚本执行器（导入 JSON 模板 · 白名单 8 类动作） ----------------

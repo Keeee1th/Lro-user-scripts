@@ -451,7 +451,7 @@ test('configured item automation remains available fallback',()=>{
 });
 
 test('version constants agree and feedback is visible',()=>{
-  const meta=source.match(/@version\s+(\S+)/)?.[1], runtime=source.match(/var VER = "([^"]+)"/)?.[1];
+  const meta=source.match(/^\/\/\s*@version\s+(\S+)/m)?.[1], runtime=source.match(/var VER = "([^"]+)"/)?.[1];
   // V2.34.0：不再写死版本号——只校验格式与「文件头 / 运行时常量一致」，升版不用改用例
   assert.ok(/^\d+\.\d+\.\d+$/.test(meta),'@version 必须是 x.y.z，实际=' + meta);assert.equal(runtime,meta);
   assert.ok(source.includes('function roFeedback(text, cls)'));
@@ -691,7 +691,12 @@ test('exp 攻击名单与物品窗口拆分：mlock 独立、掉落树已随白�
   assert.ok((anc['dsh-mobsearch'] || '').includes('dsh-fw-item'), 'V2.36.13：怪物搜索（掉落树搜索）随掉落树回物品拾取页');
   assert.ok((anc['dsh-locksearch'] || '').includes('dsh-fw-mlock'), 'V2.36.13：攻击名单窗口的怪物搜索归 mlock');
   assert.ok((anc['dsh-lockhits'] || '').includes('dsh-fw-mlock'), 'V2.36.13：攻击名单搜索结果区归 mlock');
-  for (const id of ['dsh-wllist', 'dsh-wlcount', 'dsh-bag-state', 'dsh-bag-clean', 'dsh-picken', 'dsh-pickwalk', 'dsh-picksafe', 'dsh-pickmap', 'dsh-pickmapbtn']) assert.ok((anc[id] || '').includes('dsh-fw-item'), id + ' 应在 #dsh-fw-item');
+  for (const id of ['dsh-wllist', 'dsh-wlcount', 'dsh-fw-btn-bagclean', 'dsh-picken', 'dsh-pickwalk', 'dsh-picksafe', 'dsh-pickmap', 'dsh-pickmapbtn']) assert.ok((anc[id] || '').includes('dsh-fw-item'), id + ' 应在 #dsh-fw-item');
+  assert.equal(anc['dsh-bag-clean'], undefined, 'V2.38.2：丢弃名单容器必须移出物品页');
+  const bagHost = expSource.slice(expSource.indexOf('function bagCleanEnsureHost(){'), expSource.indexOf('function bagCleanInit(){'));
+  assert.ok(bagHost.includes("h.id='dsh-fw-bagclean'") && bagHost.includes('id="dsh-bag-clean"'), 'V2.38.2：丢弃名单必须落在独立浮窗 #dsh-fw-bagclean 内');
+  assert.ok(bagHost.indexOf('dsh-fw-bagclean') < bagHost.indexOf('id="dsh-bag-clean"'), 'V2.38.2：容器顺序必须是浮窗在外、名单在内');
+  assert.ok(expSource.includes('fwReg("bagclean", "自动丢弃", bagCleanEnsureHost)'), 'V2.38.2：自动丢弃必须注册成标准浮窗');
 });
 
 test('exp 物品搜索控件与代码已删净，「＋加入」落在白名单区块内', () => {
@@ -724,7 +729,7 @@ test('exp 技能点选/顺序表等级输入与释放% 即时写回守卫', () =
 });
 
 test('exp 版本号格式合法且文件头与运行时常量一致', () => {
-  const hv = /@version\s+(\S+)/.exec(expSource)?.[1];
+  const hv = /^\/\/\s*@version\s+(\S+)/m.exec(expSource)?.[1];
   const rv = /var VER = "([^"]+)"/.exec(expSource)?.[1];
   assert.match(String(hv), /^[0-9]+\.[0-9]+\.[0-9]+$/, '@version 必须是 x.y.z');
   assert.equal(hv, rv, '@version 必须与运行时常量 VER 一致');
@@ -793,8 +798,8 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
   // 1) 版本号：稳定版与实验版都必须是 2.36.1（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.38.1', name + ' @version 必须是 2.38.1');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.1', name + ' 运行时常量 VER 必须是 2.38.1');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.2', name + ' @version 必须是 2.38.2（锚定行首元数据行）');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.2', name + ' 运行时常量 VER 必须是 2.38.2');
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
   const stripHead = (s) => s.replace(/\r\n/g,'\n').split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
@@ -1166,8 +1171,8 @@ test('V2.34.5 战斗诊断快照 prof 字段已就位（不改既有字段）', 
 // ================= V2.34.5：配置自动备份（两代）/ 黄金副本找回（纯函数真值表 / 按钮 / 键隔离）=================
 test('V2.34.5 版本号升到 2.34.5（@version 与运行时常量一致，两文件同步）', () => {
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.38.1', name + ' @version 必须是 2.38.1');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.1', name + ' 运行时常量 VER 必须是 2.38.1');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.2', name + ' @version 必须是 2.38.2（锚定行首元数据行）');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.2', name + ' 运行时常量 VER 必须是 2.38.2');
   }
 });
 
@@ -1282,7 +1287,7 @@ test('V2.34.5 备份轮转：首轮写 .bak/.bak2、同一次加载第二次不�
   assert.ok(source.includes('var profBackupDone = false; // V2.34.5'), '必须有内存标志 profBackupDone');
 });
 
-function battleVm(){let now=0,id=1;const timers=new Map(),packets=[];const code=extract('  function npBattleState() {','  onId("dsh-battleon",');const ctx={Math,Date:{now:()=>now},npBattleKnown:false,npHuntOn:false,npBattleLastSentAt:-Infinity,npBattleConfirmedAt:0,npBattleCandidate:null,npBattleExplicit:null,npBattleExplicitTimer:null,setTimeout(fn,ms){const n=id++;timers.set(n,{fn,at:now+ms});return n},clearTimeout(n){timers.delete(n)},npToggleHunt(){packets.push(ctx.want);return ctx.send!==false},npSyncBattleCheckbox(){},tlog(){}};vm.createContext(ctx);vm.runInContext(code+';this.req=npRequestBattle;this.reset=npResetBattleState',ctx);return{ctx,packets,req(w,s,i){ctx.want=w;return ctx.req(w,s,i)},tick(ms){now+=ms;for(const[n,t]of[...timers])if(t.at<=now){timers.delete(n);t.fn()}},pending:()=>timers.size}}
+function battleVm(){let now=0,id=1;const timers=new Map(),packets=[];const code=extract('  function npBattleState() {','  onId("dsh-battleon",');const ctx={Math,Date:{now:()=>now},npBattleKnown:false,npHuntOn:false,npBattleLastSentAt:-Infinity,npBattleConfirmedAt:0,npBattleCandidate:null,npBattleExplicit:null,npBattleExplicitTimer:null,npZeroVerifyTimer:null,setTimeout(fn,ms){const n=id++;timers.set(n,{fn,at:now+ms});return n},clearTimeout(n){timers.delete(n)},npToggleHunt(){packets.push(ctx.want);return ctx.send!==false},npSyncBattleCheckbox(){},tlog(){}};vm.createContext(ctx);vm.runInContext(code+';this.req=npRequestBattle;this.reset=npResetBattleState',ctx);return{ctx,packets,req(w,s,i){ctx.want=w;return ctx.req(w,s,i)},tick(ms){now+=ms;for(const[n,t]of[...timers])if(t.at<=now){timers.delete(n);t.fn()}},pending:()=>timers.size}}
 test('V2.34.6 VM auto debounce stability oscillation and liveness',()=>{let h=battleVm();h.req(true,'auto',false);h.tick(800);h.req(true,'auto',false);for(let i=0;i<20;i++){h.tick(250);h.req(true,'auto',false)}assert.deepEqual(h.packets,[true]);h=battleVm();for(let i=0;i<40;i++){h.req(i%2===0,'auto',false);h.tick(250)}assert.equal(h.packets.length,0);h=battleVm();h.req(true,'auto',false);h.tick(800);h.req(true,'auto',false);h.req(false,'auto',false);h.tick(800);h.req(false,'auto',false);assert.deepEqual(h.packets,[true,false])});
 test('V2.34.6 VM explicit latest wins finite queue failure and reset',()=>{let h=battleVm();h.req(true,'click',true);h.tick(100);h.req(false,'click',true);h.tick(100);assert.equal(h.req(true,'click',true),'already');h.tick(500);assert.deepEqual(h.packets,[true]);assert.equal(h.pending(),0);h=battleVm();h.ctx.send=false;assert.equal(h.req(true,'click',true),'failed');assert.equal(h.ctx.npBattleKnown,false);assert.equal(h.ctx.npBattleLastSentAt,-Infinity);h=battleVm();h.req(true,'click',true);h.tick(100);h.req(false,'click',true);h.ctx.reset();h.tick(1000);assert.deepEqual(h.packets,[true]);assert.equal(h.pending(),0)});
 test('V2.34.6 structure guards shared entry points incremental receipt and local display',()=>{for(const src of[source,expSource]){const btn=src.slice(src.indexOf('onId("dsh-np-atk",'),src.indexOf('onId("dsh-np-pick",'));assert.ok(btn.includes('setBattle(true)'));assert.doesNotMatch(btn,/npCmd|npToggleHunt/);const hk=src.slice(src.indexOf('  function npToggleFight()'),src.indexOf('  // 助手自动战斗快捷键'));assert.ok(hk.includes('npRequestBattle(want, "hotkey", true)'));assert.equal((src.match(/npToggleHunt\(\)/g)||[]).length,3);const paint=src.slice(src.indexOf('  function qswPaint()'),src.indexOf('  try {',src.indexOf('  function qswPaint()')+10));assert.doesNotMatch(paint,/npReadPanelState|npHuntOn\s*=/);assert.ok(src.includes('npResetBattleState(); } catch (e0) {} // 换角色'));assert.ok(src.includes('npChatSeen.has(p)'));assert.ok(src.includes('var bsLocal = npBattleState(), bsPanel = npReadPanelState()'))}});
@@ -1349,21 +1354,26 @@ test('bagClean UI validates imports before normalization and reports failure',()
   for(const [name,src] of [['stable',source],['exp',expSource]]){const ui=src.slice(src.indexOf('  function bagCleanInit()'),src.indexOf('  // ---------------- 拾取页：内挂百分比联动'));const handler=ui.slice(ui.indexOf("box.querySelector('[data-import]')"));assert.ok(handler.indexOf('bagCleanValidateImport(raw,legacy)')>=0,name+' import must validate');assert.ok(handler.indexOf('bagCleanValidateImport(raw,legacy)')<handler.indexOf('bagCleanNormalize('),name+' validation must precede normalization');assert.ok(handler.includes("bagCleanSay('导入失败："),name+' import must show failure');}
 });
 
-test('bagClean type names reverse runtime ItemType mappings and retain safe generic names',()=>{
-  const h=bagCleanVm({}, {Healing:0,Material:3}),names=h.ctx.typeNames();assert.equal(names[0],'Healing');assert.equal(names[3],'Material');assert.equal(names[2],'消耗');assert.equal(names[11],'技能消耗');
+test('V2.38.2 bagClean 类别名一律用中文安全表，不再依赖 DB/Items/ItemType',()=>{
+  const h=bagCleanVm({}, {Healing:0,Material:3}),names=h.ctx.typeNames();
+  assert.equal(names[0],'治疗');assert.equal(names[3],'材料');assert.equal(names[2],'消耗');assert.equal(names[10],'箭矢');assert.equal(names[11],'技能消耗');
+  assert.equal(names[99],undefined,'未登记类型不得冒出英文名');
+  const src=extract("  var BAG_CLEAN_KEY = 'dsh-bag-clean-v2'",'  function bagCleanUnitWeight(id)');
+  assert.ok(!src.includes("requireDB('DB/Items/ItemType')")&&!src.includes('requireDB("DB/Items/ItemType")'),'类别名不再读客户端 ItemType 模块');
 });
 
-test('bagClean runtime-named unsafe and conflicting types are not batch selectable',()=>{
-  const unsafe=bagCleanVm({}, {SEARCH:99}),unsafeNames=unsafe.ctx.typeNames();
-  assert.equal(unsafeNames[99],'SEARCH');assert.equal(unsafe.ctx.describe({ITID:501,index:1,type:99,count:2},{discardRules:{},categoryTypes:[99],protectedIds:[]},unsafeNames).ok,false);
-  const h=bagCleanVm({}, {Material:3,Etc:3}),names=h.ctx.typeNames();assert.equal(names[3],false);
-  const cfg={discardRules:{},categoryTypes:[3],protectedIds:[]};assert.equal(h.ctx.describe({ITID:501,index:1,type:3,count:2},cfg,names).ok,false);
+test('V2.38.2 bagClean 未登记/冲突类型不做类别规则，只认显式名单',()=>{
+  const h=bagCleanVm(),names=h.ctx.typeNames(),cfg=n=>({discardRules:{},categoryTypes:[n],protectedIds:[]});
+  assert.equal(h.ctx.describe({ITID:501,index:1,type:99,count:2},cfg(99),names).ok,false,'类型 99 未登记 → 保护');
+  [4,5,8,12,18].forEach(type=>assert.equal(h.ctx.describe({ITID:501,index:1,type:type,count:2},cfg(type),names).ok,false,'冲突类型 '+type+' 不得批量可丢'));
+  assert.equal(h.ctx.describe({ITID:501,index:1,type:3,count:2},cfg(3),names).ok,true,'材料 3 属安全类型 → 类别可丢');
+  assert.equal(h.ctx.describe({ITID:501,index:1,type:4,count:1},{discardRules:{'501':0},categoryTypes:[],protectedIds:[]},names).ok,false,'装备即使显式列入也必须过装备保护');
 });
 
 test('bagClean blacklist keeps configured quantity and category is union fallback',()=>{
   const h=bagCleanVm(),names=h.ctx.typeNames(),explicit={discardRules:{'501':3},categoryTypes:[],protectedIds:[]},category={discardRules:{},categoryTypes:[3],protectedIds:[]};
   const a=h.ctx.describe({ITID:501,index:1,type:3,count:8},explicit,names),b=h.ctx.describe({ITID:502,index:2,type:3,count:8},category,names);
-  assert.equal(a.ok,true);assert.equal(a.keep,3);assert.equal(a.source,'黑名单');assert.equal(b.ok,true);assert.equal(b.keep,0);assert.match(b.source,/类别/);
+  assert.equal(a.ok,true);assert.equal(a.keep,3);assert.equal(a.source,'丢弃名单');assert.equal(b.ok,true);assert.equal(b.keep,0);assert.match(b.source,/类别/);
 });
 
 test('bagClean protectedIds overrides explicit blacklist and category selection',()=>{
@@ -1403,15 +1413,55 @@ test('bagClean rule changes disarm automation and initial automatic enable requi
 });
 
 test('bagClean v2 UI and storage contract is lockstep and documents unsupported boss-source filtering',()=>{
-  for(const [name,src] of [['stable',source],['exp',expSource]]){assert.ok(src.includes("'dsh-bag-clean-v2'"));assert.ok(src.includes("'dsh-bag-clean-rules-v1'"));assert.ok(src.includes('丢弃黑名单（勾选=要丢'));assert.ok(src.includes('类别保护例外（永不丢）'));assert.ok(src.includes('协议不含掉落怪来源，无法安全区分BOSS掉落，故不提供该规则。'));assert.ok(src.includes('导出v2'));const ui=src.slice(src.indexOf('  function bagCleanInit()'),src.indexOf('  // ---------------- 拾取页：内挂百分比联动'));assert.ok(ui.includes('Object.keys(BAG_SAFE_TYPES).map(Number)'),name+' UI must enumerate only safe types');assert.ok(ui.includes("ch.setAttribute('data-type',String(type))"),name+' UI category checkbox needs safe type marker');assert.ok(!ui.includes('presentTypes'),name+' UI must not derive category choices from runtime type 99');assert.ok(!ui.includes('data-type=99'),name+' UI must not generate data-type=99');}
+  for(const [name,src] of [['stable',source],['exp',expSource]]){assert.ok(src.includes("'dsh-bag-clean-v2'"));assert.ok(src.includes("'dsh-bag-clean-rules-v1'"));assert.ok(src.includes('丢弃黑名单（勾选=要丢'));assert.ok(src.includes('类别保护例外（永不丢）'));assert.ok(src.includes('协议不含掉落怪来源，无法安全区分BOSS掉落，故不提供该规则。'));assert.ok(src.includes('导出名单'));const ui=src.slice(src.indexOf('  function bagCleanInit()'),src.indexOf('  // ---------------- 拾取页：内挂百分比联动'));assert.ok(ui.includes('Object.keys(BAG_SAFE_TYPES).map(Number)'),name+' UI must enumerate only safe types');assert.ok(ui.includes("ch.setAttribute('data-type',String(type))"),name+' UI category checkbox needs safe type marker');assert.ok(!ui.includes('presentTypes'),name+' UI must not derive category choices from runtime type 99');assert.ok(!ui.includes('data-type=99'),name+' UI must not generate data-type=99');}
   const a=source.slice(source.indexOf('  // ---------------- 背包安全清理 v2'),source.indexOf('  // ---------------- 拾取页：内挂百分比联动')).replace(/\r\n/g,'\n');
   const b=expSource.slice(expSource.indexOf('  // ---------------- 背包安全清理 v2'),expSource.indexOf('  // ---------------- 拾取页：内挂百分比联动')).replace(/\r\n/g,'\n');assert.equal(a,b);
 });
 
 
+// ================= V2.38.2 定点修复：随时丢弃（anytime）开启时零候选走正常收尾 =================
+// 口径：anytime 开 = 不看负重与空格，于是外层 500ms 轮询每拍都会进 bagCleanExecute；
+//       零候选时旧代码 throw bagCleanShortage → 「背包清理暂停」错误态被反复刷到状态栏。
+//       本组用例锁死：自动+随时丢弃：正常 idle 收尾；阈值模式/手动/预览的原因清单不被削弱。
+function bagCleanExecVm(cfg){
+  const code=extract("  var BAG_CLEAN_KEY = 'dsh-bag-clean-v2'",'  function bagCleanUnitWeight(id)')
+    +extract('  function bagCleanRows(inv,cfg){','  async function bagCleanExecute(done,manual){')
+    +extract('  async function bagCleanExecute(done,manual){','  function bagCleanPreview(){');
+  const ctx={Number,String,Object,Array,JSON,Math,isFinite,document:{querySelector:()=>null},
+    CLIENT:{SS:{Entity:{GID:42}},PS:{CZ:{}},NM:{sendPacket(){}}},requireDB:()=>null,getMapName:()=> 'prontera',czp:()=>function(){},bagCleanUnitWeight:()=>null};
+  vm.createContext(ctx);vm.runInContext(code,ctx);
+  ctx.bagClean.config=Object.assign({version:2,discardRules:{},categoryTypes:[],protectedIds:[],armed:true,enabled:true,anytime:false},cfg);
+  ctx.bagClean.enabled=ctx.bagClean.config.enabled===true;
+  ctx.bagClean.status={textContent:''};ctx.bagClean.detail={textContent:''};
+  return ctx;
+}
+test('V2.38.2 定点修复：随时丢弃开启时零候选不抛错（阈值模式与手动仍保留原因清单）',async()=>{
+  const one=[{ITID:501,index:1,type:3,count:1}]; // 背包可读、但名单与类别都为空，即零候选
+  const on=bagCleanExecVm({anytime:true});on.bagCleanInventory=()=>one;let doneOn=0;
+  await on.bagCleanExecute(()=>{doneOn++;},null);
+  assert.equal(on.bagClean.error,'','anytime 开启时零候选不得产生错误态');
+  assert.equal(on.bagClean.pending,false,'正常收尾必须清掉 pending');
+  assert.equal(on.bagClean.detail.textContent,'随时丢弃待命：当前没有可丢候选');
+  assert.equal(doneOn,1,'正常收尾仍要回调 done');
+  const noInv=bagCleanExecVm({anytime:true});noInv.bagCleanInventory=()=>null;
+  await noInv.bagCleanExecute(()=>{},null);
+  assert.equal(noInv.bagClean.error,'','anytime 开启时读不到背包也不得反复刷错误态');
+  assert.match(noInv.bagClean.detail.textContent,/^随时丢弃待命：/);
+  const off=bagCleanExecVm({anytime:false});off.bagCleanInventory=()=>one;off.bagCleanWeight=()=>80;
+  await off.bagCleanExecute(()=>{},null);
+  assert.match(off.bagClean.error,/^背包清理暂停：/,'阈值模式必须继续告诉用户为什么没丢');
+  assert.match(off.bagClean.error,/当前没有可丢候选/);
+  const manual=bagCleanExecVm({anytime:false});manual.bagCleanInventory=()=>one;
+  await manual.bagCleanExecute(()=>{},{});
+  assert.equal(manual.bagClean.error,'','手动「立即清理」零候选仍是原有 break 收尾');
+  assert.equal(manual.bagClean.detail.textContent,'清理完成');
+  assert.ok(source.includes("throw Error(bagCleanShortage(inv))"),'阈值模式仍须用 bagCleanShortage 说明原因');
+  assert.ok(source.includes('bagCleanSay(bagCleanShortage(inv))'),'预览路径仍须保留 bagCleanShortage 原因清单');
+});
+
 // ================= V2.35.1 assistant API + standalone dojo =================
 const splitSources=[['stable',source],['exp',expSource]];
-test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.38\.1/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
+test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(s)?.[1],'2.38.2',name+' @version 必须锚定行首元数据行（旧的非锚定正则可能命中变更日志/正文里的 @version 字样）');assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
 test('V2.35.1 public API uses owner-only external signatures and validates the current lease owner',()=>{for(const[,s]of splitSources){assert.ok(s.includes('/^[A-Za-z0-9_.:-]{8,128}$/'));assert.ok(s.includes('dojo:1,battle:1,movement:1,dialog:1,arrow:1,fly:1'));assert.ok(s.includes('if(apiLease&&apiLease.owner!==owner)'));for(const sig of ['apiHas(owner,scope)','apiSnapshot(owner)','apiRelease(owner)','apiContact(owner,gid)','apiWalk(owner,payload)','apiChoose(owner,payload)','apiBattle(owner,on)','apiSetArrow(owner,target)','apiClearArrow(owner)','apiFly(owner,payload)'])assert.ok(s.includes('function '+sig),sig);assert.ok(s.includes('apiLease.generation===generation'));assert.ok(!s.includes('apiHas(owner,generation'));}});
 test('V2.35.1 snapshot and battle/menu ownership contracts are explicit',()=>{for(const[,s]of splitSources){for(const key of ['ready:','map:','player:','mobs:','npcs:','target:','inDojoMap:','dialogOpen:','menu:','battleState:','busy:','arrow:'])assert.ok(s.includes(key),key);assert.ok(s.includes('if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"}'));assert.ok(s.includes('b.state="pending-on"'));assert.ok(s.includes('if(b.state!=="owned")return {ok:true,result:"not-owned"}'));assert.ok(s.includes('l.battle.state==="owned"||l.battle.state==="pending-off"'));assert.ok(s.includes('if(s!==false)return {ok:true,result:s===true?"preexisting":"unknown"}'));}});
 test('V2.36.11 arrow rules use a per-monster table plus a default arrow',()=>{for(const[name,s]of splitSources){
@@ -2105,6 +2155,7 @@ test('V2.36.14 换箭打完后自动换回默认箭（默认箭可设置 · 实�
     arrowItemName: (i) => 'IT' + i, arrowSelfSay: (s) => { ctx.__said = s; }, arrowSay: () => {},
     arrowUseQuiver: () => null, arrowEffectiveMid: (mid) => ({ mid, sticky: false }),
     arrowMobName: () => '怪', arrowBoss: () => false, arrowKindName: (k) => k, arrowCandidates: () => [],
+    arrowPickSay: () => '换箭', ARROW_PLAIN_ITID: 1750, mobElemName: () => '',
     __mid: 0, __gone: false, __ammo: null, __bag: [], __gk: '', __ga: 0,
   };
   ctx.context = ctx; vm.createContext(ctx); vm.runInContext(code, ctx);
@@ -2129,7 +2180,7 @@ test('V2.36.14 连续死亡自动下线：5 分钟 3 次走「ESC→选择角色
   assert.ok(gsrc.includes('pkt.type = 1'), '按钮取不到时发的是 CZ.RESTART type=1（回角色服）');
   assert.ok(gsrc.includes('CharSelectV4') && gsrc.includes('.btn.cancel'), '角色选择界面的「取消」按钮必须点到');
   assert.ok(gsrc.includes('WinPrompt') && gsrc.includes('btn_ok.bmp'), '确认框必须点第一颗 ok 按钮（真正下线）');
-  assert.ok(gsrc.includes('stopZhu()') && gsrc.includes('npRequestBattle(false'), '下线前必须停助手并关内挂');
+  assert.ok(gsrc.includes('stopZhu()') && gsrc.includes('npZeroBattle("death-guard")'), '下线前必须停助手并关内挂（统一走 npZeroBattle）');
   assert.ok(gsrc.includes('deathReturnCancel("连续死亡自动下线")'), '必须接管死亡回图布防（不能一边回图一边下线）');
   assert.ok(gsrc.includes('zRunning === true || npBattleState() === true'), '只统计助手或内挂在跑时的死亡');
   assert.ok(gsrc.includes('gid !== lastCharGid'), '必须确认是自己的角色');
@@ -2539,4 +2590,973 @@ test('V2.37.1 主审回归：真实装备接口、失败保护与 KV dirty',()=>
 test('V2.37.1 安全语义结构守卫',()=>{
   ['if (!Array.isArray(ps.deck))','for (var x = 0; x < ids.length; x++)','if (sent.cardFail) bad.push','if (cap.deckOk) { ps.deck = cap.deck','if (!has(lp, "gearSets")','if (cur !== startValue || curTs !== startTs) return;','return; // pull 只应用，不立即反推'].forEach(x=>assert.ok(source.includes(x),x));
   assert.ok(source.includes("var mk = 'dsh_ro_st_migrate_v21530_' + activeProfileKey()"));
+});
+
+// ================= V2.38.2：背包读取 / 换箭兜底 / 辅助技能 / 自动丢弃 =================
+test('V2.38.2 背包读取统一走 bagList()：组件与 UIManager 缺一不可地兜底',()=>{
+  for(const [name,src] of [['stable',source],['exp',expSource]]){
+    assert.ok(src.includes('function bagList()'),name+' 必须有统一背包读取');
+    assert.ok(src.includes('function findInventory() { return bagList(); }'),name+' findInventory 必须复用 bagList');
+    assert.ok(src.includes('function readBagWorn(slotBit)'),name+' 必须能按穿戴位回读背包实例');
+    assert.ok(src.includes('function readBagAmmo()'),name+' 箭矢槽必须有组件→背包回读兜底');
+    assert.ok(src.includes('function readBagArrows()'),name+' 必须有背包箭矢读取');
+    assert.ok(src.includes('var rawT = it.type, t = Number(rawT);')&&src.includes('/箭矢$/.test(nm)'),name+' 箭矢类型必须数字规范化 + 名字二次确认');
+    assert.ok(src.includes('arrowBagDiagRender'),name+' 必须有背包数据源诊断');
+    assert.ok(src.includes('id="dsh-arrowbaglog"')&&src.includes('id="dsh-arrow-rules-bagdiag"'),name+' 两个诊断行必须在界面里');
+  }
+});
+
+test('V2.38.2 自动续箭阈值 50 支且按「对应箭袋→普通箭矢」顺序兜底',()=>{
+  for(const [name,src] of [['stable',source],['exp',expSource]]){
+    assert.ok(src.includes('var ARROW_PLAIN_ITID=1750, ARROW_MAGIC_QUIVER=2000030, ARROW_LOW_AMMO=50;'),name+' 普通箭矢/魔法箭矢筒/阈值必须集中声明');
+    assert.ok(src.includes('if (have >= ARROW_LOW_AMMO)'),name+' 阈值必须是「当前装备箭矢 >= 50」才不动手');
+    assert.ok(src.includes('var needItid = (ammo && arrowPos(ammo.itid)) || arrowPos(arrowRules.defaultItid) || ARROW_PLAIN_ITID;'),name+' 续箭目标=当前那支→默认箭→普通箭');
+    assert.ok(src.includes('var quiver = arrowUseQuiver(needItid);'),name+' 必须优先开当前那支箭对应的箭袋');
+    assert.ok(src.includes('useItemById(ARROW_MAGIC_QUIVER)'),name+' 没有对应箭袋时才用魔法箭矢筒');
+    assert.ok(src.includes('箭矢不足 50 支时自动补箭（打开对应箭袋，没有则换普通箭矢）'),name+' 界面文案要写明 50 支与兜底');
+    assert.ok(!src.includes('箭矢耗尽时用魔法箭袋'),name+' 旧「耗尽才补」文案必须删净');
+  }
+});
+
+test('V2.38.2 换箭候选链：属性箭 → 指定怪箭 → 念/不死属性补偿 → 通用箭 → 普通箭矢',()=>{
+  for(const [name,src] of [['stable',source],['exp',expSource]]){
+    assert.ok(src.includes('if(en==="念")'),name+' 念属性补偿分支');
+    assert.ok(src.includes('["水","火","地","风"].forEach'),name+' 念→水/火/地/风 顺序不能乱');
+    assert.ok(src.includes('addElem("elemfallback","火","不死")'),name+' 不死→火');
+    assert.ok(src.includes('addElem("elemfallback","圣","不死")'),name+' 不死→火→圣');
+    assert.ok(src.includes('add("default",cfg.defaultItid)'),name+' 通用箭仍要保留');
+    assert.ok(src.includes('if(out.length)add("plain",ARROW_PLAIN_ITID);'),name+' 普通箭矢只在前面有配置时才兜底，且必须走 add() 的 seen 去重（默认箭恰为 1750 时不重复）');
+    assert.ok(src.includes('"属性箭缺失，已用 "+(c.useElem||"")+"属性箭 补偿："+tag'),name+' 属性补偿提示');
+    assert.ok(src.includes('"背包缺 "+en+"箭矢，改用通用箭矢 "'),name+' 通用箭兜底提示');
+    assert.ok(src.includes('"通用箭矢也没有，已用魔法箭袋补充普通箭矢"'),name+' 普通箭矢兜底提示');
+    assert.ok(src.includes('"没有任何可用的箭矢/箭袋，保持当前箭："'),name+' 全都没有时只提示不换');
+  }
+});
+
+test('V2.38.2 辅助技能：默认关闭、SP 下限可 0、名单归属校验、状态栏实时',()=>{
+  for(const [name,src] of [['stable',source],['exp',expSource]]){
+    assert.ok(src.includes('saved.askEn === true'),name+' 自动 buff 必须默认关闭');
+    assert.ok(src.includes('dsh_ro_uiclear170_v1'),name+' 一次性清空键必须是浏览器级');
+    assert.ok(!src.includes('saved.uiClear170'),name+' 旧的角色档内清空标志必须删净');
+    assert.ok(src.includes('function askSpGuard()'),name+' SP 下限必须有共享解析');
+    assert.ok(src.includes("var n = parseInt($id(id) ? $id(id).value : \"\", 10); return isFinite(n) ? n : def;"),name+' SP 下限必须允许 0');
+    assert.ok(src.includes('if (profMemKey && profMemKey !== k)'),name+' saveAskList 必须有归属校验');
+    assert.ok(src.includes('function renderBuffLog()'),name+' 状态栏必须有实时渲染');
+    for(const txt of ['辅助技能：未启用（勾选"启用自动释放"）','辅助技能：待机（自动战斗未开启）','辅助技能：暂停（SP ','辅助技能：运行中']) assert.ok(src.includes(txt),name+' 状态栏文案 '+txt);
+    assert.ok(src.includes('if (txt === buffLogLast) return;'),name+' 状态栏内容不变不得重写（防闪）');
+    assert.ok(src.includes('var list = askList.slice()'),name+' 一键补 buff 必须用快照，避免切档/刷新错档');
+  }
+});
+
+test('V2.38.2 自动丢弃：逐角色保存、默认关闭、随时丢弃独立开关、提速',()=>{
+  for(const [name,src] of [['stable',source],['exp',expSource]]){
+    assert.ok(src.includes('function bagCleanStorageKey()')&&src.includes("return k?(BAG_CLEAN_KEY+':'+k):BAG_CLEAN_KEY;"),name+' 必须逐角色保存且能退回全局键');
+    assert.ok(src.includes('bagClean.config.enabled===true&&bagClean.config.armed===true'),name+' 启用状态必须逐角色记忆');
+    assert.ok(src.includes('data-anytime'),name+' 必须有「随时丢弃」开关');
+    assert.ok(src.includes('function bagCleanNeeded(weight,free){if(bagClean.config.anytime===true)return true;return (weight!==null&&weight>70)||(free!==null&&free<20);}'),name+' anytime 为真时不看负重/空格阈值：名单命中即丢');
+    assert.ok(src.includes('cfg.armed=false; // 安全门禁'),name+' 加载后必须回到未授权');
+    assert.ok(src.includes('setTimeout(poll,80)'),name+' 确认轮询必须提速到 80ms');
+    assert.ok(src.includes('plan.slice(0,4)'),name+' 每轮最多连丢 4 个不同 index 的堆叠');
+    assert.ok(src.includes('URL.createObjectURL'),name+' 导出必须真的下载 JSON');
+    assert.ok(src.includes('readAsText'),name+' 导入必须支持选择文件');
+    assert.ok(src.includes("已导入 '+outN+' 条名单（跳过 '+Math.max(0,inN-outN)+' 条无效"),name+' 导入提示要报条目数');
+  }
+});
+
+test('V2.38.2 物品说明浮窗可加入/移出丢弃名单（左键，不劫持右键）',()=>{
+  for(const [name,src] of [['stable',source],['exp',expSource]]){
+    assert.ok(src.includes('data-dsh-bagact'),name+' 必须有名单按钮');
+    assert.ok(src.includes('加入丢弃名单')&&src.includes('移出丢弃名单'),name+' 按钮两种文案都要有');
+    assert.ok(src.includes('function bagCleanToggleItem(item,remove)'),name+' 按钮后端');
+    assert.ok(src.includes('t.closest("#dsh-itemtip")'),name+' 鼠标进浮窗不得收起来（否则点不到按钮）');
+    assert.ok(src.includes('e.preventDefault(); e.stopPropagation();'),name+' 点按钮必须拦下，别落到游戏画面');
+  }
+});
+
+test('V2.38.2 bagClean 逐角色键与角色档隔离（VM）',()=>{
+  const store=new Map();
+  const code=extract("  var BAG_CLEAN_KEY = 'dsh-bag-clean-v2'",'  function bagCleanSay(text)'); // 末尾放宽到 bagCleanSay 之前，把 bagCleanNeeded 口径一并纳入 VM 验证
+  const ctx={Number,String,Object,Array,JSON,Math,isFinite,document:{querySelector:()=>null},requireDB:()=>null,require:()=>null,activeProfileKey:()=>'abc',
+    localStorage:{getItem:k=>store.has(k)?store.get(k):null,setItem:(k,v)=>store.set(k,String(v))},bagCleanSay(){}};
+  vm.createContext(ctx);vm.runInContext(code+';this.load=bagCleanLoad;this.save=bagCleanSave;this.key=bagCleanStorageKey;this.needed=bagCleanNeeded',ctx);
+  assert.equal(ctx.key(),'dsh-bag-clean-v2:abc','逐角色键必须是 <全局键>:<角色档键>');
+  ctx.bagClean.config={version:2,discardRules:{'501':0},categoryTypes:[],protectedIds:[],armed:true,enabled:true,anytime:true};
+  ctx.save();
+  assert.ok(store.get('dsh-bag-clean-v2:abc').includes('"anytime":true'),'随时丢弃必须落盘');
+  assert.ok(!store.has('dsh-bag-clean-v2'),'逐角色时不得写全局键');
+  const cfg=ctx.load();
+  assert.equal(cfg.armed,false,'加载后必须回到未授权');
+  assert.equal(cfg.enabled,true,'启用状态必须逐角色记住');
+  assert.equal(cfg.anytime,true,'随时丢弃必须逐角色记住');
+  // 口径：开启「随时丢弃」= 不看负重与空格；关闭 = 只在 负重>70% 或 空格<20 时动手
+  ctx.bagClean.config={anytime:true};
+  assert.equal(ctx.needed(10,999),true,'anytime 为真：负重/空格再宽裕也判需要丢弃');
+  assert.equal(ctx.needed(null,null),true,'anytime 为真：读不到负重/空格也判需要丢弃');
+  ctx.bagClean.config={anytime:false};
+  assert.equal(ctx.needed(70,20),false,'anytime 为假：负重 70% / 空格 20 是边界，不触发');
+  assert.equal(ctx.needed(70.5,100),true,'anytime 为假：负重>70% 才动手');
+  assert.equal(ctx.needed(10,19),true,'anytime 为假：空格<20 才动手');
+  assert.equal(ctx.needed(null,null),false,'anytime 为假：读不到负重/空格不动手');
+});
+
+// ================= V2.38.2 第三批定点修复：切角色复位自动丢弃 / anytime 归零 armed / 陈旧预览清 enabled / 状态去重 / 补偿箭顺序 =================
+test('第三批 F1/F3/F4/F5：切角色复位自动丢弃、anytime 改动归零 armed、陈旧预览清 enabled、状态去重',()=>{
+  for(const [name,src] of [['stable',source],['exp',expSource]]){
+    const chg=src.slice(src.indexOf('  function onCharChanged(ent) {'),src.indexOf('  onId("dsh-saveprofile"'));
+    assert.ok(chg.includes('bagClean.config = bagCleanLoad();')&&chg.includes('bagClean.config.armed = false;')&&chg.includes("bagCleanSay('切换角色：自动丢弃已关闭，需重新预览确认。')"),name+' F1 切角色必须复位自动丢弃并给出中文提示');
+    assert.ok(chg.indexOf('captureAll();')<chg.indexOf('bagClean.generation++'),name+' F1 复位必须在 captureAll（旧档落盘）之后');
+    assert.ok(chg.indexOf('askList = profiles[key].askList')<chg.indexOf('bagClean.config = bagCleanLoad();'),name+' F1 复位必须在重绑 lockList/askList 之后');
+    assert.ok(chg.includes('} catch (eBC) {}'),name+' F1 复位必须自带 try/catch，不得影响换角色主流程');
+    const ui=src.slice(src.indexOf('  function bagCleanInit()'),src.indexOf('  // ---------------- 拾取页：内挂百分比联动'));
+    assert.ok(ui.includes("box.querySelector('[data-anytime]').onchange=function(){bagClean.config.anytime=this.checked===true;changed('随时丢弃已修改：自动已关闭，需重新预览确认。');};"),name+' F3 随时丢弃改动必须走 changed()（armed 归零）');
+    assert.ok(!ui.includes("bagClean.config.anytime=this.checked===true;bagCleanSave();"),name+' F3 旧「只赋值 + save」写法必须删净');
+    const prev=src.slice(src.indexOf('  function bagCleanPreview()'),src.indexOf('  function bagCleanInit()'));
+    assert.ok(prev.includes("if(stale){bagCleanDisarm('预览期间索引/ITID/type/数量/保护或规则变化，已停止；请重新预览。');return null;}"),name+' F4 陈旧候选必须走 bagCleanDisarm（同时清 enabled）');
+    assert.ok(src.includes('var bagCleanSayLast="";'),name+' F5 状态文本必须记住上一次内容');
+    assert.ok(src.includes('function bagCleanSay(text){text=String(text);if(text===bagCleanSayLast)return;bagCleanSayLast=text;'),name+' F5 文本未变不得重写 DOM');
+  }
+});
+
+test('第三批 F2：bagCleanSave 一律写回加载时记住的键，旧角色规则不得写进新角色档（VM）',()=>{
+  const store=new Map();let profile='A';
+  const code=extract("  var BAG_CLEAN_KEY = 'dsh-bag-clean-v2'",'  function bagCleanSay(text)');
+  const ctx={Number,String,Object,Array,JSON,Math,isFinite,document:{querySelector:()=>null},requireDB:()=>null,require:()=>null,
+    activeProfileKey:()=>profile,localStorage:{getItem:k=>store.has(k)?store.get(k):null,setItem:(k,v)=>store.set(k,String(v))}};
+  vm.createContext(ctx);vm.runInContext(code+';this.load=bagCleanLoad;this.save=bagCleanSave;this.key=bagCleanStorageKey',ctx);
+  assert.equal(ctx.key(),'dsh-bag-clean-v2:A','逐角色键仍是 <全局键>:<角色档键>');
+  ctx.load();
+  assert.equal(ctx.bagClean.key,'dsh-bag-clean-v2:A','bagCleanLoad 必须记住加载时用的键');
+  profile='B';
+  ctx.bagClean.config={version:2,discardRules:{'999':0},categoryTypes:[],protectedIds:[],armed:false,enabled:false,anytime:false};
+  ctx.save();
+  assert.ok(store.get('dsh-bag-clean-v2:A').includes('"999":0'),'切档复位还没跑时也必须写回记住的旧键');
+  assert.ok(!store.has('dsh-bag-clean-v2:B'),'绝不能把旧角色的规则写进新角色档');
+  ctx.load();
+  assert.equal(ctx.bagClean.key,'dsh-bag-clean-v2:B','重新加载后记住的键跟到新角色');
+  ctx.bagClean.config={version:2,discardRules:{'888':0},categoryTypes:[],protectedIds:[],armed:false,enabled:false,anytime:false};
+  ctx.save();
+  assert.ok(store.get('dsh-bag-clean-v2:B').includes('"888":0'),'复位之后写到新角色档');
+});
+
+test('第三批 F9：属性箭已配但背包里没有时，补偿箭仍排在通用箭之前（VM）',()=>{
+  const code=extract('  function arrowPos(v)','  function arrowLoad(){')+extract('  function arrowBoss(mid)','  function arrowFill(s)');
+  const ctx={};vm.createContext(ctx);vm.runInContext(code+';this.cand=arrowCandidates;this.decide=arrowDecision',ctx);
+  // 1061 = 念属性怪，1015 = 不死属性怪（取本机 MOB_ELEM_RAW 交核对）
+  const nian=ctx.cand(1061,{byElem:{'念':1758,'水':1754},byMid:{},defaultItid:1750}),nids=nian.map(x=>x.itid);
+  assert.equal(nids[0],1758,'属性箭本身仍然是第一优先');
+  assert.ok(nids.indexOf(1754)>=0&&nids.indexOf(1750)>=0&&nids.indexOf(1754)<nids.indexOf(1750),'念箭已配但用不上时，水属性箭必须排在通用箭之前');
+  const fb=nian.filter(x=>x.kind==='elemfallback');
+  assert.equal(fb.length,1,'只有配过的补偿箭才进候选');
+  assert.equal(fb[0].itid,1754);assert.equal(fb[0].useElem,'水');assert.equal(fb[0].missElem,'念','kind/useElem/missElem 标记必须保留（提示文案靠它）');
+  const ud=ctx.cand(1015,{byElem:{'不死':1766,'火':1752,'圣':1765},byMid:{},defaultItid:1750}).map(x=>x.itid);
+  assert.ok(ud.indexOf(1752)<ud.indexOf(1750)&&ud.indexOf(1765)<ud.indexOf(1750),'不死用不上时火/圣必须排在通用箭之前');
+  assert.ok(ud.indexOf(1752)<ud.indexOf(1765),'不死补偿顺序必须是 火 → 圣');
+  assert.equal(ctx.cand(1061,{byElem:{},byMid:{},defaultItid:null}).length,0,'什么都没配 → 仍然是空列表、不动作');
+  assert.equal(ctx.decide(1061,{byElem:{},byMid:{},defaultItid:null}),null,'什么都没配 → 不换箭');
+  assert.equal(JSON.stringify(ctx.decide(1061,{byElem:{'水':1754},byMid:{},defaultItid:null})),JSON.stringify({kind:'elemfallback',itid:1754,useElem:'水',missElem:'念'}),'念箭没配置时补偿链口径不变');
+});
+
+
+// ================= V2.38.2 第四批定点修复：切角色复位无视 bagCleanLoad 失败 / 普通箭矢候选去重 ==================
+test('第四批 G1：bagCleanLoad 抛错时切角色复位仍必须完成安全归零并落盘（VM）',()=>{
+  const head='      // 切角色复位：',tail='      profMemKey = activeProfileKey();';
+  for(const [name,src] of [['stable',source],['exp',expSource]]){
+    const a=src.indexOf(head),b=src.indexOf(tail,a);
+    assert.ok(a>=0&&b>a,name+' 必须能切出切角色复位块');
+    const block=src.slice(a,b);
+    assert.ok(block.indexOf('} catch (eBC) {}')<block.indexOf('bagClean.enabled = false;'),name+' 安全归零必须排在 try/catch 之后，不能排在 bagCleanLoad 之后');
+    assert.ok(block.indexOf('bagClean.enabled = false;')<block.indexOf('bagCleanSave();'),name+' 归零必须先于落盘');
+    function run(load,extra){
+      const store=new Map();
+      const ctx={bagClean:{enabled:true,busy:true,pending:true,generation:1,key:'dsh-bag-clean-v2:A',render:null,
+        config:{version:2,discardRules:{'501':0},categoryTypes:[],protectedIds:[],armed:true,enabled:true,anytime:true}},
+        bagCleanLoad:load,
+        bagCleanSave(){store.set(ctx.bagClean.key,JSON.stringify(ctx.bagClean.config));ctx.__saved=(ctx.__saved||0)+1;},
+        bagCleanSay(t){ctx.__said=t;}};
+      if(extra)extra(ctx);
+      vm.createContext(ctx);vm.runInContext(block,ctx);
+      return {ctx,store};
+    }
+    // 1) 加载直接抛错：旧角色的 armed 授权绝不能残留
+    let {ctx,store}=run(()=>{throw Error('模拟 bagCleanLoad 失败');});
+    assert.equal(ctx.bagClean.enabled,false,name+' 加载失败也必须 enabled=false');
+    assert.equal(ctx.bagClean.config.armed,false,name+' 加载失败也必须 config.armed=false');
+    assert.equal(ctx.bagClean.config.enabled,false,name+' 加载失败也必须 config.enabled=false');
+    assert.equal(ctx.bagClean.generation,2,name+' 复位代数仍要自增');
+    assert.equal(ctx.bagClean.busy,false);assert.equal(ctx.bagClean.pending,false);
+    assert.ok(ctx.__saved>=1,name+' 加载失败也必须落盘');
+    let raw=JSON.parse(store.get('dsh-bag-clean-v2:A'));
+    assert.equal(raw.armed,false,name+' 落盘内容 armed 必须是 false');
+    assert.equal(raw.enabled,false,name+' 落盘内容 enabled 必须是 false');
+    assert.equal(ctx.__said,'切换角色：自动丢弃已关闭，需重新预览确认。',name+' 复位提示必须照常给出');
+    // 2) 加载成功但 render 抛错：归零与落盘不得被带偏
+    ({ctx,store}=run(()=>({version:2,discardRules:{},categoryTypes:[],protectedIds:[],armed:true,enabled:true,anytime:true}),c=>{c.bagClean.render=()=>{throw Error('渲染失败');};}));
+    assert.equal(ctx.bagClean.enabled,false,name+' render 抛错也必须 enabled=false');
+    assert.equal(ctx.bagClean.config.armed,false,name+' render 抛错也必须 config.armed=false');
+    assert.equal(ctx.__said,'切换角色：自动丢弃已关闭，需重新预览确认。');
+    raw=JSON.parse(store.get('dsh-bag-clean-v2:A'));
+    assert.equal(raw.armed,false,name+' render 抛错也必须落盘 armed=false');
+  }
+});
+
+test('第四批 G2：默认箭恰好是普通箭矢 1750 时候选链不出现重复（VM）',()=>{
+  const code=extract('  function arrowPos(v)','  function arrowLoad(){')+extract('  function arrowBoss(mid)','  function arrowFill(s)');
+  const ctx={};vm.createContext(ctx);vm.runInContext(code+';this.cand=arrowCandidates',ctx);
+  const dup=ctx.cand(1002,{byMid:{},byElem:{},defaultItid:1750});
+  assert.equal(JSON.stringify(dup),JSON.stringify([{kind:'default',itid:1750}]),'默认箭=普通箭矢 1750 时候选只能有一支（1750 不得出现两次）');
+  assert.equal(ctx.cand(1002,{byMid:{},byElem:{},defaultItid:null}).length,0,'什么都没配置 → 仍然不补普通箭矢（保护不变）');
+  const withMob=ctx.cand(1002,{byMid:{1002:1751},byElem:{},defaultItid:1750});
+  assert.equal(withMob.length,2,'指定怪箭 + 默认箭，普通箭矢被 seen 去重');
+  assert.equal(withMob.filter(x=>x.itid===1750).length,1,'1750 只能出现一次');
+  const fb=ctx.cand(1002,{byMid:{},byElem:{},defaultItid:1802});
+  assert.equal(JSON.stringify(fb.map(x=>x.kind)),JSON.stringify(['default','plain']),'默认箭不是 1750 时普通箭矢仍要兜底在最后');
+  assert.equal(fb[fb.length-1].itid,1750);
+  assert.ok(source.includes('if(out.length)add("plain",ARROW_PLAIN_ITID);'),'稳定版必须走 add() 的 seen 去重');
+  assert.ok(expSource.includes('if(out.length)add("plain",ARROW_PLAIN_ITID);'),'实验版必须同步');
+});
+
+// ================= V2.38.2 挂机结束时置零内挂自动战斗（全局设置 dsh_ro_npzero_v1） =================
+const NP_ZERO_LOAD = '  var NP_ZERO_KEY = "dsh_ro_npzero_v1";';
+const NP_ZERO_END = '  // 设置界面：';
+
+test('V2.38.2 置零设置：默认开、读取失败按开、关闭时一个包都不发（VM）', () => {
+  for (const [name, src] of [['stable', source], ['exp', expSource]]) {
+    assert.ok(src.includes('var NP_ZERO_KEY = "dsh_ro_npzero_v1";'), name + ' 必须用稳定全局键 dsh_ro_npzero_v1');
+    assert.ok(src.includes('var npZeroCfg = { enabled: true };'), name + ' 默认值必须是开');
+    assert.ok(src.includes('id="dsh-npzero" type="checkbox"') && src.includes('挂机结束时关闭内挂自动战斗（默认开）'), name + ' 内挂页必须有中文复选框');
+    assert.ok(src.includes('npZeroSave(this.checked)'), name + ' 勾选必须立刻落盘');
+    assert.ok(src.includes('已开启：挂机结束时自动关闭内挂自动战斗') && src.includes('已关闭：挂机结束时不再关闭内挂自动战斗'), name + ' 勾选进/出都要有中文 setStatus 提示');
+    const load = src.slice(src.indexOf(NP_ZERO_LOAD), src.indexOf(NP_ZERO_END, src.indexOf(NP_ZERO_LOAD)));
+    assert.ok(load.length > 0, name + ' 必须能切出设置与置零函数块');
+    function boot(stored) {
+      const packets = [];
+      const store = new Map();
+      if (stored !== undefined) store.set('dsh_ro_npzero_v1', stored);
+      const ctx = { JSON, localStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)) },
+        npReadPanelState: () => null, // 面板读不到 → 走既有语义
+        npRequestBattle: (w, s, i) => { packets.push([w, s, i]); return 'sent'; }, tlog() {} };
+      vm.createContext(ctx); vm.runInContext(load + ';this.zero=npZeroBattle;this.on=npZeroEnabled;this.save=npZeroSave', ctx);
+      return { ctx, packets, store };
+    }
+    // 无值 → 默认开，且立刻请求一次「关自动战斗」（走立即事务；面板读不到 → 未知态照发）
+    let { ctx, packets } = boot(undefined);
+    assert.equal(ctx.on(), true, name + ' 无值时一律按开');
+    assert.equal(ctx.zero('dojoStop'), 'sent', name + ' 开启时置零必须走 npRequestBattle');
+    assert.equal(JSON.stringify(packets), JSON.stringify([[false, 'zero:dojoStop', true]]), name + ' 必须是 npRequestBattle(false, "zero:...", true)');
+    // 读取失败（坏 JSON / null / 非对象 / 非布尔）→ 一律按开
+    for (const bad of ['{坏', 'null', '[]', '"x"', '{"enabled":"yes"}']) {
+      const b = boot(bad);
+      assert.equal(b.ctx.on(), true, name + ' 读取失败(' + bad + ')必须按开');
+    }
+    // 显式关闭 → 直接返回，一个包都不发
+    const off = boot('{"enabled":false}');
+    assert.equal(off.ctx.on(), false, name + ' 落盘 false 必须生效');
+    assert.equal(off.ctx.zero('dojoStop'), 'disabled', name + ' 关闭时必须直接返回');
+    assert.equal(off.packets.length, 0, name + ' 关闭时绝不能发包');
+    off.ctx.save(true);
+    assert.equal(off.store.get('dsh_ro_npzero_v1'), '{"enabled":true}', name + ' 重新勾选必须立刻落盘');
+    assert.equal(off.ctx.on(), true, name + ' 重新勾选后立刻生效');
+  }
+});
+
+// V2.38.2 置零 VM 夹具：document 里必须有真实的 #vbk input.openattack 节点——
+//   生产 npSendBattle→npSyncBattleCheckbox 会把面板写回 false，800ms 复核读到 false 就不再补发；
+//   夹具没有 document 时这条写回被 try/catch 吞掉，会测出生产根本不成立的「补发 2 次」路径（假绿）。
+function npZeroVm(known, on, panel) {
+  const toggles = [], logs = [], timers = [], cleared = [];
+  let now = 1000, tid = 0;
+  const vbk = panel === null ? null : { checked: panel === true };
+  const ctx = { Math, Date: { now: () => now },
+    document: { querySelector: (sel) => (sel === '#vbk input.openattack' ? vbk : null) },
+    setTimeout: (fn, ms) => { timers.push({ id: ++tid, fn: fn, ms: ms }); return tid; },
+    clearTimeout: (id) => { cleared.push(id); },
+    npHuntOn: !!on, npBattleKnown: !!known, npBattleLastSentAt: -Infinity, npBattleConfirmedAt: 0,
+    npBattleCandidate: null, npBattleExplicit: null, npBattleExplicitTimer: null,
+    npReadPanelState: () => { const el = ctx.document.querySelector('#vbk input.openattack'); return el ? !!el.checked : null; },
+    npToggleHunt: () => { toggles.push(1); return true; }, npIsThree: () => false, npSendUpdate: () => true,
+    tlog: (m) => logs.push(m) };
+  vm.createContext(ctx);
+  vm.runInContext(extract('  function npBattleState() {', '  onId("dsh-battleon",') + extract(NP_ZERO_LOAD, NP_ZERO_END)
+    + ';this.zero=npZeroBattle;this.state=npBattleState;this.req=npRequestBattle;this.clear=npClearBattleIntent;this.reset=npResetBattleState', ctx);
+  return { ctx, toggles, logs, timers, cleared,
+    panelChecked: () => (vbk ? vbk.checked : null),
+    setPanel: (v) => { if (vbk) vbk.checked = v === true; },
+    later: (ms) => { now += ms; while (timers.length) { const t = timers.shift(); if (cleared.indexOf(t.id) >= 0) continue; t.fn(); } } };
+}
+
+test('V2.38.2 置零真值表：面板=服务器权威 → 面板关 0 发包 / 面板开必真发关包（缓存说关也照发）（VM）', () => {
+  // 真值表：面板明确「已关」→ already，任何缓存组合都 0 发包
+  for (const [known, on] of [[true, true], [true, false], [false, false]]) {
+    const a = npZeroVm(known, on, false);
+    assert.equal(a.ctx.zero('dojoStop'), 'already', '面板说已关 (' + known + ',' + on + ') 必须 already');
+    assert.equal(a.toggles.length, 0, '面板说已关时一个包都不发');
+    assert.equal(a.timers.length, 0, '面板说已关时不得起任何定时器');
+    assert.equal(a.ctx.state(), false, '面板=服务器权威，缓存必须被纠回「已关」');
+    assert.ok(a.logs.join('|').includes('panel=false'), '必须写下面板口径的 tlog');
+  }
+  // 关键用例一：缓存说关、面板说开 → 必须绕过缓存去重真发一次关闭包
+  const b = npZeroVm(true, false, true);
+  assert.equal(b.ctx.state(), false, '前置：本地缓存认为内挂已关');
+  assert.equal(b.ctx.zero('stopZhu'), 'sent', '面板说在跑即使缓存说关也必须真发关包');
+  assert.equal(b.toggles.length, 1, '面板说在跑只发一次 toggle');
+  assert.equal(b.ctx.state(), false, '发包后本地态回到已关');
+  assert.ok(b.logs.join('|').includes('panel=true'), '必须写下面板口径的 tlog');
+  // 发完复核：生产里 npSyncBattleCheckbox 已把面板写回「关」→ 复核读到关，不再补发
+  assert.equal(b.panelChecked(), false, '生产：关包发出后 #vbk 被写回 false');
+  b.later(800);
+  assert.equal(b.toggles.length, 1, '面板已收敛时不得补发第二次');
+  // 关键用例二：缓存说开、面板说开 → 发一次；800ms 复核读到生产写回的「关」→ 不得补发（生产实际只发 1 次）
+  const c = npZeroVm(true, true, true);
+  assert.equal(c.ctx.state(), true, '前置：缓存与面板都说在跑');
+  assert.equal(c.ctx.zero('换角色'), 'sent', '面板说在跑必须发关包');
+  assert.equal(c.toggles.length, 1);
+  assert.equal(c.panelChecked(), false, '生产：关包发出后 npSyncBattleCheckbox 已把 #vbk 写回 false');
+  c.later(800);
+  assert.equal(c.toggles.length, 1, '复核读到面板已关 → 不得补发');
+  c.later(5000);
+  assert.equal(c.toggles.length, 1, '绝不循环');
+  assert.equal(c.timers.length, 0, '复核跑完不得再排定时器');
+  // 面板读不到 → 保持既有语义：已知开发一次 / 已知关 already / 未知发一次
+  const u = npZeroVm(false, false, null);
+  assert.equal(u.ctx.state(), null, '前置：权威状态未知');
+  assert.equal(u.ctx.zero('换角色'), 'sent', '未知态必须照发一次');
+  assert.equal(u.toggles.length, 1, '未知态只发一次');
+  assert.equal(u.ctx.zero('dojoStop'), 'already', '同一波挂机结束的第二次置零必须 already');
+  assert.equal(u.toggles.length, 1, '同一波挂机结束不得重复 toggle');
+  const d = npZeroVm(true, true, null);
+  assert.equal(d.ctx.zero('death-guard'), 'sent', '面板读不到 + 已知在跑 → 照发一次');
+  assert.equal(d.toggles.length, 1);
+  const e = npZeroVm(true, false, null);
+  assert.equal(e.ctx.zero('apiRelease'), 'already', '面板读不到 + 已知关 → already，不重复发包');
+  assert.equal(e.toggles.length, 0);
+  // npZeroBattle 内部异常不得外抛
+  const boom = { JSON, localStorage: { getItem: () => null, setItem() {} }, npReadPanelState: () => null, npRequestBattle: () => { throw Error('boom'); }, tlog() {} };
+  vm.createContext(boom); vm.runInContext(extract(NP_ZERO_LOAD, NP_ZERO_END) + ';this.zero=npZeroBattle', boom);
+  assert.equal(boom.zero('x'), 'error', 'npRequestBattle 抛错时 npZeroBattle 必须吞掉并返回 error');
+});
+
+test('V2.38.2 置零复核：关包发出后服务器把面板重新渲染成「开」→ 允许补发一次，总计硬上限 2 次（VM）', () => {
+  const c = npZeroVm(true, true, true);
+  assert.equal(c.ctx.zero('换角色'), 'sent', '面板说在跑 → 先发一次关包');
+  assert.equal(c.toggles.length, 1);
+  assert.equal(c.panelChecked(), false, '前置：客户端把面板写回「关」');
+  c.setPanel(true); // 服务器下一帧把 #vbk 重新渲染成开（本地缓存被污染 / 面板被重绘）
+  c.later(800);
+  assert.equal(c.toggles.length, 2, '复核读到面板又在跑 → 允许补发一次');
+  assert.ok(c.logs.join('|').includes('np-zero retry result='), '补发必须写 tlog');
+  c.later(5000);
+  assert.equal(c.toggles.length, 2, '总计硬上限 2 次，绝不循环');
+  assert.equal(c.timers.length, 0, '补发后不得再排定时器');
+});
+
+test('V2.38.2 内挂置零：800ms 复核定时器必须存句柄，换角色复位 / 清战斗意图后立即撤销且绝不再发包（VM）', () => {
+  const c = npZeroVm(true, true, true);
+  assert.equal(c.ctx.zero('换角色'), 'sent', '面板说在跑 → 发一次关包并排一个复核');
+  assert.equal(c.toggles.length, 1);
+  assert.equal(c.timers.length, 1, '复核必须排一个 800ms 定时器');
+  c.ctx.reset(); // 换角色复位：npResetBattleState → npClearBattleIntent
+  assert.ok(c.cleared.indexOf(c.timers[0].id) >= 0, '换角色复位必须 clearTimeout 掉待复核定时器');
+  c.later(800);
+  assert.equal(c.toggles.length, 1, '被撤销的复核绝不能再对（可能已切换的）角色发一次');
+  const d = npZeroVm(true, true, true);
+  assert.equal(d.ctx.zero('stopZhu'), 'sent');
+  assert.equal(d.timers.length, 1);
+  d.ctx.clear(); // 直接清战斗意图
+  assert.ok(d.cleared.indexOf(d.timers[0].id) >= 0, 'npClearBattleIntent 本身也要清掉复核定时器');
+  d.later(800);
+  assert.equal(d.toggles.length, 1, '清意图后复核同样不得再发包');
+});
+
+test('V2.38.2 dojoStop 只在真正跑过道场时置零一次，且排在 release 之后（VM）', () => {
+  const code = extract('  function dojoStop(reason){', '  function dojoRender(){');
+  function run(on) {
+    const calls = [];
+    const api = { clearBattleTarget: () => calls.push('clearBattle'), clearArrowTarget: () => calls.push('clearArrow'), release: () => calls.push('release') };
+    const ctx = { dojoRun: { on: on, generation: 1, timer: 7, npc: null, phase: '' }, dojoApi: () => api,
+      DOJO_OWNER: 'builtin-dojo', dojoRender() {}, clearInterval() {}, npZeroBattle: (r) => { calls.push('zero:' + r); return 'sent'; } };
+    vm.createContext(ctx); vm.runInContext(code + ';this.stop=dojoStop', ctx);
+    ctx.stop('测试');
+    return { ctx, calls };
+  }
+  assert.deepEqual(run(true).calls, ['clearBattle', 'clearArrow', 'release', 'zero:dojoStop'], '道场跑过 → 释放租约后必须置零内挂自动战斗');
+  assert.deepEqual(run(false).calls, ['clearBattle', 'clearArrow', 'release'], '租约没拿到（被别的流程占用 / 未启动就失败）→ 释放路径照旧但绝不置零别人的内挂');
+  assert.equal(run(true).ctx.dojoRun.on, false, '停止后必须不再是运行态');
+  assert.equal(run(true).ctx.dojoRun.timer, null, '停止必须清掉定时器');
+});
+
+test('V2.38.2 apiRelease 只在持有 battle 能力且内挂确认在跑时置零（VM）', () => {
+  const code = extract('  function apiRelease(owner)', '  function apiContact(owner,gid)');
+  function run(lease, npState) {
+    const zeros = [];
+    const ctx = { apiLease: lease, npBattleState: () => npState, npZeroBattle: (r) => { zeros.push(r); return 'sent'; },
+      apiClearBattleTarget: () => ({ ok: true }), apiBattleTick() {}, npClearBattleIntent() {}, npRequestBattle: () => 'sent', apiEmit() {},
+      moveXY: {}, arrowTarget: null, arrowPending: null, arrowReady: false, arrowBlocked: false };
+    vm.createContext(ctx); vm.runInContext(code + ';this.rel=apiRelease', ctx);
+    const out = ctx.rel('owner-123');
+    return { ctx, zeros, out };
+  }
+  const lease = (scopes, state) => ({ owner: 'owner-123', generation: 1, scopes: scopes, released: false, battle: { state: state } });
+  const a = run(lease(['battle'], 'none'), true);
+  assert.deepEqual(a.zeros, ['apiRelease'], '外部脚本持有 battle 且内挂还在跑 → 释放时必须置零');
+  assert.equal(a.ctx.apiLease, null, '释放后租约必须清空');
+  assert.equal(a.out.ok, true);
+  assert.deepEqual(run(lease(['battle'], 'none'), false).zeros, [], '内挂确认已关时不得再发关包');
+  assert.deepEqual(run(lease(['movement'], 'none'), true).zeros, [], '只持有移动能力的脚本释放时不得碰内挂');
+  assert.deepEqual(run(lease(['battle'], 'owned'), true).zeros, [], 'owned 已走既有 external-release 路径，不得重复发包');
+});
+
+test('V2.38.2 stopZhu 统一走 npZeroBattle，且置零只从挂机结束路径触发', () => {
+  const code = extract('  function stopZhu() {', '  // 无目标自动走路寻怪（2s 判定一次）');
+  const calls = [];
+  const ctx = { deathReturnStopping: false, deathReturnCancel() {}, zRunning: true, stopScan() {}, zAttTimer: null, clearInterval() {},
+    zLock: { gid: 3, done: false }, zUseCounts: { a: 1 }, zLockCounts: { b: 1 }, dshDiag() {}, zMon: {},
+    $id: () => ({ textContent: '' }), setStatus() {}, npZeroBattle: (r) => { calls.push(r); return 'already'; } };
+  vm.createContext(ctx); vm.runInContext(code + ';this.stop=stopZhu', ctx);
+  ctx.stop();
+  assert.equal(JSON.stringify(calls), '["stopZhu"]', 'stopZhu 必须恰好置零一次');
+  assert.equal(ctx.zRunning, false, 'stopZhu 仍然要停助手');
+  for (const [name, src] of [['stable', source], ['exp', expSource]]) {
+    assert.equal((src.match(/npZeroBattle\(/g) || []).length, 6, name + ' npZeroBattle 只允许 1 处定义 + 5 处挂机结束调用');
+    assert.equal((src.match(/function npZeroBattle\(/g) || []).length, 1, name + ' 置零函数只能有一个定义');
+    for (const c of ['npZeroBattle("stopZhu");', 'npZeroBattle("death-guard");', 'npZeroBattle("dojoStop");', 'npZeroBattle("换角色");', 'npZeroBattle("apiRelease");']) {
+      assert.ok(src.includes(c), name + ' 缺少挂机结束调用点 ' + c);
+    }
+    const zwalk = src.slice(src.indexOf('  function zWalk() {'), src.indexOf('  function zAttack() {'));
+    assert.ok(zwalk.length > 0 && !zwalk.includes('npZeroBattle'), name + ' 寻怪热路径绝不允许调用置零');
+    assert.ok(!src.slice(src.indexOf('  function zAttack() {'), src.indexOf('  // 技能行统一序列化')).includes('npZeroBattle'), name + ' 攻击热路径绝不允许调用置零');
+    assert.ok(src.includes('npHuntStop("walkToXY", true)'), name + ' 临时让位路径不得被改成置零');
+  }
+});
+test('V2.38.2 换图分支无条件补一次停战：置零开关关闭时也停、面板明确已关时不盲发（VM）', () => {
+  for (const [name, src] of [['stable', source], ['exp', expSource]]) {
+    const seg = src.slice(src.indexOf('              npCalibrate();                     // 对齐服务器实际状态'), src.indexOf('              setStatus("换图：自动战斗已停止"'));
+    assert.ok(seg.length > 0, name + ' 必须能切出换图停战分支');
+    assert.ok(seg.includes('npHuntStop("map-change", true)'), name + ' 换图必须保留显式停战调用');
+    assert.ok(/if \(npReadPanelState\(\) !== false\) \{ npHuntStop\("map-change", true\); \}/.test(seg), name + ' 换图停战必须无条件执行（不受置零开关门控），且面板明确已关时不盲发（toggle 型，盲发会把内挂打开）');
+  }
+  const s0 = source.indexOf('              npCalibrate();                     // 对齐服务器实际状态');
+  const e0 = source.indexOf('              setStatus("换图：自动战斗已停止"');
+  const code = source.slice(s0, e0);
+  function run(zRunning, npHuntOn, panel) {
+    const calls = [];
+    const ctx = { zRunning: zRunning, npHuntOn: npHuntOn, npReadPanelState: () => panel,
+      npCalibrate: () => calls.push('calibrate'), stopZhu: () => calls.push('stopZhu'),
+      npHuntStop: (s, i) => calls.push('huntStop:' + s + ':' + i) };
+    vm.createContext(ctx); vm.runInContext(code, ctx);
+    return calls;
+  }
+  // 置零开关关闭（stopZhu 内部已不再置零）+ 面板说在跑 → 换图仍必须停服务器自动战斗（缓存说关也照发）
+  assert.deepEqual(run(false, false, true), ['calibrate', 'huntStop:map-change:true'], '面板说在跑 → 换图无条件补一次停战');
+  assert.deepEqual(run(false, false, null), ['calibrate', 'huntStop:map-change:true'], '面板读不到 → 换图也补一次停战');
+  assert.deepEqual(run(false, true, true), ['calibrate', 'huntStop:map-change:true'], '纯内挂模式 → 换图停战照旧（缓存说开 + 面板说开）');
+  // 面板明确已关 → 绝不盲发（toggle 型，盲发会把已经关掉的内挂又打开）
+  assert.deepEqual(run(false, false, false), ['calibrate'], '面板说已关 → 换图一个包都不发');
+  assert.deepEqual(run(false, true, false), ['calibrate'], '缓存说开但面板说关 → 换图仍一个包都不发');
+  // 助手运行中 → 完整停止后再补一次兜底（正常只会 already，不重复发包）
+  assert.deepEqual(run(true, false, true), ['calibrate', 'stopZhu', 'huntStop:map-change:true'], '助手运行中 → 先 stopZhu 再兜底停战');
+  assert.deepEqual(run(true, true, false), ['calibrate', 'stopZhu'], '助手运行中 + 面板已关 → 不再补发');
+});
+// ================= V2.38.2 一键屏蔽其他玩家的摆摊商店（全局设置 dsh_ro_blockmc_v1） =================
+const BLOCK_MC_ANCHOR = '  var BLOCK_MC_KEY = "dsh_ro_blockmc_v1";';
+const BLOCK_MC_TAIL = '  function dispatchInbound(bytes) {';
+function blockMcBlock(src) {
+  const a = src.indexOf(BLOCK_MC_ANCHOR), b = src.indexOf(BLOCK_MC_TAIL, a);
+  assert.ok(a >= 0 && b > a, '必须能切出摆摊屏蔽设置与关窗链路');
+  return src.slice(a, b);
+}
+// 部署客户端 #NpcStore 假 DOM：类名严格取自 Online.js:376659 的模板
+//   模板真实存在 .WinBuy/.WinSell/.WinVendingStore/.WinBuyingStore/.WinCash 与 .btn.buy/.btn.sell/.btn.cancel/.btn.ok，
+//   确认模板里没有 .btn.close（旧假 DOM 对任意选择器都返回可点对象，所以 .btn.close 也能蒙混过关）。
+//   setType 只改 style.display（Online.js:376703-376712 _hideAll/_showAll）→ 这里同款模拟。
+function mcNode(cls, display) {
+  const n = { cls: cls, style: { display: display, visibility: '' }, clicks: 0 };
+  n.click = function () { n.clicks++; };
+  return n;
+}
+function mcRoot(kind, opt) {
+  opt = opt || {};
+  // kind: vending=VENDING_STORE / buying=BUYING_STORE / buy=NPC 商店 / sell=收购 / barter=以物易物 / cash=点数商店 / blank=类型还没落定
+  const shown = {
+    WinVendingStore: kind === 'vending',
+    WinBuyingStore: kind === 'buying',
+    WinBuy: kind === 'buy' || kind === 'barter' || kind === 'cash',
+    WinSell: kind === 'sell',
+    WinCash: kind === 'cash',
+  };
+  const d = (c) => (shown[c] ? '' : 'none');
+  const span = (c) => mcNode(c, d(c));
+  const buy = mcNode('btn buy WinBuy WinVendingStore', d('WinBuy'));     // 模板：class="btn buy WinBuy WinVendingStore"（点=提交购买）
+  const sell = mcNode('btn sell WinSell WinBuyingStore', d('WinSell')); // 模板：class="btn sell WinSell WinBuyingStore"（点=提交出售）
+  const cancel = mcNode('btn cancel', '');                              // 模板：class="btn cancel" → Online.js:377098 remove()
+  const ok = mcNode('btn ok', 'none');                                  // 模板：class="btn ok" 在 .PurchaseResult 里 → Online.js:377161 closeStore()
+  const nodes = [span('WinVendingStore'), span('WinBuy'), span('WinSell'), span('WinBuyingStore'), span('WinCash'), buy, sell, cancel, ok];
+  return {
+    nodes: nodes, cancel: cancel, ok: ok, buy: buy, sell: sell, queries: 0,
+    querySelector(sel) {
+      this.queries++;
+      if (opt.noClose && (sel === '.btn.cancel' || sel === '.btn.ok')) return null; // 窗口在但拿不到关闭按钮
+      const want = String(sel).replace(/^\./, '').split('.'); // '.btn.cancel' = 同时带 btn 与 cancel 两个类
+      for (let i = 0; i < nodes.length; i++) {
+        const have = (' ' + nodes[i].cls + ' ').split(' ');
+        if (want.every((c) => have.indexOf(c) >= 0)) return nodes[i];
+      }
+      return null;
+    },
+  };
+}
+function blockMcBoot(stored, block, opt) {
+  opt = opt || {};
+  const store = new Map();
+  if (stored !== undefined) store.set('dsh_ro_blockmc_v1', stored);
+  const status = [], logs = [], timers = [], els = {};
+  let now = 1000;
+  function mount(kind, hopt) {
+    hopt = hopt || {};
+    const host = { style: { display: hopt.hidden === true ? 'none' : 'block', visibility: '' } };
+    const root = mcRoot(kind, hopt);
+    Object.defineProperty(host, 'shadowRoot', { get() { if (hopt.boomShadow) throw new Error('boom-shadow'); return root; } });
+    els.NpcStore = host;
+    host.root = root;
+    return host;
+  }
+  const ctx = {
+    JSON, Math,
+    Date: { now: () => now },
+    localStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)) },
+    document: { getElementById: (id) => els[id] || null },
+    getComputedStyle: (el) => ({ display: (el && el.style && el.style.display) || 'block', visibility: (el && el.style && el.style.visibility === 'hidden') ? 'hidden' : 'visible' }),
+    setTimeout: (fn, ms) => { timers.push({ fn: fn, ms: ms }); return timers.length; },
+    clearTimeout: () => {},
+    setStatus: (t, c) => status.push([t, c]),
+    tlog: (t) => logs.push(t),
+  };
+  vm.createContext(ctx);
+  vm.runInContext(block + ';this.hit=blockMcHit;this.on=blockMcEnabled;this.save=blockMcSave', ctx);
+  return {
+    ctx, els, status, logs, timers, store, mount,
+    pump(max) { let n = 0; while (timers.length && n++ < (max || 400)) { const t = timers.shift(); if (t.ms > 0 && t.ms < 1000) now += t.ms; t.fn(); } },
+  };
+}
+
+test('V2.38.2 摆摊屏蔽设置：默认开、读取失败按开、勾选框在功能菜单（VM）', () => {
+  for (const [name, src] of [['stable', source], ['exp', expSource]]) {
+    assert.ok(src.includes('var BLOCK_MC_KEY = "dsh_ro_blockmc_v1";'), name + ' 必须用稳定全局键 dsh_ro_blockmc_v1');
+    assert.ok(src.includes('var blockMcCfg = { enabled: true };'), name + ' 默认值必须是开');
+    assert.ok(src.includes('roMenuRow(body, "点击其他玩家的摆摊商店不弹出窗口（默认开）", bmc);'), name + ' 功能菜单里必须有表达两层含义的中文勾选框');
+    assert.ok(src.includes('blockMcSave(bmc.checked);'), name + ' 勾选必须立刻落盘');
+    assert.ok(src.includes('已开启：点击其他玩家的摆摊商店不弹出窗口') && src.includes('已关闭：点击立即恢复正常'), name + ' 勾选进/出都要有中文 setStatus 提示（并说明取消后点击立即恢复正常）');
+    assert.ok(!/BLOCK_MC_KEY\s*\+\s*['"]:/.test(src) && !src.includes('blockMcStorageKey'), name + ' 屏蔽开关必须是全局键（不得逐角色分档）');
+    const block = blockMcBlock(src);
+    const on = blockMcBoot(undefined, block);
+    assert.equal(on.ctx.on(), true, name + ' 无值时一律按开');
+    for (const bad of ['{坏', 'null', '[]', '"x"', '{"enabled":"yes"}', '{"enabled":0}', '0']) {
+      assert.equal(blockMcBoot(bad, block).ctx.on(), true, name + ' 读取失败(' + bad + ')必须按开');
+    }
+    const off = blockMcBoot('{"enabled":false}', block);
+    assert.equal(off.ctx.on(), false, name + ' 只有显式 enabled:false 才算关');
+    off.ctx.save(true);
+    assert.equal(off.store.get('dsh_ro_blockmc_v1'), '{"enabled":true}', name + ' 重新勾选必须立刻落盘');
+    assert.equal(off.ctx.on(), true, name + ' 重新勾选后立刻生效');
+  }
+});
+
+test('V2.38.2 摆摊屏蔽：识别集合恰好 307/2048/2877/2072，NPC 商人 198/199 与单价读取完全不受影响（VM）', () => {
+  const CALL = '      if (op === 307 || op === 2048 || op === 2877 || op === 2072) blockMcHit();';
+  for (const [name, src] of [['stable', source], ['exp', expSource]]) {
+    assert.ok(src.includes(CALL), name + ' 必须在 dispatchInbound 里就地识别摆摊三包');
+    assert.equal((src.match(/op === 307/g) || []).length, 1, name + ' 识别集合只允许出现一处');
+    assert.ok(!/op === 198|op === 199/.test(src), name + ' 198/199 绝不能进摆摊识别集合');
+    assert.ok(src.includes('else if (op === 0xc6 || op === 0xc7) itipShopPkt(bytes, op);'), name + ' 既有的 0xc6/0xc7 买卖单价读取必须还在');
+    assert.ok(src.includes('ITIP.buy[itid6] = { price: dv.getInt32(o6, true), discountprice: dv.getInt32(o6 + 4, true) };'), name + ' itipShopPkt 买价解析不得改动');
+  }
+  const code = extract('  function dispatchInbound(bytes) {', '  function onSelfSpirits(bytes) {');
+  const calls = { mc: 0, shop: [], raw: [] };
+  const ctx = { Math, Date, collectOpStat() {}, itipPktProbe() {}, txCap: { on: false }, DPS_PKTS: [], dpsParsedSeen: false,
+    dpsOnRawDamage() {}, scrOnRawVanish() {}, onMenuList() {}, onSayDialog() {}, onCloseDialog() {}, onSkillPostDelay() {}, onSkillAck3() {}, onSelfSpirits() {},
+    itipShopPkt: (b, op) => calls.shop.push(op), onRawOpcode: (b, op) => calls.raw.push(op), blockMcHit: () => calls.mc++ };
+  vm.createContext(ctx);
+  vm.runInContext(code + ';this.dispatch=dispatchInbound;this.pkt=function(op){var b=new ArrayBuffer(8);new DataView(b).setUint16(0,op,true);return b;}', ctx);
+  const seen = [];
+  for (const op of [307, 2048, 2877, 2072]) { const n = calls.mc; ctx.dispatch(ctx.pkt(op)); assert.equal(calls.mc, n + 1, '必须识别摆摊包 ' + op); seen.push(calls.mc); }
+  assert.deepEqual(seen, [1, 2, 3, 4], '四个回包（摆摊三版本 + 收购店 2072）各命中一次');
+  for (const op of [198, 199, 0x80, 183, 2842]) { const n = calls.mc; ctx.dispatch(ctx.pkt(op)); assert.equal(calls.mc, n, '不得把 ' + op + ' 当摆摊窗口'); }
+  assert.deepEqual(calls.shop, [198, 199], 'NPC 商店 198/199 仍要走 itipShopPkt');
+  assert.ok(calls.raw.indexOf(307) >= 0 && calls.raw.indexOf(2877) >= 0, '摆摊包仍要进既有 onRawOpcode（不吞包）');
+});
+
+test('V2.38.2 摆摊屏蔽第一层：2072（ACK_ITEMLIST_BUYING_STORE）也兜底，且能正确关掉 .WinBuyingStore 窗口；198/199 永不触发（VM）', () => {
+  const block = blockMcBlock(source);
+  const disp = extract('  function dispatchInbound(bytes) {', '  function onSelfSpirits(bytes) {');
+  const B = blockMcBoot(undefined, block);
+  // 把 dispatchInbound 接进同一个 VM：2072 必须走到真正的 blockMcHit（而不是只数调用次数）
+  B.ctx.collectOpStat = () => {}; B.ctx.itipPktProbe = () => {}; B.ctx.txCap = { on: false };
+  B.ctx.DPS_PKTS = []; B.ctx.dpsParsedSeen = false;
+  B.ctx.dpsOnRawDamage = () => {}; B.ctx.scrOnRawVanish = () => {};
+  B.ctx.onMenuList = () => {}; B.ctx.onSayDialog = () => {}; B.ctx.onCloseDialog = () => {};
+  B.ctx.onSkillPostDelay = () => {}; B.ctx.onSkillAck3 = () => {}; B.ctx.onSelfSpirits = () => {};
+  B.ctx.itipShopPkt = () => {}; B.ctx.onRawOpcode = () => {};
+  vm.runInContext(disp + ';this.dispatch=dispatchInbound;this.pkt=function(op){var b=new ArrayBuffer(8);new DataView(b).setUint16(0,op,true);return b;}', B.ctx);
+  const h = B.mount('buying', { hidden: true }); // .WinBuyingStore = 玩家收购店
+  B.ctx.dispatch(B.ctx.pkt(2072));
+  assert.equal(h.root.cancel.clicks, 1, '2072 是玩家收购店回包，第一层必须兜底关窗');
+  assert.equal(h.root.buy.clicks + h.root.sell.clicks + h.root.ok.clicks, 0, '只点客户端关闭按钮，绝不点买卖/确定');
+  assert.ok(B.status.join('|').includes('已关闭其他玩家的摆摊商店'), '2072 必须写中文关窗状态');
+  const n = B.status.length;
+  B.ctx.dispatch(B.ctx.pkt(198));
+  B.ctx.dispatch(B.ctx.pkt(199));
+  assert.equal(B.status.length, n, '198/199（NPC 商店买卖列表）绝不能触发摆摊关窗');
+  assert.equal(h.root.cancel.clicks, 1, '198/199 不得再点任何按钮');
+});
+
+test('V2.38.2 摆摊屏蔽关窗链路：按窗口类型判定后只点 .btn.cancel（退路 .btn.ok），绝不点 .btn.buy/.btn.sell、不自己发包（VM）', () => {
+  for (const [name, src] of [['stable', source], ['exp', expSource]]) {
+    const block = blockMcBlock(src);
+    assert.doesNotMatch(block, /sendPacket|czp\(|CLIENT\.PS\.CZ|hookPacket/, name + ' 屏蔽链路绝不能自己发包');
+    assert.ok(block.includes('root.querySelector(".btn.cancel") || root.querySelector(".btn.ok")'), name + ' 关窗必须点客户端真实关闭按钮 .btn.cancel（拿不到再退 .btn.ok）');
+    assert.ok(!block.includes('.btn.close'), name + ' #NpcStore 里不存在 .btn.close（旧选择器 100% 空转，必须删干净）');
+    assert.ok(block.includes('document.getElementById("NpcStore")'), name + ' 必须复用既有的 #NpcStore 定位');
+    assert.ok(block.indexOf('return "disabled"') < 0, name + ' 关闭动作必须由 blockMcHit 自身短路');
+    // 摆摊类型判别必须读 .WinVendingStore/.WinBuyingStore 的 style.display（_hideAll/_showAll 改的就是它）
+    assert.ok(block.includes('root.querySelector(".WinVendingStore")') && block.includes('root.querySelector(".WinBuyingStore")'), name + ' 必须按窗口类型判别摆摊窗口');
+    assert.ok(block.includes('display !== "none"'), name + ' 类型判别必须看 style.display 是否为 none');
+    // 三种收尾文案必须各自区分（窗口没出现 / 出现的不是摆摊 / 摆摊但找不到按钮）
+    for (const m of ['摆摊商店 1.5 秒内未出现，已恢复显示', '出现的不是摆摊商店窗口，未做处理，已恢复显示', '摆摊商店窗口已出现但未找到关闭按钮，已恢复显示']) {
+      assert.ok(block.includes(m), name + ' 缺少中文收尾文案：' + m);
+    }
+  }
+  const block = blockMcBlock(source);
+  // A：摆摊窗口本来就开着（VENDING_STORE）→ 恰好点一次 .btn.cancel，买卖按钮一个都不许点
+  const A = blockMcBoot(undefined, block), hA = A.mount('vending');
+  A.ctx.hit();
+  assert.equal(hA.root.cancel.clicks, 1, '命中摆摊窗口必须点一次客户端关闭按钮');
+  assert.equal(hA.root.ok.clicks, 0, '能拿到 .btn.cancel 就不得退到 .btn.ok');
+  assert.equal(hA.root.buy.clicks, 0, '绝不能点 .btn.buy（那是提交购买）');
+  assert.equal(hA.root.sell.clicks, 0, '绝不能点 .btn.sell（那是提交出售）');
+  assert.ok(hA.root.queries > 0, '必须真的去查过窗口类型与关闭按钮');
+  assert.equal(hA.style.visibility, '', '本来就开着的窗口不得改可见性');
+  assert.equal(A.timers.length, 0, '关完不得再轮询');
+  A.pump();
+  assert.equal(hA.root.cancel.clicks, 1, '一次命中只关一次，不得反复点');
+  assert.ok(A.status.join('|').includes('已关闭其他玩家的摆摊商店'), '必须写中文状态');
+  assert.ok(A.logs.join('|').includes('block-mc'), '必须写 tlog');
+  assert.equal(A.store.get('dsh_ro_blockmc_v1'), undefined, '关窗不得顺手动设置键');
+  // B：BUYING_STORE 也是摆摊类型 → 同样关掉；防闪烁路径先藏后关、收尾恢复
+  const B = blockMcBoot(undefined, block), hB = B.mount('buying', { hidden: true });
+  B.ctx.hit();
+  assert.equal(hB.root.cancel.clicks, 1, 'BUYING_STORE 同样是摆摊窗口，必须关');
+  assert.equal(hB.root.ok.clicks + hB.root.buy.clicks + hB.root.sell.clicks, 0);
+  assert.equal(hB.style.visibility, '', '关完必须恢复可见性');
+  // C：NPC 商人商店（BUY）→ 一个按钮都不点，立刻恢复可见性并写说明（客户端关窗会发关店包）
+  const C = blockMcBoot(undefined, block), hC = C.mount('buy', { hidden: true });
+  C.ctx.hit();
+  assert.equal(hC.root.cancel.clicks, 0, 'NPC 商店绝不能点关闭按钮');
+  assert.equal(hC.root.ok.clicks + hC.root.buy.clicks + hC.root.sell.clicks, 0, 'NPC 商店一个按钮都不许点');
+  assert.equal(hC.style.visibility, '', '非摆摊窗口必须立刻恢复可见性');
+  assert.equal(C.timers.length, 0, '不是摆摊窗口就不再轮询');
+  assert.ok(C.status.join('|').includes('出现的不是摆摊商店窗口'), '必须写中文说明');
+  const nC = C.status.length; C.pump();
+  assert.equal(C.status.length, nC, '收尾后不得再动作');
+  // C2：收购 / 以物易物 / 点数商店同样一个按钮都不点
+  for (const kind of ['sell', 'barter', 'cash']) {
+    const S = blockMcBoot(undefined, block), hS = S.mount(kind);
+    S.ctx.hit();
+    assert.equal(hS.root.cancel.clicks + hS.root.ok.clicks + hS.root.buy.clicks + hS.root.sell.clicks, 0, kind + ' 不是摆摊类型，不得点任何按钮');
+    assert.ok(S.status.join('|').includes('出现的不是摆摊商店窗口'), kind + ' 必须写明未做处理');
+    assert.equal(hS.style.visibility, '', kind + ' 必须恢复可见性');
+  }
+  // D（V3）：宿主元素中途被替换 → 收尾恢复的必须是当初被隐藏的那个元素，旧元素不得永久隐藏
+  const D = blockMcBoot(undefined, block);
+  const d1 = D.mount('blank', { hidden: true }); // 类型还没落定 → 一直等（不点、不提前收尾）
+  D.ctx.hit();
+  assert.equal(d1.style.visibility, 'hidden', '防闪烁：本来没开着的先藏起来');
+  const d2 = D.mount('blank', { hidden: true }); // 宿主被替换
+  assert.notEqual(d1, d2);
+  D.pump(400);
+  assert.equal(d1.style.visibility, '', '收尾必须恢复当初被隐藏的那个元素（否则旧元素被永久隐藏）');
+  assert.equal(d2.style.visibility, '', '替换后的新元素从未被隐藏，不得被改写');
+  assert.equal(D.timers.length, 0, '超时后必须停止轮询');
+  assert.ok(D.status.join('|').includes('摆摊商店 1.5 秒内未出现'), '未落定窗口按「未出现」收尾');
+  // E：摆摊窗口出现了但拿不到关闭按钮 → 文案必须单独区分，且恢复可见性
+  const E = blockMcBoot(undefined, block), hE = E.mount('vending', { hidden: true, noClose: true });
+  E.ctx.hit();
+  assert.equal(hE.root.cancel.clicks + hE.root.ok.clicks + hE.root.buy.clicks + hE.root.sell.clicks, 0, '没有被点的按钮');
+  assert.equal(hE.style.visibility, 'hidden', '窗口已出现但还没关上 → 先藏着防闪烁');
+  E.pump(400);
+  assert.equal(hE.style.visibility, '', '超时也必须恢复可见性');
+  assert.ok(E.status.join('|').includes('摆摊商店窗口已出现但未找到关闭按钮'), '必须单独写「找不到关闭按钮」');
+  assert.ok(!E.status.join('|').includes('1.5 秒内未出现'), '不能把两种情况混成同一条文案');
+  assert.equal(E.timers.length, 0, '超时后必须停止轮询');
+  const nE = E.status.length; E.pump();
+  assert.equal(E.status.length, nE, '超时后不得再动作');
+  // F：#NpcStore 始终没出现 → 同样超时收尾，不抛异常
+  const F = blockMcBoot(undefined, block);
+  F.ctx.hit();
+  F.pump(400);
+  assert.equal(F.timers.length, 0, '窗口始终不出现也必须超时收尾');
+  assert.equal(F.status.length, 1, '始终不出现只写一条状态');
+  assert.ok(F.status.join('|').includes('摆摊商店 1.5 秒内未出现'), '文案必须是「未出现」');
+  // G：窗口稍后才出现 → 出现即关一次，之后不再点
+  const G = blockMcBoot(undefined, block);
+  G.ctx.hit();
+  G.pump(2);
+  assert.equal(G.status.length, 0, '还没出现时不得空写状态');
+  const g1 = G.mount('vending');
+  G.pump(2);
+  assert.equal(g1.root.cancel.clicks, 1, '窗口稍后出现也必须关一次');
+  G.pump();
+  assert.equal(g1.root.cancel.clicks, 1, '关完不得反复点');
+  assert.equal(g1.style.visibility, '', '关完必须恢复可见性');
+  // H：设置关闭 → 零查询零动作（摆摊窗口照原样弹出）
+  const OFF = blockMcBoot('{"enabled":false}', block), hOff = OFF.mount('vending');
+  OFF.ctx.hit();
+  assert.equal(hOff.root.cancel.clicks + hOff.root.ok.clicks + hOff.root.buy.clicks + hOff.root.sell.clicks, 0, '设置关闭时不得关摆摊窗口');
+  assert.equal(hOff.root.queries, 0, '设置关闭时连窗口查询都不做');
+  assert.equal(hOff.style.visibility, '', '设置关闭时不得改可见性');
+  assert.equal(OFF.timers.length, 0, '设置关闭时不得起轮询');
+  assert.equal(OFF.status.length, 0, '设置关闭时不得写状态');
+  assert.equal(OFF.logs.length, 0, '设置关闭时不得写日志');
+  // I（Z4）：链路异常（#NpcStore 根节点取 shadowRoot 抛错）必须被吞掉 → 可见性恢复、pending 清空、不抛异常
+  const I = blockMcBoot(undefined, block);
+  const iHost = I.mount('vending', { hidden: true, boomShadow: true });
+  I.ctx.hit();
+  assert.equal(iHost.style.visibility, '', '异常时也必须恢复可见性（绝不能把窗口永久藏起来）');
+  assert.ok(I.status.join('|').includes('屏蔽摆摊商店异常'), '异常必须有中文状态提示');
+  assert.equal(I.timers.length, 0, '异常后 pending 必须清空，不得继续轮询');
+  const nI = I.status.length;
+  I.pump();
+  assert.equal(I.status.length, nI, 'pending 已清空，异常后不得再动作');
+  // I2：同一条异常链路接进 dispatchInbound → 异常必须被吞掉，后续分支仍被调用（不吞包）
+  const code = extract('  function dispatchInbound(bytes) {', '  function onSelfSpirits(bytes) {');
+  const raw = [];
+  const dctx = { Math, Date, collectOpStat() {}, itipPktProbe() {}, txCap: { on: false }, DPS_PKTS: [], dpsParsedSeen: false,
+    dpsOnRawDamage() {}, scrOnRawVanish() {}, onMenuList() {}, onSayDialog() {}, onCloseDialog() {}, onSkillPostDelay() {}, onSkillAck3() {}, onSelfSpirits() {},
+    itipShopPkt() {}, onRawOpcode: (b, op) => raw.push(op), blockMcHit: () => { I.ctx.hit(); } };
+  vm.createContext(dctx);
+  vm.runInContext(code + ';this.dispatch=dispatchInbound;this.pkt=function(op){var b=new ArrayBuffer(8);new DataView(b).setUint16(0,op,true);return b;}', dctx);
+  const nI2 = I.status.length;
+  dctx.dispatch(dctx.pkt(307));
+  assert.equal(I.status.length, nI2 + 1, '异常路径仍要被吞掉并写一条中文状态');
+  assert.ok(raw.indexOf(307) >= 0, '摆摊链路异常绝不能吞包，dispatchInbound 后续分支仍要执行');
+  assert.equal(iHost.style.visibility, '', 'dispatchInbound 这条链路异常后可见性同样被恢复');
+});
+
+
+// ================= V2.38.2 点击其他玩家的摊位/收购店：客户端发出请求前直接拦截（第二层） =================
+const DROP_TXBUILD_HEAD = '  function txBuild(p) {';
+const DROP_HOOK_HEAD = '  function hookSendPacket() {';
+const DROP_HOOK_TAIL = '  function txExport() {';
+const DROP_RES_HEAD = '  function blockMcDropResolve() {';
+const DROP_RES_TAIL = '  var blockMcDropLastLog = 0;';
+function segOf(src, head, tail) {
+  const a = src.indexOf(head), b = src.indexOf(tail, a);
+  assert.ok(a >= 0 && b > a, '必须能切出 ' + head);
+  return src.slice(a, b);
+}
+// txBuild + 第二层拦截 + NM.sendPacket 包装
+function blockMcDropChain(src) {
+  const seg = segOf(src, DROP_TXBUILD_HEAD, DROP_HOOK_HEAD) + '\n' + segOf(src, DROP_HOOK_HEAD, DROP_HOOK_TAIL);
+  assert.ok(seg.includes('blockMcDropResolve') && seg.includes('blockMcDropCheck'), '第二层拦截必须位于 txBuild 与 hookSendPacket 之间');
+  assert.ok(seg.includes('if (blockMcDropCheck(p)) {'), '包装函数里必须有丢包分支');
+  return seg;
+}
+// 桩包类：ver 不给就只留 build（= REQ_BUY_FROMMC 那种写死 opcode 的类）
+function dropCzCls(ver, bytes, counter) {
+  const bump = () => { if (counter) counter.n++; };
+  const C = function () {};
+  if (ver != null) C.prototype.getPacketVersion = function () { bump(); return [20200101, ver]; };
+  C.prototype.build = function () { bump(); const b = new ArrayBuffer(4); new DataView(b).setUint16(0, bytes, true); return new Uint8Array(b); };
+  return C;
+}
+// 线上真实组合：REQ_BUY_FROMMC.build() 写死 304；REQ_CLICK_TO_BUYING_STORE 走版本表——
+//   部署客户端 packetver=20211103 下该 CZ 类是 2071（2877 是 ZC 侧 PC_PURCHASE_ITEMLIST_FROMMC 的版本值，两侧绝不能混用）
+const DROP_REAL_CZ = { REQ_BUY_FROMMC: dropCzCls(null, 304), REQ_CLICK_TO_BUYING_STORE: dropCzCls(2071, 2071) };
+const dropPktVer = (op) => ({ getPacketVersion: function () { return [20200101, op]; } });
+const dropPktBuild = (op) => ({ build: function () { const b = new ArrayBuffer(4); new DataView(b).setUint16(0, op, true); return new Uint8Array(b); } });
+function blockMcDropBoot(src, opt) {
+  opt = opt || {};
+  const store = new Map();
+  if (opt.stored !== undefined) store.set('dsh_ro_blockmc_v1', opt.stored);
+  const logs = [], status = [];
+  let calls = 0;
+  const CLIENT = { PS: { CZ: opt.CZ || {} }, NM: { sendPacket: function () { calls++; return 'orig'; } } };
+  const txCap = { on: !!opt.capOn, ring: [], hooked: false, n: 0, drop: 0, lastLog: 0 };
+  const ctx = {
+    JSON, Math, Date, Object,
+    localStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)) },
+    document: { getElementById: () => null },
+    czPacketVer: () => ctx.__ver, // 复用生产同名函数：packetVer 一变必须让解析缓存作废
+    getComputedStyle: () => ({ display: 'block', visibility: 'visible' }),
+    setTimeout: () => 0, clearTimeout: () => {},
+    setStatus: (t2, c) => status.push([t2, c]),
+    tlog: (t2) => logs.push(t2),
+    CLIENT, txCap, clientReady: () => true, $id: () => null,
+  };
+  vm.createContext(ctx);
+  const code = blockMcBlock(src) + '\n' + segOf(src, '  function czOpcodeBoth(Ctor) {', '  // 探测 + 就地安装') + '\n' + blockMcDropChain(src);
+  vm.runInContext(code + ';this.hook=hookSendPacket;this.enabled=blockMcEnabled;this.save=blockMcSave;this.raw=function(){return blockMcDropResolve();}', ctx);
+  ctx.hook();
+  ctx.__ver = 0;
+  return {
+    ctx, logs, status, store, txCap, client: CLIENT, setVer: (v) => { ctx.__ver = v; }, calls: () => calls,
+    send: (p) => CLIENT.NM.sendPacket(p),
+    ops: () => Object.keys(ctx.raw()).map(Number).sort((a, b) => a - b),
+  };
+}
+
+test('V2.38.2 摊位拦截 opcode 解析：优先 getPacketVersion()[1]，拿不到回落 build() 前两字节小端、结果缓存（VM）', () => {
+  // 两个口径不一致 → 必须用版本口径（= getPacketVersion()[1]）
+  const A = blockMcDropBoot(source, { CZ: { REQ_BUY_FROMMC: dropCzCls(111, 222), REQ_CLICK_TO_BUYING_STORE: dropCzCls(333, 444) } });
+  assert.deepEqual(A.ops(), [111, 333], '有 getPacketVersion 必须优先取 [1]，不得用 build() 的字节口径');
+  // 只有 build 的类 → 读 build() 前两字节小端
+  const B = blockMcDropBoot(source, { CZ: { REQ_BUY_FROMMC: dropCzCls(null, 304), REQ_CLICK_TO_BUYING_STORE: dropCzCls(null, 305) } });
+  assert.deepEqual(B.ops(), [304, 305], '拿不到版本口径必须回落 build() 前两字节小端');
+  // 线上真实组合 → 恰好这两个 opcode；同一包版本必须命中缓存（解析计数不得再涨）
+  const ctr = { n: 0 };
+  const C = blockMcDropBoot(source, { CZ: { REQ_BUY_FROMMC: dropCzCls(null, 304, ctr), REQ_CLICK_TO_BUYING_STORE: dropCzCls(2071, 2071, ctr) } });
+  assert.deepEqual(C.ops(), [304, 2071], '解析出的集合必须恰好是这两个 opcode');
+  assert.equal(ctr.n, 3, '第一次解析：只有 build 的类读 1 次，有版本口径的类读 getPacketVersion+build 各 1 次');
+  assert.ok(Object.is(C.ctx.raw(), C.ctx.raw()), '同一版本必须返回同一个缓存对象');
+  assert.equal(ctr.n, 3, '包版本没变 → 第二次绝不重新解析（旧断言自比自恒真，此处改为解析调用计数）');
+});
+
+test('V2.38.2 摊位拦截解析缓存：客户端 packetver 改变必须重新解析（旧 opcode 立即失效、新 opcode 生效）（VM）', () => {
+  const CZ = { REQ_BUY_FROMMC: dropCzCls(111, 111), REQ_CLICK_TO_BUYING_STORE: dropCzCls(222, 222) };
+  const B = blockMcDropBoot(source, { CZ: CZ, capOn: true });
+  assert.deepEqual(B.ops(), [111, 222], '首次解析');
+  let n = B.calls(); B.send(dropPktVer(111));
+  assert.equal(B.calls(), n, '首次解析后 111 必须被拦住');
+  CZ.REQ_BUY_FROMMC = dropCzCls(333, 333); // 同一 packetver 下偷偷换包类定义 → 必须仍走缓存
+  n = B.calls(); B.send(dropPktVer(111));
+  assert.equal(B.calls(), n, '包版本没变必须继续用缓存（不得每个包都重新解析）');
+  B.setVer(20211103); // 同一页面会话内 packetver 会变（Online.js:315656/315663/389047 三处赋值）
+  assert.deepEqual(B.ops(), [222, 333], '包版本一变必须重新解析');
+  n = B.calls(); B.send(dropPktVer(111));
+  assert.equal(B.calls(), n + 1, '旧 opcode 111 在新版本下必须立刻不再命中（正常包不得被误丢）');
+  n = B.calls(); B.send(dropPktVer(333));
+  assert.equal(B.calls(), n, '新 opcode 333 必须生效并被拦截');
+});
+
+test('V2.38.2 摊位拦截：解析失败绝不缓存空集 → 包类补齐后下一次发包必须能拦（VM）', () => {
+  const B = blockMcDropBoot(source, { CZ: {}, capOn: true });
+  assert.deepEqual(B.ops(), [], '客户端还没就绪时解析不到 → 空集');
+  let n = B.calls(); B.send(dropPktVer(304));
+  assert.equal(B.calls(), n + 1, '解析不到时一个包都不许丢（fail-safe）');
+  B.client.PS.CZ.REQ_BUY_FROMMC = dropCzCls(304, 304);      // 真实包类随后才挂回来
+  B.client.PS.CZ.REQ_CLICK_TO_BUYING_STORE = dropCzCls(2071, 2071);
+  n = B.calls(); B.send(dropPktVer(304));
+  assert.equal(B.calls(), n, '包类补齐后第一次发包就必须重试解析并拦住 304');
+  n = B.calls(); B.send(dropPktVer(2071));
+  assert.equal(B.calls(), n, '2071 同样必须被拦');
+  assert.equal(B.txCap.drop, 2, '两次拦截计数必须正确');
+});
+
+test('V2.38.2 摊位拦截：设置关闭 → 命中包也照旧发出，抓包记录行为完全不变（VM）', () => {
+  const B = blockMcDropBoot(source, { stored: '{"enabled":false}', capOn: true, CZ: DROP_REAL_CZ });
+  for (let i = 0; i < 3; i++) B.send(dropPktVer(304));
+  B.send(dropPktVer(2071));
+  assert.equal(B.calls(), 4, '设置关闭：命中拦截集合的包也必须一次不落地照原样发出');
+  assert.equal(B.txCap.ring.length, 4, '设置关闭：出站抓包记录行为与改动前完全一致');
+  assert.equal(B.txCap.n, 4, '设置关闭：抓包计数照旧');
+  assert.equal(B.logs.length, 0, '设置关闭不得写任何日志');
+  assert.equal(B.status.length, 0, '设置关闭不得写任何状态');
+});
+
+test('V2.38.2 摊位拦截：设置开启 + 命中 opcode → orig 一次都不被调用，抓包环里只留带 drop 标记的拦截记录（VM）', () => {
+  const B = blockMcDropBoot(source, { capOn: true, CZ: DROP_REAL_CZ });
+  for (let i = 0; i < 5; i++) B.send(dropPktVer(304));
+  B.send(dropPktVer(2071));
+  B.send(dropPktBuild(304)); // 拿不到版本口径 → 回落 build 也必须拦得住
+  assert.equal(B.calls(), 0, '命中拦截集合的包一次都不许发出去（这就是「点击不生效」）');
+  assert.equal(B.txCap.ring.length, 7, '抓包开启时被丢的包必须在环里留痕');
+  assert.equal(B.txCap.ring.every((r) => r.drop === true), true, '这 7 条全部是拦截记录，绝不冒充一次正常发送');
+  assert.equal(B.txCap.drop, 7, '被丢的包必须有独立计数');
+  assert.equal(B.txCap.n, 7, '抓包计数与环内条数一致');
+  assert.equal(B.logs.length, 1, '中文提示必须限流（1.5 秒内最多一条）');
+  assert.equal(B.status.length, 1, '状态提示同样限流');
+  assert.ok(B.logs[0].includes('已拦截一次点击其他玩家商店的请求'), '必须写中文 tlog');
+});
+
+test('V2.38.2 摊位拦截：抓包开启时被丢的包有可区分的 drop 记录/计数（VM）', () => {
+  const B = blockMcDropBoot(source, { capOn: true, CZ: DROP_REAL_CZ });
+  B.send(dropPktVer(304));
+  assert.equal(B.calls(), 0, '被丢的包一次都不许发出去');
+  assert.equal(B.txCap.ring.length, 1, '抓包开启时被丢的包必须留痕');
+  const rec = B.txCap.ring[0];
+  assert.equal(rec.drop, true, '记录必须带 drop 标记（不与正常发包混淆）');
+  assert.equal(rec.d, 'U', '方向仍标成客户端发出尝试');
+  assert.equal(rec.op, 304, '记录里必须能看到被拦的是哪个 opcode');
+  assert.equal(B.txCap.drop, 1, '独立丢弃计数 = 1');
+  assert.equal(B.txCap.n, 1, '抓包总数与环内条数一致');
+  B.send(dropPktVer(2071));
+  assert.equal(B.txCap.drop, 2, '再拦一次计数累加');
+  assert.equal(B.txCap.ring.length, 2);
+  // 未命中包行为一字不改：照旧发出、记录不带 drop 标记、不进丢弃计数
+  B.send(dropPktVer(150));
+  assert.equal(B.calls(), 1, '非命中包照旧原样发出');
+  assert.equal(B.txCap.ring[2].drop, undefined, '正常发送的记录不得带 drop 标记');
+  assert.equal(B.txCap.drop, 2, '正常包不得计入丢弃数');
+  assert.equal(B.txCap.n, 3, '正常包照旧计数');
+});
+
+test('V2.38.2 摊位拦截：设置开启 + 非命中 opcode（NPC 商店/移动/助手自己的包）一律原样放行（VM）', () => {
+  const B = blockMcDropBoot(source, { capOn: true, CZ: DROP_REAL_CZ });
+  const others = [198, 199, 0xa7, 2842, 0x96, 150];
+  for (const op of others) { const n = B.calls(); B.send(dropPktVer(op)); assert.equal(B.calls(), n + 1, '非命中包必须原样发出：' + op); }
+  const n0 = B.calls(); B.send({}); assert.equal(B.calls(), n0 + 1, '读不出 opcode 的包必须原样放行（绝不误伤）');
+  assert.equal(B.txCap.ring.length, others.length + 1, '非命中包照旧进抓包环');
+  assert.equal(B.logs.length, 0, '非命中包不得写拦截日志');
+  assert.deepEqual(B.ops(), [304, 2071], '拦截集合始终只有这两个 opcode');
+});
+
+test('V2.38.2 摊位拦截 fail-safe：两个包类都解析不到 → 一个包都不丢，只写一条中文说明（VM）', () => {
+  const B = blockMcDropBoot(source, { CZ: {} });
+  assert.deepEqual(B.ops(), [], '解析不到必须是空集');
+  assert.equal(B.logs.length, 1, '解析失败必须写一条中文 tlog');
+  assert.ok(B.logs[0].includes('解析不到'), '必须说明解析失败');
+  assert.ok(B.logs[0].includes('仍由回包关窗兜底'), '必须说明仍由第一层兜底');
+  for (const op of [304, 2071, 307, 2048, 198]) { const n = B.calls(); B.send(dropPktVer(op)); assert.equal(B.calls(), n + 1, 'fail-safe：解析不到时一个包都不许丢：' + op); }
+  assert.equal(B.logs.length, 1, '解析失败只写一条，不得每个包都刷');
+});
+
+test('V2.38.2 摊位拦截：每次发包现场读设置（同一次运行先开后关，关掉后立即恢复发包）（VM）', () => {
+  const B = blockMcDropBoot(source, { CZ: DROP_REAL_CZ });
+  B.send(dropPktVer(304));
+  assert.equal(B.calls(), 0, '开启时命中必须丢');
+  B.ctx.save(false);
+  B.send(dropPktVer(304));
+  assert.equal(B.calls(), 1, '同一次运行里关掉后必须立即恢复正常发包（不得用启动时的缓存）');
+  B.send(dropPktVer(2071));
+  assert.equal(B.calls(), 2, '关掉后两个 opcode 都必须恢复');
+  B.ctx.save(true);
+  B.send(dropPktVer(304));
+  assert.equal(B.calls(), 2, '重新打开后立即恢复拦截');
+  assert.equal(B.store.get('dsh_ro_blockmc_v1'), '{"enabled":true}', '开关仍用既有键落盘');
+});
+
+test('V2.38.2 摊位拦截静态断言：丢包分支在 orig.apply 之前、两个包名只出现在解析函数里（静态）', () => {
+  const noComment = (s) => s.replace(/\r/g, '').split('\n').map((l) => l.replace(/^\s*\/\/.*$/, '')).join('\n');
+  for (const [name, src] of [['stable', source], ['exp', expSource]]) {
+    const hook = segOf(src, DROP_HOOK_HEAD, DROP_HOOK_TAIL);
+    const a = hook.indexOf('CLIENT.NM.sendPacket = function (p) {');
+    const b = hook.indexOf('txCap.hooked = true;', a);
+    assert.ok(a >= 0 && b > a, name + ' 必须能切出 NM.sendPacket 包装函数');
+    const wrap = hook.slice(a, b);
+    const iDrop = wrap.indexOf('blockMcDropCheck(p)');
+    const iOrig = wrap.indexOf('return orig.apply(this, arguments)');
+    assert.ok(iDrop >= 0 && iOrig > iDrop, name + ' 丢包分支必须出现在 orig.apply 之前');
+    assert.equal((wrap.match(/orig\.apply/g) || []).length, 1, name + ' 包装函数只允许一处转发 orig');
+    const res = segOf(src, DROP_RES_HEAD, DROP_RES_TAIL);
+    assert.ok(res.includes('CLIENT.PS') && res.includes('czOpcodeBoth('), name + ' 解析函数必须运行时读包并复用 czOpcodeBoth');
+    const all = noComment(src), resCode = noComment(res);
+    for (const nm of ['REQ_BUY_FROMMC', 'REQ_CLICK_TO_BUYING_STORE']) {
+      const total = (all.match(new RegExp(nm, 'g')) || []).length;
+      const inRes = (resCode.match(new RegExp(nm, 'g')) || []).length;
+      assert.ok(total > 0 && total === inRes, name + ' ' + nm + ' 只允许出现在解析函数里（全文 ' + total + ' 处 / 解析内 ' + inRes + ' 处）');
+    }
+    assert.doesNotMatch(resCode, /\b(304|307|198|199|2048|2877)\b/, name + ' 解析函数不得写死任何 opcode 数字');
+    const chain = blockMcDropChain(src);
+    assert.ok(chain.includes('p.getPacketVersion') && chain.includes('txBuild(p).op'), name + ' 每个包先走 getPacketVersion，拿不到才回落 txBuild（不得每包都 build）');
+    assert.ok(chain.includes('if (!blockMcEnabled()) return false;'), name + ' 必须复用既有 blockMcEnabled() 并在发包现场读');
+    assert.ok(chain.includes('if (blockMcDropCheck(p)) {'), name + ' 丢包必须直接 return（不调用 orig）');
+  }
 });

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手 · 实验版）
 // @namespace    dsh.ro-plugin
-// @version      2.38.1
+// @version      2.38.2
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -119,6 +119,20 @@
 // 3. 无限道场优先选择活体 MVP/BOSS，使用租约内临时 GID 目标驱动原有 zAttack 攻击链；临时压制内挂其他 MID，死亡、换波或停止后按当前永久名单恢复，不写入 lockList。
 // 4. 临时战斗目标 API 在任何发包前严格验证 GID/MID、活体怪物和 MvpDropsNum；失效时自动清理。保留 v2.38.0 opcode 能力探测与启动自检修复。
 // 5. 版本：@version 2.38.0 → 2.38.1（VER 同步）；实验版同步。离线 runtime 151/151、opcode 9/9，独立定点复核 8/8 通过。
+
+// ---------------- V2.38.2 变更摘要 ----------------
+// 1. 统一背包读取器 bagList()：依次尝试 Inventory/BasicInventory 组件 .list、UIManager 组件表、UIManager.getComponent 与 CLIENT.SS 兜底，逐个校验并记录
+//    来源名/件数/箭矢种数；findInventory/readBagArrows/useItemById/arrowQuiverFor 共用同一读取器，修「换箭整条链静默失效」；换箭设置浮窗与自动装箭矢栏各加一行诊断。
+// 2. 按怪属性换箭补齐兜底链：属性箭 → 指定怪箭 → 念(水/火/地/风)与不死(火/圣)属性补偿 → 通用箭 → 魔法箭矢筒(2000030)普通箭矢，每层带 kind 标记与中文原因提示；
+//    属性行新增「手填 ID」输入框，建议表按本地物品表逐条核对后补 火/水/风/地 四支（不再凭记忆填 ID）。
+// 3. 自动续箭阈值改为「当前装备的箭矢不足 50 支」（空槽视为 0），顺序=当前箭对应箭矢筒 → 普通箭矢（魔法箭矢筒）→ 中文提示，不再把背包里任意一支箭当兜底。
+// 4. 自动 buff：清空标志改浏览器级 localStorage 一次性键（不再按角色档反复清空 askList 并强制关勾选），buff 状态栏由死元素改为实时状态，SP 下限允许 0。
+// 5. 自动丢弃：逐角色保存且默认关闭、新增「随时丢弃」独立开关、拆成独立浮窗（复用 fwMakeWin/fwReg）、类别改中文名并显示背包件数与示例、
+//    物品说明浮窗新增加入/移出名单按钮、导入导出走文件与粘贴双通道、快确认轮询与每轮多堆叠提速；预览+armed 授权、NPC 对话阻断、逐包重校验等安全门禁全部保留。
+// 6. 版本：@version 2.38.1 → 2.38.2（VER 同步）；实验版同步。离线 runtime 186/186、opcode 9/9。
+// 7. 挂机结束时关闭内挂自动战斗（默认开，键 dsh_ro_npzero_v1）：dojoStop / apiRelease / stopZhu / 死亡自动下线 / 换角色 五处统一出口，先复核内挂面板状态再决定是否发包，客户端该开关为切换型故绝不盲发。
+// 8. 点击其他玩家的摆摊商店不弹出窗口（默认开，键 dsh_ro_blockmc_v1）：在客户端发出请求前直接拦截 REQ_CLICK_TO_BUYING_STORE / REQ_BUY_FROMMC，点击即无效；
+//    万一列表仍到达则同帧自动关窗兜底——回包识别 PC_PURCHASE_ITEMLIST_FROMMC 三个版本包（307/2048/2877），按窗口类型确认是摆摊窗口后点客户端自己的关闭按钮，NPC 商店与单价读取完全不受影响。
 // ---------------- V2.37.1 变更摘要 ----------------
 // 1. 修复 buff 技能设置刷新后丢失：KV 拉回角色档后立即重绑 saved/lockList/askList/profMemKey 并刷新列表；本地保存即标记 KV dirty，避免旧远端值覆盖刚写配置。
 // 2. buff 旧配置找回改为按角色执行，在真实角色识别后才恢复；只补空档，不覆盖已有 askList。黄金恢复副本可为已有角色补缺失 gearSets。
@@ -233,7 +247,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.38.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.38.2"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -1144,6 +1158,7 @@
       '<button class="ghost" id="dsh-np-pick" style="flex:0 0 auto">开自动拾取</button>' +
       '<button class="ghost" id="dsh-np-eat" style="flex:0 0 auto">开自动吃药</button>' +
       '<button class="ghost" id="dsh-np-probe" style="flex:0 0 auto">校对内挂状态</button></div>' +
+      '<div class="row"><label class="switch"><input id="dsh-npzero" type="checkbox">挂机结束时关闭内挂自动战斗（默认开）</label></div>' +
       '<div class="row"><span class="st" style="font-size:10px">校对=快速点一次内挂开关并读回执：读到「关闭」就停；读到「开启」立刻关回去（结束一定=关闭，同步悬浮球[内]开关显示）。</span></div>' +
       '<div class="row"><span class="lb">寻怪模式</span><select id="dsh-np-huntmode" style="flex:0 0 96px">' +
       '<option value="0" selected>移动寻怪</option><option value="1">范围寻怪</option><option value="2">原地寻怪</option></select>' +
@@ -1318,10 +1333,11 @@
       '<button class="ghost" id="dsh-itemdel" style="flex:0 0 auto">删除选中</button>' +
       '<label class="switch" style="margin-left:auto"><input id="dsh-itemen" type="checkbox">启用自动使用</label></div>' +
       '<div class="row"><span class="st" style="font-size:10px">「优先使用治愈术替代药品」已移至 助手模式→战斗设置</span></div></div>' +
-      '<div class="sec">自动装箭矢（V2.15.26：箭矢耗尽自动补）</div>' +
-      '<div class="row"><label class="switch"><input id="dsh-arrowen" type="checkbox" checked>箭矢耗尽时用魔法箭袋(2000030)放箭并装上装备栏</label></div>' +
+      '<div class="sec">自动续箭（V2.38.2：箭矢不足 50 支自动补）</div>' +
+      '<div class="row"><label class="switch"><input id="dsh-arrowen" type="checkbox" checked>箭矢不足 50 支时自动补箭（打开对应箭袋，没有则换普通箭矢）</label></div>' +
       '<div class="row"><span class="st" style="font-size:10px">V2.16.27：仅当手持弓/乐器/鞭子时生效（其它职业没有箭矢槽，避免白耗箭袋）</span></div>' +
       '<div class="row"><span class="st" id="dsh-arrowlog" style="font-size:10px">未启用</span></div>' +
+      '<div class="row"><span class="st" id="dsh-arrowbaglog" style="font-size:10px">背包数据源：未读取</span></div>' +
       '</div>' +
       '<div class="sec">死亡后返回目标地图</div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-deathreturn" type="checkbox">死亡后返回目标地图（默认关）</label></div>' +
@@ -1398,7 +1414,7 @@
       '<div class="row"><span class="lb">当前地图</span><span class="st" id="dsh-pickmap" style="flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—（未进图）</span>' +
       '<button class="ghost" id="dsh-pickmapbtn" style="flex:0 0 auto">本图怪物掉落</button></div>' +
       '<div class="box"><div class="b-hd">当前白名单 <span class="tag green" id="dsh-wlcount" style="float:right">0 个物品ID</span></div>' +
-      '<div id="dsh-wllist" style="font-size:11px;max-height:70px;overflow:auto">空</div>' +
+      '<div id="dsh-wllist" style="font-size:12px">空</div>' +
       '<div class="row" style="margin-top:2px"><span class="lb">物品ID</span><input id="dsh-wlid" type="text" placeholder="数字ID" style="flex:0 0 88px">' +
       '<button class="ghost" id="dsh-wladdbtn" style="flex:0 0 auto">＋加入</button><span class="st" style="font-size:10px">手动加ID到白名单（替代原「搜物品」）</span></div>' +
       '</div>' +
@@ -1409,11 +1425,11 @@
       '<div class="row"><input id="dsh-mobsearch" type="text" placeholder="搜索怪物名/ID…（全量图鉴）">' +
       '<button class="ghost" id="dsh-mobsearchbtn" style="flex:0 0 auto">搜索</button>' +
       '<button class="ghost" id="dsh-mobsearchclr" style="flex:0 0 auto">清空</button></div>' +
-      '<div id="dsh-drop-tree" style="font-size:11px;max-height:200px;overflow:auto">' +
+      '<div id="dsh-drop-tree" style="font-size:12px">' +
       '<div class="st">怪物掉落树：点「本图怪物掉落」直接看当前地图怪 → 展开勾选物品加入白名单；也可搜索。</div></div>' +
       '<div class="sec">背包整理（丢弃黑名单 · 类别规则）</div>' +
-      '<div class="row"><span class="st" id="dsh-bag-state" style="font-size:10px">未初始化（登录后自动就绪）</span></div>' +
-      '<div id="dsh-bag-clean" style="font-size:11px"></div>' +
+      '<div class="row"><span class="st" style="font-size:12px">自动丢弃与丢弃名单已拆到独立浮窗（逐角色保存 · 默认关闭；改规则后需重新预览授权）。</span>' +
+      '<button class="ghost" id="dsh-fw-btn-bagclean" data-fw="bagclean" style="flex:0 0 auto;padding:0 8px;font-size:12px">浮窗</button></div>' +
       '</div>' +
       '<div class="sec">目标锁定条 / 队伍面板</div>' +
       '<div class="row"><span class="st" style="font-size:11px">V2.29.0 起改为全透明悬浮层：直接在游戏画面上拖动，位置自动保存；在 功能菜单 勾选「目标状态 / 队伍血条」显示；队友色块点击即锁定。</span></div>' +
@@ -2294,6 +2310,7 @@
     fwReg("tp", "传送功能", function () { return document.getElementById("dsh-fw-tp"); });
     fwReg("txcap", "数据抓包", txCapEnsureHost);
     fwReg("arrowrules", "换箭设置", arrowEnsureHost); // V2.35.1
+    fwReg("bagclean", "自动丢弃", bagCleanEnsureHost); // V2.38.2：自动丢弃/丢弃名单独立浮窗
     fwReg("gear", "一键换装 · 卡册", gearEnsureHost); // V2.37.0
     fwReg("zhu2", "战斗设置", function () { return document.getElementById("dsh-fw-zhu2"); });
     // V2.34.0：原「助手战斗设置」页内三页签拆成三个一级浮窗，各自独立登记
@@ -2598,6 +2615,17 @@
     sk.checked = roSkinOn();
     sk.addEventListener("change", function () { roSkinSet(sk.checked); });
     roMenuRow(body, "RO 原生皮肤", sk);
+    // V2.38.2：点击其他玩家的摆摊商店不弹出窗口（全局设置，非角色档 · 默认开）
+    //   第一层：客户端发出请求前直接丢弃点击摊位/收购店的请求 → 服务器不返列表，窗口根本不会生成（点击等于没发生）
+    //   第二层：万一列表仍到达，回包后同帧自动关窗兜底
+    var bmc = document.createElement("input"); bmc.type = "checkbox"; bmc.className = "ro-cb";
+    bmc.checked = blockMcEnabled();
+    bmc.addEventListener("change", function () {
+      blockMcSave(bmc.checked);
+      setStatus(bmc.checked ? "已开启：点击其他玩家的摆摊商店不弹出窗口（请求直接拦截，窗口不会出现）" : "已关闭：点击立即恢复正常，其他玩家的摆摊商店照原样弹出", "ok");
+      tlog("block-mc-set enabled=" + (bmc.checked === true));
+    });
+    roMenuRow(body, "点击其他玩家的摆摊商店不弹出窗口（默认开）", bmc);
     var info = document.createElement("div"); info.className = "ro-info";
     info.textContent = "当前视口 " + roVw() + "×" + roVh() + " · 实际缩放 " + Math.round(roScale() * 100) + "%";
     body.appendChild(info);
@@ -4098,8 +4126,10 @@
       } catch (me) {}
       if (activeProfileKey() === key && lastCharGid === gid) return;
       try { deathReturnCancel("切换角色"); } catch (e0) {}
+      var npZeroWasOn = false; try { npZeroWasOn = (npBattleState() === true); } catch (e0) {} // V2.38.2：换角色=挂机结束，先记下旧角色内挂是否确认在跑（下一行 reset 之后就查不到了）
       try { npResetBattleState(); } catch (e0) {} // 换角色：旧角色排队意图绝不能落到新角色
       try { dojoStop("换角色"); } catch (e5) {} // V2.36.0：换角色立即停止内置道馆并释放租约
+      try { if (npZeroWasOn) npZeroBattle("换角色"); } catch (e0) {} // 道场已在上一步置零时这里只会拿到 already，不会重复发包
       if (typeof selfSpirits !== "undefined") selfSpirits = { aid: 0, num: 0, map: "" };
       try { captureAll(); } catch (e) {} // 旧档先落盘
       setActiveProfile(key);
@@ -4108,7 +4138,20 @@
       saved = loadSaved();
       if (btDiagOn) { try { btLog('hk', '切档=' + key + ' panel=' + JSON.stringify(hkOf('panel')) + ' np=' + JSON.stringify(hkOf('np')) + ' zhu=' + JSON.stringify(hkOf('zhu'))); } catch (e) {} }
       lockList = profiles[key].lockList || {};
-      askList = profiles[key].askList || [];
+      askList = profiles[key].askList = profiles[key].askList || [];
+      // 切角色复位：自动丢弃的授权/名单/配置逐角色隔离，绝不能带 A 的授权在 B 身上丢东西
+      try {
+        bagClean.generation++;
+        bagClean.busy = false;
+        bagClean.pending = false;
+        bagClean.config = bagCleanLoad();
+      } catch (eBC) {}
+      // 安全归零必须排在 try/catch 之后：bagCleanLoad 抛错时旧角色的 armed 授权绝不能留给新角色
+      bagClean.enabled = false;
+      if (bagClean.config) { bagClean.config.enabled = false; bagClean.config.armed = false; }
+      bagCleanSave();
+      try { if (bagClean.render) bagClean.render(); } catch (eBC2) {}
+      bagCleanSay('切换角色：自动丢弃已关闭，需重新预览确认。');
       profMemKey = activeProfileKey(); // V2.34.5：内存名单归属=当前档（切档后名单已同步）
       applyProfileUI();
       try { fillZhuQoaskill(); } catch (e) {} // V2.16.7：切档后重填解围下拉（新角色已学技能，清掉旧角色技能）
@@ -5319,52 +5362,94 @@
   // V2.16.27：读当前装备武器的武器类型（客户端 WeaponType：11=弓 13=乐器 14=鞭子）
   // 自动换箭只在手持这三类武器时生效——其它职业没有箭矢槽，旧代码会一路走到
   // 「背包无箭矢 → 使用魔法箭袋(2000030)」，白白消耗箭袋。
-  function readEquippedWeaponType() {
+  // V2.38.2：线上客户端桥接模块的白名单里没有 UI/Components/Equipment/Equipment，组件路径必然读不到，
+  // 这里统一改走 equippedWeaponItid()（组件优先，其次背包列表的穿戴标记兜底）。
+  function equippedWeaponItid() {
     try {
       var eq = null;
       try { eq = window.require && window.require("UI/Components/Equipment/Equipment"); } catch (e1) {}
-      if (!eq && window.requireDB) { try { eq = window.requireDB("UI/Components/Equipment/Equipment"); } catch (e2) {} }
+      if (!eq && typeof requireDB === "function") { try { eq = requireDB("UI/Components/Equipment/Equipment"); } catch (e2) {} }
       var slot = eq && eq.ui && eq.ui.find('.weapon .item[data-index]');
       var index = slot && slot.length ? Number(slot.attr('data-index')) : null;
-      if (index == null || isNaN(index)) return { wt: -1, itid: null, why: "未装备武器" };
-      var item = (eq.getItemByIndex && eq.getItemByIndex(index)) || null;
-      if (!item) return { wt: -1, itid: null, why: "取不到武器实例" };
-      var itid = item.ITID != null ? item.ITID : item.itemid;
-      if (itid == null) return { wt: -1, itid: null, why: "武器无 ITID" };
+      if (index != null && !isNaN(index)) {
+        var item = (eq.getItemByIndex && eq.getItemByIndex(index)) || null;
+        if (item && item.ITID != null) return { itid: item.ITID, src: "装备组件" };
+      }
+    } catch (e3) {}
+    // V2.38.2 兜底：背包列表里带武器槽穿戴标记（EquipmentLocation.WEAPON=2）的那件
+    var worn = readBagWorn(2);
+    if (worn) return { itid: (worn.ITID != null ? worn.ITID : worn.itemid), src: "背包穿戴标记" };
+    return null;
+  }
+  function readEquippedWeaponType() {
+    try {
+      var got = equippedWeaponItid();
+      if (!got || got.itid == null) return { wt: -1, itid: null, why: "未装备武器" };
+      var itid = got.itid;
       var db = itipDB();
       if (!db) return { wt: -1, itid: itid, why: "DB 不可用" };
       if (typeof db.getWeaponType === "function") {
         var t = Number(db.getWeaponType(itid));
-        return { wt: isNaN(t) ? -1 : t, itid: itid, why: "getWeaponType" };
+        return { wt: isNaN(t) ? -1 : t, itid: itid, why: "getWeaponType/" + got.src };
       }
       // 兜底：ItemTable 的 ClassNum 就是武器类型（客户端 DBManager.getWeaponType 内部同逻辑）
       var info = (db.getItemInfo && db.getItemInfo(itid)) || null;
       var cn = info && info.ClassNum != null ? Number(info.ClassNum) : NaN;
-      return { wt: isNaN(cn) ? -1 : cn, itid: itid, why: "ClassNum兜底" };
+      return { wt: isNaN(cn) ? -1 : cn, itid: itid, why: "ClassNum兜底/" + got.src };
     } catch (e) { return { wt: -1, itid: null, why: "异常:" + e.message }; }
   }
   function readEquippedAmmo() {
     try {
       var eq = null;
       try { eq = window.require && window.require("UI/Components/Equipment/Equipment"); } catch (e1) {}
-      if (!eq && window.requireDB) { try { eq = window.requireDB("UI/Components/Equipment/Equipment"); } catch (e2) {} }
+      if (!eq && typeof requireDB === "function") { try { eq = requireDB("UI/Components/Equipment/Equipment"); } catch (e2) {} }
       var slot = eq && eq.ui && eq.ui.find('.ammo .item[data-index]');
       var index = slot && slot.length ? Number(slot.attr('data-index')) : null;
-      if (index == null || isNaN(index)) return null; // 空槽/无箭矢槽
+      if (index == null || isNaN(index)) return readBagAmmo(); // 空槽/无箭矢槽/组件读不到 → 背包穿戴标记兜底
       var item = (eq.getItemByIndex && eq.getItemByIndex(index)) || null;
-      if (!item) return null;
+      if (!item) return readBagAmmo();
       var cnt = item.count != null ? item.count : (item.amount != null ? item.amount : 0);
-      return { index: index, count: cnt, itid: item.ITID != null ? item.ITID : item.itemid };
-    } catch (e) { return null; }
+      return { index: index, count: cnt, itid: item.ITID != null ? item.ITID : item.itemid, src: "装备组件" };
+    } catch (e) { try { return readBagAmmo(); } catch (e2) { return null; } }
+  }
+  // V2.38.2：按穿戴位掩码从背包列表找已穿戴的那件（readEquippedWeaponType / readEquippedAmmo 的共用兜底）。
+  // 掩码口径与发包一致：2=武器槽、32768=箭矢槽。
+  function readBagWorn(slotBit) {
+    try {
+      var inv = bagList();
+      if (!inv) return null;
+      for (var i = 0; i < inv.length; i++) {
+        var it = inv[i] || {};
+        var w = it.WearState != null ? it.WearState : (it.wearState != null ? it.wearState : (it.IsEquipped != null ? it.IsEquipped : it.equipped));
+        if (w == null || w === false || w === true) continue;
+        if (!(Number(w) & slotBit)) continue;
+        return it;
+      }
+    } catch (e) {}
+    return null;
+  }
+  function readBagAmmo() {
+    var it = readBagWorn(32768);
+    if (!it) return null;
+    var cnt = it.count != null ? it.count : (it.amount != null ? it.amount : 0);
+    return { index: it.index != null ? it.index : null, count: Number(cnt) || 0, itid: it.ITID != null ? it.ITID : it.itemid, src: "背包穿戴标记" };
   }
   function readBagArrows() {
     var out = [];
     try {
-      var inv = findInventory();
+      var inv = bagList();
       if (!inv) return out;
       for (var i = 0; i < inv.length; i++) {
         var it = inv[i] || {};
-        if (it.type !== 10) continue; // 10=箭矢
+        // V2.38.2：type 可能是字符串/缺失，先做数字规范化；只有「取不到数值」时才允许用「物品名以 箭矢 结尾」做二次确认。
+        // 绝不放宽到任意物品：拿不到 type 又名字对不上的一律跳过，装备永远不会被当成箭。
+        var rawT = it.type, t = Number(rawT);
+        if (t !== 10) {
+          if (rawT != null && rawT !== "" && isFinite(t)) continue; // 明确是别的类型
+          var nm = "";
+          try { nm = String(getItemName(it.ITID != null ? it.ITID : it.itemid) || "").replace(/\s+/g, ""); } catch (e2) {}
+          if (!/箭矢$/.test(nm)) continue;
+        }
         var cnt = it.count != null ? it.count : (it.amount != null ? it.amount : 0);
         if (Number(cnt) <= 0) continue;
         out.push({ index: it.index != null ? it.index : i, itid: it.ITID != null ? it.ITID : it.itemid, count: Number(cnt) });
@@ -5384,7 +5469,7 @@
   }
   function tickArrow() {
     try {
-      if (externalAutomationOwns("arrow") || arrowTarget || arrowSelfWanted()) return; // V2.35.1/V2.36.12 外部目标或按怪换箭接管时，通用耗尽换箭让位
+      if (externalAutomationOwns("arrow") || arrowTarget || arrowSelfWanted()) return; // V2.35.1/V2.36.12 外部目标或按怪换箭接管时，通用续箭让位
       if (!clientReady()) return;
       var en = $id("dsh-arrowen");
       if (!en || !en.checked) { setArrowLog("未启用"); return; }
@@ -5393,34 +5478,48 @@
       var wq = readEquippedWeaponType();
       zArrow.wt = wq.wt; zArrow.wItid = wq.itid; zArrow.wWhy = wq.why;
       if (wq.wt !== 11 && wq.wt !== 13 && wq.wt !== 14) {
-        setArrowLog("当前武器不是弓/乐器/鞭子（类型 " + wq.wt + "，武器ID " + (wq.itid == null ? "无" : wq.itid) + "），自动换箭不生效");
+        setArrowLog("当前武器不是弓/乐器/鞭子（类型 " + wq.wt + "，武器ID " + (wq.itid == null ? "无" : wq.itid) + "），自动续箭不生效");
         return;
       }
+      // V2.38.2：触发阈值从「箭矢耗尽」改为「当前装备的箭矢不足 50 支」（箭矢槽为空/读不到都视为 0）
       var ammo = readEquippedAmmo();
-      var arrows = readBagArrows();
-      var bagN = arrows.reduce(function (a, b) { return a + b.count; }, 0);
-      // 已装箭矢且未耗尽 → 正常，仅刷新状态
-      if (ammo && ammo.count > 0) { setArrowLog("当前箭矢 ×" + ammo.count + (bagN > 0 ? "，背包箭矢 " + bagN + " 支" : "，背包无箭矢")); return; }
-      // 耗尽：背包有箭矢 → 直接装上
-      if (arrows.length) {
-        if (now - zArrow.lastEquip < 3000) return; // 3s 节流防反复
-        if (equipArrow(arrows[0].index)) { zArrow.lastEquip = now; setArrowLog("箭矢耗尽，已请求装上背包箭矢（余 " + bagN + " 支）"); }
-        return;
+      var have = Number(ammo && ammo.count) || 0;
+      var bag = readBagArrows();
+      var bagN = 0, bg = 0;
+      for (bg = 0; bg < bag.length; bg++) bagN += Number(bag[bg].count) || 0;
+      if (have >= ARROW_LOW_AMMO) { setArrowLog("当前箭矢 ×" + have + (bagN > 0 ? "，背包箭矢 " + bagN + " 支" : "，背包无箭矢")); return; }
+      var needItid = (ammo && arrowPos(ammo.itid)) || arrowPos(arrowRules.defaultItid) || ARROW_PLAIN_ITID;
+      var bi = 0;
+      // ① 当前这支箭（读不到就用通用箭）在背包里 → 直接装上补足
+      if (now - zArrow.lastEquip >= 3000) {
+        for (bi = 0; bi < bag.length; bi++) {
+          if (Number(bag[bi].itid) !== Number(needItid)) continue;
+          if (equipArrow(bag[bi].index)) { zArrow.lastEquip = now; setArrowLog("箭矢不足 " + have + " 支，已装上背包里的" + arrowItemName(needItid) + "（余 " + bagN + " 支）"); }
+          return;
+        }
       }
-      // V2.36.12 背包无箭矢 → 先开「当前这支箭」对应的箭矢筒（风灵箭矢筒 / 魔法风灵箭矢筒），再退回旧的魔法箭袋
       if (now - zArrow.lastBag < 2000) return; // 2s 节流
-      var needItid = (ammo && arrowPos(ammo.itid)) || arrowPos(arrowRules.defaultItid) || null;
-      var quiver = needItid ? arrowUseQuiver(needItid) : null;
-      if (quiver && quiver.used) { zArrow.lastBag = now; zArrow.failBag = 0; setArrowLog("箭矢耗尽，已使用" + quiver.q.name + "补充" + arrowItemName(needItid) + "…"); }
-      else if (quiver && quiver.q) { zArrow.lastBag = now; setArrowLog("箭矢耗尽，等" + quiver.q.name + "生效（" + arrowItemName(needItid) + "）"); }
-      else if (useItemById(2000030)) { zArrow.lastBag = now; zArrow.failBag = 0; setArrowLog("箭矢耗尽且背包无箭，使用魔法箭袋(2000030)…"); }
-      else {
-        zArrow.failBag++;
-        setArrowLog(zArrow.failBag >= 3 ? ("背包无箭矢，也没有" + (needItid ? arrowItemName(needItid) : "当前箭矢") + "对应的箭矢筒，请准备箭矢筒") : "背包无箭矢，箭矢筒未找到");
+      // ① 当前这支箭对应的箭矢筒（风灵箭矢 → 风灵箭矢筒 / 魔法风灵箭矢筒）
+      var quiver = arrowUseQuiver(needItid);
+      if (quiver && quiver.used) { zArrow.lastBag = now; zArrow.failBag = 0; setArrowLog("箭矢不足 " + have + " 支，已使用" + quiver.q.name + "补充" + arrowItemName(needItid) + "…"); return; }
+      if (quiver && quiver.q) { zArrow.lastBag = now; setArrowLog("箭矢不足 " + have + " 支，等" + quiver.q.name + "生效（" + arrowItemName(needItid) + "）"); return; }
+      // ② 没有对应箭袋 → 换成普通箭矢（魔法箭矢筒 2000030 产出的那支：背包本来就有就直接装，否则用筒等产出）
+      if (Number(needItid) !== Number(ARROW_PLAIN_ITID)) {
+        if (now - zArrow.lastEquip >= 3000) {
+          for (bi = 0; bi < bag.length; bi++) {
+            if (Number(bag[bi].itid) !== Number(ARROW_PLAIN_ITID)) continue;
+            if (equipArrow(bag[bi].index)) { zArrow.lastEquip = now; zArrow.failBag = 0; setArrowLog("没有对应箭矢筒，已换上普通箭矢 ×" + bag[bi].count); }
+            return;
+          }
+        }
+        if (useItemById(ARROW_MAGIC_QUIVER)) { zArrow.lastBag = now; zArrow.failBag = 0; setArrowLog("没有对应箭矢筒，已用魔法箭矢筒(2000030)补充普通箭矢，等产出入包后装上…"); return; }
       }
+      // ③ 都没有 → 中文提示，不动作
+      zArrow.failBag++;
+      setArrowLog(zArrow.failBag >= 3 ? ("箭矢不足 " + have + " 支，背包也没有" + arrowItemName(needItid) + "对应箭矢筒，请准备箭矢/箭矢筒") : "箭矢不足，未找到可用箭矢与箭矢筒");
     } catch (e) {}
   }
-  masterTickReg(function () { try { tickArrow(); } catch (e) {} });
+  masterTickReg(function () { try { tickArrow(); } catch (e) {} try { arrowBagDiagRender(); } catch (e) {} });
   if (saved.arrowEn === false) { var ae = $id("dsh-arrowen"); if (ae) ae.checked = false; } // V2.16.7：默认开，仅当用户明确关过(saved.arrowEn===false)才恢复为关
 
   // ---------------- 背包快照定期上报（V2.15.27：复用仓库查询读取，到点上报道本机采集服务）----------------
@@ -5459,7 +5558,12 @@
   })();
   var askPickIdx = -1;
   function saveAskList() {
-    try { var k = activeProfileKey(); ensureProfile(k); profiles[k].askList = askList; profiles[k].lastAt = Date.now(); saveProfiles(); } catch (e) {}
+    try {
+      var k = activeProfileKey();
+      // V2.38.2：与 saveSaved 同口径的归属校验——内存 askList 不属于当前档时不得反写覆盖（KV 中继刷新/切档后可能错档）
+      if (profMemKey && profMemKey !== k) { try { console.log("[PROFILE] 名单归属不符，跳过 askList 写回"); } catch (e0) {} }
+      else { ensureProfile(k); profiles[k].askList = askList; profiles[k].lastAt = Date.now(); saveProfiles(); }
+    } catch (e) {}
     renderAskList();
   }
   function renderAskList() {
@@ -5541,6 +5645,34 @@
   onId("dsh-askdel", "click", function () {
     if (askPickIdx >= 0) { askList.splice(askPickIdx, 1); askPickIdx = -1; saveAskList(); }
   });
+  // V2.38.2：数字输入统一取值——SP 下限允许 0（原来 parseInt(...) || 30 把「不低于 0」也改成 30），用 isFinite 判断
+  function askNum(id, def) { var n = parseInt($id(id) ? $id(id).value : "", 10); return isFinite(n) ? n : def; }
+  function askSpGuard() { return askNum("dsh-asksp", 30); }
+  // V2.38.2：#dsh-bufflog 原来是死元素（全脚本只有创建它的那一行、没有任何写入）→ 永远显示「辅助技能：未启用」。
+  // 改为实时状态；内容不变不重写（防闪）。
+  var buffLogLast = "", askLastCast = null;
+  function renderBuffLog() {
+    try {
+      var el = $id("dsh-bufflog"); if (!el) return;
+      var en = $id("dsh-asken") && $id("dsh-asken").checked;
+      var n = (typeof askList !== "undefined" && askList) ? askList.length : 0;
+      var txt;
+      if (!en) txt = '辅助技能：未启用（勾选"启用自动释放"）';
+      else if (!zRunning) txt = "辅助技能：待机（自动战斗未开启）";
+      else {
+        var ent = CLIENT.SS && CLIENT.SS.Entity;
+        var spMax = (ent && ent.life) ? (ent.life.sp_max != null ? ent.life.sp_max : ent.life.maxsp) : null;
+        var sp = (ent && ent.life) ? ent.life.sp : null;
+        var pct = (spMax > 0 && sp != null) ? (sp / spMax * 100) : null;
+        var guard = askSpGuard();
+        if (pct != null && pct < guard) txt = "辅助技能：暂停（SP " + Math.round(pct) + "% < 下限 " + guard + "%）";
+        else txt = "辅助技能：运行中" + (askLastCast ? (" · 已补 " + askLastCast.name + " " + askLastCast.time) : "") + "（列表 " + n + " 项）";
+      }
+      if (txt === buffLogLast) return;
+      buffLogLast = txt;
+      el.textContent = txt;
+    } catch (e) {}
+  }
   function tickAskSkills() {
     try {
       var en = $id("dsh-asken") && $id("dsh-asken").checked;
@@ -5550,10 +5682,10 @@
       var ent = CLIENT.SS.Entity;
       if (!ent || !ent.life) return;
       var now = Date.now();
-      var intv = (parseInt($id("dsh-askint").value, 10) || 120) * 1000;
+      var intv = (askNum("dsh-askint", 120) || 120) * 1000;
       var spMax = ent.life.sp_max != null ? ent.life.sp_max : ent.life.maxsp;
       var spPct = spMax > 0 ? (ent.life.sp != null ? ent.life.sp / spMax * 100 : 100) : 100;
-      var spGuard = parseInt($id("dsh-asksp").value, 10) || 30;
+      var spGuard = askSpGuard();
       if (spPct < spGuard) return;
       // 修「掉 buff 不及时补」：去掉全局 askLastCast 门禁，改每技能独立 lastAt。
       // 状态判活技能 = 状态消失/在身即补（仅 5s 防抖防重复）；无状态技能 = 按全局间隔放。
@@ -5601,6 +5733,7 @@
           CLIENT.NM.sendPacket(p);
           s.lastAt = now;
           if (s.st) s.missCnt = (s.missCnt || 0) + 1; // 补了但判活仍缺 → missCnt++（连续2次退避到全局间隔）
+          askLastCast = { name: s.name || ("技能" + s.skid), time: new Date(now).toTimeString().slice(0, 8) };
           castAny = true;
           if (btDiagOn) btLog('ask-cast', 'skid=' + s.skid + ' st=' + s.st + ' stInv=' + !!s.stInv + ' missCnt=' + (s.missCnt || 0));
         } catch (e) {
@@ -5639,7 +5772,7 @@
     }
     next();
   }
-  masterTickReg(function () { try { tickAskSkills(); } catch (e) {} });
+  masterTickReg(function () { try { tickAskSkills(); } catch (e) {} try { renderBuffLog(); } catch (e) {} });
   // 状态挂钩定时重试：asken 开着但 SI 模块未就绪时持续重试，确保 buffActive 判活表可用（否则状态判活失效）
   setInterval(function () { try { if ($id("dsh-asken") && $id("dsh-asken").checked) hookStatusIcons(); } catch (e) {} }, 3000);
   renderAskList();
@@ -5715,13 +5848,21 @@
   if (saved.buffInterval) { var abi = $id("dsh-askint"); if (abi) abi.value = saved.buffInterval; saved.buffInterval = ""; }
   if (saved.buffSP) { var abs = $id("dsh-asksp"); if (abs) abs.value = saved.buffSP; saved.buffSP = ""; }
   if (saved.buffEnabled) { var abe = $id("dsh-asken"); if (abe) abe.checked = true; saved.askEn = true; saved.buffEnabled = ""; saveSaved(saved); }
-  if (saved.askEn) { $id("dsh-asken").checked = true; hookStatusIcons(); }
-  onId("dsh-asken", "change", function () { saved.askEn = this.checked; saveSaved(saved); if (this.checked) hookStatusIcons(); });
+  // V2.38.2：自动 buff 默认关闭——新档不勾 dsh-asken，只有存档里明确 askEn===true 才勾上
+  if (saved.askEn === true) { var akeOn = $id("dsh-asken"); if (akeOn) akeOn.checked = true; hookStatusIcons(); }
+  else { var akeOff = $id("dsh-asken"); if (akeOff) akeOff.checked = false; }
+  onId("dsh-asken", "change", function () { saved.askEn = this.checked; saveSaved(saved); if (this.checked) hookStatusIcons(); renderBuffLog(); });
   // V1.7.0 一次性清空：多辅助/自动技能 历史数据（用户要求默认清空「助手内按间隔自动施放的增益」）
-  if (!saved.uiClear170) {
+  // V2.38.2 修复：原来的清空标志只存在【角色档】里（saveSaved 把非登录键全写进 profiles[档].saved），
+  //   凡是没带这个标志的角色档，下次加载都会再清一遍 askList 并把启用开关强制关掉 —— 表现就是「buff 技能设置刷新后丢失、要重新写」。
+  //   改成浏览器级 localStorage 一次性键：只执行一次、永不重来；且不再把用户的 saved.askEn 写成 false（只在这一唯一一次清空时关掉界面勾选）。
+  var UI_CLEAR_170_KEY = "dsh_ro_uiclear170_v1", uiCleared170 = false;
+  try { uiCleared170 = localStorage.getItem(UI_CLEAR_170_KEY) === "1"; } catch (e) {}
+  if (!uiCleared170) {
     try { askList.length = 0; saveAskList(); } catch (e) {}
-    saved.buffs = ""; saved.buffEnabled = false; saved.askEn = false;
-    saved.uiClear170 = true; saveSaved(saved);
+    saved.buffs = ""; saved.buffEnabled = false;
+    try { localStorage.setItem(UI_CLEAR_170_KEY, "1"); } catch (e) {}
+    saveSaved(saved);
     var aek170 = $id("dsh-asken"); if (aek170) aek170.checked = false;
     setStatus("已按新版本要求清空多辅助/自动技能历史列表", "st");
   }
@@ -6424,7 +6565,13 @@
       if (npChatSeen) npChatSeen.add(p);
       if (!npChatContainer(p)) continue;
       var state = npChatStateOf(p);
-      if (state !== null) npApplyBattleState(state, "chat-new");
+      if (state !== null) {
+        // V2.38.2：内挂面板是服务器实际状态的可读副本；公屏文本与面板不一致时一律以面板为准，
+        //   绝不让一句带「关闭自动战斗」的公屏聊天把本地状态钉死成已关（后续置零会因此空转）
+        var panel = null; try { panel = npReadPanelState(); } catch (e1) {}
+        if (panel !== null && panel !== state) { try { tlog("np-chat-ignore panel=" + panel + " chat=" + state); } catch (e2) {} }
+        else npApplyBattleState(state, "chat-new");
+      }
     }
   }
   function npWatchBattleChat() {
@@ -6469,6 +6616,8 @@
   }
   function npClearBattleIntent() {
     if (npBattleExplicitTimer) clearTimeout(npBattleExplicitTimer);
+    if (npZeroVerifyTimer) clearTimeout(npZeroVerifyTimer); // V2.38.2：换角色复位（npResetBattleState 走这里）必须撤销 800ms 复核
+    npZeroVerifyTimer = null;
     npBattleExplicitTimer = null; npBattleExplicit = null; npBattleCandidate = null;
   }
   function npResetBattleState() {
@@ -6655,6 +6804,61 @@
   function npToggleHunt() {
     return npIsThree() ? npSendWhisper("NPC:setautoattack") : npSendUpdate(34, 1);
   }
+  // V2.38.2：挂机结束时置零内挂「自动战斗」（全局设置，默认开）
+  // 只关 id=34 的自动战斗（三转 NPC:setautoattack），不动拾取35/吃药36/跟随37/寻怪模式38；一律复用 npRequestBattle 事务路径
+  var NP_ZERO_KEY = "dsh_ro_npzero_v1";
+  var npZeroVerifyTimer = null; // V2.38.2：800ms 复核定时器句柄（换角色/复位必须能撤销，否则旧角色残留复核会对新角色再发一次）
+  var npZeroCfg = { enabled: true };
+  try { var npZeroRaw = JSON.parse(localStorage.getItem(NP_ZERO_KEY) || "null"); if (npZeroRaw && npZeroRaw.enabled === false) npZeroCfg.enabled = false; } catch (e) {}
+  function npZeroEnabled() { return npZeroCfg.enabled !== false; }
+  // V2.38.2：置零先复核内挂面板（#vbk input.openattack = 服务器实际状态的可读副本），再决定是否发包——
+  //   客户端这个开关是切换(toggle)型，发一次翻一次，所以「已经关着还盲发一次」会把内挂打开（本地缓存可能被公屏文本污染，不能当唯一依据）。
+  function npZeroBattle(reason) {
+    try {
+      if (!npZeroEnabled()) return "disabled";
+      var src = "zero:" + (reason || "auto");
+      var panel = npReadPanelState();
+      if (panel === false) { // 面板明确「已关」：一个包都不发，并把可能被污染的本地缓存纠回面板口径
+        npBattleKnown = true; npHuntOn = false; npBattleCandidate = null;
+        tlog("np-zero result=already source=" + src + " panel=false");
+        return "already";
+      }
+      if (panel === true) { // 面板明确「在跑」：绕过被污染的缓存去重，真发一次关闭包
+        npBattleKnown = false; npHuntOn = false;
+        var r1 = npRequestBattle(false, src, true);
+        tlog("np-zero result=" + r1 + " source=" + src + " panel=true");
+        if (r1 === "sent" || r1 === "queued") npZeroVerifyTimer = setTimeout(function () { // 800ms 后复核一次；仍显示在跑才允许再发，总计硬上限 2 次，绝不循环
+          npZeroVerifyTimer = null;
+          try {
+            if (npReadPanelState() !== true) return;
+            npBattleKnown = false; npHuntOn = false;
+            var r2 = npRequestBattle(false, src + ":verify", true);
+            if (r2 === "sent" || r2 === "queued") tlog("np-zero retry result=" + r2 + " source=" + src);
+          } catch (e2) {}
+        }, 800);
+        return r1;
+      }
+      var r = npRequestBattle(false, src, true); // 面板读不到：保持既有语义（已知开→发一次；已知关→already；未知→发一次）
+      tlog("np-zero result=" + r + " source=" + src + " panel=null");
+      return r;
+    } catch (e) { return "error"; }
+  }
+  function npZeroSave(on) {
+    npZeroCfg.enabled = on !== false;
+    try { localStorage.setItem(NP_ZERO_KEY, JSON.stringify({ enabled: npZeroCfg.enabled })); } catch (e) {}
+  }
+  // 设置界面：勾选立即落盘 + 中文提示（元素缺失只跳过这一条，不影响加载）
+  try {
+    var npZeroBox = $id("dsh-npzero");
+    if (npZeroBox) {
+      npZeroBox.checked = npZeroEnabled();
+      npZeroBox.addEventListener("change", function () {
+        npZeroSave(this.checked);
+        setStatus(this.checked ? "已开启：挂机结束时自动关闭内挂自动战斗" : "已关闭：挂机结束时不再关闭内挂自动战斗", "ok");
+        tlog("np-zero-set enabled=" + (this.checked === true));
+      });
+    }
+  } catch (e) {}
   function npEnsureHunt() {
     try {
       var result = npRequestBattle(true, "npEnsureHunt", false, npIsThree() ? null : function () { npSendUpdate(38, 0); });
@@ -7875,35 +8079,105 @@
       return true;
     } catch (e) { return false; }
   }
-  function findInventory() {
+  // ---------------- 统一背包读取器 bagList（V2.38.2）----------------
+  // 原 findInventory 先调不存在的 UM.get(...)（死代码）再退回 UM.components，而线上客户端桥接模块的 require 白名单里
+  // 没有 UI/UIManager 与两个 Inventory 组件——读不到就返回 null，readBagArrows/useItemById/arrowQuiverFor 全部拿不到数据，
+  // 整条换箭链静默失效。这里按顺序尝试并逐个校验，返回第一个通过的数组，同时记录诊断（来源名/件数/箭矢种数）。
+  var bagRead = { source: "未读取", count: 0, arrows: 0 };
+  function bagListOk(list) {
+    if (!Array.isArray(list) || !list.length) return false;
+    var it = list[0];
+    if (!it || typeof it !== "object") return false;
+    return ("ITID" in it) || ("itemid" in it);
+  }
+  function bagCountArrows(list) {
+    var seen = {}, n = 0;
     try {
-      // 优先从 UIManager 组件实例取背包 .list（数据源已由探针 v0.13.17 确认：inventory/BasicInventory.list）
-      try {
-        if (!CLIENT.UI) CLIENT.UI = window.require && window.require("UI/UIManager");
-        var UM = CLIENT.UI;
-        if (UM) {
-          var cands = ["BasicInventory", "Inventory", "ItemInfo"];
-          for (var c = 0; c < cands.length; c++) {
-            var inst = null;
-            try { if (typeof UM.get === "function") inst = UM.get(cands[c]); } catch (e) {}
-            if (!inst && UM.components) inst = UM.components[cands[c]] || null;
-            if (!inst && UM.instance && UM.instance.components) inst = UM.instance.components[cands[c]] || null;
-            if (inst && Array.isArray(inst.list) && inst.list.length && inst.list[0] && typeof inst.list[0] === "object" && ("ITID" in inst.list[0] || "itemid" in inst.list[0])) return inst.list;
+      for (var i = 0; i < list.length; i++) {
+        var it = list[i] || {};
+        if (Number(it.type) !== 10) continue;
+        var cnt = it.count != null ? it.count : (it.amount != null ? it.amount : 0);
+        if (Number(cnt) <= 0) continue;
+        var id = String(it.ITID != null ? it.ITID : it.itemid);
+        if (seen[id]) continue;
+        seen[id] = 1; n++;
+      }
+    } catch (e) {}
+    return n;
+  }
+  function bagSourceTry(tag, list) {
+    if (!bagListOk(list)) return null;
+    bagRead.source = tag; bagRead.count = list.length; bagRead.arrows = bagCountArrows(list);
+    return list;
+  }
+  function bagList() {
+    var list = null;
+    bagRead.source = "读取失败"; bagRead.count = 0; bagRead.arrows = 0;
+    try {
+      // ①/② 组件模块的 .list（先 requireDB；桥接模块 require 白名单没有这些路径时静默跳过）
+      var paths = [["UI/Components/Inventory/Inventory", "Inventory.list"], ["UI/Components/BasicInventory/BasicInventory", "BasicInventory.list"]];
+      for (var i = 0; i < paths.length && !list; i++) {
+        var mod = null;
+        try { mod = requireDB(paths[i][0]); } catch (e1) {}
+        if (!mod) { try { mod = window.require && window.require(paths[i][0]); } catch (e2) {} }
+        if (mod) list = bagSourceTry(paths[i][1], mod.list);
+      }
+      // ③ UIManager 组件表（require 可能直接抛异常，整个包住）
+      if (!list) {
+        try {
+          if (!CLIENT.UI) CLIENT.UI = window.require && window.require("UI/UIManager");
+          var UM = CLIENT.UI;
+          var names = ["Inventory", "BasicInventory"];
+          for (var c = 0; c < names.length && !list; c++) {
+            var comp = (UM && UM.components) ? UM.components[names[c]] : null;
+            if (comp) list = bagSourceTry("UM.components." + names[c] + ".list", comp.list);
           }
-        }
-      } catch (e) {}
-      // 兜底：旧客户端 SessionStorage 顶层直接挂的背包数组
-      if (CLIENT.SS) {
+          // ④ UM.getComponent（该方法不存在或抛异常都必须能继续）
+          if (!list && UM && typeof UM.getComponent === "function") {
+            for (var c2 = 0; c2 < names.length && !list; c2++) {
+              var inst = null;
+              try { inst = UM.getComponent(names[c2]); } catch (e3) {}
+              if (inst) list = bagSourceTry("UM.getComponent." + names[c2] + ".list", inst.list);
+            }
+          }
+        } catch (e4) {}
+      }
+      // ⑤ 旧客户端 SessionStorage 顶层直接挂的背包数组
+      if (!list && CLIENT.SS) {
         var keys = Object.keys(CLIENT.SS);
-        for (var i = 0; i < keys.length; i++) {
-          var v = CLIENT.SS[keys[i]];
-          if (v && typeof v === "object" && Array.isArray(v) && v.length && v[0] && typeof v[0] === "object" && ("ITID" in v[0] || "itemid" in v[0])) return v;
+        for (var k = 0; k < keys.length && !list; k++) {
+          var v = CLIENT.SS[keys[k]];
+          if (v && Array.isArray(v)) list = bagSourceTry("CLIENT.SS." + keys[k], v);
         }
       }
     } catch (e) {}
+    if (list) return list;
+    bagRead.source = "读取失败"; bagRead.count = 0; bagRead.arrows = 0;
     return null;
   }
-
+  // 只读诊断行：换箭设置浮窗、自动装箭矢栏共用（内容不变不重写，防闪）
+  function bagDiagText() {
+    if (!bagRead.source || bagRead.source === "读取失败") return "背包数据源：读取失败（所有路径都拿不到 list）";
+    return "背包数据源：" + bagRead.source + " · " + bagRead.count + " 件 · 箭矢 " + bagRead.arrows + " 种";
+  }
+  function ammoDiagText() {
+    var a = null;
+    try { a = readEquippedAmmo(); } catch (e) {}
+    if (!a) return "装备栏箭矢槽：读取失败";
+    return "装备栏箭矢槽：" + arrowItemName(a.itid) + " ×" + (a.count != null ? a.count : 0);
+  }
+  function arrowBagDiagRender() {
+    try {
+      var txt = bagDiagText() + " ｜ " + ammoDiagText();
+      var ids = ["dsh-arrowbaglog", "dsh-arrow-rules-bagdiag"];
+      for (var i = 0; i < ids.length; i++) {
+        var el = $id(ids[i]);
+        if (!el || el.textContent === txt) continue;
+        el.textContent = txt;
+      }
+    } catch (e) {}
+  }
+  function findInventory() { return bagList(); }
   // ---- 助手攻击循环 ----
   // 内挂面板开关读取：vbk 面板 .openattack checkbox（自动战斗）当前勾选状态 = 服务器内挂实际开关
   // toggle 语义下必须与服务器同步，否则发错次数会反相；用户可能手动在内挂面板点过 → 启动时校准
@@ -8030,7 +8304,7 @@
     stopScan();
     if (zAttTimer) { clearInterval(zAttTimer); zAttTimer = null; }
     // 内挂机制寻怪：停止时关闭内挂自动战斗
-    npHuntStop("stopZhu", true);
+    npZeroBattle("stopZhu");
     zLock.gid = null; zLock.done = false; // 解除锁定/停手状态
     zUseCounts = {}; // V1.7.0 重置本轮技能释放次数（maxUses）
     zLockCounts = {}; // V1.7.5 重置锁定次数（开/停自动战斗清空）
@@ -10201,14 +10475,24 @@
     } catch (e) { setStatus("导入异常: " + e.message, "err"); }
   });
 
-  // ---------------- 背包安全清理 v2（黑名单 + 类别规则）----------------
+  // ---------------- 背包安全清理 v2（丢弃名单 + 类别规则 · V2.38.2）----------------
+  // V2.38.2：状态逐角色保存（键 = dsh-bag-clean-v2:<角色档键>）、默认关闭、新增「随时丢弃」独立开关；
+  // 删掉「每次加载强制 enabled=false; armed=false」，但「规则改动/加载/切档后 armed 归零、必须重新预览」的安全门禁全部保留。
   var BAG_CLEAN_KEY = 'dsh-bag-clean-v2', BAG_CLEAN_V1_KEY = 'dsh-bag-clean-rules-v1';
-  var bagClean = {enabled:false,pending:false,busy:false,config:{version:2,discardRules:{},categoryTypes:[],protectedIds:[],armed:false},generation:0,status:null,detail:null,hold:null,error:""};
+  var bagClean = {enabled:false,pending:false,busy:false,config:{version:2,discardRules:{},categoryTypes:[],protectedIds:[],armed:false,enabled:false,anytime:false},generation:0,status:null,detail:null,hold:null,error:"",render:null};
   var BAG_SAFE_TYPES = {0:'治疗',2:'消耗',3:'材料',6:'卡片',7:'宠物蛋',10:'箭矢',11:'技能消耗'};
   var BAG_CONFLICT_TYPES = {4:1,5:1,8:1,12:1,18:1};
-  function bagCleanInventory() {var paths=['UI/Components/Inventory/Inventory','UI/Components/BasicInventory/BasicInventory'];for(var i=0;i<paths.length;i++){var m=requireDB(paths[i]);if(m&&Array.isArray(m.list))return m.list;}return null;}
+  // V2.38.2：背包统一走 bagList()（组件 .list → UIManager → getComponent → CLIENT.SS 兜底，逐个校验），
+  // 旧写法只读 requireDB 的两个组件模块，线上桥接白名单里没有它们 → 恒为 null。
+  function bagCleanInventory() {
+    try { var l = bagList(); if (Array.isArray(l)) return l; } catch (e) {}
+    try { var paths=['UI/Components/Inventory/Inventory','UI/Components/BasicInventory/BasicInventory'];for(var i=0;i<paths.length;i++){var m=requireDB(paths[i]);if(m&&Array.isArray(m.list))return m.list;} } catch (e2) {}
+    return null;
+  }
   function bagCleanInt(v,min,max){var n=Number(v);return Number.isInteger(n)&&n>=min&&n<=max?n:null;}
   function bagCleanRuleKey(k){return /^[1-9]\d*(?::u)?$/.test(k)&&Number(k.split(':')[0])<=2147483647;}
+  // 逐角色键：没有角色档（例如测试沙箱）时退回全局键，保持键名 dsh-bag-clean-v2 不变
+  function bagCleanStorageKey(){try{var k=(typeof activeProfileKey==='function')?activeProfileKey():'';return k?(BAG_CLEAN_KEY+':'+k):BAG_CLEAN_KEY;}catch(e){return BAG_CLEAN_KEY;}}
   function bagCleanValidateImport(raw,legacy){
     if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('规则必须是对象');
     if(raw.version===2){
@@ -10223,25 +10507,34 @@
     return raw;
   }
   function bagCleanNormalize(raw, legacy) {
-    var out={version:2,discardRules:{},categoryTypes:[],protectedIds:[],armed:false}, src=raw&&typeof raw==='object'&&!Array.isArray(raw)?raw:null;
+    var out={version:2,discardRules:{},categoryTypes:[],protectedIds:[],armed:false,enabled:false,anytime:false}, src=raw&&typeof raw==='object'&&!Array.isArray(raw)?raw:null;
     var rules=src&&src.version===2?src.discardRules:(legacy&&src?(src.discardRules&&typeof src.discardRules==='object'&&!Array.isArray(src.discardRules)?src.discardRules:src):null);
     if(rules&&typeof rules==='object'&&!Array.isArray(rules))Object.keys(rules).forEach(function(k){var n=bagCleanInt(rules[k],0,1000000000);if(bagCleanRuleKey(k)&&n!==null)out.discardRules[k]=n;});
     if(src&&src.version===2){
       if(Array.isArray(src.categoryTypes))src.categoryTypes.forEach(function(v){var n=bagCleanInt(v,0,255);if(n!==null&&Object.prototype.hasOwnProperty.call(BAG_SAFE_TYPES,String(n))&&out.categoryTypes.indexOf(n)<0)out.categoryTypes.push(n);});
       if(Array.isArray(src.protectedIds))src.protectedIds.forEach(function(v){var n=bagCleanInt(v,1,2147483647);if(n!==null&&out.protectedIds.indexOf(n)<0)out.protectedIds.push(n);});
       out.armed=src.armed===true;
+      out.enabled=src.enabled===true;
+      out.anytime=src.anytime===true;
     }
     return out;
   }
-  function bagCleanLoad(){var raw=null,empty=function(){return bagCleanNormalize(null,false);};try{raw=JSON.parse(localStorage.getItem(BAG_CLEAN_KEY)||'null');}catch(ignore){}if(raw&&raw.version===2){try{return bagCleanNormalize(bagCleanValidateImport(raw,false),false);}catch(ignore2){return empty();}}try{raw=JSON.parse(localStorage.getItem(BAG_CLEAN_V1_KEY)||'{}');var migrated=bagCleanNormalize(bagCleanValidateImport(raw,true),true);try{localStorage.setItem(BAG_CLEAN_KEY,JSON.stringify(migrated));}catch(ignore3){}return migrated;}catch(ignore4){return empty();}}
-  function bagCleanSave(){localStorage.setItem(BAG_CLEAN_KEY,JSON.stringify(bagClean.config));}
-  function bagCleanDisarm(message){bagClean.config.armed=false;bagClean.enabled=false;bagClean.generation++;bagClean.pending=false;bagCleanSave();var en=document.querySelector('#dsh-bag-clean [data-enable]');if(en)en.checked=false;if(message)bagCleanSay(message);}
+  function bagCleanLoad(){
+    var key=bagCleanStorageKey();bagClean.key=key;var raw=null,cfg=null,empty=function(){return bagCleanNormalize(null,false);};
+    try{raw=JSON.parse(localStorage.getItem(key)||'null');}catch(ignore){}
+    if(raw&&raw.version===2){try{cfg=bagCleanNormalize(bagCleanValidateImport(raw,false),false);}catch(ignore2){cfg=empty();}}
+    else{try{raw=JSON.parse(localStorage.getItem(BAG_CLEAN_V1_KEY)||'{}');cfg=bagCleanNormalize(bagCleanValidateImport(raw,true),true);try{localStorage.setItem(key,JSON.stringify(cfg));}catch(ignore3){}}catch(ignore4){cfg=empty();}}
+    cfg.armed=false; // 安全门禁：加载/切角色后一律回到未授权，必须重新预览
+    return cfg;
+  }
+  function bagCleanSave(){try{localStorage.setItem(bagClean.key||bagCleanStorageKey(),JSON.stringify(bagClean.config));}catch(e){}} // 一律写到加载时记住的键，避免把旧角色规则写进新角色档
+  function bagCleanDisarm(message){bagClean.config.armed=false;bagClean.enabled=false;bagClean.config.enabled=false;bagClean.generation++;bagClean.pending=false;bagCleanSave();var en=document.querySelector('#dsh-bag-clean [data-enable]');if(en)en.checked=false;if(message)bagCleanSay(message);}
+  // V2.38.2：类别名一律用 BAG_SAFE_TYPES 里的中文，不再读 DB/Items/ItemType 的英文名
+  //（该模块本来就不在线上桥接模块白名单里，旧实现读不到时会把整类当「名称未确认」直接保护）。
   function bagCleanTypeNames(){
-    var names={}, db=null;try{db=requireDB('DB/Items/ItemType')||(typeof require==='function'?require('DB/Items/ItemType'):null);}catch(ignore){}
-    function label(v){return typeof v==='string'&&v.trim()&&!/^\d+$/.test(v)?v.trim():null;}
-    function add(type,name){if(type===null||!name)return;if(Object.prototype.hasOwnProperty.call(names,type)&&names[type]!==name)names[type]=false;else if(!Object.prototype.hasOwnProperty.call(names,type))names[type]=name;}
-    if(db&&typeof db==='object')Object.keys(db).forEach(function(k){var kn=bagCleanInt(k,0,255),vn=bagCleanInt(db[k],0,255),lk=label(db[k]),lv=label(k);if(kn!==null&&lk)add(kn,lk);else if(vn!==null&&lv)add(vn,lv);});
-    Object.keys(BAG_SAFE_TYPES).forEach(function(k){if(!Object.prototype.hasOwnProperty.call(names,k))names[k]=BAG_SAFE_TYPES[k];});return names;
+    var names={};
+    Object.keys(BAG_SAFE_TYPES).forEach(function(k){names[k]=BAG_SAFE_TYPES[k];});
+    return names;
   }
   function bagCleanProtected(it){
     if(!it)return '数据缺失';
@@ -10262,14 +10555,14 @@
     cfg=cfg||bagClean.config;typeNames=typeNames||bagCleanTypeNames();if(!it)return {ok:false,reason:'数据缺失'};
     var id=bagCleanInt(it.ITID,1,2147483647),index=bagCleanInt(it.index,1,65535),type=bagCleanInt(it.type,0,255),equipment=[4,5,8,12].indexOf(type)>=0;
     var amount=bagCleanInt(it.count!=null?it.count:(it.amount!=null?it.amount:(equipment?1:NaN)),1,1000000000);if(id===null||index===null||amount===null||type===null)return {ok:false,reason:'索引/物品/数量/类型字段不明'};
-    if(!typeNames[type])return {ok:false,reason:'类型未知/名称冲突，全部保护',id:id,index:index,type:type,amount:amount};
+    if(!typeNames[type])return {ok:false,reason:'类型未知，全部保护',id:id,index:index,type:type,amount:amount};
     if(cfg.protectedIds.indexOf(id)>=0)return {ok:false,reason:'类别保护例外（永不丢）',id:id,index:index,type:type,amount:amount};
     var protection=bagCleanProtected(it);if(protection)return {ok:false,reason:protection,id:id,index:index,type:type,amount:amount};
     var unidentified=equipment&&(it.IsIdentified===0||it.IsIdentified===false),key=String(id)+(unidentified?':u':''), explicit=Object.prototype.hasOwnProperty.call(cfg.discardRules,key);
     var category=Object.prototype.hasOwnProperty.call(BAG_SAFE_TYPES,String(type))&&cfg.categoryTypes.indexOf(type)>=0&&!!typeNames[type]&&!BAG_CONFLICT_TYPES[type];
     if(unidentified&&!explicit)return {ok:false,reason:'未鉴定装备仅允许显式黑名单 :u',id:id,index:index,type:type,amount:amount,key:key};
-    if(!explicit&&!category)return {ok:false,reason:!typeNames[type]||BAG_CONFLICT_TYPES[type]?'类型未知/名称未确认，类别规则关闭':'未命中黑名单或类别',id:id,index:index,type:type,amount:amount,key:key};
-    return {ok:true,id:id,index:index,type:type,amount:amount,key:key,unidentified:unidentified,source:explicit?'黑名单':'类别 '+typeNames[type],keep:explicit?cfg.discardRules[key]:0};
+    if(!explicit&&!category)return {ok:false,reason:(!typeNames[type]||BAG_CONFLICT_TYPES[type])?'该类型不做类别规则':'未命中丢弃名单或类别规则',id:id,index:index,type:type,amount:amount,key:key};
+    return {ok:true,id:id,index:index,type:type,amount:amount,key:key,unidentified:unidentified,source:explicit?'丢弃名单':'类别 '+typeNames[type],keep:explicit?cfg.discardRules[key]:0};
   }
   function bagCleanUnitWeight(id){try{var db=CLIENT.DB||requireDB('DB/DBManager'),info=db&&db.getItemInfo&&db.getItemInfo(id);if(!info)return null;var desc=info.identifiedDescriptionName,text=(Array.isArray(desc)?desc.join('\n'):String(desc||'')).replace(/\^[0-9a-f]{6}/gi,'').replace(/<[^>]*>/g,' '),m=text.match(/(?:重量|Weight)\s*[:：]\s*([0-9]+(?:\.[0-9]+)?)/i);return m&&Number.isFinite(Number(m[1]))?Number(m[1]):null;}catch(ignore){return null;}}
   function bagCleanRows(inv,cfg){var groups={},names=bagCleanTypeNames();(inv||[]).forEach(function(it){var d=bagCleanDescribe(it,cfg,names);if(!d.ok)return;var groupKey=d.key+'|'+d.source;if(!groups[groupKey])groups[groupKey]={id:d.id,key:d.key,type:d.type,source:d.source,unidentified:d.unidentified,unitWeight:bagCleanUnitWeight(d.id),total:0,keep:d.keep,stacks:[]};groups[groupKey].total+=d.amount;groups[groupKey].stacks.push({index:d.index,amount:d.amount,id:d.id,type:d.type,key:d.key,source:d.source});});return Object.keys(groups).map(function(k){var r=groups[k];r.drop=Math.max(0,r.total-r.keep);return r;});}
@@ -10277,40 +10570,144 @@
   function bagCleanPlan(inv,cfg){return bagCleanRows(inv,cfg).filter(function(r){return r.drop>0;}).sort(bagCleanWeightOrder);}
   function bagCleanWeight(){var a=document.querySelector('.weight_value'),b=document.querySelector('.weight_total');function number(el){return el?Number(el.textContent.replace(/[,，\s]/g,'')):NaN;}var w=number(a),max=number(b),ent=CLIENT.SS&&CLIENT.SS.Entity;if(!(Number.isFinite(w)&&max>0)&&ent){w=Number(ent.weight);max=Number(ent.maxWeight||ent.maxweight);}return Number.isFinite(w)&&w>=0&&Number.isFinite(max)&&max>0?w/max*100:null;}
   function bagCleanFreeSlots(){var used=document.querySelector('#Inventory .titlebar .curamount'),max=document.querySelector('#Inventory .titlebar .maxamount');if(!used||!max||!used.textContent.trim()||!max.textContent.trim())return null;var a=Number(used.textContent.trim()),b=Number(max.textContent.trim());return isFinite(a)&&Number.isInteger(a)&&isFinite(b)&&Number.isInteger(b)&&a>=0&&b>0?Math.max(0,b-a):null;}
-  function bagCleanNeeded(weight,free){return weight!==null&&weight>70||free!==null&&free<20;}
-  function bagCleanSay(text){if(bagClean.status)bagClean.status.textContent=String(text).split('\n')[0];if(bagClean.detail)bagClean.detail.textContent=text;}
-  function bagCleanShortage(inv){var lines=['当前没有可丢候选。'],cfg=bagClean.config;if(!Object.keys(cfg.discardRules).length&&!cfg.categoryTypes.length)lines.push('黑名单与类别规则均为空（零候选）。');(inv||[]).forEach(function(it){var d=bagCleanDescribe(it,cfg);if(d.reason&&d.reason.indexOf('未命中')<0)lines.push('#'+(it&&it.ITID)+'：已保护，'+d.reason);});return lines.slice(0,14).join('\n');}
+  // V2.38.2 口径更正：「随时丢弃」开启=不看负重与空格，只要背包里有名单里的物品就丢；关闭=维持原行为，只在 负重>70% 或 空格<20 时自动动手
+  function bagCleanNeeded(weight,free){if(bagClean.config.anytime===true)return true;return (weight!==null&&weight>70)||(free!==null&&free<20);}
+  var bagCleanSayLast=""; // 防闪：文本与上次相同就不重写 DOM（anytime 模式每 500ms 会重复同一句）
+  function bagCleanSay(text){text=String(text);if(text===bagCleanSayLast)return;bagCleanSayLast=text;if(bagClean.status)bagClean.status.textContent=String(text).split('\n')[0];if(bagClean.detail)bagClean.detail.textContent=text;}
+  function bagCleanShortage(inv){var lines=['当前没有可丢候选。'],cfg=bagClean.config;if(!Object.keys(cfg.discardRules).length&&!cfg.categoryTypes.length)lines.push('丢弃名单与类别规则均为空（零候选）。');(inv||[]).forEach(function(it){var d=bagCleanDescribe(it,cfg);if(d.reason&&d.reason.indexOf('未命中')<0)lines.push('#'+(it&&it.ITID)+'：已保护，'+d.reason);});return lines.slice(0,14).join('\n');}
   function bagCleanFindCurrent(index){var inv=bagCleanInventory(),found=[];(inv||[]).forEach(function(it){if(Number(it&&it.index)===index)found.push(it);});return found.length===1?found[0]:null;}
   function bagCleanRevalidate(stack,remaining){var count=bagCleanInt(Math.min(stack.amount,remaining,32767),1,32767),current=bagCleanFindCurrent(stack.index),d=bagCleanDescribe(current,bagClean.config);if(count===null||!current||!d.ok||d.index!==stack.index||d.id!==stack.id||d.type!==stack.type||d.key!==stack.key||d.source!==stack.source||d.amount!==stack.amount||d.amount<count)return null;return {item:current,desc:d,count:count};}
   async function bagCleanExecute(done,manual){
     if(bagClean.busy)return;bagClean.busy=true;bagClean.error='';var generation=bagClean.generation,player=CLIENT.SS.Entity,map=getMapName();
-    function valid(){return (manual||bagClean.enabled&&bagClean.config.armed)&&generation===bagClean.generation&&player===CLIENT.SS.Entity&&map===getMapName();}function wait(){return new Promise(function(resolve){setTimeout(resolve,800);});}
-    try{if(!valid())return;var attempts=0,limits=manual||null;
-      while(true){if(!valid())return;if(++attempts>100)throw Error('清理次数达到上限');var controls=requireDB('Preferences/Controls');if(controls&&controls.talk)throw Error('NPC 对话尚未结束');var inv=bagCleanInventory();if(!inv)throw Error('背包数据未就绪，请先打开背包');var plan=bagCleanPlan(inv);if(limits)plan=plan.filter(function(r){return limits[r.key+'|'+r.source]>0;});else if(!bagCleanNeeded(bagCleanWeight(),bagCleanFreeSlots()))break;if(!plan.length){if(limits)break;throw Error(bagCleanShortage(inv));}
-        var row=plan[0],stack=row.stacks[0],want=limits?limits[row.key+'|'+row.source]:row.drop,fresh=bagCleanRevalidate(stack,want);if(!fresh){bagCleanSay('索引/ITID/数量/type/保护或规则变化，已跳过陈旧候选');if(limits)limits[row.key+'|'+row.source]=0;continue;}if(!CLIENT.PS.CZ.ITEM_THROW)throw Error('此客户端不支持已核对的丢弃接口');
-        var before=fresh.desc.amount,packet=new (czp("ITEM_THROW"))();packet.Index=fresh.desc.index;packet.count=fresh.count;bagCleanSay('清理中：#'+fresh.desc.id+' ×'+fresh.count+'（命中'+fresh.desc.source+'）');CLIENT.NM.sendPacket(packet);var ack=false;
-        for(var retry=0;retry<8;retry++){await wait();if(!valid())return;var cur=bagCleanFindCurrent(fresh.desc.index);if(!cur||Number(cur.ITID)!==fresh.desc.id||Number(cur.count!=null?cur.count:cur.amount)<=before-fresh.count){ack=true;break;}}
-        if(!ack)throw Error('丢弃未确认或索引内容变化，已停止重发');if(limits)limits[row.key+'|'+row.source]-=fresh.count;
-      }bagClean.pending=false;bagCleanSay('清理完成');if(valid()&&done)done();
+    function valid(){return (manual||bagClean.enabled&&bagClean.config.armed)&&generation===bagClean.generation&&player===CLIENT.SS.Entity&&map===getMapName();}
+    // V2.38.2 提速：快确认轮询（80ms 一次，总超时 1000ms），替代原来固定 800ms×8=6.4s 的等待
+    function waitAck(ok,timeoutMs){var limit=timeoutMs||1000,t0=Date.now();return new Promise(function(resolve){function poll(){if(ok())return resolve(true);if(Date.now()-t0>=limit)return resolve(false);setTimeout(poll,80);}poll();});}
+    function acked(index,id,before,count){var cur=bagCleanFindCurrent(index);return !cur||Number(cur.ITID)!==id||Number(cur.count!=null?cur.count:cur.amount)<=before-count;}
+    try{if(!valid())return;var attempts=0,limits=manual||null,idle=null;
+      while(true){if(!valid())return;if(++attempts>100)throw Error('清理次数达到上限');var controls=requireDB('Preferences/Controls');if(controls&&controls.talk)throw Error('NPC 对话尚未结束');var inv=bagCleanInventory();if(!inv){if(!limits&&bagClean.config.anytime===true){idle='随时丢弃待命：读不到背包数据（请先打开背包）';break;}throw Error('背包数据未就绪，请先打开背包');}var plan=bagCleanPlan(inv);if(limits)plan=plan.filter(function(r){return limits[r.key+'|'+r.source]>0;});else if(!bagCleanNeeded(bagCleanWeight(),bagCleanFreeSlots()))break;if(!plan.length){if(limits)break;if(bagClean.config.anytime===true){idle='随时丢弃待命：当前没有可丢候选';break;}throw Error(bagCleanShortage(inv));}
+        // V2.38.2：每轮连续处理最多 4 个「不同 index」的堆叠；每次发包前都重校验（安全门禁不变）
+        var batch=plan.slice(0,4),did=0,seenIndex={};
+        for(var bi=0;bi<batch.length;bi++){
+          var row=batch[bi],stack=row.stacks&&row.stacks[0];if(!stack||seenIndex[stack.index])continue;seenIndex[stack.index]=1;
+          if(!valid())return;var ct=requireDB('Preferences/Controls');if(ct&&ct.talk)throw Error('NPC 对话尚未结束');
+          var want=limits?limits[row.key+'|'+row.source]:row.drop,fresh=bagCleanRevalidate(stack,want);
+          if(!fresh){bagCleanSay('索引/ITID/数量/type/保护或规则变化，已跳过陈旧候选');if(limits)limits[row.key+'|'+row.source]=0;continue;}
+          if(!CLIENT.PS.CZ.ITEM_THROW)throw Error('此客户端不支持已核对的丢弃接口');
+          var before=fresh.desc.amount,packet=new (czp("ITEM_THROW"))();packet.Index=fresh.desc.index;packet.count=fresh.count;bagCleanSay('清理中：#'+fresh.desc.id+' ×'+fresh.count+'（命中'+fresh.desc.source+'）');CLIENT.NM.sendPacket(packet);did++;
+          var ack=await waitAck(function(){return acked(fresh.desc.index,fresh.desc.id,before,fresh.count);},1000);
+          if(!ack)throw Error('丢弃未确认或索引内容变化，已停止重发');if(limits)limits[row.key+'|'+row.source]-=fresh.count;
+        }
+        if(!did)continue;
+      }bagClean.pending=false;bagCleanSay(idle||'清理完成');if(valid()&&done)done();
     }catch(e){bagClean.error='背包清理暂停：'+e.message;bagCleanSay(bagClean.error);}finally{bagClean.busy=false;}
   }
-  function bagCleanPreview(){var inv=bagCleanInventory(),plan=bagCleanPlan(inv),stale=plan.some(function(r){return r.stacks.some(function(s){return !bagCleanRevalidate(s,s.amount);});});if(stale){bagClean.config.armed=false;bagCleanSave();bagCleanSay('预览期间索引/ITID/type/数量/保护或规则变化，已停止；请重新预览。');return null;}if(!plan.length){bagClean.config.armed=false;bagCleanSave();bagCleanSay(bagCleanShortage(inv));return null;}var lines=plan.map(function(r){return (r.unidentified?'[未鉴定] ':'')+(getItemName(r.id)||'物品')+' #'+r.id+'：丢弃 '+r.drop+'，保留 '+(r.total-r.drop)+'（命中'+r.source+'）';});bagCleanSay('预览候选：\n'+lines.join('\n'));return {plan:plan,text:lines.join('\n')};}
+  function bagCleanPreview(){var inv=bagCleanInventory(),plan=bagCleanPlan(inv),stale=plan.some(function(r){return r.stacks.some(function(s){return !bagCleanRevalidate(s,s.amount);});});if(stale){bagCleanDisarm('预览期间索引/ITID/type/数量/保护或规则变化，已停止；请重新预览。');return null;}if(!plan.length){bagClean.config.armed=false;bagCleanSave();bagCleanSay(bagCleanShortage(inv));return null;}var lines=plan.map(function(r){return (r.unidentified?'[未鉴定] ':'')+(getItemName(r.id)||'物品')+' #'+r.id+'：丢弃 '+r.drop+'，保留 '+(r.total-r.drop)+'（命中'+r.source+'）';});bagCleanSay('预览候选：\n'+lines.join('\n'));return {plan:plan,text:lines.join('\n')};}
+  // V2.38.2：物品说明浮窗底部「加入/移出丢弃名单」按钮的后端（不劫持右键；右键=物品说明、ALT+右键=全部存仓仍是客户端行为）
+  function bagCleanKeyOfItem(item){
+    var id=bagCleanInt(item&&(item.ITID!=null?item.ITID:item.itemid),1,2147483647);if(id===null)return null;
+    var type=bagCleanInt(item&&item.type,0,255),equipment=[4,5,8,12].indexOf(type)>=0;
+    var u=equipment&&(item.IsIdentified===0||item.IsIdentified===false);
+    return String(id)+(u?':u':'');
+  }
+  function bagCleanToggleItem(item,remove){
+    var key=bagCleanKeyOfItem(item);if(!key)return false;
+    var id=Number(key.split(':')[0]),un=key.slice(-2)===':u',nm=(getItemName(id)||'物品')+' #'+id+(un?'（未鉴定）':'');
+    if(remove)delete bagClean.config.discardRules[key];else bagClean.config.discardRules[key]=0;
+    bagCleanDisarm((remove?'已移出丢弃名单：':'已加入丢弃名单：')+nm);
+    if(bagClean.render)bagClean.render();
+    try{setStatus((remove?'已移出':'已加入')+'丢弃名单：'+nm,'ok');}catch(e){}
+    return true;
+  }
+  // V2.38.2：自动丢弃从物品页拆成独立浮窗（复用 fwMakeWin/fwReg 框架，写法同 arrowEnsureHost）
+  function bagCleanEnsureHost(){
+    var h=document.getElementById('dsh-fw-bagclean');if(h)return h;
+    var dock=document.getElementById('dsh-bagclean-dock');
+    if(!dock){dock=document.createElement('div');dock.id='dsh-bagclean-dock';dock.style.display='none';document.documentElement.appendChild(dock);}
+    h=document.createElement('div');h.id='dsh-fw-bagclean';
+    h.innerHTML='<div class="sec">自动丢弃（逐角色保存 · 默认关闭）</div>'
+      +'<div class="st" style="font-size:12px">名单里的物品会被丢到地面，不是保护名单。类别规则风险更高；装备安全保护与保护例外仍优先。协议不含掉落怪来源，无法安全区分BOSS掉落，故不提供该规则。</div>'
+      +'<div id="dsh-bag-clean" style="font-size:12px"></div>';
+    dock.appendChild(h);return h;
+  }
   function bagCleanInit(){
-    bagClean.config=bagCleanLoad();bagClean.enabled=false;bagClean.config.armed=false;bagCleanSave();var box=document.getElementById('dsh-bag-clean');if(!box)return;
-    box.innerHTML='<div class="st">黑名单中的物品会被丢弃，不是保护名单。类别规则风险更高；所有装备保护仍优先。协议不含掉落怪来源，无法安全区分BOSS掉落，故不提供该规则。</div><label class="switch"><input data-enable type="checkbox">启用自动丢弃（需先预览确认授权）</label><div class="row" style="flex-wrap:wrap;gap:5px"><button data-scan>扫描背包</button><button data-preview>预览候选</button><button data-now>立即清理…</button><button class="ghost" data-stop>停止清理</button><button class="ghost" data-export>导出v2</button><button class="ghost" data-import>导入v2</button></div><div data-state style="font-size:10px;white-space:pre-line;overflow-wrap:anywhere"></div><details open><summary>丢弃黑名单（勾选=要丢，可设置保留数量）</summary><div data-list style="max-height:240px;overflow:auto"></div></details><details><summary>按类别丢弃（仅当前背包且名称已确认）</summary><div data-categories></div></details><details><summary>类别保护例外（永不丢）</summary><div data-protected style="max-height:180px;overflow:auto"></div></details><details><summary>清理详情 / 保护原因</summary><div data-detail style="white-space:pre-line"></div></details><textarea data-json aria-label="v2规则导入导出JSON" placeholder="v2完整JSON；也兼容旧 {&quot;507&quot;:50}" style="width:100%;height:48px"></textarea>';
+    // V2.38.2：逐角色读取状态；armed 一律归零（必须重新预览），enabled 记住角色档的开关但未授权前不会动手
+    bagClean.config=bagCleanLoad();
+    bagClean.enabled=bagClean.config.enabled===true&&bagClean.config.armed===true;
+    bagClean.config.enabled=bagClean.enabled;
+    bagCleanSave();
+    bagCleanEnsureHost();
+    var box=document.getElementById('dsh-bag-clean');if(!box)return;
+    box.innerHTML='<label class="switch"><input data-enable type="checkbox">启用自动丢弃（逐角色保存 · 需先预览确认授权）</label>'
+      +'<label class="switch"><input data-anytime type="checkbox">随时丢弃（开启后不看负重和空格，只要背包里有名单里的物品就丢；关闭则只在负重超过 70% 或 空格少于 20 时自动动手）</label>'
+      +'<div class="row" style="flex-wrap:wrap;gap:5px"><button data-scan>刷新背包</button><button data-preview>预览候选</button><button data-now>立即清理…</button><button class="ghost" data-stop>停止清理</button></div>'
+      +'<div data-state id="dsh-bag-state" style="font-size:12px;white-space:pre-line;overflow-wrap:anywhere"></div>'
+      +'<details open><summary>丢弃黑名单（勾选=要丢，可设置保留数量 · 默认只列已配置条目）</summary>'
+      +'<div class="row" style="gap:4px"><input data-search type="text" placeholder="搜索名单（名字/ID）" style="flex:1 1 90px"><button class="ghost" data-searchclear>清空搜索</button></div>'
+      +'<div class="row" style="gap:4px"><input data-bagfind type="text" placeholder="按名字/ID 搜背包物品" style="flex:1 1 90px"><button data-bagadd>从背包添加</button></div>'
+      +'<div data-baghits class="st" style="font-size:12px"></div>'
+      +'<div data-list style="font-size:12px"></div></details>'
+      +'<details><summary>按类别丢弃（中文类别 · 当前背包件数与示例）</summary><div data-categories style="font-size:12px"></div></details>'
+      +'<details><summary>类别保护例外（永不丢）</summary>'
+      +'<div class="row" style="gap:4px"><input data-proid type="number" min="1" placeholder="保护 ID" style="flex:0 0 96px"><button class="ghost" data-proadd>加入保护</button></div>'
+      +'<div data-protected style="font-size:12px"></div></details>'
+      +'<details><summary>清理详情 / 保护原因</summary><div data-detail style="font-size:12px;white-space:pre-line"></div></details>'
+      +'<div class="row" style="flex-wrap:wrap;gap:5px"><button data-export>导出名单</button><button class="ghost" data-import>粘贴导入</button><button class="ghost" data-pickfile>选择文件</button><input data-file type="file" accept=".json,application/json" style="display:none"></div>'
+      +'<textarea data-json aria-label="丢弃名单导入导出JSON" placeholder="导出后这里是名单 JSON；也可粘贴 JSON 后点「粘贴导入」" style="width:100%;height:70px;font-size:12px"></textarea>';
     bagClean.status=box.querySelector('[data-state]');bagClean.detail=box.querySelector('[data-detail]');
+    var search='';
     function changed(msg){bagCleanDisarm(msg||'规则已修改：自动已关闭，需重新预览确认。');render();}
-    function render(){var inv=bagCleanInventory()||[],names=bagCleanTypeNames(),rows={},list=box.querySelector('[data-list]'),cats=box.querySelector('[data-categories]'),prot=box.querySelector('[data-protected]');list.textContent='';cats.textContent='';prot.textContent='';inv.forEach(function(it){var id=bagCleanInt(it&&it.ITID,1,2147483647),type=bagCleanInt(it&&it.type,0,255);if(id===null)return;var equipment=[4,5,8,12].indexOf(type)>=0,u=equipment&&(it.IsIdentified===0||it.IsIdentified===false),key=String(id)+(u?':u':'');if(!rows[key])rows[key]={id:id,key:key,u:u,total:0};rows[key].total+=Number(it.count!=null?it.count:(it.amount!=null?it.amount:1))||0;});Object.keys(bagClean.config.discardRules).forEach(function(k){if(!rows[k])rows[k]={id:Number(k.split(':')[0]),key:k,u:k.slice(-2)===':u',total:0};});
-      Object.keys(rows).sort(function(a,b){return rows[a].id-rows[b].id;}).forEach(function(k){var r=rows[k],line=document.createElement('label'),ch=document.createElement('input'),keep=document.createElement('input');line.style.display='block';ch.type='checkbox';ch.checked=Object.prototype.hasOwnProperty.call(bagClean.config.discardRules,k);keep.type='number';keep.min='0';keep.max='1000000000';keep.value=ch.checked?bagClean.config.discardRules[k]:0;line.append(ch,document.createTextNode((r.u?'[未鉴定] ':'')+(getItemName(r.id)||'物品')+' #'+r.id+' ×'+r.total+'，保留 '),keep);function change(){var n=bagCleanInt(keep.value,0,1000000000);if(ch.checked&&n!==null)bagClean.config.discardRules[k]=n;else delete bagClean.config.discardRules[k];changed('丢弃黑名单已修改：自动已关闭，需重新预览确认。');}ch.onchange=keep.onchange=change;list.appendChild(line);});
-      Object.keys(BAG_SAFE_TYPES).map(Number).sort(function(a,b){return a-b;}).forEach(function(type){var confirmed=!!names[type]&&!BAG_CONFLICT_TYPES[type],line=document.createElement('label'),ch=document.createElement('input');line.style.display='block';ch.type='checkbox';ch.setAttribute('data-type',String(type));ch.disabled=!confirmed;ch.checked=confirmed&&bagClean.config.categoryTypes.indexOf(type)>=0;line.append(ch,document.createTextNode(confirmed?'类型'+type+' '+names[type]:'类型'+type+'（名称未确认）'));ch.onchange=function(){if(this.checked&&!window.confirm('类别规则会批量丢弃该类型物品；装备安全保护和保护例外仍生效。确认加入？')){this.checked=false;return;}var i=bagClean.config.categoryTypes.indexOf(type);if(this.checked&&i<0)bagClean.config.categoryTypes.push(type);if(!this.checked&&i>=0)bagClean.config.categoryTypes.splice(i,1);changed('类别规则已修改：自动已关闭，需重新预览确认。');};cats.appendChild(line);});
-      var ids=[];inv.forEach(function(it){var n=bagCleanInt(it&&it.ITID,1,2147483647);if(n!==null&&ids.indexOf(n)<0)ids.push(n);});ids.sort(function(a,b){return a-b;}).forEach(function(id){var line=document.createElement('label'),ch=document.createElement('input');line.style.display='block';ch.type='checkbox';ch.checked=bagClean.config.protectedIds.indexOf(id)>=0;line.append(ch,document.createTextNode((getItemName(id)||'物品')+' #'+id));ch.onchange=function(){var i=bagClean.config.protectedIds.indexOf(id);if(this.checked&&i<0)bagClean.config.protectedIds.push(id);if(!this.checked&&i>=0)bagClean.config.protectedIds.splice(i,1);changed('保护例外已修改：自动已关闭，需重新预览确认。');};prot.appendChild(line);});if(!list.children.length)list.textContent='背包无可列物品';if(!cats.children.length)cats.textContent='当前背包无可确认类别';if(!prot.children.length)prot.textContent='当前背包无物品';}
-    box.querySelector('[data-scan]').onclick=render;box.querySelector('[data-preview]').onclick=function(){var p=bagCleanPreview();if(!p)return;if(window.confirm('预览候选如下：\n\n'+p.text+'\n\n确认本规则集可用于自动丢弃？')){bagClean.config.armed=true;bagCleanSave();bagCleanSay('预览已确认，自动授权 armed=true；自动开关仍保持关闭。');}};
-    box.querySelector('[data-enable]').onchange=function(){if(!this.checked){bagClean.enabled=false;bagClean.generation++;bagCleanSay('自动丢弃已关闭');return;}if(!bagClean.config.armed){this.checked=false;bagClean.enabled=false;return bagCleanSay('尚未授权：请先“预览候选”并确认。');}if(!window.confirm('自动丢弃会在负重/格数阈值触发，并按刚确认的候选丢到地面。确认开启？')){this.checked=false;return;}bagClean.enabled=true;bagClean.generation++;bagCleanSay('自动丢弃已开启');};
-    box.querySelector('[data-stop]').onclick=function(){bagClean.enabled=false;bagClean.generation++;box.querySelector('[data-enable]').checked=false;bagCleanSay('已停止；已发出的丢弃无法撤回');};
+    function render(){
+      var inv=bagCleanInventory()||[],names=bagCleanTypeNames(),rows={},list=box.querySelector('[data-list]'),cats=box.querySelector('[data-categories]'),prot=box.querySelector('[data-protected]');
+      var en=box.querySelector('[data-enable]'),any=box.querySelector('[data-anytime]');
+      if(en)en.checked=bagClean.enabled;if(any)any.checked=bagClean.config.anytime===true;
+      // 名单只列「已配置」条目（不再枚举整包），带搜索过滤
+      Object.keys(bagClean.config.discardRules).forEach(function(k){var id=bagCleanInt(String(k).split(':')[0],1,2147483647);if(id!==null)rows[k]={id:id,key:k,u:String(k).slice(-2)===':u'};});
+      var catStat={};
+      inv.forEach(function(it){var type=bagCleanInt(it&&it.type,0,255),id=bagCleanInt(it&&it.ITID,1,2147483647);if(type===null||id===null)return;if(!catStat[type])catStat[type]={n:0,names:[]};var cnt=Number(it.count!=null?it.count:(it.amount!=null?it.amount:1))||0;catStat[type].n+=cnt;var nm=getItemName(id)||('物品 #'+id);if(catStat[type].names.indexOf(nm)<0&&catStat[type].names.length<3)catStat[type].names.push(nm);});
+      list.textContent='';cats.textContent='';prot.textContent='';
+      var q=search.replace(/\s+/g,'').toLowerCase();
+      var keys=Object.keys(rows).filter(function(k){if(!q)return true;return String(rows[k].id).indexOf(q)>=0||String(getItemName(rows[k].id)||'').toLowerCase().indexOf(q)>=0;}).sort(function(a,b){return rows[a].id-rows[b].id;});
+      if(!keys.length)list.textContent=q?('名单里没有匹配「'+search+'」的条目'):'名单为空：用「从背包添加」或物品说明浮窗底部的按钮加入';
+      keys.forEach(function(k){var r=rows[k],line=document.createElement('label'),ch=document.createElement('input'),keep=document.createElement('input');line.style.display='block';ch.type='checkbox';ch.checked=true;keep.type='number';keep.min='0';keep.max='1000000000';keep.value=String(bagClean.config.discardRules[k]);line.append(ch,document.createTextNode((r.u?'[未鉴定] ':'')+(getItemName(r.id)||'物品')+' #'+r.id+'，保留 '),keep);function change(){var n=bagCleanInt(keep.value,0,1000000000);if(ch.checked&&n!==null)bagClean.config.discardRules[k]=n;else delete bagClean.config.discardRules[k];changed('丢弃名单已修改：自动已关闭，需重新预览确认。');}ch.onchange=keep.onchange=change;list.appendChild(line);});
+      Object.keys(BAG_SAFE_TYPES).map(Number).sort(function(a,b){return a-b;}).forEach(function(type){var st=catStat[type]||{n:0,names:[]},confirmed=!!names[type]&&!BAG_CONFLICT_TYPES[type],line=document.createElement('label'),ch=document.createElement('input');line.style.display='block';ch.type='checkbox';ch.setAttribute('data-type',String(type));ch.disabled=!confirmed;ch.checked=confirmed&&bagClean.config.categoryTypes.indexOf(type)>=0;line.append(ch,document.createTextNode((confirmed?names[type]:('类型'+type+'（中文名缺失）'))+'：当前背包 '+st.n+' 件'+(st.n?('，例：'+st.names.slice(0,3).join('、')):'')));ch.onchange=function(){if(this.checked&&!window.confirm('类别规则会批量丢弃「'+(names[type]||('类型'+type))+'」类物品（当前背包 '+st.n+' 件）；装备安全保护与保护例外仍生效。这是不可逆操作，确认加入？')){this.checked=false;return;}var i=bagClean.config.categoryTypes.indexOf(type);if(this.checked&&i<0)bagClean.config.categoryTypes.push(type);if(!this.checked&&i>=0)bagClean.config.categoryTypes.splice(i,1);changed('类别规则已修改：自动已关闭，需重新预览确认。');};cats.appendChild(line);});
+      var pids=bagClean.config.protectedIds.slice().sort(function(a,b){return a-b;});
+      if(!pids.length)prot.textContent='没有保护例外（永不丢）条目：可在上面输入 ID 加入';
+      pids.forEach(function(id){var line=document.createElement('label'),ch=document.createElement('input');line.style.display='block';ch.type='checkbox';ch.checked=true;line.append(ch,document.createTextNode((getItemName(id)||'物品')+' #'+id));ch.onchange=function(){if(this.checked)return;var i=bagClean.config.protectedIds.indexOf(id);if(i>=0)bagClean.config.protectedIds.splice(i,1);changed('保护例外已修改：自动已关闭，需重新预览确认。');};prot.appendChild(line);});
+    }
+    bagClean.render=render;
+    box.querySelector('[data-scan]').onclick=render;
+    box.querySelector('[data-search]').oninput=function(){search=this.value||'';render();};
+    box.querySelector('[data-searchclear]').onclick=function(){search='';var s=box.querySelector('[data-search]');if(s)s.value='';render();};
+    box.querySelector('[data-bagadd]').onclick=function(){var q=(box.querySelector('[data-bagfind]').value||'').trim(),inv=bagCleanInventory()||[],hits=[],eh=box.querySelector('[data-baghits]');inv.forEach(function(it){var id=bagCleanInt(it&&it.ITID,1,2147483647);if(id===null)return;var nm=getItemName(id)||'';if(!q||String(id)===q||nm.indexOf(q)>=0||String(it.index)===q){if(!hits.some(function(h){return h.id===id;}))hits.push({id:id,nm:nm||('物品 #'+id)});}});hits=hits.slice(0,40);eh.textContent='';if(!hits.length){eh.textContent='背包里没有匹配的物品';return;}eh.appendChild(document.createTextNode('点一下加入丢弃名单：'));hits.forEach(function(h){var b=document.createElement('button');b.className='ghost';b.style.cssText='font-size:12px;margin:1px 3px';b.textContent=h.nm+' #'+h.id;b.onclick=function(){bagClean.config.discardRules[String(h.id)]=0;changed('已加入丢弃名单：'+h.nm+' #'+h.id);};eh.appendChild(b);});};
+    box.querySelector('[data-proadd]').onclick=function(){var id=bagCleanInt(box.querySelector('[data-proid]').value,1,2147483647);if(id===null)return bagCleanSay('请输入有效物品 ID');if(bagClean.config.protectedIds.indexOf(id)<0)bagClean.config.protectedIds.push(id);changed('已加入保护例外：'+(getItemName(id)||'物品')+' #'+id);};
+    box.querySelector('[data-preview]').onclick=function(){var p=bagCleanPreview();if(!p)return;if(window.confirm('预览候选如下：\n\n'+p.text+'\n\n确认本规则集可用于自动丢弃？')){bagClean.config.armed=true;bagCleanSave();bagCleanSay('预览已确认，自动授权 armed=true；自动开关仍保持关闭。');}};
+    box.querySelector('[data-enable]').onchange=function(){if(!this.checked){bagClean.enabled=false;bagClean.config.enabled=false;bagClean.generation++;bagCleanSave();bagCleanSay('自动丢弃已关闭');return;}if(!bagClean.config.armed){this.checked=false;bagClean.enabled=false;return bagCleanSay('尚未授权：请先「预览候选」并确认。');}if(!window.confirm('自动丢弃按当前口径触发（「随时丢弃」开启=名单里的物品随时丢，不看负重和空格；关闭=负重>70% 或 空格<20 才动手），并按刚确认的候选丢到地面。确认开启？')){this.checked=false;return;}bagClean.enabled=true;bagClean.config.enabled=true;bagClean.generation++;bagCleanSave();bagCleanSay('自动丢弃已开启（随时丢弃='+(bagClean.config.anytime===true?'开':'关')+'）');};
+    box.querySelector('[data-anytime]').onchange=function(){bagClean.config.anytime=this.checked===true;changed('随时丢弃已修改：自动已关闭，需重新预览确认。');};
+    box.querySelector('[data-stop]').onclick=function(){bagClean.enabled=false;bagClean.config.enabled=false;bagClean.generation++;bagCleanSave();box.querySelector('[data-enable]').checked=false;bagCleanSay('已停止；已发出的丢弃无法撤回');};
     box.querySelector('[data-now]').onclick=function(){if(bagClean.busy)return;if(!clientReady())return bagCleanSay('客户端未就绪');var p=bagCleanPreview();if(!p)return;if(!window.confirm('将立即丢弃以下物品到地面：\n\n'+p.text+'\n\n这是不可逆操作，确认执行？'))return;var limits={};p.plan.forEach(function(r){limits[r.key+'|'+r.source]=r.drop;});bagCleanExecute(function(){},limits);};
-    box.querySelector('[data-export]').onclick=function(){box.querySelector('[data-json]').value=JSON.stringify(bagClean.config,null,2);};
-    box.querySelector('[data-import]').onclick=function(){try{var raw=JSON.parse(box.querySelector('[data-json]').value),legacy=raw&&raw.version!==2;bagCleanValidateImport(raw,legacy);var cfg=bagCleanNormalize(raw,legacy);cfg.armed=false;bagClean.config=cfg;bagCleanDisarm('导入成功：自动已关闭且未授权，请重新预览确认。');render();}catch(e){bagCleanSay('导入失败：'+(e.message||'JSON/键/数量/类型不合法'));}};
-    render();setInterval(function(){if(!bagClean.enabled||!bagClean.config.armed||bagClean.busy)return;var w=bagCleanWeight(),free=bagCleanFreeSlots();if(bagCleanNeeded(w,free)){bagClean.pending=true;bagCleanExecute(function(){},null);}},2000);
+    // 导出：Blob + URL.createObjectURL + <a download> 触发下载，同时复制到剪贴板（失败则选中文本让用户 Ctrl+C）
+    box.querySelector('[data-export]').onclick=function(){var text=JSON.stringify(bagClean.config,null,2),ta=box.querySelector('[data-json]'),n=Object.keys(bagClean.config.discardRules).length;ta.value=text;var copied=false;
+      try{var blob=new Blob([text],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='dsh-bag-clean-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();setTimeout(function(){try{a.remove();URL.revokeObjectURL(url);}catch(e){}},0);}catch(e){}
+      try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(function(){bagCleanSay('已导出 '+n+' 条名单（已下载 JSON 并复制到剪贴板）');},function(){ta.select();bagCleanSay('已导出 '+n+' 条名单（已下载 JSON；剪贴板不可用，已选中文本请 Ctrl+C）');});copied=true;}}catch(e2){}
+      if(!copied){try{ta.select();}catch(e3){}bagCleanSay('已导出 '+n+' 条名单（已下载 JSON；已选中文本，可 Ctrl+C 复制）');}};
+    // 导入：粘贴导入 / 选择文件（FileReader）；沿用 bagCleanValidateImport + bagCleanNormalize 校验
+    box.querySelector('[data-import]').onclick=function(){try{parseAndApply(box.querySelector('[data-json]').value,'粘贴导入');}catch(e){bagCleanSay('导入失败：'+(e.message||'JSON/键/数量/类型不合法'));}};
+    function parseAndApply(text,srcName){var raw=JSON.parse(text),legacy=raw&&raw.version!==2;bagCleanValidateImport(raw,legacy);bagCleanImportApply(bagCleanNormalize(raw,legacy),raw,srcName);}
+    box.querySelector('[data-pickfile]').onclick=function(){var f=box.querySelector('[data-file]');if(f)f.click();};
+    box.querySelector('[data-file]').onchange=function(){var f=this.files&&this.files[0];if(!f)return;var rd=new FileReader();rd.onload=function(){try{parseAndApply(String(rd.result),f.name||'文件导入');}catch(e){bagCleanSay('导入失败：'+(e.message||'JSON/键/数量/类型不合法'));}};try{rd.readAsText(f,'utf-8');}catch(e2){bagCleanSay('导入失败：文件读取异常');}};
+    render();
+    // V2.38.2 提速：外层轮询 2000ms → 500ms；每轮最多连丢 4 个不同 index 的堆叠（bagCleanExecute 内部）
+    setInterval(function(){if(!bagClean.enabled||!bagClean.config.armed||bagClean.busy)return;var w=bagCleanWeight(),free=bagCleanFreeSlots();if(bagCleanNeeded(w,free)){bagClean.pending=true;bagCleanExecute(function(){},null);}},500);
+  }
+  // 导入落地（调用方已 validate + normalize）：中文提示含条目数与被跳过的无效条目数
+  function bagCleanImportApply(cfg,raw,srcName){
+    cfg.armed=false;cfg.enabled=false;bagClean.config=cfg;bagClean.enabled=false;bagClean.generation++;bagClean.pending=false;
+    var rawRules=raw&&typeof raw==='object'?(raw.version===2?raw.discardRules:raw):null;
+    var inN=rawRules&&typeof rawRules==='object'?Object.keys(rawRules).length:0,outN=Object.keys(cfg.discardRules).length;
+    bagCleanSave();
+    if(bagClean.render)bagClean.render();
+    bagCleanSay('已导入 '+outN+' 条名单（跳过 '+Math.max(0,inN-outN)+' 条无效，来源：'+(srcName||'导入')+'），自动已关闭，需重新预览确认。');
+    return cfg;
   }
   // ---------------- 拾取页：内挂百分比联动 ----------------
   onId("dsh-lootread", "click", function () {
@@ -11618,6 +12015,76 @@
       ingest({ type: "opstat", opcode: op, len: len, hex: hex, hp: hpNow, map: getMapName(), ts: new Date().toISOString() });
     } catch (e) {}
   }
+  // V2.38.2：一键屏蔽其他玩家的摆摊商店（全局设置，非角色档 · 默认开 · 完全不动 NPC 商人买卖窗口）
+  // 识别：ZC 307 / 2048 / 2877 = PC_PURCHASE_ITEMLIST_FROMMC(2/3) 三选一（取决于客户端包版本）
+  //   玩家收购店窗口由另一个包开：ZC 2072 = ACK_ITEMLIST_BUYING_STORE → 同样命中 blockMcHit（窗口类 .WinBuyingStore）
+  // 关窗：先用窗口类型确认是摆摊窗口，再点客户端自己的关闭按钮（助手绝不自己发包）
+  //   客户端实证 Online.js：377098 .btn.cancel → remove()；377161 .btn.ok → closeStore()；377099-377100 .btn.buy/.btn.sell 是提交买卖，绝不能点
+  //   摆摊类型关窗时客户端本来就不发包（377542-377545 _closePacketSent=true 直接 return），NPC 商店关窗才发（377540/377548）
+  var BLOCK_MC_KEY = "dsh_ro_blockmc_v1";
+  var blockMcCfg = { enabled: true };
+  try { var blockMcRaw = JSON.parse(localStorage.getItem(BLOCK_MC_KEY) || "null"); if (blockMcRaw && blockMcRaw.enabled === false) blockMcCfg.enabled = false; } catch (e) {}
+  var blockMcPending = null; // { until, needHide, hid, host, timer }：每次命中只关一次，1.5 秒超时兜底
+  function blockMcEnabled() { return blockMcCfg.enabled !== false; }
+  function blockMcSave(on) {
+    blockMcCfg.enabled = on !== false;
+    try { localStorage.setItem(BLOCK_MC_KEY, JSON.stringify({ enabled: blockMcCfg.enabled })); } catch (e) {}
+  }
+  function blockMcHost() { try { return document.getElementById("NpcStore"); } catch (e) { return null; } }
+  function blockMcShown(el) { try { if (!el) return false; var s = getComputedStyle(el); return !!(s && s.display !== "none" && s.visibility !== "hidden"); } catch (e) { return !!el; } }
+  function blockMcEnd(msg) {
+    var p = blockMcPending;
+    blockMcPending = null;
+    if (!p) return;
+    try { if (p.timer) clearTimeout(p.timer); } catch (e) {}
+    try { if (p.hid && p.host) p.host.style.visibility = ""; } catch (e) {} // 超时/异常也必须恢复，绝不把窗口永久藏起来
+    try { setStatus(msg, "ok"); } catch (e) {}
+    try { tlog("block-mc " + msg); } catch (e) {}
+  }
+  // 摆摊窗口类型判别：Online.js:377234-377247 摆摊类型 _showAll 摆摊容器，其它类型把它隐藏（改的都是 style.display）
+  //   true=摆摊窗口 / false=确定的非摆摊窗口（NPC 商店·收购·以物易物·点数商店）/ null=类型还没落定，继续等
+  function blockMcWinShown(el) { try { return !!(el && el.style && el.style.display !== "none"); } catch (e) { return !!el; } }
+  function blockMcKind(root) {
+    try {
+      if (!root || !root.querySelector) return null;
+      if (blockMcWinShown(root.querySelector(".WinVendingStore")) || blockMcWinShown(root.querySelector(".WinBuyingStore"))) return true;
+      if (blockMcWinShown(root.querySelector(".WinBuy")) || blockMcWinShown(root.querySelector(".WinSell"))) return false;
+      return null;
+    } catch (e) { return null; }
+  }
+  function blockMcTick() {
+    try {
+      var p = blockMcPending;
+      if (!p) return;
+      var host = blockMcHost();
+      if (host) {
+        // V2.38.2：宿主只认第一个（也就是被藏起来的那个）；中途被替换也不覆盖，收尾恢复的一定是当初藏起来的元素
+        if (!p.host) { p.host = host; if (p.needHide) { try { host.style.visibility = "hidden"; } catch (e) {} p.hid = true; } } // 防闪烁：本来没开着的，先藏再关
+        var root = host.shadowRoot || host;
+        var kind = blockMcKind(root);
+        if (kind === false) { blockMcEnd("出现的不是摆摊商店窗口，未做处理，已恢复显示"); return; } // NPC 商店关窗会发关店包，绝不能在非摆摊窗口上动手
+        if (kind === true) {
+          var btn = root.querySelector ? (root.querySelector(".btn.cancel") || root.querySelector(".btn.ok")) : null; // 客户端真实关闭按钮（退路 .btn.ok）；绝不点 .btn.buy/.btn.sell
+          if (btn) {
+            try { btn.click(); } catch (e) {}
+            blockMcEnd("已关闭其他玩家的摆摊商店");
+            return;
+          }
+          if (Date.now() >= p.until) { blockMcEnd("摆摊商店窗口已出现但未找到关闭按钮，已恢复显示"); return; }
+        }
+      }
+      if (Date.now() >= p.until) { blockMcEnd("摆摊商店 1.5 秒内未出现，已恢复显示"); return; }
+      p.timer = setTimeout(blockMcTick, 40);
+    } catch (e) { try { blockMcEnd("屏蔽摆摊商店异常，已恢复显示"); } catch (e2) {} }
+  }
+  function blockMcHit() {
+    try {
+      if (!blockMcEnabled()) return;   // 设置关闭：助手对摆摊窗口不做任何动作，照原样弹出
+      if (blockMcPending) return;      // 一次命中只关一次，不反复点
+      blockMcPending = { until: Date.now() + 1500, needHide: !blockMcShown(blockMcHost()), hid: false, host: null, timer: null };
+      blockMcTick();
+    } catch (e) {}
+  }
   function dispatchInbound(bytes) {
     try {
       var dv = new DataView(bytes);
@@ -11635,6 +12102,7 @@
           txCap.n++;
         } catch (eD) {}
       }
+      if (op === 307 || op === 2048 || op === 2877 || op === 2072) blockMcHit(); // V2.38.2：其他玩家的摆摊商店 / 收购店回包 → 命中即关；NPC 商人 198/199 不在此列
       if (DPS_PKTS.indexOf(op) >= 0 && !dpsParsedSeen) dpsOnRawDamage(bytes, op);
       if (op === 0x80) scrOnRawVanish(bytes);
       if (op === 183) onMenuList(bytes);
@@ -11840,7 +12308,7 @@
   //     map 服的出站包在 socket.send 之前已经被 PacketCrypt 混淆，opcode 读出来是乱的；
   //     NM.sendPacket 拿到的是"未混淆的包对象"，getPacketVersion()[1] 直接就是真实 opcode。
   //   注意：这里只是读，不拦截、不修改、不额外发任何包，原来的发包路径原样透传。
-  var txCap = { on: false, ring: [], hooked: false, n: 0, lastLog: 0 }; // ring 元素 {t, d('U'出/'D'入), op, len, hex}
+  var txCap = { on: false, ring: [], hooked: false, n: 0, drop: 0, lastLog: 0 }; // ring 元素 {t, d('U'出/'D'入), op, len, hex, drop(真=已拦截未发出)}
   function txBuild(p) {
     try {
       var v = (p && p.getPacketVersion) ? p.getPacketVersion() : null;
@@ -11866,6 +12334,49 @@
       return { op: op, len: len, hex: hex };
     } catch (e) { return { op: -1, len: 0, hex: "" }; }
   }
+  // V2.38.2 第二层拦截：点击其他玩家的摊位/收购店，在客户端"发出请求之前"就把包丢掉——
+  //   客户端实证 Online.js:307964 Entity.onRoomEnter()：Room.Type.SELL_SHOP → CZ.REQ_CLICK_TO_BUYING_STORE（makerAID）、
+  //   Room.Type.BUY_SHOP → CZ.REQ_BUY_FROMMC（AID）；全客户端只有这一条路径 new 这两个包，NPC 商人商店 / 聊天室 / 以物易物都不走它们。
+  //   opcode 运行时解析：优先 getPacketVersion()[1]，拿不到再读 build() 前两字节小端；两个都解析不到就一个包都不丢（fail-safe，仍由第一层回包关窗兜底）。
+  var blockMcDropCache = null; // { ver: 解析时的 czPacketVer(), ops }：包版本一变就作废重解析；null=还没成功解析（fail-safe：不丢任何包）
+  var blockMcDropWarnAt = 0;
+  function blockMcDropResolve() {
+    var ver = 0; try { ver = czPacketVer(); } catch (eV) {} // V2.38.2：缓存必须跟包版本绑定（同一页面会话内 packetver 会变，旧数字可能已是别的包）
+    if (blockMcDropCache && blockMcDropCache.ver === ver) return blockMcDropCache.ops;
+    var ops = {}, ns = null, names = ["REQ_BUY_FROMMC", "REQ_CLICK_TO_BUYING_STORE"];
+    try { ns = CLIENT.PS && CLIENT.PS.CZ; } catch (e) {}
+    for (var i = 0; i < (ns ? names.length : 0); i++) {
+      try {
+        var o = czOpcodeBoth(ns[names[i]]); // 复用既有探测：ver=getPacketVersion()[1]，bytes=build() 前两字节小端
+        var op = (o.ver != null) ? o.ver : o.bytes;
+        if (op > 0) ops[op] = true;
+      } catch (e) {}
+    }
+    // V2.38.2：只有解析到 opcode 才写缓存；解析不到保持未缓存，下次发包重试（绝不用空集把整场会话钉死）
+    if (!Object.keys(ops).length) {
+      try { if (Date.now() - blockMcDropWarnAt > 1500) { blockMcDropWarnAt = Date.now(); tlog("block-mc 发包拦截：解析不到 REQ_BUY_FROMMC / REQ_CLICK_TO_BUYING_STORE 的 opcode（客户端未就绪或包类缺失），本次不拦任何包，仍由回包关窗兜底（下次发包会重试）"); } } catch (e2) {}
+      return ops;
+    }
+    blockMcDropCache = { ver: ver, ops: ops };
+    return ops;
+  }
+  var blockMcDropLastLog = 0;
+  function blockMcDropLog(msg) {
+    try { if (Date.now() - blockMcDropLastLog < 1500) return; blockMcDropLastLog = Date.now(); tlog("block-mc " + msg); setStatus(msg, "ok"); } catch (e) {}
+  }
+  // 返回 true = 丢包（不调用 orig、不进抓包环、不计数）；任何异常一律放行
+  function blockMcDropCheck(p) {
+    try {
+      if (!blockMcEnabled()) return false; // 每次现场读设置：关掉后点击立即恢复正常，行为与改动前完全一致
+      var ops = blockMcDropResolve();
+      var op = -1;
+      try { var v = (p && p.getPacketVersion) ? p.getPacketVersion() : null; if (v && v[1] != null) op = v[1]; } catch (e0) {}
+      if (!(op > 0)) { try { op = txBuild(p).op; } catch (e1) {} } // 只有拿不到版本口径才回落 build（绝不对每个包都 build）
+      if (!(op > 0) || ops[op] !== true) return false;
+      blockMcDropLog("已拦截一次点击其他玩家商店的请求");
+      return true;
+    } catch (e) { return false; }
+  }
   function hookSendPacket() {
     if (txCap.hooked) return true;
     try {
@@ -11873,6 +12384,18 @@
       if (!CLIENT.NM || typeof CLIENT.NM.sendPacket !== "function") return false;
       var orig = CLIENT.NM.sendPacket;
       CLIENT.NM.sendPacket = function (p) {
+        if (blockMcDropCheck(p)) { // V2.38.2 第二层：点击其他玩家的摊位/收购店 → 请求在发出前丢弃（服务器不返列表，窗口不会生成）
+          // V2.38.2：抓包开着时被丢的包也要留痕——带 drop 标记 + 独立计数，绝不冒充一次正常发送
+          if (txCap.on) {
+            try {
+              var bd = txBuild(p);
+              txCap.ring.push({ t: Date.now(), d: "U", op: bd.op, len: bd.len, hex: bd.hex, drop: true });
+              if (txCap.ring.length > 3000) txCap.ring.shift();
+              txCap.n++; txCap.drop++;
+            } catch (eD2) {}
+          }
+          return;
+        }
         if (txCap.on) {
           try {
             var b = txBuild(p);
@@ -11897,7 +12420,7 @@
                    "# 地图=" + getMapName() + " 脚本版本=" + VER];
       for (var i = 0; i < txCap.ring.length; i++) {
         var r = txCap.ring[i];
-        lines.push((r.t - t0) + " " + (r.d || "U") + " " + r.op + "(0x" + (r.op < 0 ? "?" : r.op.toString(16)) + ") " + r.len + "B " + r.hex);
+        lines.push((r.t - t0) + " " + (r.d || "U") + " " + r.op + "(0x" + (r.op < 0 ? "?" : r.op.toString(16)) + ") " + r.len + "B " + r.hex + (r.drop ? " [拦截·未发送]" : ""));
       }
       var txt = lines.join("\n");
       txCap.lastText = txt;
@@ -13235,7 +13758,9 @@
             try {
               npCalibrate();                     // 对齐服务器实际状态（面板=服务器）
               if (zRunning) { stopZhu(); }       // 助手运行中 → 完整停止（内含内挂关闭）
-              else if (npHuntOn) { npHuntStop("map-change", true); } // 纯内挂模式 → 立即关服务器自动战斗
+              // V2.38.2：换图必须无条件停服务器侧自动战斗（含纯内挂模式；置零开关关闭时 stopZhu 也不再置零，这里是兜底）——
+              //   内挂开关是 toggle 型，面板明确「已关」时绝不盲发（会把已经关掉的内挂又打开）；在跑或读不到才补发，正常只会 already。
+              if (npReadPanelState() !== false) { npHuntStop("map-change", true); }
               setStatus("换图：自动战斗已停止", "st");
               tlog("map-changed: battle stopped");
               // V2.35.2：换图清空瞬移/脱战/卡死残留，避免死后换图继续乱飞
@@ -14678,6 +15203,10 @@
   // ================= V2.35.1 公共自动化 API + 助手换箭 =================
   var ARROW_RULES_KEY="dsh-ro-arrow-rules-v1";
   function arrowPos(v){v=Number(v);return Number.isInteger(v)&&v>0?v:null;}
+  // V2.38.2：普通箭矢与魔法箭矢筒 ID 均取自本地物品表逐条核对（_tmp/LROBrowser-pr2/vendor/core/System/itemInfo_re_59.lua：
+  // [1750] identifiedDiSPlayName="箭矢"、[2000030] identifiedDiSPlayName="魔法箭矢筒" 描述「能创造源源不断的箭矢」）。
+  // ARROW_LOW_AMMO=50：自动续箭触发阈值（当前装备的箭矢不足 50 支，空槽视为 0）。
+  var ARROW_PLAIN_ITID=1750, ARROW_MAGIC_QUIVER=2000030, ARROW_LOW_AMMO=50;
   // V2.36.0：旧挑战/道场迁移键（arrowLoad 与内置道馆 dojoLoad 共用，保证字面量只有一处）
   var CHALLENGE_KEY="dsh-ro-challenge-v1";
   // V2.36.13：属性箭的元素顺序（元素码 = 下标）。arrowLoad 在 IIFE 初始化时就要用，必须声明在它前面。
@@ -14687,11 +15216,25 @@
   var arrowRules=arrowLoad(),arrowTarget=null,arrowPending=null,arrowStatus="未启用",arrowBlocked=false,arrowReady=false;
   function arrowSave(){try{localStorage.setItem(ARROW_RULES_KEY,JSON.stringify(arrowRules));}catch(e){}}
   function arrowBoss(mid){try{var m=(getMobDb()||{})[arrowPos(mid)];return !!(m&&Number(m.MvpDropsNum)>0);}catch(e){return false;}}
+  // V2.38.2 候选链（顺序即优先级，每项带 kind 标记）：
+  //   1 elem         怪属性对应的属性箭（配置 byElem[怪属性]）
+  //   2 mob          该怪单独配的箭（byMid）
+  //   3 elemfallback 属性箭用不上时的属性补偿（未配置或背包里没有）：念→水/火/地/风；不死→火/圣
+  //   4 default      通用（默认）箭 (defaultItid)
+  //   5 plain        普通箭矢——魔法箭矢筒 2000030 产出的那支（只有前面配过东西才加，避免"什么都没配"被当成要换箭）
+  // 其它属性没有对应属性箭时直接落 4/5；全部都没有时由 arrowSelfTick 提示并保持当前箭。
   function arrowCandidates(mid,cfg){cfg=cfg||arrowRules;var out=[],seen={},m=arrowPos(mid);
     function add(kind,itid){itid=arrowPos(itid);if(!itid||seen[itid])return;seen[itid]=1;out.push({kind:kind,itid:itid});}
+    function addElem(kind,key,miss){var v=cfg.byElem?arrowPos(cfg.byElem[key]):null;if(!v||seen[v])return;seen[v]=1;out.push({kind:kind,itid:v,useElem:key,missElem:miss});}
     var en=m?mobElemName(m):"",ev=en&&cfg.byElem?arrowPos(cfg.byElem[en]):null;if(ev)add("elem",ev); // 优先级 1：属性箭
     var v=m&&cfg.byMid?cfg.byMid[m]:null;add("mob",v&&v.itid!=null?v.itid:v); // 优先级 2：指定怪箭
-    add("default",cfg.defaultItid); // 优先级 3：默认箭
+    // 优先级 3：属性补偿链（顺序严格按用户口径）。判据是「属性箭用不上」——没配置或背包里没有都算，
+    // 所以不再用 !ev 做门禁：补偿候选无条件排在属性箭之后，由候选链按顺序取第一个可用的。
+    // addElem 只在 byElem 确实配过这支箭时才加入 → 什么都没配置时仍是空列表、不动作。
+      if(en==="念"){["水","火","地","风"].forEach(function(k){addElem("elemfallback",k,"念");});}
+      else if(en==="不死"){addElem("elemfallback","火","不死");addElem("elemfallback","圣","不死");}
+    add("default",cfg.defaultItid); // 优先级 4：通用（默认）箭
+    if(out.length)add("plain",ARROW_PLAIN_ITID); // 优先级 5：普通箭矢（魔法箭矢筒 2000030 产出）；走 add() 的 seen 去重，默认箭恰为 1750 时不重复
     return out;}
   function arrowDecision(mid,cfg){var c=arrowCandidates(mid,cfg);return c.length?c[0]:null;}
   function arrowSay(s){arrowStatus=String(s);var e=$id("dsh-arrow-rules-status");if(e)e.textContent=arrowStatus;apiEmit("notice",{kind:"arrow",message:arrowStatus});}
@@ -14701,7 +15244,9 @@
   function arrowElemLoad(){if(MOB_ELEM_MAP)return MOB_ELEM_MAP;MOB_ELEM_MAP={};try{MOB_ELEM_RAW.split(",").forEach(function(p){var i=p.indexOf(":");if(i<=0)return;var id=p.slice(0,i),c=Number(p.slice(i+1));if(!id||!isFinite(c))return;var n=ARROW_ELEM_ORDER[c];if(n)MOB_ELEM_MAP[id]=n;});}catch(e){}return MOB_ELEM_MAP;}
   function mobElemName(mid){try{var m=arrowPos(mid);return m?(arrowElemLoad()[String(m)]||""):"";}catch(e){return "";}}
   // 常用属性箭建议（背包里没有也能先配上；真正换箭仍要求背包里有这支箭，否则按默认箭兜底）
-  var ARROW_ELEM_SUGGEST=[[1757,"无形箭矢（念）"],[1753,"钢铁箭矢（无）"],[1762,"铁锈箭矢（毒）"],[1766,"破魔箭矢（圣）"],[1767,"影子箭矢（暗）"],[1770,"铁箭矢（无）"]];
+  // V2.38.2：补 火/水/风/地 四支——每条都拿本地物品表核对过名称与属性（itemInfo_re_59.lua）：
+  // 1752 火箭矢/火、1754 水灵箭矢/水、1755 风灵箭矢/风、1756 地灵箭矢/地；其余沿用 V2.36.13 核对过的条目。
+  var ARROW_ELEM_SUGGEST=[[1757,"无形箭矢（念）"],[1752,"火箭矢（火）"],[1754,"水灵箭矢（水）"],[1755,"风灵箭矢（风）"],[1756,"地灵箭矢（地）"],[1753,"钢铁箭矢（无）"],[1762,"铁锈箭矢（毒）"],[1766,"破魔箭矢（圣）"],[1767,"影子箭矢（暗）"],[1770,"铁箭矢（无）"]];
   function arrowFillElemSelect(sel,cur){if(!sel)return;sel.innerHTML="";var o0=document.createElement("option");o0.value="";o0.textContent="不强制";sel.appendChild(o0);var seen={};ARROW_ELEM_SUGGEST.forEach(function(x){if(seen[x[0]])return;seen[x[0]]=1;var o=document.createElement("option");o.value=String(x[0]);o.textContent=x[1]+" #"+x[0];sel.appendChild(o);});try{readBagArrows().forEach(function(x){if(seen[x.itid])return;seen[x.itid]=1;var o=document.createElement("option");o.value=String(x.itid);o.textContent=(getItemName(x.itid)||("ITID "+x.itid))+" #"+x.itid+" ×"+x.count;sel.appendChild(o);});}catch(e){}if(cur&&!seen[cur]){var o2=document.createElement("option");o2.value=String(cur);o2.textContent=arrowItemName(cur)+"（当前配置）";sel.appendChild(o2);}sel.value=cur?String(cur):"";}
   // V2.36.13 boss 粘性 + 目标防抖：无限初级这类随机刷新图上，目标一抖就换箭会把箭换乱
   var arrowStickyBoss=null,arrowStableKey="",arrowStableAt=0,ARROW_STABLE_MS=1500,ARROW_BOSS_KEEP_MS=30000;
@@ -14711,11 +15256,19 @@
   function arrowEffectiveMid(mid,gid,now){var m=arrowPos(mid);if(m&&arrowBoss(m))arrowStickyBoss={mid:m,gid:gidInt(gid)||0,at:now};if(arrowStickyBoss&&now-arrowStickyBoss.at<=ARROW_BOSS_KEEP_MS){var b=arrowStickyBoss;if(b.mid===m){b.at=now;if(gid)b.gid=gidInt(gid)||b.gid;}else if(arrowBossAlive(b.mid,b.gid)){b.at=now;return {mid:b.mid,sticky:true};}else arrowStickyBoss=null;}return {mid:m,sticky:false};}
   function arrowStableGate(key,now){if(arrowStableKey!==key){arrowStableKey=key;arrowStableAt=now;arrowPending=null;arrowSelfPending=null;return false;}return now-arrowStableAt>=ARROW_STABLE_MS;}
   function arrowFill(s){if(!s)return;var old=s.value;s.innerHTML='<option value="">选择背包 type10 箭矢</option>';readBagArrows().forEach(function(x){var o=document.createElement("option");o.value=x.itid;o.textContent=(getItemName(x.itid)||("ITID "+x.itid))+" #"+x.itid+" ×"+x.count;s.appendChild(o);});s.value=old;}
-  function arrowKindName(k){return k==="elem"?"属性箭":(k==="mob"?"指定怪箭":"默认箭");}
+  function arrowKindName(k){return k==="elem"?"属性箭":(k==="elemfallback"?"属性箭补偿":(k==="mob"?"指定怪箭":(k==="plain"?"普通箭矢":"默认箭")));}
+  // V2.38.2：装箭提示要写清用了哪一层（属性补偿/通用兜底/普通箭矢）
+  function arrowPickSay(c,tag,en,elemCfg){
+    if(!c)return "";
+    if(c.kind==="elemfallback")return (c.missElem||"属性")+"属性箭缺失，已用 "+(c.useElem||"")+"属性箭 补偿："+tag;
+    if(c.kind==="default"&&en&&en!=="无"&&(elemCfg||en==="念"||en==="不死"))return "背包缺 "+en+"箭矢，改用通用箭矢 "+arrowItemName(c.itid)+"："+tag;
+    if(c.kind==="plain")return "换成普通箭矢（魔法箭袋补充）："+tag+" → "+arrowItemName(c.itid);
+    return "换成"+arrowKindName(c.kind)+"："+tag+" → "+arrowItemName(c.itid);
+  }
   function arrowMobName(mid){try{var m=(getMobDb()||{})[arrowPos(mid)];return m?(m.kName||m.name||m.Name||("怪物 #"+mid)):("怪物 #"+mid);}catch(e){return "怪物 #"+mid;}}
   function arrowItemName(itid){try{return (getItemName(itid)||("ITID "+itid))+" #"+itid;}catch(e){return "ITID "+itid;}}
   function arrowFillMobs(s,q){if(!s)return;var old=s.value,db=getMobDb()||{},needle=String(q||"").trim().toLowerCase(),keys=[];Object.keys(db).forEach(function(k){if(!arrowPos(k))return;if(needle&&arrowMobName(k).toLowerCase().indexOf(needle)<0&&String(k).indexOf(needle)<0)return;keys.push(k);});keys.sort(function(a,b){return Number(a)-Number(b);});s.innerHTML='<option value="">选择怪物（可先搜索）</option>';keys.forEach(function(k){var m=db[k]||{},o=document.createElement("option");o.value=k;o.textContent=arrowMobName(k)+" #"+k+(Number(m.MvpDropsNum)>0?" [Boss]":"");s.appendChild(o);});if(old&&keys.indexOf(old)>=0)s.value=old;}
-  function arrowRenderCfg(){var box=$id("dsh-arrow-rules-list");if(!box)return;box.innerHTML="";var def=arrowPos(arrowRules.defaultItid),r0=document.createElement("div");r0.className="row";var s0=document.createElement("span");s0.style.cssText="flex:1 1 auto";s0.textContent="默认箭："+(def?arrowItemName(def)+"（打完后自动换回这支）":"未设置（不换箭，保持当前装备）");r0.appendChild(s0);box.appendChild(r0);var head=document.createElement("div");head.className="st";head.textContent="属性 → 箭（按当前攻击目标的属性自动换；留空=不强制；优先级 属性箭 > 指定怪箭 > 默认箭）";box.appendChild(head);ARROW_ELEM_ORDER.forEach(function(en){var row=document.createElement("div");row.className="row";var lb=document.createElement("span");lb.style.cssText="flex:0 0 auto;min-width:26px";lb.textContent=en;row.appendChild(lb);var sel=document.createElement("select");sel.style.cssText="flex:1 1 auto";arrowFillElemSelect(sel,arrowPos(arrowRules.byElem[en]));sel.addEventListener("change",function(){var v=arrowPos(this.value);if(v)arrowRules.byElem[en]=v;else delete arrowRules.byElem[en];arrowSave();arrowSay(v?("属性箭已保存："+en+" → "+arrowItemName(v)):("已清空"+en+"属性箭"));});row.appendChild(sel);if(arrowPos(arrowRules.byElem[en])){var clr=document.createElement("button");clr.className="ghost";clr.textContent="清";clr.style.cssText="flex:0 0 auto;padding:1px 6px;font-size:11px";clr.addEventListener("click",function(){delete arrowRules.byElem[en];arrowSave();arrowRenderCfg();arrowSay("已清空"+en+"属性箭");});row.appendChild(clr);}box.appendChild(row);});var ids=Object.keys(arrowRules.byMid).map(function(k){return arrowPos(k);}).filter(function(x){return !!x;});ids.sort(function(a,b){return a-b;});if(!ids.length){var e=document.createElement("span");e.className="st";e.textContent="未指定怪物：没配过的怪一律用属性箭/默认箭。";box.appendChild(e);return;}ids.forEach(function(mid){var row=document.createElement("div");row.className="row";var t=document.createElement("span");t.style.cssText="flex:1 1 auto";t.textContent=arrowMobName(mid)+" #"+mid+" → "+arrowItemName(arrowRules.byMid[mid])+(mobElemName(mid)?(" · "+mobElemName(mid)+"属性"):"");row.appendChild(t);var b=document.createElement("button");b.className="ghost";b.textContent="删除";b.style.cssText="flex:0 0 auto;padding:1px 8px;font-size:11px";b.addEventListener("click",function(){delete arrowRules.byMid[mid];arrowSave();arrowRenderCfg();arrowSay("已删除指定怪 #"+mid);});row.appendChild(b);box.appendChild(row);});}
+  function arrowRenderCfg(){var box=$id("dsh-arrow-rules-list");if(!box)return;box.innerHTML="";var def=arrowPos(arrowRules.defaultItid),r0=document.createElement("div");r0.className="row";var s0=document.createElement("span");s0.style.cssText="flex:1 1 auto";s0.textContent="默认箭："+(def?arrowItemName(def)+"（打完后自动换回这支）":"未设置（不换箭，保持当前装备）");r0.appendChild(s0);box.appendChild(r0);var head=document.createElement("div");head.className="st";head.textContent="属性 → 箭（按当前攻击目标的属性自动换；留空=不强制；优先级 属性箭 > 指定怪箭 > 默认箭）";box.appendChild(head);ARROW_ELEM_ORDER.forEach(function(en){var row=document.createElement("div");row.className="row";var lb=document.createElement("span");lb.style.cssText="flex:0 0 auto;min-width:26px";lb.textContent=en;row.appendChild(lb);var sel=document.createElement("select");sel.style.cssText="flex:1 1 auto";arrowFillElemSelect(sel,arrowPos(arrowRules.byElem[en]));sel.addEventListener("change",function(){var v=arrowPos(this.value);if(v)arrowRules.byElem[en]=v;else delete arrowRules.byElem[en];arrowSave();arrowSay(v?("属性箭已保存："+en+" → "+arrowItemName(v)):("已清空"+en+"属性箭"));});var num=document.createElement("input");num.type="number";num.min="1";num.placeholder="手填ID";num.value=arrowPos(arrowRules.byElem[en])?String(arrowPos(arrowRules.byElem[en])):"";num.title="手填箭矢/物品 ID（填了就用它，可与下拉互相覆盖）";num.style.cssText="flex:0 0 68px;font-size:12px";num.addEventListener("change",function(){var v=arrowPos(this.value);if(v){arrowRules.byElem[en]=v;}else{delete arrowRules.byElem[en];}arrowSave();arrowRenderCfg();arrowSay(v?("属性箭已保存（手填）："+en+" → "+arrowItemName(v)):("已清空"+en+"属性箭"));});row.appendChild(num);row.appendChild(sel);if(arrowPos(arrowRules.byElem[en])){var clr=document.createElement("button");clr.className="ghost";clr.textContent="清";clr.style.cssText="flex:0 0 auto;padding:1px 6px;font-size:11px";clr.addEventListener("click",function(){delete arrowRules.byElem[en];arrowSave();arrowRenderCfg();arrowSay("已清空"+en+"属性箭");});row.appendChild(clr);}box.appendChild(row);});var ids=Object.keys(arrowRules.byMid).map(function(k){return arrowPos(k);}).filter(function(x){return !!x;});ids.sort(function(a,b){return a-b;});if(!ids.length){var e=document.createElement("span");e.className="st";e.textContent="未指定怪物：没配过的怪一律用属性箭/默认箭。";box.appendChild(e);return;}ids.forEach(function(mid){var row=document.createElement("div");row.className="row";var t=document.createElement("span");t.style.cssText="flex:1 1 auto";t.textContent=arrowMobName(mid)+" #"+mid+" → "+arrowItemName(arrowRules.byMid[mid])+(mobElemName(mid)?(" · "+mobElemName(mid)+"属性"):"");row.appendChild(t);var b=document.createElement("button");b.className="ghost";b.textContent="删除";b.style.cssText="flex:0 0 auto;padding:1px 8px;font-size:11px";b.addEventListener("click",function(){delete arrowRules.byMid[mid];arrowSave();arrowRenderCfg();arrowSay("已删除指定怪 #"+mid);});row.appendChild(b);box.appendChild(row);});}
   function arrowCurrentMid(){try{var gid=gidInt(zLock&&zLock.gid);if(!gid){var me=CLIENT.SS&&CLIENT.SS.Entity;gid=gidInt(me&&me.targetGID);}if(!gid&&dps&&dps.cur&&Number(dps.cur.lastAt)&&Date.now()-Number(dps.cur.lastAt)<15000)gid=gidInt(dps.cur.gid);if(!gid)return 0;var list=apiEntities();for(var i=0;i<list.length;i++){if(list[i].gid===gid&&list[i].type===5&&list[i].mid)return list[i].mid;}}catch(e){}return 0;}
   var arrowSelfPending=null,arrowSelfSaid="",arrowQuiverAt=0;
   function arrowSelfSay(s){s=String(s);if(s===arrowSelfSaid)return;arrowSelfSaid=s;arrowSay(s);}
@@ -14752,7 +15305,9 @@
     }
     var eff=arrowEffectiveMid(mid0,0,now),mid=eff.mid||mid0;
     if(!arrowStableGate("s"+mid,now)){arrowSelfSay("目标刚换，等 1.5 秒确认："+arrowMobName(mid)+(eff.sticky?"[BOSS粘性]":""));return;}
-    var list=arrowCandidates(mid,arrowRules);if(!list.length)return;
+    var list=arrowCandidates(mid,arrowRules);
+    if(!list.length){arrowSelfPending=null;arrowSelfSay("没有任何可用的箭矢/箭袋，保持当前箭："+arrowMobName(mid));return;}
+    var en0=mobElemName(mid),elemCfg=en0&&arrowRules.byElem?arrowPos(arrowRules.byElem[en0]):null;
     var tag=arrowMobName(mid)+(arrowBoss(mid)?"[BOSS]":"")+(eff.sticky?"[BOSS粘性]":""),ammo=readEquippedAmmo(),bag=readBagArrows(),i=0,j=0,row=null;
     for(i=0;i<list.length;i++){
       var same=!!(ammo&&Number(ammo.itid)===list[i].itid);
@@ -14761,7 +15316,7 @@
       if(row){
         var p=arrowSelfPending;
         if(p&&p.itid===list[i].itid){if(now<p.confirmUntil)return;if(!p.retryAt){p.retryAt=now+3000;arrowSelfSay("确认超时，3秒后重试："+tag);return;}if(now<p.retryAt)return;}
-        if(equipArrow(row.index)){arrowSelfPending={itid:list[i].itid,confirmUntil:now+5000,retryAt:0};arrowSelfSay("换成"+arrowKindName(list[i].kind)+"："+tag+" → "+arrowItemName(list[i].itid));}
+        if(equipArrow(row.index)){arrowSelfPending={itid:list[i].itid,confirmUntil:now+5000,retryAt:0};arrowSelfSay(arrowPickSay(list[i],tag,en0,elemCfg));}
         return;
       }
     }
@@ -14769,9 +15324,15 @@
     arrowSelfPending=null;
     if(qu&&qu.used){arrowSelfSay("背包缺"+arrowItemName(need)+"，已使用"+qu.q.name+"…");return;}
     if(qu&&qu.q){arrowSelfSay("背包缺"+arrowItemName(need)+"，等"+qu.q.name+"生效…");return;}
-    arrowSelfSay("背包缺"+arrowItemName(need)+"且无对应箭矢筒（保持当前箭）："+tag);
+    // ⑤ 普通箭矢兜底：前面几层都没有 → 魔法箭矢筒(2000030)产出普通箭矢，等产出入包后由下一拍装上
+    if(Number(need)!==Number(ARROW_PLAIN_ITID)){
+      var pq=arrowUseQuiver(ARROW_PLAIN_ITID);
+      if(pq&&pq.used){arrowSelfSay("通用箭矢也没有，已用魔法箭袋补充普通箭矢");return;}
+      if(pq&&pq.q){arrowSelfSay("通用箭矢也没有，已用魔法箭袋补充普通箭矢（等"+pq.q.name+"生效）");return;}
+    }
+    arrowSelfSay("没有任何可用的箭矢/箭袋，保持当前箭："+tag);
   }catch(e){}}
-  function arrowEnsureHost(){var h=$id("dsh-fw-arrowrules");if(h){arrowFill($id("dsh-arrow-rules-item"));arrowFill($id("dsh-arrow-rules-mobitem"));arrowFillMobs($id("dsh-arrow-rules-mob"),$id("dsh-arrow-rules-find")?$id("dsh-arrow-rules-find").value:"");arrowRenderCfg();return h;}var dock=$id("dsh-arrow-rules-dock");if(!dock){dock=document.createElement("div");dock.id="dsh-arrow-rules-dock";dock.style.display="none";document.documentElement.appendChild(dock);}h=document.createElement("div");h.id="dsh-fw-arrowrules";
+  function arrowEnsureHost(){var h=$id("dsh-fw-arrowrules");if(h){arrowFill($id("dsh-arrow-rules-item"));arrowFill($id("dsh-arrow-rules-mobitem"));arrowFillMobs($id("dsh-arrow-rules-mob"),$id("dsh-arrow-rules-find")?$id("dsh-arrow-rules-find").value:"");arrowRenderCfg();arrowBagDiagRender();return h;}var dock=$id("dsh-arrow-rules-dock");if(!dock){dock=document.createElement("div");dock.id="dsh-arrow-rules-dock";dock.style.display="none";document.documentElement.appendChild(dock);}h=document.createElement("div");h.id="dsh-fw-arrowrules";
     h.innerHTML='<div class="sec">换箭设置</div>'
       + '<label><input id="dsh-arrow-rules-enabled" type="checkbox">自动换箭（默认关闭）</label>'
       + '<div class="row"><span class="lb" style="min-width:52px">默认箭</span><select id="dsh-arrow-rules-item"></select><button id="dsh-arrow-rules-default">设为默认</button></div>'
@@ -14779,9 +15340,11 @@
       + '<div class="row"><span class="lb" style="min-width:52px">该怪箭</span><select id="dsh-arrow-rules-mobitem"></select><button class="green" id="dsh-arrow-rules-mobsave">保存指定怪箭</button></div>'
       + '<div class="box"><div class="b-hd">已配置</div><div id="dsh-arrow-rules-list" style="font-size:11px;max-height:104px;overflow:auto"></div></div>'
       + '<div id="dsh-arrow-rules-status" class="st"></div>'
+      + '<div id="dsh-arrow-rules-bagdiag" class="st" style="font-size:11px">背包数据源：未读取</div>'
       + '<div class="log">规则：优先级 属性箭（按目标属性）&gt; 指定怪箭 &gt; 默认箭；之后才是下面的说明。按你当前攻击的那只怪换箭（助手挂机、内挂、手动打的都算）→ 属性配过的先按属性换；这只怪单独配过就用指定怪箭；都没配就用默认箭；背包里没有要用的箭就用默认箭兜底；默认箭也没设 → 就不动（保持当前装备）；一场打完（没有攻击目标、或目标怪已消失）会自动换回默认箭，先等 1.5 秒确认。道场脚本报的怪优先。大 MVP（MvpDropsNum>0）30 秒内还在实体列表里就保持它的箭（boss 粘性）；目标刚换会先等 1.5 秒确认再换，随机刷新图不再乱换。</div>'
       + '<div class="log">属性 → 箭：火/水/风/地/毒/圣/暗/念/不死/无 十行，留空=不强制；怪物属性取自内嵌的全量怪物表（2471 只）。真实换箭仍要求背包里有这支箭，否则按默认箭兜底。</div>'
-      + '<div class="log">背包里一支箭都没有时会自动打开对应箭矢筒（风灵箭矢 → 风灵箭矢筒 / 魔法风灵箭矢筒）；连箭矢筒也没有就只提示，不乱换。</div>';
+      + '<div class="log">背包里一支箭都没有时会自动打开对应箭矢筒（风灵箭矢 → 风灵箭矢筒 / 魔法风灵箭矢筒）；连箭矢筒也没有就用魔法箭矢筒(2000030)补普通箭矢；两个都没有才提示并保持当前箭，绝不拿背包里任意一支箭凑数。</div>'
+      + '<div class="log">兜底顺序：属性箭 → 指定怪箭 → 念(水/火/地/风) 与 不死(火/圣) 属性补偿 → 通用箭 → 魔法箭矢筒普通箭矢。属性行可手填 ID；下拉框动态列出背包里的箭矢。</div>';
     dock.appendChild(h);
     var en=$id("dsh-arrow-rules-enabled"),item=$id("dsh-arrow-rules-item"),mob=$id("dsh-arrow-rules-mob"),mobItem=$id("dsh-arrow-rules-mobitem"),find=$id("dsh-arrow-rules-find");
     en.checked=arrowRules.enabled;arrowFill(item);arrowFill(mobItem);arrowFillMobs(mob,"");arrowRenderCfg();
@@ -14812,7 +15375,7 @@
   function apiSetBattleTarget(owner,target){var bad=apiGuard(owner,"battle"),mid=target&&arrowPos(target.mid),gid=target&&arrowPos(target.gid);if(bad)return bad;if(!target||!mid||!gid)return {ok:false,error:"invalid-target"};var entity=apiBattleTargetEntity({mid:mid,gid:gid});if(!entity)return {ok:false,error:"battle-target-not-live-boss"};if(apiBattleTarget&&apiBattleTarget.owner===owner&&apiBattleTarget.mid===mid&&apiBattleTarget.gid===gid)return {ok:true};apiClearBattleTarget(owner);var added=!lockList[String(mid)];apiBattleTarget={owner:owner,mid:mid,gid:gid,npAdded:added};if(owner===DOJO_OWNER)npSyncTargets();else if(added)npOnlyTarget(mid,1);return {ok:true};}
   function apiBattleTick(){if(!apiLease)return;if(typeof apiBattleTarget!=="undefined"&&apiBattleTarget&&!apiBattleTargetEntity(apiBattleTarget))apiClearBattleTarget(apiBattleTarget.owner);var b=apiLease.battle,s=npBattleState();if(b.state==="pending-on"&&s===true)b.state="owned";else if(b.state==="pending-off"&&s===false)b.state="none";if(apiLease.released&&b.state==="none"){apiLease=null;apiEmit("state",{});}}
   function apiBattleDrive(){var now=Date.now();if(now-apiBattleAttackAt<250||zRunning||!apiLease||!apiBattleTarget||apiBattleTarget.owner!==apiLease.owner||apiLease.scopes.indexOf("battle")<0)return;var state=apiLease.battle&&apiLease.battle.state;if(state!=="owned"&&state!=="pending-on")return;if(!apiBattleTargetEntity(apiBattleTarget))return;apiBattleAttackAt=now;zAttack();}
-  function apiRelease(owner){if(!apiLease||apiLease.owner!==owner)return {ok:false,error:"not-owner"};if(typeof apiClearBattleTarget==="function")apiClearBattleTarget(owner);apiBattleTick();if(!apiLease)return {ok:true};var l=apiLease;if(l.scopes.indexOf("movement")>=0){moveXY.busy=false;moveXY.onArrive=null;}if(l.scopes.indexOf("arrow")>=0&&arrowTarget&&arrowTarget.owner===owner){arrowTarget=null;arrowPending=null;arrowReady=false;arrowBlocked=false;}if(l.scopes.indexOf("battle")>=0&&(l.battle.state==="owned"||l.battle.state==="pending-off")){l.released=true;if(l.battle.state!=="pending-off"){var generation=l.generation,r=npRequestBattle(false,"external-release:"+owner,true,function(){return !!(apiLease&&apiLease.owner===owner&&apiLease.generation===generation);});if(r==="sent"||r==="queued")l.battle.state="pending-off";else l.released=false;}return {ok:l.released,result:l.battle.state};}if(l.battle.state==="pending-on")npClearBattleIntent();apiLease=null;apiEmit("state",{});return {ok:true};}
+  function apiRelease(owner){if(!apiLease||apiLease.owner!==owner)return {ok:false,error:"not-owner"};if(typeof apiClearBattleTarget==="function")apiClearBattleTarget(owner);apiBattleTick();if(!apiLease)return {ok:true};var l=apiLease;if(l.scopes.indexOf("movement")>=0){moveXY.busy=false;moveXY.onArrive=null;}if(l.scopes.indexOf("arrow")>=0&&arrowTarget&&arrowTarget.owner===owner){arrowTarget=null;arrowPending=null;arrowReady=false;arrowBlocked=false;}if(l.scopes.indexOf("battle")>=0&&(l.battle.state==="owned"||l.battle.state==="pending-off")){l.released=true;if(l.battle.state!=="pending-off"){var generation=l.generation,r=npRequestBattle(false,"external-release:"+owner,true,function(){return !!(apiLease&&apiLease.owner===owner&&apiLease.generation===generation);});if(r==="sent"||r==="queued")l.battle.state="pending-off";else l.released=false;}return {ok:l.released,result:l.battle.state};}if(l.battle.state==="pending-on")npClearBattleIntent();if(l.scopes.indexOf("battle")>=0&&npBattleState()===true&&typeof npZeroBattle==="function")npZeroBattle("apiRelease");apiLease=null;apiEmit("state",{});return {ok:true};}
   function apiContact(owner,gid){var bad=apiGuard(owner,"dialog");gid=arrowPos(gid);if(bad)return bad;if(!gid)return {ok:false,error:"invalid-gid"};var found=apiEntities().filter(function(e){return e.gid===gid&&(e.type===6||e.type===12);})[0];if(!found)return {ok:false,error:"npc-not-found"};try{var p=new (czp("CONTACTNPC"))();p.NAID=gid;p.type=1;CLIENT.NM.sendPacket(p);apiLease.selectedNpc=gid;lastTalkNpc={GID:gid,name:found.name,pos:found.position};return {ok:true};}catch(e){return {ok:false,error:"contact-failed"};}}
   function apiWalk(owner,payload){var bad=apiGuard(owner,"movement"),x=payload&&Number(payload.x),y=payload&&Number(payload.y);if(bad)return bad;if(!payload||!Number.isInteger(x)||!Number.isInteger(y))return {ok:false,error:"invalid-position"};return {ok:!!walkToXY(x,y,null,"dsh-arrow-rules-status")};}
   function apiChoose(owner,payload){var bad=apiGuard(owner,"dialog"),menu=apiMenu(),naid=payload&&arrowPos(payload.naid),index=payload&&Number(payload.index),fp=payload&&payload.fingerprint;if(bad)return bad;if(!payload||!naid||!Number.isInteger(index)||index<0||index>=menu.items.length||naid!==menu.naid||naid!==apiLease.selectedNpc||typeof fp!=="string"||fp!==menu.fingerprint)return {ok:false,error:"invalid-menu"};if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"};apiMenuUsed=fp;try{var p=new (czp("CHOOSE_MENU"))();p.NAID=naid;p.num=index+1;CLIENT.NM.sendPacket(p);return {ok:true};}catch(e){return {ok:false,error:"choose-failed"};}}
@@ -15079,7 +15642,7 @@
     deathGuardRun = { phase: "charselect", until: now + 8000, tries: 0, at: now };
     try { deathReturnCancel("连续死亡自动下线"); } catch (e) {}
     try { stopZhu(); } catch (e1) {}
-    try { if (npBattleState() === true) npRequestBattle(false, "death-guard", true, null); } catch (e2) {}
+    try { npZeroBattle("death-guard"); } catch (e2) {}
     deathGuardSay("最近 " + mins + " 分钟内死亡 " + deathGuardAt.length + " 次：已停助手/内挂，按正确方式自动下线", "err");
     deathGuardNotify("连续死亡（" + mins + " 分钟 " + deathGuardAt.length + " 次）：已停止挂机并自动下线");
     deathGuardCharSelect();
@@ -15291,10 +15854,11 @@
   }
   function dojoStop(reason){
     var a=dojoApi();
-    dojoRun.on=false;dojoRun.generation++;
+    var dojoWasOn=dojoRun.on;dojoRun.on=false;dojoRun.generation++;
     if(dojoRun.timer)clearInterval(dojoRun.timer); // 100 轮暂停/停止必须清掉定时器
     dojoRun.timer=null;
     if(a){try{a.clearBattleTarget(DOJO_OWNER);a.clearArrowTarget(DOJO_OWNER);a.release(DOJO_OWNER);}catch(e){}}
+    if(dojoWasOn){try{npZeroBattle("dojoStop");}catch(e){}} // 挂机结束：置零内挂自动战斗（release 已发过同一请求时走 already，不会重复发包）
     dojoRun.npc=null;dojoRun.phase=reason||"已停止";dojoRender();
   }
   function dojoRender(){
@@ -15854,7 +16418,15 @@
       var cards = itipCardList(item);
       var refined = Number(item.RefiningLevel || item.refine || 0);
       var grade = Number(item.enchantgrade || 0);
-      if (ident && !opts.length && !cards.length && !refined && !grade && !priceObj) return ""; // 无隐藏信息 → 不弹
+      // V2.38.2 口径更正：恢复原早退——没有隐藏信息就不显示说明文字；「加入/移出丢弃名单」按钮单独一行，不受该早退影响
+      var bIt = itipBagTarget(item);
+      ITIP.bagTarget = bIt || null;
+      var bAct = "";
+      if (bIt) {
+        var bKey = bagCleanKeyOfItem(bIt), bIn = !!(bKey && Object.prototype.hasOwnProperty.call(bagClean.config.discardRules, bKey));
+        bAct = '<div style="margin-top:5px"><button type="button" data-dsh-bagact="' + (bIn ? 'del' : 'add') + '" style="pointer-events:auto;cursor:pointer;font:12px \'Microsoft YaHei\',Arial,sans-serif;padding:2px 8px;border-radius:4px;border:1px solid rgba(120,170,240,0.6);background:rgba(30,50,90,0.9);color:#e9eff8">' + (bIn ? '移出丢弃名单' : '加入丢弃名单') + '</button></div>';
+      }
+      if (ident && !opts.length && !cards.length && !refined && !grade && !priceObj) return bAct; // 无隐藏信息 → 不显示说明（恢复原行为），只保留按钮那一行
       var L = [];
       if (!ident) L.push('<div style="color:#ffcf5c;font-weight:bold">未鉴定</div>');
       var head = "";
@@ -15891,6 +16463,7 @@
         if (priceObj.discountprice != null && priceObj.discountprice !== priceObj.price) pz += "（原价 " + itipZeny(priceObj.price) + "）";
         if (pz) L.push('<div style="color:#ffd479;margin-top:3px">' + itipEsc(pz) + "</div>");
       }
+      if (bAct) L.push(bAct);
       return L.join("");
     } catch (e) { return ""; }
   }
@@ -15922,12 +16495,27 @@
       return css.display !== "none" && css.visibility !== "hidden";
     } catch (e) { return false; }
   }
+  // V2.38.2：物品说明浮窗里的「加入/移出丢弃名单」——只对背包/身上（bagList 能读到的）物品给按钮
+  function itipBagTarget(item) {
+    try {
+      var inv = bagList();
+      if (!Array.isArray(inv) || !item) return null;
+      var id = (item.ITID != null) ? item.ITID : item.itemid, idx = (item.index != null) ? item.index : null;
+      for (var i = 0; i < inv.length; i++) {
+        if (idx != null && Number(inv[i].index) === Number(idx)) return inv[i];
+        if (idx == null && String(inv[i].ITID) === String(id)) return inv[i];
+      }
+    } catch (e) {}
+    return null;
+  }
   function itipOver(e) {
     try {
       if (!ITIP.on) return;
       var t = e.target;
       try { var pth = e.composedPath && e.composedPath(); if (pth && pth.length) t = pth[0]; } catch (e0) {}
       if (!t || !t.closest) return;
+      // V2.38.2：鼠标移到物品说明浮窗自己身上（丢弃名单按钮）时不要收起来
+      if (t.closest("#dsh-itemtip")) { ITIP.hover = ITIP.hover || t; return; }
       var el = t.closest(".item");
       if (!el) { itipHide(); return; }
       ITIP.hover = el; ITIP.x = e.clientX; ITIP.y = e.clientY;
@@ -16128,6 +16716,20 @@
   }
   try {
     document.addEventListener("mouseover", itipOver, true);
+    // V2.38.2：丢弃名单按钮（右键物品说明里）——捕获阶段拦下，别让点击落到游戏画面上
+    document.addEventListener("click", function (e) {
+      try {
+        var t = e.target;
+        try { var pth = e.composedPath && e.composedPath(); if (pth && pth.length) t = pth[0]; } catch (e0) {}
+        var b = t && t.closest ? t.closest("[data-dsh-bagact]") : null;
+        if (!b) return;
+        e.preventDefault(); e.stopPropagation();
+        var item = ITIP.bagTarget;
+        if (!item) { setStatus("丢弃名单：读不到背包里的这件物品", "warn"); return; }
+        bagCleanToggleItem(item, b.getAttribute("data-dsh-bagact") === "del");
+        ITIP.elKey = ""; itipRefresh();
+      } catch (err) {}
+    }, true);
     document.addEventListener("mousemove", function (e) { try { if (ITIP.el && ITIP.el.style.display === "block") itipPlace(e.clientX, e.clientY); } catch (e2) {} }, true);
     document.addEventListener("mouseout", function (e) {
       try {
@@ -16640,7 +17242,7 @@
       var ak = localStorage.getItem("dsh_ro_last_active");
       if (ak && profiles[ak]) activeCharKey = ak;
       else if (!profiles[activeCharKey]) activeCharKey = "default";
-      ensureProfile(activeCharKey); saved = loadSaved(); lockList = profiles[activeCharKey].lockList || {}; askList = profiles[activeCharKey].askList || []; profMemKey = activeCharKey;
+      ensureProfile(activeCharKey); saved = loadSaved(); lockList = profiles[activeCharKey].lockList || {}; askList = profiles[activeCharKey].askList = profiles[activeCharKey].askList || []; profMemKey = activeCharKey;
       if (panel && panel.style.display !== "none") applyProfileUI();
       try { renderLockList(); renderAskList(); renderGearAll(); } catch (e1) {}
     } catch (e) { try { setStatus("远端角色档刷新失败：" + (e.message || e), "err"); } catch (e2) {} }
@@ -16842,7 +17444,7 @@
             saved = loadSaved();
             var pk = activeProfileKey();
             lockList = (profiles[pk] && profiles[pk].lockList) || {};
-            askList = (profiles[pk] && profiles[pk].askList) || [];
+            askList = (profiles[pk] && (profiles[pk].askList = profiles[pk].askList || [])) || [];
             profMemKey = pk;
             if (panel && panel.style.display !== "none") applyProfileUI();
             try { renderLockList(); renderAskList(); } catch (e4) {}

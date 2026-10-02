@@ -233,11 +233,11 @@ for (const [label, fn] of checks) {
 }
 
 // ============ I7 结构断言：版本 / 门位置清单 / EOL / 行数 / 差异 ============
-test('V2.38.6 结构断言：版本 2.38.6、九处门就位、EOL 与两文件差异不变', () => {
+test('V2.38.7 结构断言：版本 2.38.7、九处门就位、EOL 与两文件差异不变', () => {
   const stable = SOURCES[0][1], exp = SOURCES[1][1];
   for (const [name, src] of SOURCES) {
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.6', name + ' @version 必须是 2.38.6');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.6', name + ' VER 必须是 2.38.6');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.7', name + ' @version 必须是 2.38.7');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.7', name + ' VER 必须是 2.38.7');
     const t = lfSrc(src);
     const gates = [
       ['saveProfiles', '      if (!profWriteGuard("档案落盘")) return;'],

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手 · 实验版）
 // @namespace    dsh.ro-plugin
-// @version      2.38.6
+// @version      2.38.7
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -120,6 +120,17 @@
 // 4. 临时战斗目标 API 在任何发包前严格验证 GID/MID、活体怪物和 MvpDropsNum；失效时自动清理。保留 v2.38.0 opcode 能力探测与启动自检修复。
 // 5. 版本：@version 2.38.0 → 2.38.1（VER 同步）；实验版同步。离线 runtime 151/151、opcode 9/9，独立定点复核 8/8 通过。
 
+// ---------------- V2.38.7 变更摘要 ----------------
+// 1. 装备读取改走收发包（方案 C）：新增最高优先级路线①「包流装备表」——整表 ZC.EQUIPMENT_ITEMLIST 五版
+//    （opcode 164/661/720/2450/2573，记录长 20/24/28/31/57）+ 穿脱确认增量（170/172/2256/2257/2457/2458，
+//    成功语义按客户端类定义：170/172 直读 result，ACK2/V5 取反）；原四条客户端/DOM/背包路线保留兜底。
+//    逐槽记录来源路线与失败原因；0 槽仍然算失败，绝不假装成功；拿不到的字段标「未知」，绝不填 0。
+// 2. 新增 complete 维度：只有收到过「非空整表」才为 true；gearApply 预检从 cur.ok 升级为 ok && complete===true，
+//    否则部分快照会让换装计划「只穿不脱」造成叠穿；未收到整表时明确报「未收到装备数据」。
+// 3. 分帧补充表 ZC_EXTRA_LEN（170/2256/2457/172/2257/2458）：这几个包类声明 size=0/未登记，多包消息里
+//    非首位时会被整帧丢弃 → 只在主表缺失该 opcode 时启用，未知 opcode 仍然立刻停（绝不猜长）。
+// 4. 启动期「角色未识别」提示只在「已进游戏」时弹（不再在页面刚加载时刷）。
+// 5. 版本：@version 2.38.6 → 2.38.7（VER 同步）；实验版同步。
 // ---------------- V2.38.6 变更摘要 ----------------
 // 1. 手机端「身份未识别」fail-closed：拿不到 char_id 时不再沿用 localStorage 的活跃档键，所有「按档写」一律拒绝
 //    （profWriteGuard 唯一闸门：saveProfiles / saveSaved / captureAll / applyProfileUI / 锁定名单 / 技能 / 换装预设 / bagClean /
@@ -373,7 +384,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.38.6"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.38.7"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -566,8 +577,12 @@
       pendingEditsTouch();
       if (Date.now() - identityLog.last > 5000) {
         identityLog.last = Date.now();
-        try { setStatus("角色未识别，已暂停保存（" + key + "）；识别后会自动恢复", "warn"); } catch (e0) {}
-        try { identityLogLine("identity-block write=" + key + " key=" + activeProfileKey() + " cid=" + selfCharId()); } catch (e1) {}
+        // V2.38.7：未进游戏（页面刚加载、客户端组件/角色都还没就绪）时不弹这条提示 —— 启动期的内部写（如 collapsed 回写）
+        //   不该打扰用户；已进游戏仍未识别、或用户主动操作被拒时照常提示（用户操作路径另有各自的 setStatus）。
+        var inGame = false;
+        try { inGame = (typeof clientReady === "function" && clientReady() === true) || pktCharIdAt > 0; } catch (eGame) { inGame = false; }
+        if (inGame) { try { setStatus("角色未识别，已暂停保存（" + key + "）；识别后会自动恢复", "warn"); } catch (e0) {} }
+        try { identityLogLine("identity-block write=" + key + " key=" + activeProfileKey() + " cid=" + selfCharId() + " inGame=" + (inGame ? 1 : 0)); } catch (e1) {}
       }
       return false;
     } catch (e) { return false; } // 判不出来一律拒绝（fail-closed）
@@ -13353,6 +13368,14 @@
     } catch (eS) {}
     return n;
   }
+  // V2.38.7 分帧补充长度表（方案 C.6）：zcLenTable 对「类声明 size===0」的包一律跳过（0 不等于未知，
+  //   需人工核实后进补充表），而 ZC.REQ_WEAR_EQUIP_ACK(170) 与 ZC.ACK_WEAR_EQUIP_V5(2457) 正是 size=0。
+  //   它们出现在多包消息的非首位时，主表查不到 → walker 会 break → 上层记 framePartial 后整帧丢弃（穿脱确认全丢）。
+  //   六个长度都是逐字核对客户端类定义后手工登记的（170=2+2+2+2+1、2457=2+2+4+2+1 …），未知 opcode 仍然立刻停，绝不猜长。
+  //   审计（V2.38.7 阻塞项）修正：本服 packetver=20211103 的装备/背包整表走「分流式 itemlist」家族
+  //   0x0b08(2824)/0x0b09(2825)/0x0b39(2873)/0x0b0b(2827)：其中 2824/2825/2826/2873 类是 size=-1（变长，长度在 @2），
+  //   2827 类 size=4（定长，body 从 @2 起，帧内没有独立长度字段）——不登记它们会让 walker 在 burst 中途 break，后面的整表永远丢。
+  var ZC_EXTRA_LEN = { 170: 9, 2256: 9, 2457: 11, 172: 7, 2257: 7, 2458: 9, 2824: -1, 2825: -1, 2826: -1, 2827: 4, 2873: -1 };
   function zcLenTable() {
     try {
       var PS = CLIENT && CLIENT.PS;
@@ -13369,6 +13392,7 @@
             var id = 0, size = 0;
             try { id = Number(S.id) || 0; size = Number(S.size); } catch (eId) { continue; }
             if (!(id > 0)) continue;
+            // V2.38.7：0 ≠ 未知。声明 0 的包（170/2457 等）只是「类里没写死长度」，需人工核实后进 ZC_EXTRA_LEN，绝不在这里猜。
             if (!isFinite(size) || size === 0) continue; // 没声明长度（0/NaN）绝不登记，避免把变长包当定长包猜
             if (tbl[id] === undefined) { tbl[id] = size; n++; }
             continue;
@@ -13397,11 +13421,15 @@
     try { op0 = dv.getUint16(0, true); } catch (eOp0) { return { frames: 0, rest: total }; } // V2.38.4-审计修正（F5）：一个字节都没切走，rest 记 total（记 0 会被上层误当成「整条都切完了」）
     var tbl = zcLenTable();
     var off = 0, frames = 0;
-    while (tbl && off + 2 <= total) {
+    // V2.38.7：主表（CLIENT.PS 运行时收集）缺失该 opcode 时，只回退到「手工核实过的定长补充表」；仍然没有 → break，绝不猜长。
+    //   循环条件不再要求 tbl 非空：手机端 CLIENT.PS 可能拿不到，此时补充表仍能让穿脱确认帧（170/172 等）被正确切出；
+    //   首包 op 不在两张表里时行为与旧实现逐字一致（frames=0 → 整条消息当一个包交付）。
+    while (off + 2 <= total) {
       var op = 0, size = 0, len = 0;
       try { op = dv.getUint16(off, true); } catch (eOp) { break; }
-      size = tbl[op];
-      if (typeof size !== "number") break;               // 表里没有该 opcode：不猜，停止遍历
+      size = tbl ? tbl[op] : undefined;
+      if (typeof size !== "number") size = ZC_EXTRA_LEN[op];
+      if (typeof size !== "number") break;               // 两张表都没有该 opcode：不猜，停止遍历
       if (size < 0) {                                     // 变长包：真实长度 = offset+2 的 UShort
         if (off + 4 > total) break;
         try { len = dv.getUint16(off + 2, true); } catch (eVar) { break; }
@@ -13443,6 +13471,9 @@
     try {
       if (typeof op !== "number") { try { op = new DataView(bytes).getUint16(0, true); } catch (e0) { return; } }
       identityPktHook(bytes, op); // V2.38.6：手机端 char_id 包流来源（113/2757 记录身份、107 清身份）
+      // V2.38.7：装备整表 / 穿脱确认包流（只读；单帧异常只丢该帧）。
+      //   typeof 守卫：局部切片测试环境里这个函数可能不在同一段代码中，缺了就当没有（绝不抛、绝不影响分帧与身份）。
+      if (typeof gearPktHook === "function") gearPktHook(bytes, op);
       collectOpStat(bytes, op);
       itipPktProbe(bytes, op); // V2.16.21 自动探查：首次出现的 opcode 记录十六进制
       // V2.16.16：入站也进抓包环（方向 D）；V2.38.4：改为按帧记录，op/len/hex 都取该帧真实值
@@ -18565,8 +18596,306 @@
   //     ④ window.__lastroDiagnostics.inventoryEvents[*].items[]
   //   每槽记录来源路线（isInEquipList / inventory / switchEquip / inventoryEvents / domOnly / missing）与失败原因；
   //   ok 只在「至少读到 1 个槽」时为 true —— 一个槽都没读到绝不是「已穿 0 件」的成功。
+  // ================= V2.38.7 装备状态的包流来源（整表 + 穿脱确认，只读）=================
+  // 手机端取不到 Equipment/Inventory 组件（Equipment 是 jQuery 版、没有 getRoot；isInEquipList 在手机端 client 全文 0 次出现），
+  //   而且客户端对 WearState 物品直接丢弃、已穿装备根本不进 Inventory.list（Online*.js addItemSub：WearState && type!==AMMO && type!==CARD → return false）
+  //   → 包流不是备选，是手机端唯一可行路线。
+  // 约束（方案 C）：只读（不发包、不新增端点、不新增定时器，复用既有事件与 tick）；解析失败绝不写档、绝不抛（单帧异常只丢该帧）。
+  // 整表五版（逐字核对客户端 Online.js）：
+  //   164/20B  index i16@0 · ITID u16@2 · type u8@4 · IsIdentified u8@5 · location u16@6 · WearState u16@8
+  //            · IsDamaged u8@10 · RefiningLevel u8@11 · card1..4 u16@12/14/16/18
+  //   661/24B  = 20B + HireExpireDate i32@20
+  //   720/28B  = 24B + bindOnEquipType u16@24 + wItemSpriteNumber u16@26
+  //   2450/31B index@0 · ITID@2 · type@4 · location u32@5 · WearState u32@9 · RefiningLevel u8@13 · card1..4@14/16/18/20
+  //            · HireExpireDate i32@22 · bindOnEquipType u16@26 · sprite u16@28 · flag u8@30(bit0 identified / bit1 damaged)
+  //   2573/57B 同 31B 布局但 flag 挪到 @56：nRandomOptionCnt i8@30 + Options[1..5]（short index / short value / char param）@31..55
+  // 穿脱确认（成功语义按客户端类定义，绝不写反）：170/172 直读 result；
+  //   2256/2257（ACK2）与 2457/2458（V5）类内 result = !readUChar() → raw 0 = 成功。
+  var gearPkt = { slots: {}, byIndex: {}, at: 0, changedAt: 0, complete: false, dirty: {}, listOp: 0, ver: 0, rec: 0, n: 0, ackN: 0, src: "", why: "", sess: 0, chunks: 0, sessOp: 0 };
+  // 数字兜底表：手机端可能拿不到 CLIENT.PS（psClassIndex 为空），这些 opcode 来自客户端 opcode 表，永远可用。
+  var ZC_GEAR_LIST_NUM = { 164: { ver: 1, rec: 20 }, 661: { ver: 2, rec: 24 }, 720: { ver: 3, rec: 28 }, 2450: { ver: 4, rec: 31 }, 2573: { ver: 5, rec: 57 } };
+  var ZC_GEAR_ACK_NUM = {
+    170: { kind: "wear", len: 9, inv: false, loc32: false, resOff: 8 },
+    2256: { kind: "wear", len: 9, inv: true, loc32: false, resOff: 8 },
+    2457: { kind: "wear", len: 11, inv: true, loc32: true, resOff: 10 },
+    172: { kind: "takeoff", len: 7, inv: false, loc32: false, resOff: 6 },
+    2257: { kind: "takeoff", len: 7, inv: true, loc32: false, resOff: 6 },
+    2458: { kind: "takeoff", len: 9, inv: true, loc32: true, resOff: 8 }
+  };
+  var ZC_GEAR_LIST_CLS = [["EQUIPMENT_ITEMLIST", 1, 20], ["EQUIPMENT_ITEMLIST2", 2, 24], ["EQUIPMENT_ITEMLIST3", 3, 28], ["EQUIPMENT_ITEMLIST4", 4, 31], ["EQUIPMENT_ITEMLIST5", 5, 57]];
+  var ZC_GEAR_ACK_CLS = [
+    ["REQ_WEAR_EQUIP_ACK", "wear", 9, false, false, 8], ["REQ_WEAR_EQUIP_ACK2", "wear", 9, true, false, 8], ["ACK_WEAR_EQUIP_V5", "wear", 11, true, true, 10],
+    ["REQ_TAKEOFF_EQUIP_ACK", "takeoff", 7, false, false, 6], ["REQ_TAKEOFF_EQUIP_ACK2", "takeoff", 7, true, false, 6], ["ACK_TAKEOFF_EQUIP_V5", "takeoff", 9, true, true, 8]
+  ];
+  // V2.38.7 修复（审计阻塞项·分流式 itemlist 家族）：数字表先铺底 → 手机端 CLIENT.PS / psClassIndex 为空时也能认这两个 opcode（审计要求 #5）。
+  //   0x0b39/2873 SPLIT_SEND_ITEMLIST_EQUIP2 ：装备整表，invType u8@4 + 记录 68B 自 @5（真帧 481B = 5 + 7×68）
+  //   0x0b08/2824 SPLIT_SEND_ITEMLIST_SET   ：会话开始（变长：op@0 + total@2 + invType@4 + 名字）
+  //   0x0b0b/2827 SPLIT_SEND_ITEMLIST_RESULT：会话结束（定长 4B：op@0 + invType@2 + flag@3）
+  //   偏移逐字核对客户端 client/Online.js 173794-173833（EQUIP2，item_size=68）/ 173469-173473（SET）/ 173542-173546（RESULT）。
+  var ZC_GEAR_SPLIT_NUM = { 2873: { rec: 68 } };
+  var ZC_GEAR_SPLIT_CLS = [["SPLIT_SEND_ITEMLIST_EQUIP2", 2873, 68]];
+  var ZC_GEAR_SESS_NUM = { 2824: { kind: "start", invOff: 4, varLen: true }, 2827: { kind: "end", invOff: 2, varLen: false } };
+  var ZC_GEAR_SESS_CLS = [["SPLIT_SEND_ITEMLIST_SET", 2824, "start", 4, true], ["SPLIT_SEND_ITEMLIST_RESULT", 2827, "end", 2, false]];
+  var __gearOps = { map: null, sig: -1 };
+  // op → 帧描述：数字表先铺底（手机端无 CLIENT.PS 也能用），再用 psClassIndex 的类名换成该构建的真实 opcode。
+  function gearPktOps() {
+    try {
+      var ix = psClassIndex();
+      var sig = ix ? ix.sig : -1;
+      if (__gearOps.map && __gearOps.sig === sig) return __gearOps.map;
+      var map = {}, k = "";
+      for (k in ZC_GEAR_LIST_NUM) { var lv = ZC_GEAR_LIST_NUM[k]; map[k] = { list: true, ver: lv.ver, rec: lv.rec, op: Number(k) }; }
+      for (k in ZC_GEAR_ACK_NUM) { var av = ZC_GEAR_ACK_NUM[k]; map[k] = { ack: true, kind: av.kind, len: av.len, inv: av.inv, loc32: av.loc32, resOff: av.resOff, op: Number(k) }; }
+      for (k in ZC_GEAR_SPLIT_NUM) { var sv = ZC_GEAR_SPLIT_NUM[k]; map[k] = { split: true, rec: sv.rec, op: Number(k) }; }
+      for (k in ZC_GEAR_SESS_NUM) { var ev = ZC_GEAR_SESS_NUM[k]; map[k] = { sess: ev.kind, invOff: ev.invOff, varLen: ev.varLen, op: Number(k) }; }
+      if (ix && ix.byName) {
+        for (var i = 0; i < ZC_GEAR_LIST_CLS.length; i++) {
+          var c = ZC_GEAR_LIST_CLS[i], r = ix.byName["ZC." + c[0]] || ix.byName["HC." + c[0]];
+          if (r && r.id > 0) map[r.id] = { list: true, ver: c[1], rec: c[2], op: r.id, cls: c[0] };
+        }
+        for (var j = 0; j < ZC_GEAR_ACK_CLS.length; j++) {
+          var d = ZC_GEAR_ACK_CLS[j], r2 = ix.byName["ZC." + d[0]] || ix.byName["HC." + d[0]];
+          if (r2 && r2.id > 0) map[r2.id] = { ack: true, kind: d[1], len: d[2], inv: d[3], loc32: d[4], resOff: d[5], op: r2.id, cls: d[0] };
+        }
+        for (var m2 = 0; m2 < ZC_GEAR_SPLIT_CLS.length; m2++) {
+          var sp = ZC_GEAR_SPLIT_CLS[m2], rs = ix.byName["ZC." + sp[0]] || ix.byName["HC." + sp[0]];
+          if (rs && rs.id > 0) map[rs.id] = { split: true, rec: sp[2], op: rs.id, cls: sp[0] };
+        }
+        for (var n2 = 0; n2 < ZC_GEAR_SESS_CLS.length; n2++) {
+          var se = ZC_GEAR_SESS_CLS[n2], rss = ix.byName["ZC." + se[0]] || ix.byName["HC." + se[0]];
+          if (rss && rss.id > 0) map[rss.id] = { sess: se[2], invOff: se[3], varLen: se[4], op: rss.id, cls: se[0] };
+        }
+      }
+      __gearOps = { map: map, sig: sig };
+      return map;
+    } catch (e) { return null; }
+  }
+  // 进图（113/2757）/回角色列表（107）：整表作废（complete=false）→ 预检拒绝，绝不拿上一张图/上一个角色的快照换装。
+  function gearPktReset(why) {
+    try {
+      gearPkt.slots = {}; gearPkt.byIndex = {}; gearPkt.dirty = {};
+      gearPkt.complete = false; gearPkt.at = 0; gearPkt.n = 0; gearPkt.ver = 0; gearPkt.rec = 0; gearPkt.listOp = 0;
+      gearPkt.sess = 0; gearPkt.chunks = 0; gearPkt.sessOp = 0;
+      gearPkt.changedAt = Date.now(); gearPkt.why = "未收到装备数据（已清空：" + why + "）";
+      identityLogLine("gear-pkt-reset " + why);
+    } catch (e) {}
+  }
+  // 单条记录 → 与客户端路线同形的槽对象（gearSigEqual / gearApply / 诊断共用）。
+  //   拿不到的字段一律标「未知」：options=null + optionsKnown:false（非 2573 版没有随机词条）、
+  //   enchantgrade=null + enchantKnown:false（五版都不含附魔强化等级）—— 绝不填 0，否则 gearSigEqual 会把「无词条」误判成一致。
+  function gearPktSlot(dv, b, ver) {
+    try {
+      var it = { itid: 0, index: 0, type: 0, identified: false, damaged: false, refine: 0, cards: [], wearMask: 0, locRaw: 0 };
+      it.index = dv.getInt16(b, true); it.itid = dv.getUint16(b + 2, true); it.type = dv.getUint8(b + 4);
+      if (ver >= 4) {
+        it.locRaw = dv.getUint32(b + 5, true); it.wearMask = dv.getUint32(b + 9, true); it.refine = dv.getUint8(b + 13);
+        for (var c = 0; c < 4; c++) { var cv = dv.getUint16(b + 14 + c * 2, true); if (cv) it.cards.push(cv); }
+        it.expire = dv.getInt32(b + 22, true); it.bindType = dv.getUint16(b + 26, true); it.sprite = dv.getUint16(b + 28, true);
+        if (ver >= 5) {
+          it.optCnt = dv.getInt8(b + 30);
+          var opts = [];
+          for (var o = 1; o <= 5; o++) {
+            var ob = b + 31 + (o - 1) * 5, oi = dv.getInt16(ob, true), ov = dv.getInt16(ob + 2, true), op2 = dv.getInt8(ob + 4);
+            if (!(oi || ov || op2)) continue;
+            opts.push({ index: oi, value: ov, param: op2 });
+          }
+          var fl5 = dv.getUint8(b + 56);
+          it.options = opts; it.optionsKnown = true;
+          it.identified = !!(fl5 & 1); it.damaged = !!(fl5 & 2);
+        } else {
+          var fl4 = dv.getUint8(b + 30);
+          it.options = null; it.optionsKnown = false;
+          it.identified = !!(fl4 & 1); it.damaged = !!(fl4 & 2);
+        }
+      } else {
+        it.identified = !!dv.getUint8(b + 5); it.locRaw = dv.getUint16(b + 6, true); it.wearMask = dv.getUint16(b + 8, true);
+        it.damaged = !!dv.getUint8(b + 10); it.refine = dv.getUint8(b + 11);
+        for (var c2 = 0; c2 < 4; c2++) { var cv2 = dv.getUint16(b + 12 + c2 * 2, true); if (cv2) it.cards.push(cv2); }
+        it.options = null; it.optionsKnown = false;
+        if (ver === 2) it.expire = dv.getInt32(b + 20, true);
+        else if (ver === 3) { it.expire = dv.getInt32(b + 20, true); it.bindType = dv.getUint16(b + 24, true); it.sprite = dv.getUint16(b + 26, true); }
+      }
+      it.enchantgrade = null; it.enchantKnown = false; // 五版都不含 enchantgrade（只在装备窗 MICROSCOPE 系列）
+      if (!it.wearMask) it.wearMask = it.locRaw || 0;
+      return {
+        itid: it.itid, refine: Number(it.refine) || 0, cards: it.cards.slice(),
+        options: it.optionsKnown ? it.options : null, optionsKnown: !!it.optionsKnown,
+        enchantgrade: null, enchantKnown: false,
+        idx: isFinite(it.index) ? it.index : null, name: gearName(it.itid),
+        wearLocation: Number(it.wearMask) || 0, identified: !!it.identified, damaged: !!it.damaged, type: Number(it.type) || 0,
+        expire: it.expire, bindType: it.bindType, sprite: it.sprite, optCnt: it.optCnt, ver: ver, src: "packet",
+        instanceKey: ("idx:" + it.index)
+      };
+    } catch (e) { return null; }
+  }
+  // 分流会话「失效」：清掉可用标记但保留槽位（诊断对比用）；快照随即不可用（complete=false / at=0）。
+  function gearPktInvalidate(why) {
+    try {
+      gearPkt.complete = false; gearPkt.at = 0;
+      gearPkt.why = "未收到装备数据（" + why + "）";
+      identityLogLine("gear-pkt-invalid " + why);
+    } catch (e) {}
+  }
+  // 分流式装备整表（SPLIT_SEND_ITEMLIST_EQUIP2，0x0b39/2873）单条 68B 记录 → 与客户端路线同形的槽对象。
+  //   本家族自带随机词条与 enchantgrade（客户端类里就是字段）→ optionsKnown/enchantKnown 必须 true（审计 #3）；旧家族继续标未知。
+  //   偏移逐字核对客户端 Online.js 173794-173833：index i16@0 · ITID u32@2 · type u8@6 · location u32@7 · WearState u32@11
+  //   · card1..4 u32@15/19/23/27 · HireExpireDate i32@31 · bindOnEquipType u16@35 · wItemSpriteNumber u16@37
+  //   · nRandomOptionCnt i8@39 · Options[1..5]（i16 index / i16 value / u8 param）@40..64
+  //   · RefiningLevel u8@65 · enchantgrade u8@66 · flag u8@67（bit0 鉴定 / bit1 损坏 / bit2 PlaceETCTab）。
+  function gearPktSplit2Slot(dv, b) {
+    try {
+      var it = { index: dv.getInt16(b, true), itid: dv.getUint32(b + 2, true), type: dv.getUint8(b + 6),
+        locRaw: dv.getUint32(b + 7, true), wearMask: dv.getUint32(b + 11, true), cards: [] };
+      for (var c = 0; c < 4; c++) { var cv = dv.getUint32(b + 15 + c * 4, true); if (cv) it.cards.push(cv); }
+      it.expire = dv.getInt32(b + 31, true); it.bindType = dv.getUint16(b + 35, true); it.sprite = dv.getUint16(b + 37, true);
+      it.optCnt = dv.getInt8(b + 39);
+      var opts = [];
+      for (var o = 1; o <= 5; o++) {
+        var ob = b + 40 + (o - 1) * 5, oi = dv.getInt16(ob, true), ov = dv.getInt16(ob + 2, true), opm = dv.getInt8(ob + 4);
+        if (!(oi || ov || opm)) continue;
+        opts.push({ index: oi, value: ov, param: opm });
+      }
+      it.refine = dv.getUint8(b + 65); it.enchantgrade = dv.getUint8(b + 66);
+      var fl = dv.getUint8(b + 67);
+      if (!it.wearMask) it.wearMask = it.locRaw || 0;
+      return {
+        itid: it.itid, refine: Number(it.refine) || 0, cards: it.cards.slice(),
+        options: opts, optionsKnown: true, enchantgrade: Number(it.enchantgrade) || 0, enchantKnown: true,
+        idx: isFinite(it.index) ? it.index : null, name: gearName(it.itid),
+        wearLocation: Number(it.wearMask) || 0, identified: !!(fl & 1), damaged: !!(fl & 2), type: Number(it.type) || 0,
+        expire: it.expire, bindType: it.bindType, sprite: it.sprite, optCnt: it.optCnt,
+        ver: 6, src: "packet", instanceKey: ("idx:" + it.index)
+      };
+    } catch (e) { return null; }
+  }
+  // 分流整表（严格 fail-soft）：必须 (帧长-5) 整除 68、且 invType===0；任何不满足一律拒绝且不动现有快照（绝不把未知当已知）。
+  function gearPktParseSplit2(bytes, op, f) {
+    try {
+      var total = (bytes && bytes.byteLength) || 0;
+      if (!(total >= 5)) { gearPkt.why = "分流整表 op" + op + " 帧长 " + total + " 太短（< 5 = op+total+invType）→ 不解析"; return false; }
+      if (((total - 5) % f.rec) !== 0) { gearPkt.why = "分流整表 op" + op + " 帧长 " + total + " 不是「5 + 记录长" + f.rec + " 的整数倍」→ 版本不符，不解析"; identityLogLine("gear-pkt-split-reject op=" + op + " len=" + total + " rec=" + f.rec); return false; }
+      var dv = new DataView(bytes);
+      var invType = dv.getUint8(4);
+      if (invType !== 0) { gearPkt.why = "分流整表 op" + op + " invType=" + invType + "（不是 0=装备/背包）→ 不解析（fail-soft）"; identityLogLine("gear-pkt-split-reject op=" + op + " invType=" + invType); return false; }
+      var cnt = (total - 5) / f.rec, slots = {}, byIndex = {};
+      for (var i = 0; i < cnt; i++) {
+        var slot = gearPktSplit2Slot(dv, 5 + i * f.rec);
+        if (!slot) continue;
+        byIndex[slot.idx] = slot;
+        var ws = Number(slot.wearLocation) || 0, hit = false;
+        for (var s = 0; s < GEAR_SLOTS.length; s++) { var m = GEAR_SLOTS[s].m; if (ws & m) { slots[m] = slot; hit = true; } }
+        if (!hit) identityLogLine("gear-pkt-slot-unmapped idx=" + slot.idx + " itid=" + slot.itid + " wear=0x" + ws.toString(16));
+      }
+      gearPkt.slots = slots; gearPkt.byIndex = byIndex; gearPkt.dirty = {};
+      gearPkt.listOp = op; gearPkt.ver = 6; gearPkt.rec = f.rec; gearPkt.n = cnt;
+      gearPkt.at = Date.now(); gearPkt.changedAt = gearPkt.at; gearPkt.src = "packet";
+      gearPkt.complete = (cnt > 0);
+      gearPkt.why = (cnt > 0) ? "" : ("分流整表 0 条（op" + op + " 帧长 " + total + "）→ 0 槽：不算成功");
+      if (gearPkt.sess) gearPkt.chunks++;
+      identityLogLine("gear-pkt-split op=" + op + " invType=0 rec=" + f.rec + " n=" + cnt + " slots=" + Object.keys(slots).length + " complete=" + gearPkt.complete);
+      return true;
+    } catch (e) { gearPkt.why = "分流整表解析异常：" + (e && e.message ? e.message : e); return false; }
+  }
+  // 分流会话状态机：SET(0x0b08) 开始 → 清空；RESULT(0x0b0b) 结束 → 关闭会话标记。
+  //   结束口径：本次会话拿到过非空整表 → 保留 complete（真机 burst 是 SET→整表→RESULT；若在这里一律失效，手机端会永远「未收到装备数据」）；
+  //   一条都没拿到 → 整份标记失效（fail-closed）。invType!=0（推车/仓库分流）不动装备快照。
+  function gearPktParseSess(bytes, op, f) {
+    try {
+      var total = (bytes && bytes.byteLength) || 0;
+      var need = f.invOff + 1;
+      if (f.varLen) need = 5;
+      if (!(total >= need)) { identityLogLine("gear-pkt-sess-short op=" + op + " len=" + total + " need=" + need); return false; }
+      var invType = new DataView(bytes).getUint8(f.invOff);
+      if (invType !== 0) { identityLogLine("gear-pkt-sess-skip op=" + op + " " + f.sess + " invType=" + invType + "（非装备/背包分流）"); return true; }
+      if (f.sess === "start") {
+        gearPktReset("分流会话开始 op" + op);
+        gearPkt.sess = 1; gearPkt.chunks = 0; gearPkt.sessOp = op;
+        return true;
+      }
+      gearPkt.sess = 0; gearPkt.changedAt = Date.now();
+      if (!(gearPkt.n > 0)) gearPktInvalidate("分流会话结束 op" + op + " 但本次没拿到整表");
+      identityLogLine("gear-pkt-sess-end op=" + op + " chunks=" + gearPkt.chunks + " n=" + gearPkt.n + " complete=" + gearPkt.complete);
+      return true;
+    } catch (e) { return false; }
+  }
+  // 整表：只有「帧长 − 4」被记录长整除时才解析（严格；不整除 = 版本不符 → 不解析，退回客户端路线）
+  function gearPktParseList(bytes, op, f) {
+    try {
+      var total = (bytes && bytes.byteLength) || 0;
+      if (!(total >= 4) || !(f.rec >= 20)) return false;
+      if (((total - 4) % f.rec) !== 0) { gearPkt.why = "整表 op" + op + " 帧长 " + total + " 不是记录长 " + f.rec + " 的整数倍（版本不符）→ 不解析"; return false; }
+      var cnt = (total - 4) / f.rec;
+      var dv = new DataView(bytes), slots = {}, byIndex = {};
+      for (var i = 0; i < cnt; i++) {
+        var slot = gearPktSlot(dv, 4 + i * f.rec, f.ver);
+        if (!slot) continue;
+        byIndex[slot.idx] = slot;
+        var ws = Number(slot.wearLocation) || 0, hit = false;
+        for (var s = 0; s < GEAR_SLOTS.length; s++) { var m = GEAR_SLOTS[s].m; if (ws & m) { slots[m] = slot; hit = true; } }
+        if (!hit) identityLogLine("gear-pkt-slot-unmapped idx=" + slot.idx + " itid=" + slot.itid + " wear=0x" + ws.toString(16));
+      }
+      gearPkt.slots = slots; gearPkt.byIndex = byIndex; gearPkt.dirty = {};
+      gearPkt.listOp = op; gearPkt.ver = f.ver; gearPkt.rec = f.rec; gearPkt.n = cnt;
+      gearPkt.at = Date.now(); gearPkt.changedAt = gearPkt.at; gearPkt.src = "packet";
+      gearPkt.complete = (cnt > 0); // 空表不置 complete：0 槽绝不是「已穿 0 件」的成功
+      gearPkt.why = (cnt > 0) ? "" : ("整表 0 条（op" + op + " 帧长 " + total + "）→ 0 槽：不算成功");
+      identityLogLine("gear-pkt-list op=" + op + " v" + f.ver + " rec=" + f.rec + " n=" + cnt + " slots=" + Object.keys(slots).length + " complete=" + gearPkt.complete);
+      return true;
+    } catch (e) { gearPkt.why = "整表解析异常：" + (e && e.message ? e.message : e); return false; }
+  }
+  // 穿脱确认：严格等长（整条消息被当一个包交付时，绝不把后续包字节读成字段）；
+  //   成功语义 170/172 直读、2256/2257/2457/2458 取反；默认只标 dirty[index] + changedAt，不直接改槽（方案 E4：等整表校正）。
+  function gearPktParseAck(bytes, op, f) {
+    try {
+      var total = (bytes && bytes.byteLength) || 0;
+      if (total !== f.len) { identityLogLine("gear-pkt-ack 长度不符 op=" + op + " len=" + total + " 期望=" + f.len + " → 丢弃"); return false; }
+      var dv = new DataView(bytes);
+      var index = dv.getUint16(2, true);
+      var loc = f.loc32 ? dv.getUint32(4, true) : dv.getUint16(4, true);
+      var raw = dv.getUint8(f.resOff);
+      var ok = f.inv ? (raw === 0) : (raw !== 0); // ACK2/V5 类内 result = !readUChar()
+      gearPkt.ackN++;
+      gearPkt.changedAt = Date.now();
+      gearPkt.dirty[index] = { at: gearPkt.changedAt, kind: f.kind, loc: loc, raw: raw, ok: ok, op: op };
+      identityLogLine("gear-pkt-ack op=" + op + " " + f.kind + " idx=" + index + " loc=" + loc + " raw=" + raw + " ok=" + ok);
+      return true;
+    } catch (e) { return false; }
+  }
+  // 收包入口（由 dispatchInboundFrame 逐帧调用）：单帧异常只丢该帧，绝不外抛到分帧器
+  function gearPktHook(bytes, op) {
+    try {
+      if (typeof op !== "number") return;
+      var ops = identityPktOps();
+      if (ops) {
+        if (ops.zone[op]) { gearPktReset("zone op" + op); return; }
+        if (ops.charlist[op]) { gearPktReset("charlist op" + op); return; }
+      }
+      var map = gearPktOps();
+      if (!map) return;
+      var f = map[op];
+      if (!f) return;
+      if (f.split) { gearPktParseSplit2(bytes, op, f); return; }
+      if (f.sess) { gearPktParseSess(bytes, op, f); return; }
+      if (f.list) gearPktParseList(bytes, op, f); else gearPktParseAck(bytes, op, f);
+    } catch (e) {}
+  }
+  // 整表快照：只有「收到过非空整表」且 60 秒内才可用；过期或从未收到 → null（交给客户端路线，都不行则 0 槽失败）
+  function gearPktSnapshot() {
+    try {
+      if (!gearPkt.complete || !(gearPkt.n > 0)) return null;
+      if (!gearPkt.at || (Date.now() - gearPkt.at) > 60000) return null;
+      if (!Object.keys(gearPkt.slots).length) return null;
+      return gearPkt.slots;
+    } catch (e) { return null; }
+  }
+  // 诊断一行（手机端定位「为什么读不到」的第一现场）；与 gearPkt 同生命周期，独立成函数便于诊断切片 VM 复用
+  function gearPktDiagText() {
+    try {
+      return "装备包流=op:" + (gearPkt.listOp || 0) + " · 版本:v" + (gearPkt.ver || 0) + " · 记录长:" + (gearPkt.rec || 0) + " · 条数:" + (gearPkt.n || 0) + " · 命中槽:" + Object.keys(gearPkt.slots).length + " · complete:" + (gearPkt.complete ? "true" : "false") + " · 整表距今:" + (gearPkt.at ? (Date.now() - gearPkt.at) + "ms" : "未收到") + " · 穿脱ack:" + (gearPkt.ackN || 0) + (gearPkt.why ? (" · 说明:" + gearPkt.why) : "");
+    } catch (e) { return "装备包流=读取异常"; }
+  }
   function gearReadEquipped() {
-    var out = { slots: {}, n: 0, ok: false, why: "", routes: {}, missWhy: {}, missing: [] };
+    var out = { slots: {}, n: 0, ok: false, why: "", routes: {}, missWhy: {}, missing: [], complete: false, src: "" };
     var bad = [];
     try {
       var EQ = gearEquipmentComp(), root = gearEqRoot(EQ), INV = null;
@@ -18578,9 +18907,16 @@
       if (!root) bad.push("装备窗口 DOM 不可用（组件未渲染或没有 getRoot）");
       if (!INV) bad.push("Inventory 组件不可用");
       if (!SW) bad.push("SwitchEquip 组件不可用");
+      // V2.38.7 路线①（最高优先级）：包流整表快照 —— 手机端唯一可行路线（组件不可达、已穿装备不进背包）。
+      var pk = (typeof gearPktSnapshot === "function") ? gearPktSnapshot() : null; // typeof 守卫：局部切片测试环境可缺
+      if (pk) {
+        for (var mk in pk) { if (!Object.prototype.hasOwnProperty.call(pk, mk)) continue; out.slots[mk] = pk[mk]; out.routes[mk] = "packet"; out.n++; }
+        out.complete = true; out.src = "packet";
+      }
       var diag = null, diagDone = false;
       for (var s2 = 0; s2 < GEAR_SLOTS.length; s2++) {
         var slot = GEAR_SLOTS[s2], mask = slot.m, cls = slot.cls;
+        if (out.slots[mask]) continue; // 路线①已给出该槽（包流优先，客户端路线只补缺口）
         var it = null, idx = null, route = "", why = "";
         if (canIso) {
           try {
@@ -18621,9 +18957,12 @@
         out.routes[mask] = route || "inventoryEvents";
         out.n++;
       }
-      out.ok = (out.n > 0);
+      out.ok = (out.n > 0); // 0 槽必须失败（现状保留）：解析成功但 0 条绝不是「已穿 0 件」
+      // V2.38.7 complete 门：① 包流整表 = 完整枚举；② EQ.isInEquipList 是整槽枚举（含空槽）→ 也算完整；
+      //   ③ DOM / switchEquip / inventoryEvents 只看得见「有东西的槽」→ 只算部分快照（绝不能据此规划「脱哪些」）。
+      if (out.ok) { out.complete = !!(out.complete || canIso); out.src = out.src || (canIso ? "client" : "partial"); }
       if (out.ok) out.why = "";
-      else out.why = "装备读取失败：一个槽都没读到（0 槽不是成功）；" + bad.join("；");
+      else out.why = "装备读取失败：一个槽都没读到（0 槽不是成功）" + ((typeof gearPkt !== "undefined" && gearPkt.why) ? "；包流：" + gearPkt.why : "") + "；" + bad.join("；");
     } catch (e) { out.ok = false; out.n = 0; out.why = "装备槽读取失败：" + (e && e.message ? e.message : e); }
     return out;
   }
@@ -18635,10 +18974,14 @@
       var eq = gearReadEquipped(), EQ = gearEquipmentComp(), UM = clientUIManager();
       L.push("RO助手 v" + VER + " 换装读取诊断 · " + new Date().toLocaleString());
       L.push("档键=" + (activeProfileKey() || "") + " · charId=" + selfCharId() + " · 角色名=" + (gearCharLabel() || ""));
-      L.push("装备读取 ok=" + (eq.ok ? "true" : "false") + " · 读到 " + eq.n + " 槽 · why=" + (eq.why || "无"));
+      L.push("装备读取 ok=" + (eq.ok ? "true" : "false") + " · 读到 " + eq.n + " 槽 · complete=" + (eq.complete === true ? "true" : "false") + " · src=" + (eq.src || "-") + " · why=" + (eq.why || "无"));
+      // V2.38.7 包流状态（手机端定位「为什么读不到」的第一现场）；局部切片 VM 里 gearPkt 不存在 → 自动跳过
+      try { if (typeof gearPktDiagText === "function") L.push(gearPktDiagText()); } catch (eGPD) {}
       for (var s3 = 0; s3 < GEAR_SLOTS.length; s3++) {
         var m3 = GEAR_SLOTS[s3].m, sl = eq.slots[m3] || null;
-        var val = sl ? ("itid=" + sl.itid + " 精炼=" + sl.refine + " 卡=" + (sl.cards || []).join("/") + " 词条=" + (sl.options || []).length + " 附魔=" + sl.enchantgrade + " idx=" + sl.idx + " 名=" + sl.name) : ("值=未读到：" + ((eq.missWhy || {})[m3] || ""));
+        var optTxt = (sl && sl.optionsKnown === false) ? "未知" : ((sl && sl.options) || []).length; // V2.38.7：拿不到就标未知，绝不显示 0
+        var encTxt = (sl && sl.enchantKnown === false) ? "未知" : (sl ? sl.enchantgrade : "");
+        var val = sl ? ("itid=" + sl.itid + " 精炼=" + sl.refine + " 卡=" + (sl.cards || []).join("/") + " 词条=" + optTxt + " 附魔=" + encTxt + " idx=" + sl.idx + " 名=" + sl.name) : ("值=未读到：" + ((eq.missWhy || {})[m3] || ""));
         L.push("槽 " + GEAR_SLOTS[s3].name + "(" + m3 + "/." + GEAR_SLOTS[s3].cls + ") 路线=" + ((eq.routes || {})[m3] || "missing") + " · " + val);
       }
       L.push("missing=" + ((eq.missing && eq.missing.length) ? eq.missing.join("、") : "无"));
@@ -18677,6 +19020,10 @@
     if (!(a && b && Number(a.itid) === Number(b.itid) && (Number(a.refine) || 0) === (Number(b.refine) || 0) && (a.cards || []).join(",") === (b.cards || []).join(","))) return false;
     if (Object.prototype.hasOwnProperty.call(a, "options") && JSON.stringify(a.options || []) !== JSON.stringify(b.options || [])) return false;
     if (Object.prototype.hasOwnProperty.call(a, "enchantgrade") && (Number(a.enchantgrade) || 0) !== (Number(b.enchantgrade) || 0)) return false;
+    // V2.38.7：包流拿不到的字段标了 optionsKnown/enchantKnown=false（绝不填 0）——
+    //   只要预设侧对这些字段有要求，就绝不判「一致」（宁可重穿 + 诊断提示，也不误报成功）。
+    if (b.optionsKnown === false && (a.options || []).length) return false;
+    if (b.enchantKnown === false && (Number(a.enchantgrade) || 0) > 0) return false;
     return true;
   }
   function gearFindInvItem(itid, refine, cards, reserved, options, enchantgrade) {
@@ -18801,6 +19148,16 @@
     gearWatchdog = setTimeout(function () { gearBusy = false; gearLog("换装超时解锁（30 秒），可再次尝试"); }, 30000); // 看门狗：异常卡住也会解锁
     var cur = gearReadEquipped();
     if (!cur.ok) { gearBusy = false; setStatus("换装预检失败：" + cur.why, "err"); gearLog("换装预检失败：" + cur.why); return false; }
+    // V2.38.7 complete 门（方案 C.5）：只有「完整枚举」（包流整表 / isInEquipList）才允许据此规划「脱哪些」；
+    //   部分快照会把「某槽其实非空」当空槽 → 换装计划只穿不脱 → 叠穿。未收到整表时明确报「未收到装备数据」。
+    if (cur.complete !== true) {
+      gearBusy = false;
+      var gp = (typeof gearPkt !== "undefined") ? gearPkt : null; // typeof 守卫：局部切片测试环境可缺
+      var whyC = (gp && gp.complete) ? ("快照来源=" + (cur.src || "?") + "，非完整枚举") : ((gp && gp.why) || "未收到装备数据");
+      setStatus("换装预检失败：未收到装备数据（" + whyC + "）", "err");
+      gearLog("换装预检失败：未收到装备数据 complete=false src=" + (cur.src || "?") + " why=" + whyC);
+      return false;
+    }
     var offs = [], wears = [], missing = [], reserved = {}, planned = {}, targets = [], byInstance = {}, offSeen = {};
     for (var s = 0; s < GEAR_SLOTS.length; s++) {
       var m = GEAR_SLOTS[s].m, want = (ps.eq || {})[m] || null, have = cur.slots[m] || null;

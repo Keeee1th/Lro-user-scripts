@@ -476,12 +476,13 @@ test('V2.38.7 9a 启动期（未进游戏）不刷「角色未识别」，已进
 });
 
 // ================= 结构断言（版本 / EOL / 两文件差异） =================
-test('V2.38.7 结构断言：版本与 EOL 不变量（两文件）', () => {
+test('V2.38.8 结构断言：版本与 EOL 不变量（两文件）', () => {
   const stable = readSrc('ro-assist.user.js'), exp = readSrc('ro-assist-exp.user.js');
   for (const [name, src] of [['stable', stable], ['exp', exp]]) {
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.7', name + ' @version 必须是 2.38.7');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.7', name + ' VER 必须是 2.38.7');
-    assert.ok(src.includes('// ---------------- V2.38.7 变更摘要 ----------------'), name + ' 必须有 V2.38.7 变更摘要');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.8', name + ' @version 必须是 2.38.8');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.8', name + ' VER 必须是 2.38.8');
+    assert.ok(src.includes('// ---------------- V2.38.8 变更摘要 ----------------'), name + ' 必须有 V2.38.8 变更摘要');
+    assert.ok(src.includes('// ---------------- V2.38.7 变更摘要 ----------------'), name + ' V2.38.7 摘要必须保留（历史批次不删）');
     assert.ok(src.includes('170: 9, 2256: 9, 2457: 11, 172: 7, 2257: 7, 2458: 9'), name + ' 必须有补充长度表（穿脱确认）');
     assert.ok(src.includes('2824: -1, 2825: -1, 2826: -1, 2827: 4, 2873: -1'), name + ' 必须有补充长度表（分流式 itemlist 家族）');
     assert.ok(src.includes('SPLIT_SEND_ITEMLIST_EQUIP2'), name + ' 必须认分流整表类名');
@@ -498,7 +499,7 @@ test('V2.38.7 结构断言：版本与 EOL 不变量（两文件）', () => {
 
 
 // ================= 分流式 itemlist 家族（0x0b39/2824/2827）真字节构造 =================
-//   逐字对齐客户端 Online.js 173794-173833（EQUIP2，item_size=68）：op@0 total@2 invType@4 记录自 @5。
+//   逐字对齐客户端 src/UI/Components/WorldMap（_dist/new-engine-local/www/Online.js 173964-174004，EQUIP2，item_size=68）：op@0 total@2 invType@4 记录自 @5。
 function writeSplit2Rec(dv, b, r) {
   dv.setInt16(b, r.index, true);
   dv.setUint32(b + 2, r.itid, true);
@@ -601,6 +602,85 @@ test('V2.38.7 G13 分流整表 0x0b39：真字节 481B / 7 条逐字段（无类
       ' 武器{' + w.itid + ',+' + w.refine + ',cards=' + B.blob(w.cards) + ',opt=' + B.blob(w.options) + ',ench=' + w.enchantgrade + '}');
   }
 });
+
+// ================= F4 加固：同族 EQUIP 67B 版（0x0b36/2826）真字节构造 =================
+//   逐字对齐客户端 src/UI/Components/WorldMap（_dist/new-engine-local/www/Online.js 173672-173710，EQUIP，item_size=67）：
+//   op@0 total@2 invType@4 记录自 @5；记录内：index i16@0 · ITID u32@2 · type u8@6 · location u32@7 · WearState u32@11 ·
+//   RefiningLevel u8@15（紧跟 WearState）· card1..4 u32@16/20/24/28 · HireExpireDate i32@32 · bind u16@36 · sprite u16@38 ·
+//   nRandomOptionCnt i8@40 · Options[1..5] @41..65 · flag u8@66（无 enchantgrade）。
+function writeSplitEquipRec(dv, b, r) {
+  dv.setInt16(b, r.index, true);
+  dv.setUint32(b + 2, r.itid, true);
+  dv.setUint8(b + 6, r.type || 0);
+  dv.setUint32(b + 7, r.locRaw || 0, true);
+  dv.setUint32(b + 11, r.wearMask || 0, true);
+  dv.setUint8(b + 15, r.refine || 0);
+  const cards = r.cards || [];
+  for (let c = 0; c < 4; c++) dv.setUint32(b + 16 + c * 4, cards[c] || 0, true);
+  dv.setInt32(b + 32, r.expire || 0, true);
+  dv.setUint16(b + 36, r.bind || 0, true);
+  dv.setUint16(b + 38, r.sprite || 0, true);
+  const opts = r.options || [];
+  dv.setInt8(b + 40, opts.length);
+  opts.forEach((o, i) => { const ob = b + 41 + i * 5; dv.setInt16(ob, o.index, true); dv.setInt16(ob + 2, o.value, true); dv.setInt8(ob + 4, o.param, true); });
+  dv.setUint8(b + 66, (r.identified ? 1 : 0) | (r.damaged ? 2 : 0) | (r.etc ? 4 : 0));
+}
+function equip67Frame(recs, invType) {
+  const buf = new ArrayBuffer(5 + recs.length * 67), dv = new DataView(buf);
+  dv.setUint16(0, 2826, true); dv.setUint16(2, buf.byteLength, true); dv.setUint8(4, invType == null ? 0 : invType);
+  recs.forEach((r, i) => writeSplitEquipRec(dv, 5 + i * 67, r));
+  return buf;
+}
+test('V2.38.8 G20 分流装备整表 67B 版（0x0b36/2826，F4 加固）：偏移与「无 enchantgrade → 未知」口径（两文件）', () => {
+  const REC1 = { index: 1, itid: 1101, type: 4, wearMask: 2, refine: 7, cards: [4001], expire: 111, bind: 1, sprite: 90, options: [{ index: 1, value: 5, param: 2 }], identified: true };
+  for (const [name, src] of splitSources) {
+    const B = world(src, { ps: null }); // 审计 #5：不依赖客户端类名索引，只走数字兜底表
+    const frame = equip67Frame([REC1]);
+    assert.equal(frame.byteLength, 72, name + ' 真帧必须 72B（5 + 67）');
+    assert.equal(B.W.zcLenTable(), null, name + ' 前置：没有主长度表');
+    const seen = [];
+    B.W.walkInboundFrames(frame, () => seen.push(1));
+    assert.equal(seen.length, 1, name + ' 2826 必须靠补充表（2826:-1）切成 1 帧');
+    B.W.dispatchInbound(frame);
+    const p = B.W.gearPkt;
+    assert.equal(p.complete, true, name + ' 非空整表必须 complete');
+    assert.equal(p.rec, 67, name + ' 记录长必须识别为 67');
+    assert.equal(p.n, 1, name + ' 条数 1');
+    assert.equal(p.listOp, 2826, name + ' opcode 2826');
+    const w = p.slots[2];
+    assert.ok(w, name + ' 武器槽必须命中');
+    assert.equal(w.itid, 1101, name + ' ITID u32@2');
+    assert.equal(w.refine, 7, name + ' 精炼 u8@15（EQUIP 版紧跟 WearState）');
+    assert.equal(B.blob(w.cards), '[4001]', name + ' 卡片 u32@16');
+    assert.equal(B.blob(w.options), '[{"index":1,"value":5,"param":2}]', name + ' 词条自 @41');
+    assert.equal(w.optionsKnown, true, name + ' 本版有词条 → 必须已知');
+    assert.equal(w.enchantKnown, false, name + ' 本版无 enchantgrade → 必须标未知');
+    assert.equal(w.enchantgrade, null, name + ' 附魔绝不填 0');
+    assert.equal(w.expire, 111, name + ' HireExpireDate i32@32');
+    assert.equal(w.bindType, 1, name + ' bind u16@36');
+    assert.equal(w.sprite, 90, name + ' sprite u16@38');
+    assert.equal(w.identified, true, name + ' flag bit0 @66');
+    assert.equal(w.ver, 6, name + ' 家族标号 v6');
+    assert.equal(w.src, 'packet', name + ' 来源');
+    assert.equal(B.packets.length, 0, name + ' 解析全程零发包');
+    // 真机口径（本服走 2873 68B）：随后到达的 2873 必须覆盖为 68B 版，且 68B 版附魔已知
+    B.W.dispatchInbound(split2Frame(SPLIT2_SEVEN(), 0));
+    assert.equal(B.W.gearPkt.rec, 68, name + ' 随后 2873 必须覆盖为 68B 版');
+    assert.equal(B.W.gearPkt.n, 7, name + ' 2873 条数 7');
+    assert.equal(B.W.gearPkt.slots[2].enchantKnown, true, name + ' 68B 版附魔已知');
+    assert.equal(B.W.gearPkt.slots[2].enchantgrade, 3, name + ' 68B 版附魔等级');
+    console.log('[分流 67B][' + name + '] 0x0b36 72B → rec=' + p.rec + ' n=' + p.n + ' 精炼@15=' + w.refine + ' enchantKnown=' + w.enchantKnown);
+  }
+  mutantKill('M21 EQUIP 67B 版偏移当 68B 用（卡片/到期/词条整体错位）',
+    '    equip:  { card: 16, expire: 32, bind: 36, sprite: 38, cnt: 40, opt: 41, refine: 15, ench: -1, flag: 66 }',
+    '    equip:  { card: 15, expire: 31, bind: 35, sprite: 37, cnt: 39, opt: 40, refine: 15, ench: -1, flag: 66 }',
+    (B) => {
+      B.W.dispatchInbound(equip67Frame([REC1]));
+      assert.equal(B.W.gearPkt.slots[2].refine, 7, '67B 版精炼必须在 @15');
+      assert.equal(B.blob(B.W.gearPkt.slots[2].cards), '[4001]', '67B 版卡片必须自 @16');
+    }, (code) => world(code, { ps: null }));
+});
+
 
 test('V2.38.7 G14 分流生命周期：0x0b08 开始清空 → 0x0b39 整表 complete → 0x0b0b 结束（两文件）', () => {
   for (const [name, src] of splitSources) {
@@ -763,9 +843,9 @@ test('V2.38.7 G16 数字兜底表：无类名索引时旧家族五版的 ver/rec
       assert.equal(B.W.gearPkt.rec, 57, '2573 记录长必须 57');
       assert.equal(B.W.gearPkt.n, 1, '2573 必须解析出 1 条');
     }, (code) => world(code, { ps: null }));
-  mutantKill('M16 分帧补充表漏掉 2873（burst 中途 break，整表永远收不到）',
-    '  var ZC_EXTRA_LEN = { 170: 9, 2256: 9, 2457: 11, 172: 7, 2257: 7, 2458: 9, 2824: -1, 2825: -1, 2826: -1, 2827: 4, 2873: -1 };',
-    '  var ZC_EXTRA_LEN = { 170: 9, 2256: 9, 2457: 11, 172: 7, 2257: 7, 2458: 9, 2824: -1, 2825: -1, 2826: -1, 2827: 4 };',
+  mutantKill('M16 分帧补充表漏掉 2873（走到 2873 就 break，整表永远收不到）',
+    '  var ZC_EXTRA_LEN = { 170: 9, 2256: 9, 2457: 11, 172: 7, 2257: 7, 2458: 9, 2824: -1, 2825: -1, 2826: -1, 2827: 4, 2873: -1, 2634: 6 };',
+    '  var ZC_EXTRA_LEN = { 170: 9, 2256: 9, 2457: 11, 172: 7, 2257: 7, 2458: 9, 2824: -1, 2825: -1, 2826: -1, 2827: 4, 2634: 6 };',
     (B) => {
       B.W.dispatchInbound(concat(sessFrame(2824, 0, '装备'), split2Frame(SPLIT2_SEVEN(), 0), sessFrame(2827, 0)));
       assert.equal(B.W.gearPkt.n, 7, 'burst 里的整表必须被切出并解析');
@@ -812,21 +892,22 @@ test('V2.38.7 G18 分流家族词条/附魔为「已知」：gearSigEqual 必须
     C.W.dispatchInbound(listFrame(164, 1, [{ index: 7, itid: 1101, refine: 7, cards: [4001], wearMask: 2 }]));
     assert.equal(C.W.gearSigEqual({ itid: 1101, refine: 7, cards: [4001], options: [{ index: 1, value: 5, param: 2 }] }, C.W.gearPkt.slots[2]), false, name + ' 旧家族词条未知 → 预设要就必须判不一致');
   }
-  mutantKill('M19 分流家族词条/附魔退回「未知」',
-    '        options: opts, optionsKnown: true, enchantgrade: Number(it.enchantgrade) || 0, enchantKnown: true,',
-    '        options: opts, optionsKnown: false, enchantgrade: Number(it.enchantgrade) || 0, enchantKnown: false,',
+  mutantKill('M19 分流家族词条退回「未知」',
+    '        options: opts, optionsKnown: true,',
+    '        options: opts, optionsKnown: false,',
     (B) => {
       B.W.dispatchInbound(split2Frame(SPLIT2_SEVEN(), 0));
       assert.equal(B.W.gearPkt.slots[2].optionsKnown, true, '本家族词条必须已知');
       assert.equal(B.W.gearPkt.slots[2].enchantKnown, true, '本家族附魔必须已知');
     }, (code) => world(code, { ps: null }));
-  mutantKill('M12 分流记录偏移写错（精炼/附魔错位）',
-    '      it.refine = dv.getUint8(b + 65); it.enchantgrade = dv.getUint8(b + 66);',
-    '      it.refine = dv.getUint8(b + 64); it.enchantgrade = dv.getUint8(b + 65);',
+  mutantKill('M12 分流记录偏移写错（EQUIP2 精炼错位到 @64）',
+    '    equip2: { card: 15, expire: 31, bind: 35, sprite: 37, cnt: 39, opt: 40, refine: 65, ench: 66, flag: 67 },',
+    '    equip2: { card: 15, expire: 31, bind: 35, sprite: 37, cnt: 39, opt: 40, refine: 64, ench: 66, flag: 67 },',
     (B) => {
       B.W.dispatchInbound(split2Frame(SPLIT2_SEVEN(), 0));
       assert.equal(B.W.gearPkt.slots[2].refine, 7, '精炼必须在 @65');
       assert.equal(B.W.gearPkt.slots[2].enchantgrade, 3, '附魔必须在 @66');
+      assert.equal(B.blob(B.W.gearPkt.slots[2].cards), '[4001,4002]', '卡片必须仍在 @15/19');
     }, (code) => world(code, { ps: null }));
 });
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.38.7
+// @version      2.38.8
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -119,6 +119,23 @@
 // 3. 无限道场优先选择活体 MVP/BOSS，使用租约内临时 GID 目标驱动原有 zAttack 攻击链；临时压制内挂其他 MID，死亡、换波或停止后按当前永久名单恢复，不写入 lockList。
 // 4. 临时战斗目标 API 在任何发包前严格验证 GID/MID、活体怪物和 MvpDropsNum；失效时自动清理。保留 v2.38.0 opcode 能力探测与启动自检修复。
 // 5. 版本：@version 2.38.0 → 2.38.1（VER 同步）；实验版同步。离线 runtime 151/151、opcode 9/9，独立定点复核 8/8 通过。
+
+// ---------------- V2.38.8 变更摘要 ----------------
+// 1. 传送改为助手自己直发发包（用户原始要求：直接发送这个包，不打开对话框、也不显示助手自己的对话框）：
+//    新增直达发包入口 teleport(map,{x,y,type}) / tpSend() / tpTeleport()，自己构造 CZ.PRIVATE_AIRSHIP_REQUEST
+//    （0x0a49/2633：packetver>=20180704 → 34B，map 名 16B 定长，随后 x/y/type/14527 各 u32；旧版 26B + u16），
+//    走助手既有发包封装 CLIENT.NM.sendPacket。原先那条路径（ChatBox GPT 频道：点开频道菜单 + 填聊天框 + submit）整体删除。
+//    帧形逐字节核对客户端两处独立来源：新引擎 src/UI/Components/WorldMap/LastROTeleport.js（Online.js 225109-225135，
+//    构造期校验 map ^[a-z0-9_]{1,15}$ / packetver>0 / 坐标 0..65535 / type∈{0,1}）与旧引擎 CZ.PRIVATE_AIRSHIP_REQUEST.build()
+//    （Online.js 与官方 Online_mn.js 逐字一致，itemid 恒 14527 = 传送卷轴）；客户端自己的世界地图/自动寻路入口同样直发此包、不弹框。
+// 2. 回包 ZC.PRIVATE_AIRSHIP_RESPONSE(2634) = op u16 + response u32（6B）：新增 tpOnAck 把服务器结果码如实上报
+//    （0=受理；2=传送卷轴不足/券耗尽；其它按原值报「未知代码」），失败绝不假装成功；ZC_EXTRA_LEN 补 2634 保证多包消息里能切出这一帧。
+// 3. 诊断：每次传送记一行（目标、是否带坐标、type、是否耗券 14527、服务器结果码、落地实际 map/坐标），
+//    落地沿用既有 20s/800ms 判定，失配时按要求暴露 requested/actual；耗券规则仍由服务器判定（城镇及周边不耗、野外/地牢耗 1 张 14527）。
+// 4. 安全口径：只在用户/脚本显式触发时发包（唯一新增发包点），无自发传送、无新端点、无新定时器、不引入等待/确认对话框。
+// 5. 审计小修：F1 分帧补充表 2825 的理由改成事实（真机 burst 首包是 op 471 ZC.SPRITE_CHANGE2，主表缺失时在 471 就断，2825 救不了；条目保留为防御性）；
+//    F2 客户端行号引用改为 new-engine-local/www/Online.js 实际位置；F4 分流装备整表补 0x0b36(2826) 67B 记录（同族加固，本服真机走 2873）。
+// 6. 版本：@version 2.38.7 → 2.38.8（VER 同步）；实验版同步。
 
 // ---------------- V2.38.7 变更摘要 ----------------
 // 1. 装备读取改走收发包（方案 C）：新增最高优先级路线①「包流装备表」——整表 ZC.EQUIPMENT_ITEMLIST 五版
@@ -384,7 +401,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.38.7"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.38.8"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -1998,7 +2015,7 @@
       '<button class="sub-tab" data-sub="bk-mvp">BOSS</button></div>' +
       '<div id="dsh-book" style="font-size:11px;max-height:180px;overflow:auto"><div class="st">书本数据读取中…（logsTable 6分类×线路）</div></div>' +
       '<div id="dsh-fw-tp">' +
-      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">GPT 地图传送 + 坐标前往</span><button class="ghost" id="dsh-fw-btn-tp" data-fw="tp" style="flex:0 0 auto;padding:0 8px;font-size:11px">⧉ 浮窗</button></div>' +
+      '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">地图传送（助手直发 · 不弹框）</span><button class="ghost" id="dsh-fw-btn-tp" data-fw="tp" style="flex:0 0 auto;padding:0 8px;font-size:11px">⧉ 浮窗</button></div>' +
       '<div class="row"><span class="lb">世界</span><select id="dsh-world" style="flex:0 0 100px"><option value="黑暗大陆">黑暗大陆</option><option value="次元大陆">次元大陆</option><option value="局部地图01">局部地图01</option><option value="局部地图02">局部地图02</option></select>' +
       '<button id="dsh-tp" style="flex:0 0 auto">传送</button><span class="st" id="dsh-tpmsg"></span></div>' +
       '<div class="row" style="align-items:center;flex-wrap:wrap;gap:7px 7px"><span class="lb" style="min-width:34px;margin:0">地图</span>' +
@@ -2007,7 +2024,7 @@
       '<div id="dsh-maplist" style="display:none;position:absolute;top:calc(100% + 3px);left:0;right:0;z-index:99;background:#fff;border:1px solid #b8c6d4;border-radius:4px;max-height:180px;overflow:auto;box-shadow:0 3px 8px rgba(0,0,0,.18)"></div></div></div>' +
       '<div class="row" style="margin-top:8px;gap:7px"><button class="ghost" id="dsh-mapload" style="flex:0 0 auto">读地图</button><button id="dsh-tp-map" style="flex:0 0 auto">传送</button><button class="ghost" id="dsh-tp-walk" style="flex:0 0 auto">走去</button><span class="st" id="dsh-tpmsg2" style="font-size:11px"></span></div>' +
       '<div class="st" id="dsh-route" style="font-size:11px;margin-top:6px">路线：-</div>' +
-      '<div class="sec">指定坐标（同图走路 / 跨图 GPT 直达）</div>' +
+      '<div class="sec">指定坐标（同图走路 / 跨图助手直发）</div>' +
       '<div class="row" style="align-items:center;flex-wrap:wrap;gap:7px"><span class="lb" style="min-width:34px;margin:0">地图</span>' +
       '<input id="dsh-mvmap" type="text" placeholder="地图英文名·留空=当前图" autocomplete="off" style="flex:1 1 140px;min-width:100px;padding:3px 6px">' +
       '<span class="lb" style="min-width:14px;margin:0">X</span><input id="dsh-mvx" type="number" placeholder="x" style="flex:0 0 56px;padding:3px 6px">' +
@@ -9543,7 +9560,7 @@
       if (pendingPick) { try { zMon.action = "拾取物品中"; } catch (e) {} return; } // V2.15.16：有拾取任务在身 → 寻怪让位（防拾取移动包被寻怪覆盖）
       var ent = CLIENT.SS.Entity;
       if (!ent || !ent.position) return;
-      // V2.16.8 换图检测 + 反向走回（走路跨图）；反向走 8s 没回图 → GPT 传送回启动图
+      // V2.16.8 换图检测 + 反向走回（走路跨图）；反向走 8s 没回图 → 助手直发传送回启动图
       try {
         var curKeyB = getMapName();
         // V2.38.4 G1①：先算「外部（客户端/用户点大地图）本地路线是否进行中」，存入状态供换图段与寻怪段共用
@@ -12142,11 +12159,12 @@
       for (var i = 0; i < subs.length; i++) if (subs[i].classList.contains("active")) active = subs[i].getAttribute("data-sub");
       var it = tbl[catMap[active]] && tbl[catMap[active]][key];
       if (!it) { setStatus("书本条目不存在", "err"); return; }
-      // 书本坐标统一交给 GPT 传送（不再自行构造私人飞艇包）。注意：只有城镇目的地传送不消耗传送卷轴；非城镇目的地（野外/洞窟）仍消耗 1 张传送卷轴 14527。
+      // 书本坐标交给助手直发传送（V2.38.8：自己构造 CZ.PRIVATE_AIRSHIP_REQUEST 0x0a49 发包，不弹任何对话框，也不再走聊天频道）。
+  // 耗券规则由服务器判定：城镇及城市周边不消耗传送卷轴，野外/地牢消耗 1 张传送卷轴 14527（包内 itemid 恒为 14527；失败码如实上报）。
       if (it.outset && it.outset.length >= 3 && clientReady()) {
-        if (gptTeleport(it.outset[0], it.outset[1], it.outset[2])) {
-          setStatus("书本前往: " + (it.npc || "") + "（GPT 指定坐标）", "ok");
-          tlog("book-goto-gpt " + (it.npc || ""));
+        if (tpTeleport(it.outset[0], it.outset[1], it.outset[2])) {
+          setStatus("书本前往: " + (it.npc || "") + "（直发指定坐标）", "ok");
+          tlog("book-goto-tp " + (it.npc || ""));
         }
         return;
       }
@@ -12163,7 +12181,7 @@
     } catch (e) { setStatus("前往异常: " + e.message, "err"); }
   }
 
-  // ---------------- GPT 地图传送（保留 v1.7.5 地图输入联想）----------------
+  // ---------------- 地图传送（V2.38.8 助手直发 0x0a49；保留 v1.7.5 地图输入联想）----------------
   var mapCache = []; // {map:"prontera", cn:"普隆德拉"} 已读取地图缓存（持久化 saved.mapCache）
   try { if (Array.isArray(saved.mapCache) && saved.mapCache.length) mapCache = saved.mapCache.map(function (x) { return { map: String(x.map || ""), cn: String(x.cn || "") }; }); } catch (e) {}
   function mapCn(map) {
@@ -12230,8 +12248,8 @@
   onId("dsh-tp", "click", function () {
     try {
       var world = ($id("dsh-world").value || "").trim();
-      var ok = gptTeleport(world);
-      $id("dsh-tpmsg").textContent = ok ? "GPT 传送请求已提交 → " + world : "GPT 传送提交失败";
+      var ok = tpTeleport(world);
+      $id("dsh-tpmsg").textContent = ok ? "传送包已发出 → " + world : "传送包发送失败";
     } catch (e) { $id("dsh-tpmsg").textContent = "传送异常: " + e.message; }
   });
   // 从元素提取地图名（data-map / id / 背景图 map/*.png·bmp）——PC .bigworld td 与手机嗅探共用
@@ -12350,8 +12368,8 @@
     try {
       var m = ($id("dsh-map").value || "").trim();
       if (!m) { $id("dsh-tpmsg2").textContent = "先选择或输入目标地图"; return; }
-      var ok = gptTeleport(m);
-      $id("dsh-tpmsg2").textContent = ok ? "GPT 传送请求已提交 → " + m : "GPT 传送提交失败";
+      var ok = tpTeleport(m);
+      $id("dsh-tpmsg2").textContent = ok ? "传送包已发出 → " + m : "传送包发送失败";
     } catch (e) { $id("dsh-tpmsg2").textContent = "前往异常: " + e.message; }
   });
   onId("dsh-tp-walk", "click", function () {
@@ -12410,35 +12428,120 @@
       mvLog("已填入当前图 " + (mm || "?") + " 坐标 (" + cpos + ")");
     } catch (e) { mvLog("填入失败: " + e.message); }
   }
-  // GPT 频道是 lastRO 自带能力：沿用聊天组件切换频道与 submit 流程，不自行构造传送包。
-  function gptSubmit(text) {
-    try {
-      var req = window.requirejs || window.require;
-      if (!req || !req.defined || !req.defined("UI/Components/ChatBox/ChatBox")) return false;
-      var chat = req("UI/Components/ChatBox/ChatBox");
-      if (!chat || !chat.ui || !chat.TYPE || !chat.TYPE.GPTA || typeof chat.submit !== "function") return false;
-      chat.ui.find(".input .filter").trigger("click");
-      var menu = document.querySelectorAll("#ContextMenu .menu div"), gpt = null;
-      for (var i = 0; i < menu.length; i++) if ((menu[i].textContent || "").trim() === "GPT") { gpt = menu[i]; break; }
-      if (!gpt) return false;
-      gpt.click();
-      chat.ui.find(".input .username").val("");
-      chat.ui.find(".input .message").val(text);
-      chat.submit();
-      return true;
-    } catch (e) { return false; }
+  // ===== V2.38.8 助手直发传送：自己构造 CZ.PRIVATE_AIRSHIP_REQUEST(0x0a49/2633) 发包，绝不弹任何对话框 =====
+  // 事实依据（两处独立来源逐字节一致）：
+  //   ① 新引擎 src/UI/Components/WorldMap/LastROTeleport.js（_dist/new-engine-local/www/Online.js 225109-225135）：
+  //        new BinaryWriter(packetver >= 20180704 ? 34 : 26) → writeShort(2633) → writeBinaryString(mapname,16)
+  //        → 依次 x,y,type,14527（modern 用 ULong、legacy 用 UShort）；构造期校验：map ^[a-z0-9_]{1,15}$、packetver>0、
+  //        x/y 为 0..65535 整数、type 只能是 0/1 —— 任一条不满足即拒绝，绝不猜。
+  //   ② 旧引擎 CZ.PRIVATE_AIRSHIP_REQUEST.build()（Online.js 997941 起、官方 Online_mn.js 同款）：同 opcode、同 16B 定长地图名、
+  //        同字段顺序、itemid 恒为 14527；客户端世界地图与自动寻路两个入口都直接 sendPacket 这个包（不弹框）。
+  //   回包 ZC.PRIVATE_AIRSHIP_RESPONSE(2634) = op u16 + response u32（6B）：客户端长度表 2634=6，本引擎虽未注册该类也会按 6B 安全跳过。
+  // 本服 packetver=20211103 → modern 34B。新引擎已无同名类（不能 new 客户端类），故这里自己写字节流；
+  //   只走既有发包封装 CLIENT.NM.sendPacket（与其它 CZ 包同一条路径），零对话框、零新端点、零新定时器。
+  var TP_PKT_OP = 2633, TP_PKT_ACK = 2634, TP_SCROLL = 14527, TP_PKT_MODERN = 20180704;
+  var TP_MAP_RE = /^[a-z0-9_]{1,15}$/;
+  var TP_ACK_WHY = { 0: "成功", 2: "传送卷轴不足（券耗尽）" };
+  // 最近一次直发传送的 requested/actual 快照（只存内存，不写档；诊断与失配暴露用）
+  var tpLast = { at: 0, sent: false, ok: null, code: null, codeAt: 0, why: "", map: "", x: null, y: null, type: 1, withXY: false,
+    bytes: 0, itemid: TP_SCROLL, pv: 0, reqMap: "", reqX: null, reqY: null, actualMap: "", actualX: null, actualY: null, landedAt: 0, miss: false };
+  function tpMapNorm(m) { try { return String(m == null ? "" : m).trim().replace(/\.gat$/i, "").toLowerCase(); } catch (e) { return ""; } }
+  // 最小写入器：与客户端 BinaryWriter 同形（.buffer/.view/.offset）——sendPacket 只认 build() 返回值的这两个字段
+  function tpWriter(size) { this.buffer = new ArrayBuffer(size); this.view = new DataView(this.buffer); this.offset = 0; }
+  tpWriter.prototype.writeShort = tpWriter.prototype.writeUShort = function (v) { this.view.setUint16(this.offset, v & 0xffff, true); this.offset += 2; return this; };
+  tpWriter.prototype.writeULong = function (v) { this.view.setUint32(this.offset, v >>> 0, true); this.offset += 4; return this; };
+  // 与客户端 BinaryWriter.writeBinaryString 同语义：charCodeAt 逐字节 + 右侧补 0 + 定长
+  tpWriter.prototype.writeBinaryString = function (str, len) {
+    str = String(str);
+    var n = len ? Math.min(len, str.length) : str.length, i;
+    for (i = 0; i < n; i++) this.view.setUint8(this.offset + i, str.charCodeAt(i) & 0xff);
+    for (i = n; i < (len || 0); i++) this.view.setUint8(this.offset + i, 0);
+    this.offset += len || n;
+    return this;
+  };
+  // 组帧（纯函数，便于逐字节核对）：34B = op u16 + 16B 地图名 + x/y/type/14527 各 u32；旧协议 26B 用 u16
+  function tpFrame(map, x, y, type, pv) {
+    var modern = Number(pv) >= TP_PKT_MODERN;
+    var w = new tpWriter(modern ? 34 : 26);
+    w.writeShort(TP_PKT_OP);
+    w.writeBinaryString(map, 16);
+    var vals = [x, y, type, TP_SCROLL], i;
+    for (i = 0; i < vals.length; i++) { if (modern) w.writeULong(vals[i]); else w.writeUShort(vals[i]); }
+    return w;
   }
-  function gptTeleport(map, x, y, onArrive) {
-    map = String(map || "").trim();
-    var hasXY = x != null && y != null && isFinite(Number(x)) && isFinite(Number(y));
-    if (!map) { mvLog("GPT 传送失败：地图名为空"); return false; }
-    var text = "请带我去 " + map + (hasXY ? " " + Math.floor(Number(x)) + " " + Math.floor(Number(y)) + " 这个坐标" : "");
-    if (!gptSubmit(text)) { mvLog("GPT 传送失败：聊天组件或 GPT 频道未就绪"); return false; }
-    mvLog("GPT 传送请求已提交 → " + map + (hasXY ? " (" + Math.floor(Number(x)) + "," + Math.floor(Number(y)) + ")" : "（随机落点）"));
+  function tpSelfPos() {
+    try { var ent = CLIENT.SS && CLIENT.SS.Entity; if (ent && ent.position) return [Math.floor(ent.position[0]), Math.floor(ent.position[1])]; } catch (e) {}
+    return null;
+  }
+  // 一行诊断：requested / 结果码 / actual / 失配（规格要求每次传送都能人工排查）
+  function tpDiagText() {
+    return "[直发传送 诊断] requested=" + (tpLast.reqMap || "?") + (tpLast.withXY ? "(" + tpLast.reqX + "," + tpLast.reqY + ")" : "(随机落点)") +
+      " type=" + tpLast.type + " 券=" + tpLast.itemid + " 协议=" + (tpLast.pv || "?") + " 帧长=" + tpLast.bytes +
+      " 结果码=" + (tpLast.code == null ? "未回" : tpLast.code + "(" + (TP_ACK_WHY[tpLast.code] || "未知代码") + ")") +
+      " actual=" + (tpLast.actualMap || "?") + (tpLast.landedAt ? "(" + tpLast.actualX + "," + tpLast.actualY + ")" : "") +
+      (tpLast.miss ? " 失配=是" : " 失配=否") + (tpLast.why ? " why=" + tpLast.why : "");
+  }
+  // 直发一次传送（唯一新增发包点；只在显式触发时调用）。opt.type：0=同图随机传送（脱战），缺省 1=前往目标图
+  function tpSend(map, x, y, opt) {
+    var o = opt || {};
+    var m = tpMapNorm(map);
+    var hasXY = (x != null && y != null);
+    var xn = hasXY ? Number(x) : 0, yn = hasXY ? Number(y) : 0;
+    var type = (o.type === 0) ? 0 : 1;
+    var pv = Number(czPacketVer()) || 0;
+    tpLast.at = Date.now(); tpLast.sent = false; tpLast.ok = null; tpLast.code = null; tpLast.codeAt = 0; tpLast.why = "";
+    tpLast.reqMap = m; tpLast.reqX = hasXY ? xn : null; tpLast.reqY = hasXY ? yn : null; tpLast.withXY = hasXY;
+    tpLast.type = type; tpLast.pv = pv; tpLast.bytes = 0; tpLast.map = m; tpLast.x = hasXY ? xn : null; tpLast.y = hasXY ? yn : null;
+    tpLast.actualMap = ""; tpLast.actualX = null; tpLast.actualY = null; tpLast.landedAt = 0; tpLast.miss = false;
+    function fail(msg) {
+      tpLast.why = msg;
+      mvLog("[直发传送] 拒绝发送：" + msg + " · " + tpDiagText());
+      tlog("tp-refuse " + msg + " map=" + m);
+      return { ok: false, why: msg, map: m };
+    }
+    if (!m || !TP_MAP_RE.test(m)) return fail("地图名非法（^[a-z0-9_]{1,15}$）：" + (map == null ? "" : map));
+    if (hasXY && (!isFinite(xn) || !isFinite(yn) || xn !== Math.floor(xn) || yn !== Math.floor(yn) || xn < 0 || xn > 65535 || yn < 0 || yn > 65535)) return fail("坐标必须是 0-65535 的整数：" + x + "," + y);
+    if (!(pv > 0)) return fail("客户端协议版本未就绪（拒绝盲发：无法确定 34B/26B 帧形）");
+    if (!clientReady() || !CLIENT.NM || typeof CLIENT.NM.sendPacket !== "function") return fail("客户端未就绪（发包通道不可用）");
+    var w = tpFrame(m, xn, yn, type, pv);
+    tpLast.bytes = w.buffer.byteLength;
+    var pkt = { build: function () { return tpFrame(m, xn, yn, type, pv); } };
+    try { CLIENT.NM.sendPacket(pkt); } catch (eS) { return fail("发包异常：" + (eS && eS.message ? eS.message : eS)); }
+    tpLast.sent = true;
+    mvLog("[直发传送] → " + m + (hasXY ? "(" + xn + "," + yn + ")" : "（随机落点）") + " type=" + type + " 券=" + TP_SCROLL + " 帧长=" + w.buffer.byteLength + " 结果码=待回");
+    tlog("tp-send map=" + m + " xy=" + (hasXY ? xn + "," + yn : "-") + " type=" + type + " itid=" + TP_SCROLL + " bytes=" + w.buffer.byteLength + " pv=" + pv);
+    return { ok: true, map: m, x: hasXY ? xn : null, y: hasXY ? yn : null, type: type, bytes: w.buffer.byteLength, frame: w };
+  }
+  // 对外语义（规格示例 teleport(owner,{map,x,y}) 的助手侧等价入口）：显式触发才发包，返回 {ok,why,...}
+  function teleport(map, opt) { var o = opt || {}; return tpSend(map, o.x, o.y, o); }
+  // 2634 回包：0=受理；2=传送卷轴不足/券耗尽；其它按原值报「未知代码」—— 失败绝不假装成功
+  function tpOnAck(bytes) {
+    try {
+      if (!bytes || bytes.byteLength < 6) return;
+      var code = new DataView(bytes).getUint32(2, true), cn = TP_ACK_WHY[code] || "未知代码";
+      tpLast.code = code; tpLast.codeAt = Date.now();
+      if (code === 0) {
+        tpLast.ok = true;
+        mvLog("[直发传送] 服务器受理 code=0(成功) · " + tpDiagText());
+        tlog("tp-ack code=0 ok map=" + tpLast.reqMap);
+      } else {
+        tpLast.ok = false; tpLast.why = "服务器拒绝 code=" + code + "(" + cn + ")";
+        mvLog("[直发传送] 服务器拒绝 code=" + code + "（" + cn + "）· " + tpDiagText());
+        tlog("tp-ack code=" + code + " fail map=" + tpLast.reqMap + " cn=" + cn);
+        try { setStatus("传送失败：code=" + code + "（" + cn + "）", "err"); } catch (eS2) {}
+      }
+      identityLogLine("tp-ack code=" + code + " map=" + tpLast.reqMap);
+    } catch (e) {}
+  }
+  // 调用方签名与旧 gptTeleport 一致：map,x,y,onArrive（返回是否已发出）
+  function tpTeleport(map, x, y, onArrive) {
+    var r = tpSend(map, x, y, null);
+    if (!r.ok) return false;
     if (typeof onArrive === "function") waitTeleportMap(map, onArrive);
     return true;
   }
-  function teleportToMap(map, onArrive) { return gptTeleport(map, null, null, onArrive); }
+  function teleportToMap(map, onArrive) { return tpTeleport(map, null, null, onArrive); }
+  // 落地判定沿用既有口径（800ms 轮询 / 20s 上限），只补 requested/actual 记账与失配暴露
   function waitTeleportMap(map, onArrive) {
     var t0 = Date.now();
     var iv = setInterval(function () {
@@ -12446,11 +12549,17 @@
         var cur = getMapName();
         if (cur && map && normMapKey(cur) === normMapKey(map)) {
           clearInterval(iv);
-          mvLog("已到 " + map);
+          var p = tpSelfPos();
+          tpLast.actualMap = tpMapNorm(cur); tpLast.actualX = p ? p[0] : null; tpLast.actualY = p ? p[1] : null;
+          tpLast.landedAt = Date.now(); tpLast.miss = false;
+          mvLog("已到 " + map + " · " + tpDiagText());
+          tlog("tp-land map=" + tpLast.actualMap + " xy=" + (p ? p[0] + "," + p[1] : "-") + " req=" + tpLast.reqMap);
           if (typeof onArrive === "function") onArrive();
         } else if (Date.now() - t0 > 20000) {
           clearInterval(iv);
-          mvLog("传送超时（20s 不在 " + map + "，当前 " + (cur || "?") + "）");
+          tpLast.actualMap = tpMapNorm(cur); tpLast.miss = true;
+          mvLog("[直发传送] 落地失配（20s 未到）· " + tpDiagText());
+          tlog("tp-miss req=" + tpLast.reqMap + " actual=" + (cur || "?") + " code=" + tpLast.code);
         }
       } catch (e) { clearInterval(iv); }
     }, 800);
@@ -12537,7 +12646,7 @@
     if (!p) return;
     var cur = getMapName();
     if (cur && normMapKey(cur) === normMapKey(p.map)) walkToXY(p.x, p.y, null, "dsh-mvlog");
-    else gptTeleport(p.map, p.x, p.y);
+    else tpTeleport(p.map, p.x, p.y);
     tpPointMsg("前往 " + p.name + "：" + p.map + " (" + p.x + "," + p.y + ")");
   }
   onId("dsh-tpp-current", "click", function () {
@@ -12591,7 +12700,7 @@
       if (sameMap) {
         walkToXY(x, y, null, "dsh-mvlog");
       } else {
-        gptTeleport(want, x, y);
+        tpTeleport(want, x, y);
       }
     } catch (e) { mvLog("走路异常: " + e.message); }
   });
@@ -12602,8 +12711,8 @@
   var selNpc = null; // 当前选中的 NPC {GID,name,pos}
   onId("dsh-tp-town", "click", function () {
     try {
-      var ok = gptTeleport("prontera");
-      $id("dsh-tpmsg2").textContent = ok ? "GPT 回城请求已提交" : "GPT 回城提交失败";
+      var ok = tpTeleport("prontera");
+      $id("dsh-tpmsg2").textContent = ok ? "回城传送包已发出" : "回城传送包发送失败";
     } catch (e) { $id("dsh-tpmsg2").textContent = "回城异常: " + e.message; }
   });
   onId("dsh-scan-npc", "click", function () {
@@ -13374,8 +13483,13 @@
   //   六个长度都是逐字核对客户端类定义后手工登记的（170=2+2+2+2+1、2457=2+2+4+2+1 …），未知 opcode 仍然立刻停，绝不猜长。
   //   审计（V2.38.7 阻塞项）修正：本服 packetver=20211103 的装备/背包整表走「分流式 itemlist」家族
   //   0x0b08(2824)/0x0b09(2825)/0x0b39(2873)/0x0b0b(2827)：其中 2824/2825/2826/2873 类是 size=-1（变长，长度在 @2），
-  //   2827 类 size=4（定长，body 从 @2 起，帧内没有独立长度字段）——不登记它们会让 walker 在 burst 中途 break，后面的整表永远丢。
-  var ZC_EXTRA_LEN = { 170: 9, 2256: 9, 2457: 11, 172: 7, 2257: 7, 2458: 9, 2824: -1, 2825: -1, 2826: -1, 2827: 4, 2873: -1 };
+  //   2827 类 size=4（定长，body 从 @2 起，帧内没有独立长度字段）。
+  //   F1（审计复审更正·事实口径）：真机 burst 的**首包是 op 471**（ZC.SPRITE_CHANGE2，类声明 size=15/11 → 主表可解析），
+  //   之后才是 0x0b09/0x0b39 这些分流帧；walker 断在「主表 + 补充表都查不到」的第一个 opcode 上，所以登记
+  //   2824/2825/2826/2873 属于**防御性覆盖**（例：主表有 471 而缺 2825 → 断在 2825，后面的整表跟着丢）；
+  //   若主表连 471 都缺就会断在 471，登记 2825 救不了（原注释把 2825 写成 burst 关键断点，与事实不符）。
+  //   V2.38.8：新登记 2634（ZC.PRIVATE_AIRSHIP_RESPONSE = op u16 + response u32，6B）——直发传送的回包靠它切帧。
+  var ZC_EXTRA_LEN = { 170: 9, 2256: 9, 2457: 11, 172: 7, 2257: 7, 2458: 9, 2824: -1, 2825: -1, 2826: -1, 2827: 4, 2873: -1, 2634: 6 };
   function zcLenTable() {
     try {
       var PS = CLIENT && CLIENT.PS;
@@ -13474,6 +13588,8 @@
       // V2.38.7：装备整表 / 穿脱确认包流（只读；单帧异常只丢该帧）。
       //   typeof 守卫：局部切片测试环境里这个函数可能不在同一段代码中，缺了就当没有（绝不抛、绝不影响分帧与身份）。
       if (typeof gearPktHook === "function") gearPktHook(bytes, op);
+      // V2.38.8：直发传送回包（2634 = op u16 + response u32，6B；主表/补充表都能切出这一帧）
+      if (op === 2634 && typeof tpOnAck === "function") tpOnAck(bytes);
       collectOpStat(bytes, op);
       itipPktProbe(bytes, op); // V2.16.21 自动探查：首次出现的 opcode 记录十六进制
       // V2.16.16：入站也进抓包环（方向 D）；V2.38.4：改为按帧记录，op/len/hex 都取该帧真实值
@@ -16226,7 +16342,7 @@
     var p = step.params || {};
     try {
       switch (step.action) {
-        case "teleport": gptTeleport(p.map, p.x, p.y); break;
+        case "teleport": tpTeleport(p.map, p.x, p.y); break;
         case "walk": walkToXY(p.x, p.y, null, "dsh-scr-log"); break;
         case "battleOn": setBattle(true); break;
         case "battleOff": setBattle(false); break;
@@ -17160,7 +17276,7 @@
       if (isSitting()) { if (now - (r.standAt || 0) >= 3000) { r.standAt = now; sendSit(false); } return; }
       if (ent.action == null || isWinOpen()) return;
       if (map === target) { deathReturnResume(r, now); return; } // 寄存点就在目标图：满血直接开打
-      if (!gptTeleport(r.target)) { deathReturnCancel("GPT 提交失败"); return; }
+      if (!tpTeleport(r.target)) { deathReturnCancel("传送包发送失败"); return; }
       r.phase = "teleport"; r.until = now + 25000; r.arrivedAt = 0;
       return;
     }
@@ -17409,7 +17525,7 @@
     if (!clientReady()) { status("传送失败：客户端未就绪，请先进入游戏"); return; }
     if (current() === map.toLowerCase()) { status("已在目标地图 " + map); return; }
     try {
-      status(gptTeleport(map) ? "GPT 传送请求已提交 → " + map : "GPT 传送提交失败");
+      status(tpTeleport(map) ? "传送包已发出 → " + map : "传送包发送失败");
     } catch (e) { status("传送失败：" + e.message); }
   }
   function mvpInit() {
@@ -18629,11 +18745,13 @@
   ];
   // V2.38.7 修复（审计阻塞项·分流式 itemlist 家族）：数字表先铺底 → 手机端 CLIENT.PS / psClassIndex 为空时也能认这两个 opcode（审计要求 #5）。
   //   0x0b39/2873 SPLIT_SEND_ITEMLIST_EQUIP2 ：装备整表，invType u8@4 + 记录 68B 自 @5（真帧 481B = 5 + 7×68）
+  //   0x0b36/2826 SPLIT_SEND_ITEMLIST_EQUIP  ：同族装备整表，记录 67B（F4 加固：客户端把 2826 也当装备整表；本服真机走 2873）
   //   0x0b08/2824 SPLIT_SEND_ITEMLIST_SET   ：会话开始（变长：op@0 + total@2 + invType@4 + 名字）
   //   0x0b0b/2827 SPLIT_SEND_ITEMLIST_RESULT：会话结束（定长 4B：op@0 + invType@2 + flag@3）
-  //   偏移逐字核对客户端 client/Online.js 173794-173833（EQUIP2，item_size=68）/ 173469-173473（SET）/ 173542-173546（RESULT）。
-  var ZC_GEAR_SPLIT_NUM = { 2873: { rec: 68 } };
-  var ZC_GEAR_SPLIT_CLS = [["SPLIT_SEND_ITEMLIST_EQUIP2", 2873, 68]];
+  //   偏移逐字核对客户端 src/UI/Components/WorldMap（_dist/new-engine-local/www/Online.js）：EQUIP2 173964-174004（item_size=68）、
+  //     EQUIP 173672-173710（item_size=67）、SET 173639-173643、RESULT 173712-173716。
+  var ZC_GEAR_SPLIT_NUM = { 2873: { rec: 68, lay: "equip2" }, 2826: { rec: 67, lay: "equip" } };
+  var ZC_GEAR_SPLIT_CLS = [["SPLIT_SEND_ITEMLIST_EQUIP2", 2873, 68, "equip2"], ["SPLIT_SEND_ITEMLIST_EQUIP", 2826, 67, "equip"]];
   var ZC_GEAR_SESS_NUM = { 2824: { kind: "start", invOff: 4, varLen: true }, 2827: { kind: "end", invOff: 2, varLen: false } };
   var ZC_GEAR_SESS_CLS = [["SPLIT_SEND_ITEMLIST_SET", 2824, "start", 4, true], ["SPLIT_SEND_ITEMLIST_RESULT", 2827, "end", 2, false]];
   var __gearOps = { map: null, sig: -1 };
@@ -18646,7 +18764,7 @@
       var map = {}, k = "";
       for (k in ZC_GEAR_LIST_NUM) { var lv = ZC_GEAR_LIST_NUM[k]; map[k] = { list: true, ver: lv.ver, rec: lv.rec, op: Number(k) }; }
       for (k in ZC_GEAR_ACK_NUM) { var av = ZC_GEAR_ACK_NUM[k]; map[k] = { ack: true, kind: av.kind, len: av.len, inv: av.inv, loc32: av.loc32, resOff: av.resOff, op: Number(k) }; }
-      for (k in ZC_GEAR_SPLIT_NUM) { var sv = ZC_GEAR_SPLIT_NUM[k]; map[k] = { split: true, rec: sv.rec, op: Number(k) }; }
+      for (k in ZC_GEAR_SPLIT_NUM) { var sv = ZC_GEAR_SPLIT_NUM[k]; map[k] = { split: true, rec: sv.rec, lay: sv.lay, op: Number(k) }; }
       for (k in ZC_GEAR_SESS_NUM) { var ev = ZC_GEAR_SESS_NUM[k]; map[k] = { sess: ev.kind, invOff: ev.invOff, varLen: ev.varLen, op: Number(k) }; }
       if (ix && ix.byName) {
         for (var i = 0; i < ZC_GEAR_LIST_CLS.length; i++) {
@@ -18659,7 +18777,7 @@
         }
         for (var m2 = 0; m2 < ZC_GEAR_SPLIT_CLS.length; m2++) {
           var sp = ZC_GEAR_SPLIT_CLS[m2], rs = ix.byName["ZC." + sp[0]] || ix.byName["HC." + sp[0]];
-          if (rs && rs.id > 0) map[rs.id] = { split: true, rec: sp[2], op: rs.id, cls: sp[0] };
+          if (rs && rs.id > 0) map[rs.id] = { split: true, rec: sp[2], lay: sp[3], op: rs.id, cls: sp[0] };
         }
         for (var n2 = 0; n2 < ZC_GEAR_SESS_CLS.length; n2++) {
           var se = ZC_GEAR_SESS_CLS[n2], rss = ix.byName["ZC." + se[0]] || ix.byName["HC." + se[0]];
@@ -18736,31 +18854,43 @@
       identityLogLine("gear-pkt-invalid " + why);
     } catch (e) {}
   }
-  // 分流式装备整表（SPLIT_SEND_ITEMLIST_EQUIP2，0x0b39/2873）单条 68B 记录 → 与客户端路线同形的槽对象。
-  //   本家族自带随机词条与 enchantgrade（客户端类里就是字段）→ optionsKnown/enchantKnown 必须 true（审计 #3）；旧家族继续标未知。
-  //   偏移逐字核对客户端 Online.js 173794-173833：index i16@0 · ITID u32@2 · type u8@6 · location u32@7 · WearState u32@11
-  //   · card1..4 u32@15/19/23/27 · HireExpireDate i32@31 · bindOnEquipType u16@35 · wItemSpriteNumber u16@37
-  //   · nRandomOptionCnt i8@39 · Options[1..5]（i16 index / i16 value / u8 param）@40..64
-  //   · RefiningLevel u8@65 · enchantgrade u8@66 · flag u8@67（bit0 鉴定 / bit1 损坏 / bit2 PlaceETCTab）。
-  function gearPktSplit2Slot(dv, b) {
+  // 分流式装备整表单条记录 → 与客户端路线同形的槽对象。两版字段顺序相同，差异只有两点：
+  //   ① EQUIP2(68B) 的 RefiningLevel@65 + enchantgrade@66 + flag@67 在 Options 之后；EQUIP(67B) 的 RefiningLevel@15 紧跟 WearState、
+  //      没有 enchantgrade，其余字段（卡片/到期/绑定/精灵图/词条计数/词条）整体前移 1 字节；② 因此 enchantKnown 按版本来。
+  //   EQUIP2 偏移逐字核对客户端 Online.js 173964-174004：index i16@0 · ITID u32@2 · type u8@6 · location u32@7 · WearState u32@11
+  //     · card1..4 u32@15/19/23/27 · HireExpireDate i32@31 · bindOnEquipType u16@35 · wItemSpriteNumber u16@37
+  //     · nRandomOptionCnt i8@39 · Options[1..5]（i16 index / i16 value / u8 param）@40..64 · RefiningLevel u8@65 · enchantgrade u8@66
+  //     · flag u8@67（bit0 鉴定 / bit1 损坏 / bit2 PlaceETCTab）。
+  //   EQUIP 偏移逐字核对客户端 Online.js 173672-173710（item_size=67）：RefiningLevel u8@15 · card1..4 u32@16/20/24/28
+  //     · HireExpireDate i32@32 · bind@36 · sprite u16@38 · nRandomOptionCnt i8@40 · Options @41..65 · flag u8@66（无 enchantgrade → 未知）。
+  //   本家族自带随机词条（EQUIP2 还带附魔等级）→ optionsKnown/enchantKnown 必须按版本来（审计 #3）；旧家族继续标未知。
+  var GEAR_SPLIT_LAY = {
+    equip2: { card: 15, expire: 31, bind: 35, sprite: 37, cnt: 39, opt: 40, refine: 65, ench: 66, flag: 67 },
+    equip:  { card: 16, expire: 32, bind: 36, sprite: 38, cnt: 40, opt: 41, refine: 15, ench: -1, flag: 66 }
+  };
+  function gearPktSplit2Slot(dv, b, lay) {
     try {
+      var L = GEAR_SPLIT_LAY[lay] || GEAR_SPLIT_LAY.equip2;
       var it = { index: dv.getInt16(b, true), itid: dv.getUint32(b + 2, true), type: dv.getUint8(b + 6),
         locRaw: dv.getUint32(b + 7, true), wearMask: dv.getUint32(b + 11, true), cards: [] };
-      for (var c = 0; c < 4; c++) { var cv = dv.getUint32(b + 15 + c * 4, true); if (cv) it.cards.push(cv); }
-      it.expire = dv.getInt32(b + 31, true); it.bindType = dv.getUint16(b + 35, true); it.sprite = dv.getUint16(b + 37, true);
-      it.optCnt = dv.getInt8(b + 39);
+      for (var c = 0; c < 4; c++) { var cv = dv.getUint32(b + L.card + c * 4, true); if (cv) it.cards.push(cv); }
+      it.expire = dv.getInt32(b + L.expire, true); it.bindType = dv.getUint16(b + L.bind, true); it.sprite = dv.getUint16(b + L.sprite, true);
+      it.optCnt = dv.getInt8(b + L.cnt);
       var opts = [];
       for (var o = 1; o <= 5; o++) {
-        var ob = b + 40 + (o - 1) * 5, oi = dv.getInt16(ob, true), ov = dv.getInt16(ob + 2, true), opm = dv.getInt8(ob + 4);
+        var ob = b + L.opt + (o - 1) * 5, oi = dv.getInt16(ob, true), ov = dv.getInt16(ob + 2, true), opm = dv.getInt8(ob + 4);
         if (!(oi || ov || opm)) continue;
         opts.push({ index: oi, value: ov, param: opm });
       }
-      it.refine = dv.getUint8(b + 65); it.enchantgrade = dv.getUint8(b + 66);
-      var fl = dv.getUint8(b + 67);
+      it.refine = dv.getUint8(b + L.refine);
+      var enchKnown = L.ench >= 0;
+      if (enchKnown) it.enchantgrade = dv.getUint8(b + L.ench);
+      var fl = dv.getUint8(b + L.flag);
       if (!it.wearMask) it.wearMask = it.locRaw || 0;
       return {
         itid: it.itid, refine: Number(it.refine) || 0, cards: it.cards.slice(),
-        options: opts, optionsKnown: true, enchantgrade: Number(it.enchantgrade) || 0, enchantKnown: true,
+        options: opts, optionsKnown: true,
+        enchantgrade: enchKnown ? (Number(it.enchantgrade) || 0) : null, enchantKnown: enchKnown,
         idx: isFinite(it.index) ? it.index : null, name: gearName(it.itid),
         wearLocation: Number(it.wearMask) || 0, identified: !!(fl & 1), damaged: !!(fl & 2), type: Number(it.type) || 0,
         expire: it.expire, bindType: it.bindType, sprite: it.sprite, optCnt: it.optCnt,
@@ -18768,7 +18898,7 @@
       };
     } catch (e) { return null; }
   }
-  // 分流整表（严格 fail-soft）：必须 (帧长-5) 整除 68、且 invType===0；任何不满足一律拒绝且不动现有快照（绝不把未知当已知）。
+  // 分流整表（严格 fail-soft）：必须 (帧长-5) 整除记录长（EQUIP2 68 / EQUIP 67）、且 invType===0；任何不满足一律拒绝且不动现有快照（绝不把未知当已知）。
   function gearPktParseSplit2(bytes, op, f) {
     try {
       var total = (bytes && bytes.byteLength) || 0;
@@ -18779,7 +18909,7 @@
       if (invType !== 0) { gearPkt.why = "分流整表 op" + op + " invType=" + invType + "（不是 0=装备/背包）→ 不解析（fail-soft）"; identityLogLine("gear-pkt-split-reject op=" + op + " invType=" + invType); return false; }
       var cnt = (total - 5) / f.rec, slots = {}, byIndex = {};
       for (var i = 0; i < cnt; i++) {
-        var slot = gearPktSplit2Slot(dv, 5 + i * f.rec);
+        var slot = gearPktSplit2Slot(dv, 5 + i * f.rec, f.lay);
         if (!slot) continue;
         byIndex[slot.idx] = slot;
         var ws = Number(slot.wearLocation) || 0, hit = false;

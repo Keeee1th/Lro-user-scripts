@@ -25,7 +25,7 @@ test('death return clicks restart, retries while HP is zero, and auto-hangs only
       $id:id=>controls[id],normMapKey:m=>String(m||'').replace(/\.(gat|rsw)$/,'').toLowerCase(),getMapName:()=>map,
       gidInt:Number,clientReady:()=>true,apiLease:null,scrRun:{running:false},dojoRun:{on:false},bagClean:{busy:false},moveXY:{busy:false},escapePending:()=>false,
       zRunning:true,npBattleState:()=>mode,npRequestBattle:(want)=>{mode=want;return 'sent';},stopZhu(){stops++;context.zRunning=false;mode=false},startZhu(){starts++;context.zRunning=true},
-      sendSit:x=>{sits.push(x);ent.action=x?2:0;},isSitting:()=>ent.action===2,isWinOpen:()=>false,gptTeleport:x=>{teleports.push(x);return true},setStatus(){},czp:name=>context.CLIENT.PS.CZ[name],deathGuardRun:null,deathGuardDone:false,masterTickReg(fn){context.tick=fn}};
+      sendSit:x=>{sits.push(x);ent.action=x?2:0;},isSitting:()=>ent.action===2,isWinOpen:()=>false,tpTeleport:x=>{teleports.push(x);return true},setStatus(){},czp:name=>context.CLIENT.PS.CZ[name],deathGuardRun:null,deathGuardDone:false,masterTickReg(fn){context.tick=fn}};
     vm.createContext(context);vm.runInContext(src.slice(start,end),context);
     context.tick();assert.equal(stops,0);assert.equal(teleports.length,0);
     map='prontera';context.tick();assert.equal(stops,0); // 不在目标图不布防
@@ -193,26 +193,138 @@ test('teleport shortcuts are global shared, migrated and capped',()=>{
   assert.ok(source.includes('ev.key !== TP_GLOBAL_KEY'));
   assert.ok(source.includes('data-tppf-go')); // 传送点悬浮条（点击直传）
   assert.ok(source.includes('list.length >= 20'));
-  assert.ok(source.includes('else gptTeleport(p.map, p.x, p.y);'));
+  assert.ok(source.includes('else tpTeleport(p.map, p.x, p.y);'));
   assert.ok(source.includes('data-tpp-edit'));
   assert.ok(source.includes('data-tpp-del'));
 });
 
-test('GPT teleport builds random-map and exact-coordinate commands',()=>{
-  const code=extract('  function gptSubmit(text) {','  function teleportToMap(map, onArrive) {');
-  const sent=[];const ctx={window:{requirejs:null,require:null},document:{querySelectorAll:()=>[]},String,Number,Math,isFinite,mvLog(){}};
-  vm.createContext(ctx);vm.runInContext(code+';gptSubmit=function(text){sent.push(text);return true};this.teleport=gptTeleport',Object.assign(ctx,{sent}));
-  assert.equal(ctx.teleport('prontera'),true);
-  assert.equal(ctx.teleport('prontera',152,94),true);
-  assert.deepEqual(sent,['请带我去 prontera','请带我去 prontera 152 94 这个坐标']);
+// ================= V2.38.8：助手直发传送（0x0a49 请求 / 2634 回包）=================
+const TP_FILES_SRC=[['stable','ro-assist.user.js'],['exp','ro-assist-exp.user.js']].map(([n,f])=>[n,fs.readFileSync(new URL('../'+f,import.meta.url),'utf8')]);
+function tpBody(src){const a=src.indexOf('  var TP_PKT_OP = 2633'),b=src.indexOf('  // V2.29.0：快捷传送点改全局共享',a);assert.ok(a>=0&&b>a,'直发传送代码块必须就位');return src.slice(a,b);}
+function tpWorld(src,over,opt){
+  const o=opt||{};let code=tpBody(src);
+  if(over){assert.equal(code.split(over[0]).length-1,1,'变异锚点必须唯一：'+over[0].slice(0,50));const mut=code.split(over[0]).join(over[1]);assert.notEqual(mut,code,'变异必须真的改到代码');code=mut;}
+  const sent=[],logs=[];let ivFn=null,clock=1000;
+  const ctx={String,Number,Math,isFinite,
+    CLIENT:{NM:{sendPacket:p=>sent.push(p)},SS:{Entity:{position:[152,94]}}},
+    clientReady:()=>o.noClient!==true,czPacketVer:()=>o.pv===undefined?20211103:o.pv,
+    mvLog:m=>logs.push(m),tlog:m=>logs.push(m),setStatus:()=>{},identityLogLine:()=>{},
+    getMapName:()=>o.map||'prontera',normMapKey:m=>String(m||'').replace(/\.(gat|rsw)$/i,'').toLowerCase(),
+    setInterval:fn=>{ivFn=fn;return 1;},clearInterval:()=>{ivFn=null;}};
+  if(o.now!==undefined)ctx.Date={now:()=>clock};
+  vm.createContext(ctx);
+  vm.runInContext(code+';this.send=tpSend;this.frame=tpFrame;this.diag=tpDiagText;this.ack=tpOnAck;this.last=function(){return tpLast};this.wait=waitTeleportMap;this.teleport=teleport;this.tpTeleport=tpTeleport;',ctx);
+  assert.equal(typeof ctx.send,'function','直发传送入口必须就位');
+  const out={sent,setClock:v=>{clock=v},logs:()=>logs,fire:()=>{if(ivFn)ivFn();},hasIv:()=>!!ivFn};
+  for(const k of ['send','frame','diag','ack','last','wait','teleport','tpTeleport'])out[k]=ctx[k];
+  return out;
+}
+function tpByteCheck(w){
+  const r1=w.send('prontera',null,null,null);
+  assert.equal(r1.ok,true,'城镇（无坐标）必须发出');assert.equal(w.sent.length,1,'一次调用只发一个包');
+  const f1=w.sent[0].build();assert.equal(f1.buffer.byteLength,34,'现代协议帧长必须 34B');const d1=f1.view;
+  assert.equal(d1.getUint16(0,true),2633,'opcode 必须是 0x0a49/2633');
+  const nm=[];for(let i=0;i<16;i++)nm.push(d1.getUint8(2+i));
+  assert.deepEqual(nm,[...'prontera'].map(c=>c.charCodeAt(0)).concat(new Array(8).fill(0)),'地图名必须 16B 定长右补 0');
+  assert.equal(d1.getUint32(18,true),0,'无坐标 → x=0');assert.equal(d1.getUint32(22,true),0,'无坐标 → y=0');
+  assert.equal(d1.getUint32(26,true),1,'前往目标图 type=1');assert.equal(d1.getUint32(30,true),14527,'传送券 14527 必须进包（耗不耗由服务器判）');
+  const r2=w.send('iz_dun02',120,30,null);assert.equal(r2.ok,true,'野外带坐标必须发出');
+  const d2=w.sent[1].build().view;assert.equal(d2.getUint32(18,true),120,'x 必须进包');assert.equal(d2.getUint32(22,true),30,'y 必须进包');
+  assert.ok(w.diag().includes('requested=iz_dun02(120,30)'),'诊断必须暴露 requested：'+w.diag());
+  assert.ok(w.diag().includes('券=14527'),'诊断必须写明券 14527');
+  const r3=w.send('prontera',null,null,{type:0});assert.equal(r3.ok,true,'同图随机传送必须发出');
+  assert.equal(w.sent[2].build().view.getUint32(26,true),0,'type=0 必须原样进包');
+  const f4=w.frame('prontera',152,94,1,20180703);
+  assert.equal(f4.buffer.byteLength,26,'旧协议帧长必须 26B');assert.equal(f4.view.getUint16(18,true),152);assert.equal(f4.view.getUint16(20,true),94);
+  assert.equal(f4.view.getUint16(22,true),1);assert.equal(f4.view.getUint16(24,true),14527);
+}
+function tpRefuseCheck(w){
+  for(const bad of [['Bad Map!',null,null],['prontera',70000,1],['prontera',-1,0],['',null,null],['prontera',1.5,2]]){
+    const r=w.send(bad[0],bad[1],bad[2],null);
+    assert.equal(r.ok,false,'非法输入必须拒绝：'+JSON.stringify(bad));
+    assert.ok(r.why&&r.why.length>0,'拒绝必须给出原因');
+  }
+  assert.equal(w.sent.length,0,'拒绝时一个包都不许发（绝不假装成功）');
+  assert.ok(w.logs().some(l=>l.includes('拒绝发送')),'拒绝必须留日志（可排查）');
+}
+function tpAckCheck(w){
+  assert.equal(w.send('prontera',10,20,null).ok,true,'合法传送必须发出');
+  const ack=code=>w.ack(new Uint8Array([0x4a,0x0a,code,0,0,0]).buffer);
+  ack(0);assert.equal(w.last().ok,true,'code=0 必须记成功');assert.equal(w.last().code,0);
+  ack(2);assert.equal(w.last().ok,false,'code=2 绝不允许当成功');assert.ok(w.last().why.includes('2'),'失败原因必须带原始码');
+  assert.ok(w.logs().some(l=>l.includes('券耗尽')),'code=2 必须点名「券耗尽」');
+  ack(7);assert.equal(w.last().ok,false,'未知码必须判失败');assert.ok(w.last().why.includes('未知代码'),'未知码按原值上报');
+  assert.ok(w.logs().some(l=>l.includes('服务器拒绝 code=7')),'未知码必须留原始码');
+}
+test('V2.38.8 直发传送帧逐字节正确：34B/26B、城镇/野外/带坐标/无坐标、券 14527 恒进包（两文件）',()=>{
+  for(const [name,src] of TP_FILES_SRC){
+    tpByteCheck(tpWorld(src));
+    const MUT=[
+      ['M-TP1 opcode 写错（2633 → 2634）',['w.writeShort(TP_PKT_OP);','w.writeShort(2634);'],tpByteCheck],
+      ['M-TP2 券 id 写错（14527 → 14528）',['var TP_PKT_OP = 2633, TP_PKT_ACK = 2634, TP_SCROLL = 14527','var TP_PKT_OP = 2633, TP_PKT_ACK = 2634, TP_SCROLL = 14528'],tpByteCheck],
+      ['M-TP3 现代/旧版判断反了（34B 帧永远不用）',['var modern = Number(pv) >= TP_PKT_MODERN;','var modern = false;'],tpByteCheck],
+      ['M-TP4 坐标不进包（x/y 恒 0）',['var vals = [x, y, type, TP_SCROLL], i;','var vals = [0, 0, type, TP_SCROLL], i;'],tpByteCheck],
+      ['M-TP5 type 恒 0（跨图变同图随机）',['var type = (o.type === 0) ? 0 : 1;','var type = 0;'],tpByteCheck],
+      ['M-TP6 结果码非 0 也当成功',['tpLast.ok = false; tpLast.why = "服务器拒绝 code=" + code + "(" + cn + ")";','tpLast.ok = true; tpLast.why = "";'],tpAckCheck],
+      ['M-TP7 地图名校验被去掉',['if (!m || !TP_MAP_RE.test(m)) return fail(','if (false) return fail('],tpRefuseCheck],
+    ];
+    for(const [label,over,probe] of MUT){
+      let killed=false,msg='';
+      try{probe(tpWorld(src,over));}catch(e){killed=true;msg=e.message;}
+      assert.ok(killed,label+' 必须被真实行为断言杀死（'+(msg||'没有任何断言失败')+'）');
+      console.log('[V2.38.8 变异]['+name+'] '+label+' 被杀死：'+String(msg).split(String.fromCharCode(10))[0].slice(0,120));
+    }
+  }
 });
-
-test('all teleport entry points avoid legacy airship and world-map clicks',()=>{
-  assert.ok(!source.includes('PRIVATE_AIRSHIP_REQUEST'));
+test('V2.38.8 直发传送：非法输入一律拒绝、结果码 0/2/未知如实上报，绝不假装成功（两文件）',()=>{
+  for(const [name,src] of TP_FILES_SRC){
+    const w=tpWorld(src);tpRefuseCheck(w);tpAckCheck(w);
+    const w0=tpWorld(src,null,{pv:0});
+    assert.equal(w0.send('prontera',null,null,null).ok,false,name+' 协议版本未知必须拒绝（不猜 34B/26B）');
+    assert.equal(w0.sent.length,0,name+' 协议版本未知时不得发包');
+    const wc=tpWorld(src,null,{noClient:true});
+    assert.equal(wc.send('prontera',null,null,null).ok,false,name+' 客户端未就绪必须拒绝');
+  }
+});
+test('V2.38.8 直发传送：落地失配暴露 requested/actual；零对话框、零自发包、零新定时器（两文件）',()=>{
+  for(const [name,src] of TP_FILES_SRC){
+    assert.ok(!src.includes('UI/Components/ChatBox/ChatBox'),name+' 不得再 require ChatBox（对话框路径必须删净）');
+    assert.ok(!src.includes('chat.submit()'),name+' 不得再走聊天提交');
+    assert.ok(!src.includes('请带我去'),name+' 不得再拼聊天文本当传送手段');
+    assert.ok(!src.includes('document.querySelector(".gogogo")'),name+' 不得点客户端世界地图入口');
+    assert.ok(!src.includes('new CLIENT.PS.CZ.PRIVATE_AIRSHIP_REQUEST'),name+' 新引擎无此类，绝不 new 客户端类');
+    const body=tpBody(src);
+    assert.ok(!/showPromptBox|confirm\(|alert\(|ChatBox/.test(body),name+' 传送代码块内不得有任何对话框');
+    assert.equal((body.match(/sendPacket\(/g)||[]).length,1,name+' 传送块内只允许一个发包点（无自发传送路径）');
+    assert.equal((body.match(/setInterval\(/g)||[]).length,1,name+' 传送块只允许沿用原有落地轮询一个定时器（无新增）');
+    const wm=tpWorld(src,null,{now:1000,map:'geffen'});
+    assert.equal(wm.send('prontera',152,94,null).ok,true);
+    wm.wait('prontera',()=>{throw new Error('失配场景不得回调到达');});
+    assert.ok(wm.hasIv(),name+' 落地判定必须布上轮询');
+    wm.setClock(1000+21000);wm.fire();
+    assert.equal(wm.last().miss,true,name+' 20s 未到必须判失配');
+    const d=wm.diag();
+    assert.ok(d.includes('requested=prontera(152,94)'),name+' 失配必须暴露 requested：'+d);
+    assert.ok(d.includes('actual=geffen'),name+' 失配必须暴露 actual：'+d);
+    assert.ok(wm.logs().some(l=>l.includes('落地失配')),name+' 失配必须留日志');
+    const wr=tpWorld(src,null,{now:1000,map:'prontera'});
+    let arrived=0;assert.equal(wr.send('prontera',152,94,null).ok,true);wr.wait('prontera',()=>{arrived++;});
+    wr.setClock(1000+800);wr.fire();
+    assert.equal(arrived,1,name+' 到图必须回调一次');
+    assert.equal(wr.last().miss,false,name+' 到图不得判失配');
+    assert.ok(wr.diag().includes('actual=prontera(152,94)'),name+' 到图必须记 actual 坐标：'+wr.diag());
+  }
+});
+test('V2.38.8 传送入口统一走直发：脚本步骤/快捷点/回城/死亡回图/MVP 都不再点客户端或走聊天（静态）',()=>{
+  assert.ok(source.includes('case "teleport": tpTeleport(p.map, p.x, p.y);'),'脚本步骤传送必须走直发');
+  assert.ok(source.includes('status(tpTeleport(map) ? "传送包已发出'),'MVP 传送必须走直发');
+  assert.ok(source.includes('var ok = tpTeleport("prontera")'),'回城必须走直发');
+  assert.ok(source.includes('if (!tpTeleport(r.target)) { deathReturnCancel("传送包发送失败"); return; }'),'死亡回目标图必须走直发');
+  assert.ok(source.includes('else tpTeleport(p.map, p.x, p.y);'),'快捷传送点必须走直发');
+  assert.ok(source.includes('function teleportToMap(map, onArrive) { return tpTeleport(map, null, null, onArrive); }'),'teleportToMap 必须仍走直发');
+  assert.ok(source.includes('function teleport(map, opt) { var o = opt || {}; return tpSend(map, o.x, o.y, o); }'),'必须提供规格示例等价的 teleport(map,{x,y}) 入口');
+  assert.ok(source.includes('CLIENT.NM.sendPacket(pkt)'),'必须走助手既有发包封装');
   assert.ok(!source.includes('document.querySelector(".gogogo")'));
-  assert.ok(source.includes('case "teleport": gptTeleport(p.map, p.x, p.y);'));
-  assert.ok(source.includes('status(gptTeleport(map) ? "GPT 传送请求已提交'));
-  assert.ok(source.includes('var ok = gptTeleport("prontera")'));
 });
 
 test('assistant battle sub-tabs switch only their direct sibling pages',()=>{
@@ -799,8 +911,8 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
   // 1) 版本号：稳定版与实验版都必须是 2.36.1（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.7', name + ' @version 必须是 2.38.6（锚定行首元数据行）');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.7', name + ' 运行时常量 VER 必须是 2.38.6');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.8', name + ' @version 必须是 2.38.8（锚定行首元数据行）');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.8', name + ' 运行时常量 VER 必须是 2.38.8');
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
   const stripHead = (s) => s.replace(/\r\n/g,'\n').split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
@@ -1172,8 +1284,8 @@ test('V2.34.5 战斗诊断快照 prof 字段已就位（不改既有字段）', 
 // ================= V2.34.5：配置自动备份（两代）/ 黄金副本找回（纯函数真值表 / 按钮 / 键隔离）=================
 test('V2.34.5 版本号升到 2.34.5（@version 与运行时常量一致，两文件同步）', () => {
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.7', name + ' @version 必须是 2.38.6（锚定行首元数据行）');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.7', name + ' 运行时常量 VER 必须是 2.38.6');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.8', name + ' @version 必须是 2.38.8（锚定行首元数据行）');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.8', name + ' 运行时常量 VER 必须是 2.38.8');
   }
 });
 
@@ -1462,7 +1574,7 @@ test('V2.38.2 定点修复：随时丢弃开启时零候选不抛错（阈值模
 
 // ================= V2.35.1 assistant API + standalone dojo =================
 const splitSources=[['stable',source],['exp',expSource]];
-test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(s)?.[1],'2.38.7',name+' @version 必须锚定行首元数据行（旧的非锚定正则可能命中变更日志/正文里的 @version 字样）');assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
+test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(s)?.[1],'2.38.8',name+' @version 必须锚定行首元数据行（旧的非锚定正则可能命中变更日志/正文里的 @version 字样）');assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
 test('V2.35.1 public API uses owner-only external signatures and validates the current lease owner',()=>{for(const[,s]of splitSources){assert.ok(s.includes('/^[A-Za-z0-9_.:-]{8,128}$/'));assert.ok(s.includes('dojo:1,battle:1,movement:1,dialog:1,arrow:1,fly:1'));assert.ok(s.includes('if(apiLease&&apiLease.owner!==owner)'));for(const sig of ['apiHas(owner,scope)','apiSnapshot(owner)','apiRelease(owner)','apiContact(owner,gid)','apiWalk(owner,payload)','apiChoose(owner,payload)','apiBattle(owner,on)','apiSetArrow(owner,target)','apiClearArrow(owner)','apiFly(owner,payload)'])assert.ok(s.includes('function '+sig),sig);assert.ok(s.includes('apiLease.generation===generation'));assert.ok(!s.includes('apiHas(owner,generation'));}});
 test('V2.35.1 snapshot and battle/menu ownership contracts are explicit',()=>{for(const[,s]of splitSources){for(const key of ['ready:','map:','player:','mobs:','npcs:','target:','inDojoMap:','dialogOpen:','menu:','battleState:','busy:','arrow:'])assert.ok(s.includes(key),key);assert.ok(s.includes('if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"}'));assert.ok(s.includes('b.state="pending-on"'));assert.ok(s.includes('if(b.state!=="owned")return {ok:true,result:"not-owned"}'));assert.ok(s.includes('l.battle.state==="owned"||l.battle.state==="pending-off"'));assert.ok(s.includes('if(s!==false)return {ok:true,result:s===true?"preexisting":"unknown"}'));}});
 test('V2.36.11 arrow rules use a per-monster table plus a default arrow',()=>{for(const[name,s]of splitSources){
@@ -4038,8 +4150,8 @@ test('V2.38.4 静态断言：新函数就位、判定链未改、零发包零 ho
     const sum = src.slice(src.indexOf('// ---------------- V2.38.4 变更摘要'), src.indexOf('// ---------------- V2.38.3 变更摘要'));
     assert.ok(sum.includes('入站分帧') && sum.includes('气弹') && sum.includes('按帧') && sum.includes('2.38.4'), name + ' V2.38.4 摘要必须覆盖：分帧 / 气弹 / 抓包按帧 / 版本');
     assert.ok(!EMOJI.test(sum) && !EMOJI.test(code), name + ' 新增内容不得含 emoji');
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.7', name + ' @version 必须是 2.38.6');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.7', name + ' VER 必须是 2.38.6');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.8', name + ' @version 必须是 2.38.8');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.8', name + ' VER 必须是 2.38.8');
   }
   assert.equal((source.match(/(?<!\r)\n/g) || []).length, 0, '稳定版必须纯 CRLF');
   assert.equal((expSource.match(/\r\n/g) || []).length, 0, '实验版必须纯 LF');
@@ -4990,7 +5102,7 @@ test('V2.38.4 静态断言：三处新口径就位、分帧分派链与已完成
     assert.ok(src.includes('if (!clientScriptPresent()) injectClient(cfg, false);'), name + ' 本机私有入口保持现状（DOM 去重 + 立即注入）');
     assert.ok(src.includes('if (state.ready || state.bootedByWrapper || state.bootedByPlugin) return;'), name + ' 启动去重必须保留');
     assert.ok(src.includes('officialBooted: false,'), name + ' state 必须有 officialBooted 标记');
-    assert.ok(src.includes('// @version      2.38.7') && src.includes('var VER = "2.38.7";'), name + ' 版本必须仍是 2.38.7（V2.38.7 批次：装备包流读取）');
+    assert.ok(src.includes('// @version      2.38.8') && src.includes('var VER = "2.38.8";'), name + ' 版本必须仍是 2.38.8（V2.38.8 批次：直发传送 + 审计 F1/F2/F4）');
     // 已完成批次与分帧分派链不得回改
     assert.equal((src.match(/op === 307/g) || []).length, 1, name + ' 摆摊识别集合仍只出现一处（拉黑/闸门批次未回改）');
     assert.ok(src.includes('var walk = walkInboundFrames(bytes, dispatchInboundFrame);'), name + ' 入站分帧分派链不得改动');
@@ -5203,7 +5315,7 @@ function deathReturnVm(src) {
     zRunning: true, npBattleState: () => mode, npRequestBattle: (want) => { mode = want; return 'sent'; },
     stopZhu() { stops++; ctx.zRunning = false; mode = false; }, startZhu() { ctx.zRunning = true; },
     sendSit: (x) => { sits.push(x); ent.action = x ? 2 : 0; }, isSitting: () => ent.action === 2, isWinOpen: () => false,
-    gptTeleport: (x) => { teleports.push(x); return true; }, setStatus: (s) => statuses.push(s), czp: (n) => ctx.CLIENT.PS.CZ[n],
+    tpTeleport: (x) => { teleports.push(x); return true; }, setStatus: (s) => statuses.push(s), czp: (n) => ctx.CLIENT.PS.CZ[n],
     deathGuardRun: null, deathGuardDone: false, masterTickReg(fn) { ctx.tick = fn; },
     advance: () => { clock += 1000; }, getStops: () => stops, ent, packets, sits, teleports, statuses, tick: null,
   };
@@ -5917,8 +6029,8 @@ test('V2.38.4 审计修正 静态：F1–F6 锚点就位，旧的跨角色认领
     assert.ok(t.includes('L.push("识别状态："'), name + ' 诊断必须有「识别状态：」');
     assert.ok(t.includes('L.push("未认领旧档："'), name + ' 诊断必须有「未认领旧档：」');
     // 版本不变
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.7', name + ' @version 必须仍是 2.38.6');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.7', name + ' VER 必须仍是 2.38.6');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.8', name + ' @version 必须仍是 2.38.8');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.8', name + ' VER 必须仍是 2.38.8');
   }
   assert.equal((source.match(/(?<!\r)\n/g) || []).length, 0, '稳定版必须纯 CRLF');
   assert.equal((expSource.match(/\r\n/g) || []).length, 0, '实验版必须纯 LF');

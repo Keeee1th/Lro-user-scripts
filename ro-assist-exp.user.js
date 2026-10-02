@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手 · 实验版）
 // @namespace    dsh.ro-plugin
-// @version      2.38.4
+// @version      2.38.5
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -119,6 +119,19 @@
 // 3. 无限道场优先选择活体 MVP/BOSS，使用租约内临时 GID 目标驱动原有 zAttack 攻击链；临时压制内挂其他 MID，死亡、换波或停止后按当前永久名单恢复，不写入 lockList。
 // 4. 临时战斗目标 API 在任何发包前严格验证 GID/MID、活体怪物和 MvpDropsNum；失效时自动清理。保留 v2.38.0 opcode 能力探测与启动自检修复。
 // 5. 版本：@version 2.38.0 → 2.38.1（VER 同步）；实验版同步。离线 runtime 151/151、opcode 9/9，独立定点复核 8/8 通过。
+
+// ---------------- V2.38.5 变更摘要 ----------------
+// 1. 客户端「物品说明」窗口（右键物品弹出的那个固定窗口）底部新增「加入丢弃名单 / 移出丢弃名单」按钮：
+//    右键背包物品即出现，窗口换物品 / 关掉重开都跟着换，非背包物品（装备栏 / 仓库 / 邮件 / 商店）一律不显示；
+//    点击即调用既有 bagCleanToggleItem() 加/移名单，并立刻刷新按钮文案与高亮；按钮随窗口一起消失，不遮挡原有内容。
+// 2. 「这次右键的是哪一件」只读记录：捕获阶段监听 .item 的 contextmenu，只记 data-index / data-itid，
+//    不 preventDefault、不 stopPropagation，绝不改变客户端右键行为；再按 itipInvMap() 的实例 index 精确映射，
+//    同 ITID 不同精炼/词条的实例绝不互相替代；映射不上就不显示按钮（宁可不显示，绝不误加）。
+// 3. 窗口内容的权威来源：对说明窗口的 setItem 做幂等包装，换物品时同步刷新按钮；助手自身每 700ms 再校正一次
+//    按钮的存在与文案，杜绝「窗口里是 A、按钮操作的是 B」。
+// 4. 旧入口（跟随鼠标的小浮层）保留可用：浮层容器改为可点，mouseout 补上与 mouseover 同一守卫
+//    （鼠标移到浮层及其按钮上不收起），指针停在浮层上时不再把它挪走（否则按钮永远够不着）。
+// 5. 版本：@version 2.38.4 → 2.38.5（VER 同步）；实验版同步。界面文案只用「用法 / 限制」短句，不出现实现词。
 
 // ---------------- V2.38.4 变更摘要 ----------------
 // 1. 入站分帧修复（根因）：客户端一条 WebSocket 消息里可以装多个包，旧实现只取 dv.getUint16(0) 当 opcode、把整条消息当成一个包，
@@ -347,7 +360,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.38.4"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.38.5"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -17136,11 +17149,22 @@
   //   售价：ZC.PC_SELL_ITEMLIST(0xc7)={index,price,overchargeprice}、ZC.PC_PURCHASE_ITEMLIST(0xc6)={price,discountprice,type,ITID}。
   var ITIP = {
     on: true, el: null, elKey: "", elAt: 0, hover: null, x: 0, y: 0,
+    over: false,                     // V2.38.5：指针是否停在小浮层上（停住就既不收起也不跟着鼠标跑）
     sell: {}, buy: {},               // 商店单价缓存
     invSig: "", invAt: 0,            // 背包探查指纹/时间
     pendingOps: [], seenOps: {},     // 首次出现的 opcode
     domShop: false, domBag: false,   // DOM 结构只报一次
     lastIdent: {},                   // ITID#index -> 是否已鉴定（检测鉴定事件）
+    infoRawCtx: null,                // V2.38.5：右键记录（按 data-index 精确映射到的背包实例的 {index,ITID}）
+    infoRawSet: null,                // V2.38.5：说明窗口 setItem 收到的那件（窗口内容的权威来源）
+    infoSetSeen: false,              // V2.38.5：setItem 包装是否已经记录过一次
+    infoPatched: false, infoComp: null, // V2.38.5：setItem 包装状态
+    infoGen: 0,                      // V2.38.5：右键代数（每次 contextmenu 递增，一次右键 = 一代来源凭证）
+    infoSrcBag: false,               // V2.38.5：本代右键的来源凭证（目标在背包链路上才算「背包来源」）
+    infoSessGen: -1,                 // V2.38.5：当前开着的这个窗口认领的是哪一代凭证（-1 = 没有有效凭证）
+    infoPendGen: -1,                 // V2.38.5：已刷新、等这次开窗的第一帧 setItem 认领的代（-1 = 没有）
+    infoPendAt: 0,                   // V2.38.5：上面那次右键记下的时刻（超过 ITIP_PEND_MS 未认领则整代作废）
+    infoOpenSeen: false,             // V2.38.5：本代凭证是否已经见过窗口打开（见过之后再关 = 本次开窗会话结束）
     probeLogged: false
   };
   function itipDB() { try { return CLIENT.DB || requireDB("DB/DBManager"); } catch (e) { return null; } }
@@ -17403,12 +17427,12 @@
     if (ITIP.el && ITIP.el.parentNode) return ITIP.el;
     var d = document.createElement("div");
     d.id = "dsh-itemtip";
-    d.style.cssText = "position:fixed;left:0;top:0;z-index:2147483000;display:none;pointer-events:none;max-width:340px;padding:7px 10px;border-radius:5px;background:rgba(12,18,30,0.96);border:1px solid rgba(120,170,240,0.6);color:#e9eff8;font:12px/1.6 'Microsoft YaHei',Arial,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,0.55);white-space:normal;word-break:break-all;text-align:left";
+    d.style.cssText = "position:fixed;left:0;top:0;z-index:2147483000;display:none;pointer-events:auto;max-width:340px;padding:7px 10px;border-radius:5px;background:rgba(12,18,30,0.96);border:1px solid rgba(120,170,240,0.6);color:#e9eff8;font:12px/1.6 'Microsoft YaHei',Arial,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,0.55);white-space:normal;word-break:break-all;text-align:left";
     try { document.documentElement.appendChild(d); } catch (e) {}
     ITIP.el = d;
     return d;
   }
-  function itipHide() { try { if (ITIP.el) ITIP.el.style.display = "none"; ITIP.elKey = ""; } catch (e) {} }
+  function itipHide() { try { if (ITIP.el) ITIP.el.style.display = "none"; ITIP.elKey = ""; ITIP.over = false; } catch (e) {} }
   function itipPlace(x, y) {
     try {
       var d = ITIP.el; if (!d) return;
@@ -17543,7 +17567,7 @@
       try { var pth = e.composedPath && e.composedPath(); if (pth && pth.length) t = pth[0]; } catch (e0) {}
       if (!t || !t.closest) return;
       // V2.38.2：鼠标移到物品说明浮窗自己身上（丢弃名单按钮）时不要收起来
-      if (t.closest("#dsh-itemtip")) { ITIP.hover = ITIP.hover || t; return; }
+      if (t.closest("#dsh-itemtip")) { ITIP.over = true; ITIP.hover = ITIP.hover || t; return; }
       var el = t.closest(".item");
       if (!el) { itipHide(); return; }
       ITIP.hover = el; ITIP.x = e.clientX; ITIP.y = e.clientY;
@@ -17585,6 +17609,245 @@
       if (!el || !el.isConnected) { itipHide(); return; }
       itipOver({ target: el, clientX: ITIP.x, clientY: ITIP.y, composedPath: function () { return [el]; } });
     } catch (e) { itipHide(); }
+  }
+  // ================= V2.38.5：客户端「物品说明」窗口里的「加入/移出丢弃名单」按钮 =================
+  // 用户口径：右键物品弹出的那个固定窗口里直接给按钮，不再依赖跟随鼠标的小浮层（小浮层保留可用）。
+  // 只读记录「这次右键的是哪一格」，再按 itipInvMap() 的实例 index 精确映射；同 ITID 不同精炼/词条的
+  // 实例绝不互相替代（映射不上就不显示按钮）。不 preventDefault / 不 stopPropagation，绝不抢客户端右键。
+  function bagActInfoComp() { try { return uiComp("ItemInfo"); } catch (e) { return null; } }
+  function bagActInfoHost() {
+    try {
+      var c = bagActInfoComp();
+      if (c && c._host) return c._host;
+      return document.getElementById("ItemInfo") || null;
+    } catch (e) { return null; }
+  }
+  // 窗口内容根：宿主还挂在页面上、且没被隐藏时才返回；窗口关掉（宿主被摘掉）一律返回 null
+  function bagActInfoDomRoot() {
+    try {
+      var h = bagActInfoHost();
+      if (!h || !h.parentNode || !h.shadowRoot) return null;
+      if (h.style && h.style.display === "none") return null;
+      var sr = h.shadowRoot;
+      return sr.querySelector(".ItemInfo") || sr.querySelector(".ui-component-root") || null;
+    } catch (e) { return null; }
+  }
+  // 按格子上的 data-index（+ data-itid 一致性校验）精确取背包实例：禁止按 ITID 反查替代
+  function bagActItemByIndex(idx, itid) {
+    try {
+      if (idx == null || idx === "") return null;
+      var i = Number(idx);
+      if (!isFinite(i)) return null;
+      var it = itipInvMap()[i];
+      if (!it || typeof it !== "object") return null;
+      var have = String(it.ITID != null ? it.ITID : it.itemid);
+      if (!have || have === "undefined" || have === "null") return null;
+      if (itid != null && itid !== "" && have !== String(itid)) return null;
+      return it;
+    } catch (e) { return null; }
+  }
+  // 客户端交给说明窗口的那件物品 → 换成背包里的真实实例（映射不上返回 null）
+  function bagActResolveBagItem(raw) {
+    try {
+      if (!raw || typeof raw !== "object") return null;
+      return bagActItemByIndex(raw.index, (raw.ITID != null ? raw.ITID : raw.itemid));
+    } catch (e) { return null; }
+  }
+  // 这条 DOM 链是不是背包自己的格子（背包宿主 id=Inventory / InventoryV0..V3；组件可达时直接比宿主元素）
+  function bagActIsBagChain(chain) {
+    try {
+      var c = null; try { c = bagInvComp(); } catch (e0) { c = null; }
+      var host = (c && c._host) ? c._host : null;
+      for (var i = 0; i < chain.length; i++) {
+        var n = chain[i];
+        if (!n) continue;
+        if (host && n === host) return true;
+        var id = "";
+        try { id = String(n.id || ""); } catch (e1) {}
+        if (/^Inventory(V[0-9]+)?$/.test(id)) return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+  // 当前说明窗口里正在显示的那件（setItem 记录优先；包装没挂上时用右键记录兜底）
+  // V2.38.5 审计 F1：ItemInfo 是所有容器共用的组件，setItem 通道必须带「来源凭证」——
+  //   只有「本代右键来源 = 背包链路」且「窗口就是本代开出来的」才允许解析出物品，否则一律 null
+  //   （不显示按钮、不写规则、不告警）；没经过任何右键的 setItem（如物品预览开窗）同样不给。
+  function bagActInfoItem() {
+    try {
+      if (!ITIP.infoOpenSeen) return null;                 // 本代凭证还没见过开窗：没有可依据的开窗会话
+      if (!ITIP.infoSrcBag) return null;                   // 本代右键来源不是背包链路
+      if (ITIP.infoSessGen !== ITIP.infoGen) return null;  // 本窗不是本代右键开出来的（凭证已过期或被换代）
+      if (ITIP.infoPatched && ITIP.infoSetSeen) return bagActResolveBagItem(ITIP.infoRawSet);
+      return bagActResolveBagItem(ITIP.infoRawCtx);
+    } catch (e) { return null; }
+  }
+  // 本次开窗会话结束（窗口被关掉）：本代凭证作废；700ms 兜底那一拍之后也不得再按旧记录把按钮复活
+  function bagActInfoCredDrop() {
+    ITIP.infoOpenSeen = false;
+    ITIP.infoSessGen = -1;
+    ITIP.infoPendGen = -1;
+  }
+  // V2.38.5 审计 F1：右键后 2 秒内没等到本次开窗的第一帧 setItem，本代凭证整代作废（fail-closed，宁可不显示）
+  var ITIP_PEND_MS = 2000;
+  function bagActInfoPendAlive() {
+    return ITIP.infoPendGen >= 0 && (Date.now() - ITIP.infoPendAt) <= ITIP_PEND_MS;
+  }
+  // 公共观察点（setItem 处理点 / 250ms 拍 / 700ms 拍都调用）：宿主被摘掉或 display:none 立刻作废会话，
+  //   待认领凭证据超过 ITIP_PEND_MS 也整代作废——两条都只往「少显示按钮」的方向走，绝不误加规则。
+  function bagActInfoObserve() {
+    if (ITIP.infoPendGen >= 0 && !bagActInfoPendAlive()) { bagActInfoCredDrop(); return true; }
+    if (!ITIP.infoOpenSeen) return false;
+    if (bagActInfoDomRoot()) return false;
+    bagActInfoCredDrop();
+    return true;
+  }
+  function bagActInfoBtnStyle(act) {
+    return "cursor:pointer;font:12px/1.5 'Microsoft YaHei',Arial,sans-serif;padding:2px 8px;border-radius:4px;"
+      + (act === "del" ? "border:1px solid #d0a04a;background:#ffe9c9;color:#6a4406" : "border:1px solid #7aa7dd;background:#eef3fb;color:#17365f");
+  }
+  function bagActInfoMakeRow() {
+    var row = document.createElement("div");
+    row.setAttribute("data-dsh-bagrow", "1");
+    row.setAttribute("style", "margin:4px 4px 0 4px;padding-top:4px;border-top:1px solid #d6dde8;text-align:left");
+    var btn = document.createElement("button");
+    btn.setAttribute("type", "button");
+    btn.setAttribute("data-dsh-bagact", "add");
+    btn.setAttribute("style", bagActInfoBtnStyle("add"));
+    row.appendChild(btn);
+    var tip = document.createElement("div");
+    tip.setAttribute("data-dsh-bagtip", "1");
+    tip.setAttribute("style", "margin-top:3px;color:#5a6472;font-size:11px;line-height:1.45;white-space:normal");
+    tip.textContent = "用法：点一下加入，再点一下移出；只对正在查看的这件物品生效";
+    row.appendChild(tip);
+    return row;
+  }
+  // 每次右键、每次换物品、助手自身每拍都调用：窗口关着什么都不做，窗口里的东西换了就跟着换
+  function bagActInfoSync() {
+    try {
+      bagActInfoPatch(); // 幂等：窗口关着也要先把 setItem 包装挂上，保证下一次开窗的第一次 setItem 就记到
+      var root = bagActInfoDomRoot();
+      if (!root) { bagActInfoObserve(); return false; }
+      ITIP.infoOpenSeen = true;
+      var item = bagActInfoItem();
+      var row = root.querySelector("[data-dsh-bagrow]");
+      if (!item) { if (row) row.style.display = "none"; return false; }
+      if (!row) { row = bagActInfoMakeRow(); root.appendChild(row); }
+      row.style.display = "block";
+      var btn = row.querySelector("[data-dsh-bagact]");
+      if (!btn) return false;
+      var key = bagCleanKeyOfItem(item);
+      var inList = !!(key && Object.prototype.hasOwnProperty.call(bagClean.config.discardRules, key));
+      var want = inList ? "del" : "add";
+      if (btn.getAttribute("data-dsh-bagact") !== want) {
+        btn.setAttribute("data-dsh-bagact", want);
+        btn.setAttribute("style", bagActInfoBtnStyle(want));
+      }
+      var label = inList ? "移出丢弃名单" : "加入丢弃名单";
+      if (btn.textContent !== label) btn.textContent = label;
+      return true;
+    } catch (e) { return false; }
+  }
+  // V2.38.5 审计B：客户端关窗调 remove() 时会对宿主同步 dispatchEvent(new Event("x_remove"))，
+  //   这是比 250ms/700ms 观察拍更早的同步信号——收到即作废本次开窗会话，封死「关窗后同一拍内重开」。
+  //   拿不到宿主（组件不可达 / 没有 addEventListener）时什么都不做，不影响既有逻辑；同一宿主只挂一次。
+  function bagActInfoRemoveHook(c) {
+    try {
+      var h = (c && c._host) ? c._host : null;
+      if (!h && document && document.getElementById) h = document.getElementById("ItemInfo");
+      if (!h || typeof h.addEventListener !== "function") return false;
+      if (h.__dshBagActRemoved) return true;
+      h.__dshBagActRemoved = true;
+      h.addEventListener("x_remove", function () { try { bagActInfoCredDrop(); } catch (eR) {} });
+      return true;
+    } catch (e) { return false; }
+  }
+  // 幂等包装说明窗口的 setItem：客户端每次换窗口里的物品都会经过这里，是「窗口里是谁」的权威来源
+  function bagActInfoPatch() {
+    try {
+      var c = bagActInfoComp();
+      bagActInfoRemoveHook(c); // V2.38.5 审计B：宿主一可达就挂 x_remove 同步作废（幂等）
+      if (ITIP.infoPatched) return true;
+      if (!c || typeof c.setItem !== "function") return false;
+      if (!c.__dshBagActPatched) {
+        var orig = c.setItem;
+        c.setItem = function (item) {
+          // V2.38.5 审计 F1：每次 setItem 处理点都观察一次（宿主已摘掉 / display:none → 立刻作废会话，不等兜底拍）
+          try { bagActInfoObserve(); } catch (eC) {}
+          var r = orig.apply(this, arguments);
+          // V2.38.5 审计 F1：本次右键开窗后的第一帧 setItem 认领本代凭证（限 ITIP_PEND_MS 内）；超时整代作废
+          try { if (ITIP.infoPendGen >= 0) { if (bagActInfoPendAlive()) { ITIP.infoSessGen = ITIP.infoPendGen; ITIP.infoPendGen = -1; } else { bagActInfoCredDrop(); } } } catch (eP) {}
+          try { ITIP.infoRawSet = item; ITIP.infoSetSeen = true; bagActInfoSync(); } catch (e0) {}
+          return r;
+        };
+        c.__dshBagActPatched = true;
+      }
+      ITIP.infoPatched = true;
+      ITIP.infoComp = c;
+      return true;
+    } catch (e) { return false; }
+  }
+  // 只读记录「这次右键的是哪一格背包」：只读 DOM 属性，绝不改变客户端的右键行为
+  // V2.38.5 审计 F1：每次 contextmenu（捕获阶段）都刷新「来源凭证」——目标属于背包链路的 .item 才算背包来源，
+  //   连空白处右键也一并降级为非背包；客户端随后的 setItem 只有落在本代凭证上才允许解析出物品。
+  function bagActOnContext(e) {
+    try {
+      var t = e && e.target;
+      try { var pth = e && e.composedPath && e.composedPath(); if (pth && pth.length) t = pth[0]; } catch (e0) {}
+      if (!t || !t.closest) return;
+      var el = t.closest(".item");
+      var chain = el ? itipChain(el) : [];
+      var isBag = bagActIsBagChain(chain);
+      var it = bagActIsBagChain(chain) ? bagActItemByIndex(el.getAttribute("data-index"), el.getAttribute("data-itid")) : null;
+      bagActInfoPatch(); // 组件一可达就挂上 setItem 包装（幂等）
+      ITIP.infoGen++;    // V2.38.5 审计 F1：每次右键都刷新「来源凭证」（新一代，上一代立即失效）
+      ITIP.infoSrcBag = !!isBag;
+      ITIP.infoRawCtx = it || null;
+      if (ITIP.infoPatched && ITIP.infoSetSeen) ITIP.infoRawSet = ITIP.infoRawCtx;
+      ITIP.infoOpenSeen = false;
+      ITIP.infoSessGen = -1;
+      ITIP.infoPendGen = -1;
+      ITIP.infoPendAt = Date.now();
+      if (bagActInfoDomRoot()) { ITIP.infoSessGen = ITIP.infoGen; ITIP.infoOpenSeen = true; } // 窗口已经开着：本次右键直接接管当前会话
+      else { ITIP.infoPendGen = ITIP.infoGen; }                                              // 窗口关着：等本次开窗的第一帧 setItem 认领（限 ITIP_PEND_MS 内）
+      bagActInfoSync();
+    } catch (err) {}
+  }
+  // 两类按钮（说明窗口 / 跟随浮层）共用的点击处理
+  function bagActClick(e) {
+    try {
+      var t = e && e.target;
+      try { var pth = e && e.composedPath && e.composedPath(); if (pth && pth.length) t = pth[0]; } catch (e0) {}
+      if (!t || !t.closest) return false;
+      var b = t.closest("[data-dsh-bagact]");
+      if (!b) return false;
+      e.preventDefault(); e.stopPropagation();
+      var inInfo = false;
+      try { inInfo = !!(b.closest && b.closest("[data-dsh-bagrow]")); } catch (e1) {}
+      var item = inInfo ? bagActInfoItem() : ITIP.bagTarget;
+      if (!item) { setStatus("丢弃名单：读不到正在查看的这件物品", "warn"); return true; }
+      bagCleanToggleItem(item, b.getAttribute("data-dsh-bagact") === "del");
+      if (inInfo) bagActInfoSync();
+      ITIP.elKey = ""; itipRefresh();
+      return true;
+    } catch (err) { return false; }
+  }
+  // V2.38.5：跟随浮层保留可用——鼠标移到浮层（及其按钮）上不收起；指针停在浮层上时不再把它挪走
+  //   （否则浮层永远跟在鼠标旁边十几像素，按钮一辈子够不着）。
+  function itipMouseOut(e) {
+    try {
+      var rt = e && e.relatedTarget;
+      try { if (rt && rt.closest && rt.closest("#dsh-itemtip")) { ITIP.over = true; return; } } catch (e2) {}
+      ITIP.over = false;
+      try { if (rt && rt.closest && rt.closest(".item")) return; } catch (e2) {}
+      ITIP.hover = null; itipHide();
+    } catch (e3) {}
+  }
+  function itipMouseMove(e) {
+    try {
+      if (ITIP.over) return;
+      if (ITIP.el && ITIP.el.style.display === "block") itipPlace(e.clientX, e.clientY);
+    } catch (e2) {}
   }
   // ---- 商店单价解析 ----
   function itipShopPkt(bytes, op) {
@@ -17744,28 +18007,12 @@
   }
   try {
     document.addEventListener("mouseover", itipOver, true);
-    // V2.38.2：丢弃名单按钮（右键物品说明里）——捕获阶段拦下，别让点击落到游戏画面上
-    document.addEventListener("click", function (e) {
-      try {
-        var t = e.target;
-        try { var pth = e.composedPath && e.composedPath(); if (pth && pth.length) t = pth[0]; } catch (e0) {}
-        var b = t && t.closest ? t.closest("[data-dsh-bagact]") : null;
-        if (!b) return;
-        e.preventDefault(); e.stopPropagation();
-        var item = ITIP.bagTarget;
-        if (!item) { setStatus("丢弃名单：读不到背包里的这件物品", "warn"); return; }
-        bagCleanToggleItem(item, b.getAttribute("data-dsh-bagact") === "del");
-        ITIP.elKey = ""; itipRefresh();
-      } catch (err) {}
-    }, true);
-    document.addEventListener("mousemove", function (e) { try { if (ITIP.el && ITIP.el.style.display === "block") itipPlace(e.clientX, e.clientY); } catch (e2) {} }, true);
-    document.addEventListener("mouseout", function (e) {
-      try {
-        var rt = e.relatedTarget;
-        try { if (rt && rt.closest && rt.closest(".item")) return; } catch (e2) {}
-        ITIP.hover = null; itipHide();
-      } catch (e3) {}
-    }, true);
+    // V2.38.2 / V2.38.5：丢弃名单按钮（说明窗口里 / 跟随浮层里）——捕获阶段拦下，别让点击落到游戏画面上
+    document.addEventListener("click", bagActClick, true);
+    // V2.38.5：只读记录右键的是哪一格背包（捕获阶段；不 preventDefault、不 stopPropagation，绝不抢客户端右键）
+    document.addEventListener("contextmenu", bagActOnContext, true);
+    document.addEventListener("mousemove", itipMouseMove, true);
+    document.addEventListener("mouseout", itipMouseOut, true);
     document.addEventListener("scroll", function () { setTimeout(itipRefresh, 0); }, true);
   } catch (e) {}
   // V2.16.26 自动技能探查：把辅助技能配置 + 判活表 + 开关/SP 一起上报，定位「不触发释放」
@@ -17811,6 +18058,10 @@
   setInterval(function () { try { askProbe(); } catch (e) {} }, 15000);
   setInterval(function () { try { itipHookOut(); } catch (e) {} }, 2000);
   setInterval(function () { try { itipProbeInv(); itipProbeDom(); } catch (e) {} }, 3000);
+  // V2.38.5：每拍校正一次说明窗口里的按钮（存在 / 文案 / 高亮），换物品、关掉重开都不串
+  setInterval(function () { try { bagActInfoSync(); } catch (e) {} }, 700);
+  // V2.38.5 审计 F1：250ms 拍也观察一次（关窗 / 凭证据超时立即作废，不等 700ms 兜底那一拍）
+  setInterval(function () { try { bagActInfoObserve(); } catch (e) {} }, 250);
   setInterval(function () {
     try {
       if (!ITIP.pendingOps.length) return;

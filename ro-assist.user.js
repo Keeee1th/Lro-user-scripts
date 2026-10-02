@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.37.0
+// @version      2.37.1
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -113,6 +113,13 @@
 // 3) 自启配置不完整：用脚本 DEFAULTS 自启缺少新引擎必需的 lastroProtocol / lastroCustomPackets / 各 charset / packetKeys / servers(数组) 等字段，
 //    引擎在模块初始化 hook NOTIFY_LOADINFO 抛 Packet not yet register "LoadInfo" 后中断启动，依旧黑屏。改为以宿主页 window.ROConfigBase 为基底自启。
 // 原站 post.lastro.cn / game.lastro.cn 的启动判据、注入方式与配置来源全部保持不变。
+// ---------------- V2.37.1 变更摘要 ----------------
+// 1. 修复 buff 技能设置刷新后丢失：KV 拉回角色档后立即重绑 saved/lockList/askList/profMemKey 并刷新列表；本地保存即标记 KV dirty，避免旧远端值覆盖刚写配置。
+// 2. buff 旧配置找回改为按角色执行，在真实角色识别后才恢复；只补空档，不覆盖已有 askList。黄金恢复副本可为已有角色补缺失 gearSets。
+// 3. 修复换装的客户端契约：使用 DB/Items/EquipmentLocation 真实槽位常量，从 Equipment DOM + getItemByIndex 读取已穿装备；支持同实例多槽组合掩码。
+// 4. 换装执行先严格预检 ITID/精炼/插卡并预占实例；缺件不脱原装备；同款双饰品不复用同一实例；双槽装备只脱/穿一次并发送组合 wearLocation。
+// 5. 卡册区分明确空组与读取失败：空组可清空现有卡，读取失败不覆盖/不改卡组；加入/移除后做双向集合验证，永不发送不可逆充能包。
+// 6. 版本：@version 2.37.0 → 2.37.1（VER 同步）；实验版同步。离线全套 147 项通过，v2.37.1 定点独立复核 6/6 通过。
 // ---------------- V2.37.0 变更摘要 ----------------
 // 1. 新增「一键换装 · 卡册」模块（功能菜单首页第一行，浮窗）：在游戏里穿好一套装备、并在「卡片典藏 → 我的卡组」激活好卡组，
 //    点「读取当前配置」即记成一套预设（名字可改，可「存为当前」覆盖、可删除）；之后点「应用」或按该预设自己的快捷键即可一键切回。
@@ -206,7 +213,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.37.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.37.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -274,7 +281,8 @@
   function saveProfiles() {
     try {
       profBackupRotate(); // V2.34.5：真正写 localStorage 之前先把旧值轮转备份（每次页面加载只一次）
-      localStorage.setItem(PROF_KEY, JSON.stringify(profiles));
+      var value = JSON.stringify(profiles);
+      if (localStorage.getItem(PROF_KEY) !== value) { localStorage.setItem(PROF_KEY, value); kvMarkLocal(PROF_KEY, value); }
     } catch (e) {}
   }
   // V2.34.5：本地自动备份（保留两代）——当前值 → .bak，旧 .bak → .bak2；仅当前值非空且与 .bak 现有值不同才轮转
@@ -2786,7 +2794,7 @@
     try { localStorage.setItem("dsh_ro_hotkeys_mig", "1"); } catch (e0) {}
     return hkCfg;
   }
-  function hkSave() { try { localStorage.setItem(HK_KEY2, JSON.stringify(hkCfg || {})); } catch (e) {} }
+  function hkSave() { try { var value = JSON.stringify(hkCfg || {}); if (localStorage.getItem(HK_KEY2) !== value) { localStorage.setItem(HK_KEY2, value); kvMarkLocal(HK_KEY2, value); } } catch (e) {} }
   function hkOf(id) { var c = hkLoad()[id]; return (c && c.key) ? c : null; }
   function hkName(id) {
     if (id && id.indexOf(GEAR_HK_PRE) === 0) { var gp = gearPreset(id.slice(GEAR_HK_PRE.length)); return gp ? ("换装·" + gp.name) : id; } // V2.37.0
@@ -3890,7 +3898,7 @@
       try { syncApplyRuntime(); renderSyncState(); } catch (e) {} // V2.15.10：切档后同步器按新档配置启停
       try { perfApply(true); } catch (e) {} // V2.23.0：切档后按新档画面优化设置生效
       renderWinInfo(); renderLockList(); renderAskList();
-      try { renderGearAll(); } catch (e6) {} // V2.37.0：换角色自动读该角色的换装/卡册预设
+      try { renderGearAll(); gearAskRecover(); } catch (e6) {} // V2.37.1：角色识别后按角色恢复 buff 并刷新换装
       try { fwRefreshHosts(); fwRestore(); } catch (e4) {}
       lastCharGid = gid;
       lastCharName = nm;
@@ -5462,14 +5470,15 @@
   // askList 已存 st 值也随之反了（集中攻击存 3、心神凝聚存 105）。按技能ID精确迁移互换，一次性标记防重复。
   (function migrateConcentrationStatus() {
     try {
-      if (localStorage.getItem('dsh_ro_st_migrate_v21530')) return;
+      var mk = 'dsh_ro_st_migrate_v21530_' + activeProfileKey();
+      if (localStorage.getItem(mk)) return;
       var moved = 0;
       askList.forEach(function (ask) {
         if (ask.skid === 357 && parseInt(ask.st, 10) === 3) { ask.st = 105; moved++; }        // 旧集中攻击 st=3 → 105
         else if (ask.skid === 45 && parseInt(ask.st, 10) === 105) { ask.st = 3; moved++; }    // 旧心神凝聚 st=105 → 3
       });
       if (moved > 0) { saveAskList(); console.log('[PROFILE] 集中攻击/心神凝聚 状态ID迁移 ' + moved + ' 项'); }
-      localStorage.setItem('dsh_ro_st_migrate_v21530', '1');
+      localStorage.setItem(mk, '1');
     } catch (e) {}
   })();
   // V2.1.0 合并多辅助到辅助技能：旧 saved.buffs 文本（技能ID:等级:状态）迁移进 askList
@@ -15915,16 +15924,22 @@
   // ITIP_END
 
   // ================= V2.37.0 一键换装 · 卡册（逐角色档案保存 · 8899 KV 换浏览器自动读回）=================
-  // 存储：profiles["角色名_GID"].gearSets = { list:[{id,name,at,eq:{槽位:{itid,refine,cards,name}},deck:[{id,name,tab,level}]}], sel:"预设id" }
+  // 存储：profiles["角色名_GID"].gearSets = { list:[{id,name,at,eq:{槽位:{itid,refine,cards,name,wearLocation,instanceKey}},deck:[{id,name,tab,level}]}], sel:"预设id" }
   //   角色档案本身在 dsh_ro_profiles_v2（8899 KV 中继键）里 → 换角色自动读该角色的预设，换浏览器/换入口经中继自动读回。
   // 执行：装备只发客户端的 CZ.REQ_TAKEOFF_EQUIP / CZ.REQ_WEAR_EQUIP（与手动点装备同一条包）；
   //   卡册只做 CZ.REQUEST_CARDCONNECTION_ADDMYDECK（加入卡组）/ _CANCEL（从卡组移除）——可逆；
   //   永不发 REQUEST_CARDCONNECTION_RECHARGE（充能会吃掉卡片，不可逆）。
   var GEAR_HK_PRE = "gearpreset:";
+  function gearLocation(name, fallback) {
+    try { var E = (CLIENT && CLIENT.EquipmentLocation) || requireDB("DB/Items/EquipmentLocation") || {}; var n = Number(E[name]); return (isFinite(n) && n > 0) ? n : fallback; } catch (e) { return fallback; }
+  }
   var GEAR_SLOTS = [
-    { m: 1, name: "头上" }, { m: 8, name: "头中" }, { m: 512, name: "头下" }, { m: 16, name: "衣服" },
-    { m: 2, name: "武器" }, { m: 4, name: "盾牌" }, { m: 32, name: "披肩" }, { m: 64, name: "鞋" },
-    { m: 128, name: "饰品1" }, { m: 256, name: "饰品2" }, { m: 32768, name: "箭矢" }
+    { m: gearLocation("HEAD_BOTTOM", 1), name: "头下", cls: "head_bottom" },
+    { m: gearLocation("WEAPON", 2), name: "武器", cls: "weapon" }, { m: gearLocation("GARMENT", 4), name: "披肩", cls: "garment" },
+    { m: gearLocation("ACCESSORY1", 8), name: "饰品1", cls: "accessory1" }, { m: gearLocation("ARMOR", 16), name: "衣服", cls: "armor" },
+    { m: gearLocation("SHIELD", 32), name: "盾", cls: "shield" }, { m: gearLocation("SHOES", 64), name: "鞋", cls: "shoes" },
+    { m: gearLocation("ACCESSORY2", 128), name: "饰品2", cls: "accessory2" }, { m: gearLocation("HEAD_TOP", 256), name: "头上", cls: "head_top" },
+    { m: gearLocation("HEAD_MID", 512), name: "头中", cls: "head_mid" }, { m: gearLocation("AMMO", 32768), name: "箭", cls: "ammo" }
   ];
   var gearBusy = false, gearLastLog = "", gearWatchdog = null;
   function gearSlotName(m) { for (var i = 0; i < GEAR_SLOTS.length; i++) if (GEAR_SLOTS[i].m === m) return GEAR_SLOTS[i].name; return "槽" + m; }
@@ -15958,42 +15973,42 @@
   }
   function gearWearState(it) { try { var w = it ? (it.WearState != null ? it.WearState : (it.wearState != null ? it.wearState : 0)) : 0; return Number(w) || 0; } catch (e) { return 0; } }
   function gearInGame() { try { return !!clientReady(); } catch (e) { return false; } }
+  function gearEquipmentComp() { try { return requireDB("UI/Components/Equipment/Equipment"); } catch (e) { return null; } }
   function gearReadEquipped() {
-    var out = { slots: {}, n: 0 };
+    var out = { slots: {}, n: 0, ok: false, why: "装备组件不可用" }, EQ = gearEquipmentComp();
     try {
-      var inv = findInventory(); if (!inv) return out;
-      for (var i = 0; i < inv.length; i++) {
-        var it = inv[i] || {}, ws = gearWearState(it);
-        if (!ws) continue;
-        for (var s = 0; s < GEAR_SLOTS.length; s++) {
-          var m = GEAR_SLOTS[s].m;
-          if (!(ws & m)) continue;
-          if (!out.slots[m]) {
-            out.slots[m] = { itid: gearItid(it), refine: gearRefine(it), cards: gearCards(it), idx: Number(it.index != null ? it.index : i), name: gearName(gearItid(it)) };
-            out.n++;
-          }
-          break;
-        }
+      if (!EQ || !EQ.ui || typeof EQ.getItemByIndex !== "function") return out;
+      var found = {};
+      for (var s = 0; s < GEAR_SLOTS.length; s++) {
+        var slot = GEAR_SLOTS[s], el = EQ.ui.find(slot.cls.split(",").map(function (c) { return "." + c + " .item[data-index]"; }).join(","));
+        if (!el || !el.length) continue;
+        var idx = Number(el.eq ? el.eq(0).attr("data-index") : el.attr("data-index")); if (!isFinite(idx)) continue;
+        var it = EQ.getItemByIndex(idx); if (!it) continue;
+        if (!found[idx]) found[idx] = { it: it, mask: 0 }; found[idx].mask |= slot.m;
       }
-    } catch (e) {}
+      for (var s2 = 0; s2 < GEAR_SLOTS.length; s2++) {
+        var slot2 = GEAR_SLOTS[s2], el2 = EQ.ui.find(slot2.cls.split(",").map(function (c) { return "." + c + " .item[data-index]"; }).join(","));
+        if (!el2 || !el2.length) continue;
+        var idx2 = Number(el2.eq ? el2.eq(0).attr("data-index") : el2.attr("data-index")), hit = found[idx2]; if (!hit) continue;
+        var realMask = gearWearState(hit.it) || hit.mask;
+        out.slots[slot2.m] = { itid: gearItid(hit.it), refine: gearRefine(hit.it), cards: gearCards(hit.it), idx: idx2, name: gearName(gearItid(hit.it)), wearLocation: realMask, instanceKey: "idx:" + idx2 }; out.n++;
+      }
+      out.ok = true; out.why = "";
+    } catch (e) { out.why = "装备槽读取失败：" + (e && e.message ? e.message : e); }
     return out;
   }
-  function gearFindInvItem(itid, refine, cards, wantEquipped, allowIdx) {
-    var inv = findInventory(); if (!inv) return null;
-    var best = null, bestScore = -1;
-    var want = (cards || []).join(",");
+  function gearSigEqual(a, b) {
+    return !!(a && b && Number(a.itid) === Number(b.itid) && (Number(a.refine) || 0) === (Number(b.refine) || 0) && (a.cards || []).join(",") === (b.cards || []).join(","));
+  }
+  function gearFindInvItem(itid, refine, cards, reserved) {
+    var inv = findInventory(); if (!inv) return null; var want = { itid: itid, refine: refine, cards: cards || [] }, worn = gearReadEquipped();
+    reserved = reserved || {}; for (var wm in worn.slots) reserved[worn.slots[wm].idx] = true;
     for (var i = 0; i < inv.length; i++) {
-      var it = inv[i] || {};
-      if (Number(gearItid(it)) !== Number(itid)) continue;
-      var worn = !!gearWearState(it), i1 = Number(it.index != null ? it.index : i);
-      if (wantEquipped ? !worn : (worn && !(allowIdx && allowIdx.indexOf(i1) >= 0))) continue;
-      var sc = 0;
-      if (gearRefine(it) === (Number(refine) || 0)) sc += 2;
-      if (gearCards(it).join(",") === want) sc += 4;
-      if (sc > bestScore) { bestScore = sc; best = it; }
-      if (sc >= 6) break;
+      var it = inv[i] || {}, idx = Number(it.index != null ? it.index : i);
+      if (reserved && reserved[idx]) continue;
+      if (gearSigEqual(want, { itid: gearItid(it), refine: gearRefine(it), cards: gearCards(it) })) return it;
     }
-    return best;
+    return null;
   }
   // ---- 卡册（卡片典藏）读取：短暂打开窗口抓 DOM，读完按需收回；只读，不改动数据 ----
   function gearCardComp() { try { return requireDB("UI/Components/CardConnection/CardConnection2"); } catch (e) { return null; } }
@@ -16003,29 +16018,17 @@
     try { if (typeof CC.append === "function") CC.append(); return needOpen; } catch (e2) { return needOpen; }
   }
   function gearCardTabMap(CC) {
-    var map = {};
+    var map = {}, oldTab = null, oldFilter = null;
     try {
+      oldTab = CC.ui.find(".tabs button.sd[data-tab]").eq(0); oldFilter = CC.ui.find("input[type=\'radio\']:checked").eq(0);
       for (var t = 1; t <= 7; t++) {
-        var btn = CC.ui.find(".tabs button[data-tab='" + t + "']");
-        if (!btn.length) continue;
-        btn.trigger("click");
-        var pages = Number(CC.ui.find(".page .totalPages").text()) || 1; if (pages > 8) pages = 8;
-        for (var pg = 1; pg <= pages; pg++) {
-          var items = CC.ui.find(".container .item[data-itid]");
-          for (var i = 0; i < items.length; i++) {
-            var el = items.eq(i), cid = Number(el.attr("data-itid"));
-            if (!cid || map[cid] || cid === 0) continue;
-            var tb = t, lv = 1, ch = el.find("[data-tab]").eq(0);
-            if (ch.length) { var a = Number(ch.attr("data-tab")), b = Number(ch.attr("data-level")); if (a) tb = a; if (b) lv = b; }
-            map[cid] = { tab: tb, level: lv };
-          }
-          if (pg < pages) CC.ui.find(".page .next").trigger("click");
-        }
+        var all = CC.ui.find("#all,input#all,input[type=\'radio\'][value=\'all\'],input[type=\'radio\'][data-filter=\'all\']").eq(0); if (all.length && !all.prop("checked")) all.prop("checked", true).trigger("change").trigger("click");
+        var btn = CC.ui.find(".tabs button[data-tab=\'" + t + "\']"); if (!btn.length) continue; btn.trigger("click"); var pages = Number(CC.ui.find(".page .totalPages").text()) || 1; if (pages > 8) pages = 8;
+        for (var pg = 1; pg <= pages; pg++) { var items = CC.ui.find(".container .item[data-itid]"); for (var i = 0; i < items.length; i++) { var el = items.eq(i), cid = Number(el.attr("data-itid")); if (!cid || map[cid]) continue; var tb = t, lv = 1, ch = el.find("[data-tab]").eq(0); if (ch.length) { var a = Number(ch.attr("data-tab")), b = Number(ch.attr("data-level")); if (a) tb = a; if (b) lv = b; } map[cid] = { tab: tb, level: lv }; } if (pg < pages) CC.ui.find(".page .next").trigger("click"); }
       }
-      var tb0 = CC.ui.find(".tabs button[data-tab='0']");
-      if (tb0.length) tb0.trigger("click");
-    } catch (e) {}
-    return map;
+    } catch (e) { map.__error = String(e && e.message ? e.message : e); }
+    try { if (oldTab && oldTab.length) oldTab.trigger("click"); else { var tb0 = CC.ui.find(".tabs button[data-tab=\'0\']"); if (tb0.length) tb0.trigger("click"); } } catch (e2) {}
+    try { if (oldFilter && oldFilter.length) oldFilter.prop("checked", true).trigger("change").trigger("click"); } catch (e3) {} return map;
   }
   function gearDeckSnapshot(cb) {
     var CC = gearCardComp();
@@ -16052,7 +16055,7 @@
   }
   function gearCapture(cb) {
     var eq = gearReadEquipped(), eqOut = {};
-    for (var s = 0; s < GEAR_SLOTS.length; s++) { var m = GEAR_SLOTS[s].m; if (eq.slots[m]) eqOut[m] = { itid: eq.slots[m].itid, refine: eq.slots[m].refine, cards: eq.slots[m].cards, name: eq.slots[m].name }; }
+    for (var s = 0; s < GEAR_SLOTS.length; s++) { var m = GEAR_SLOTS[s].m; if (eq.slots[m]) eqOut[m] = { itid: eq.slots[m].itid, refine: eq.slots[m].refine, cards: eq.slots[m].cards, name: eq.slots[m].name, wearLocation: eq.slots[m].wearLocation, instanceKey: eq.slots[m].instanceKey }; }
     gearDeckSnapshot(function (snap) {
       var deck = [];
       var CC = gearCardComp();
@@ -16060,24 +16063,26 @@
         if (snap.ok && snap.cards.length) {
           var map = gearCardTabMap(CC);
           for (var i = 0; i < snap.cards.length; i++) {
-            var c = snap.cards[i], r = (map && map[c.id]) ? map[c.id] : { tab: 1, level: 1 };
+            var c = snap.cards[i], r = map && map[c.id];
+            if (!r || !r.tab || !r.level) { snap.ok = false; snap.why = "卡片 " + c.id + " 的页签/等级读取失败"; deck = []; break; }
             deck.push({ id: c.id, name: c.name, tab: r.tab, level: r.level });
           }
         }
       } catch (e) {}
       if (CC && !snap.wasOpen) { try { CC.remove(); } catch (e2) {} }
-      cb({ eq: eqOut, eqN: eq.n, deck: deck, deckOk: !!snap.ok, why: snap.why || "" });
+      cb({ eq: eqOut, eqN: eq.n, eqOk: !!eq.ok, eqWhy: eq.why || "", deck: snap.ok ? deck : null, deckOk: !!snap.ok, why: snap.why || "" });
     });
   }
   function gearReadCurrent() {
     if (!gearInGame()) { setStatus("读取当前配置：还没进入游戏", "err"); return; }
     gearLog("正在读当前配置（装备 + 卡册）…");
     gearCapture(function (cap) {
+      if (!cap.eqOk) { var em = "读取当前配置失败：" + (cap.eqWhy || "装备读取失败"); gearLog(em); try { setStatus(em, "err"); } catch (e0) {} return; }
       var d = gearData();
       var ps = { id: "g" + Date.now().toString(36), name: "预设" + (d.list.length + 1), at: Date.now(), eq: cap.eq, deck: cap.deck };
       d.list.push(ps); d.sel = ps.id;
       gearSaveSets();
-      var msg = "已读取当前配置为「" + ps.name + "」：装备 " + cap.eqN + " 件，卡册 " + cap.deck.length + " 张" + (cap.deckOk ? "" : "（卡册读不到：" + cap.why + "）");
+      var msg = "已读取当前配置为「" + ps.name + "」：装备 " + cap.eqN + " 件，卡册 " + (cap.deck ? cap.deck.length : 0) + " 张" + (cap.deckOk ? "" : "（卡册读不到：" + cap.why + "）");
       gearLog(msg); try { setStatus(msg, cap.deckOk ? "ok" : "warn"); } catch (e) {}
       renderGearAll();
     });
@@ -16087,9 +16092,9 @@
     if (!gearInGame()) { setStatus("存为当前：还没进入游戏", "err"); return; }
     gearLog("正在把当前配置存进「" + ps.name + "」…");
     gearCapture(function (cap) {
-      ps.eq = cap.eq; ps.deck = cap.deck; ps.at = Date.now();
-      gearSaveSets();
-      var msg = "「" + ps.name + "」已按当前状态更新：装备 " + cap.eqN + " 件，卡册 " + cap.deck.length + " 张" + (cap.deckOk ? "" : "（卡册读不到：" + cap.why + "）");
+      var changed = false; if (cap.eqOk) { ps.eq = cap.eq; changed = true; } if (cap.deckOk) { ps.deck = cap.deck; changed = true; }
+      if (changed) { ps.at = Date.now(); gearSaveSets(); }
+      var msg = "「" + ps.name + "」已按当前状态更新：装备 " + cap.eqN + " 件，卡册 " + (cap.deck ? cap.deck.length : 0) + " 张" + (cap.deckOk ? "" : "（卡册读不到：" + cap.why + "）");
       gearLog(msg); try { setStatus(msg, cap.deckOk ? "ok" : "warn"); } catch (e) {}
       renderGearAll();
     });
@@ -16103,24 +16108,33 @@
     if (gearWatchdog) clearTimeout(gearWatchdog);
     gearWatchdog = setTimeout(function () { gearBusy = false; gearLog("换装超时解锁（30 秒），可再次尝试"); }, 30000); // 看门狗：异常卡住也会解锁
     var cur = gearReadEquipped();
-    var offs = [], wears = [];
+    if (!cur.ok) { gearBusy = false; setStatus("换装预检失败：" + cur.why, "err"); gearLog("换装预检失败：" + cur.why); return false; }
+    var offs = [], wears = [], missing = [], reserved = {}, planned = {}, targets = [], byInstance = {}, offSeen = {};
     for (var s = 0; s < GEAR_SLOTS.length; s++) {
       var m = GEAR_SLOTS[s].m, want = (ps.eq || {})[m] || null, have = cur.slots[m] || null;
-      var same = !!(want && have && Number(want.itid) === Number(have.itid) && (Number(want.refine) || 0) === (Number(have.refine) || 0) && (want.cards || []).join(",") === (have.cards || []).join(","));
-      if (same) continue;
-      if (have) offs.push({ idx: have.idx, name: have.name });
-      if (want) wears.push({ mask: m, want: want });
+      if (gearSigEqual(want, have) || (!want && !have)) continue;
+      if (want) {
+        var key = want.instanceKey || "";
+        if (!key) {
+          for (var g = 0; g < targets.length; g++) if (gearSigEqual(targets[g].want, want) && (Number(targets[g].want.wearLocation) || targets[g].mask) === (Number(want.wearLocation) || m) && !((targets[g].mask | m) & ~(Number(want.wearLocation) || Number(targets[g].want.wearLocation) || (targets[g].mask | m)))) { key = targets[g].key; break; }
+          if (!key) key = "legacy:" + m;
+        }
+        var group = byInstance[key];
+        if (!group) { group = byInstance[key] = { key: key, want: want, mask: 0 }; targets.push(group); }
+        group.mask |= m;
+      }
+      if (have && !offSeen[have.instanceKey || ("idx:" + have.idx)]) { offSeen[have.instanceKey || ("idx:" + have.idx)] = true; offs.push({ idx: have.idx, name: have.name }); }
     }
-    var q = [], missing = [], offsIdx = [];
-    for (var i0 = 0; i0 < offs.length; i0++) offsIdx.push(offs[i0].idx);
+    for (var t0 = 0; t0 < targets.length; t0++) {
+      var target = targets[t0], cand = gearFindInvItem(target.want.itid, target.want.refine, target.want.cards, reserved);
+      if (!cand) { missing.push(gearSlotName(target.mask) + ":" + (target.want.name || ("ID " + target.want.itid))); continue; }
+      var ci = Number(cand.index); reserved[ci] = true; planned[target.key] = true; wears.push({ idx: ci, mask: Number(target.want.wearLocation) || target.mask, name: target.want.name });
+    }
+    var q = [];
     for (var i = 0; i < offs.length; i++) q.push({ op: "off", idx: offs[i].idx, name: offs[i].name });
-    for (var j = 0; j < wears.length; j++) {
-      var cand = gearFindInvItem(wears[j].want.itid, wears[j].want.refine, wears[j].want.cards, false, offsIdx);
-      if (!cand) { missing.push(wears[j].want.name || ("ID " + wears[j].want.itid)); continue; }
-      q.push({ op: "on", idx: Number(cand.index), mask: wears[j].mask, name: wears[j].want.name });
-    }
+    for (var j = 0; j < wears.length; j++) q.push({ op: "on", idx: wears[j].idx, mask: wears[j].mask, name: wears[j].name });
     var sent = { off: 0, on: 0, fail: 0 };
-    gearLog("换装「" + ps.name + "」开始：待脱 " + offs.length + " 件，待穿 " + (wears.length - missing.length) + " 件" + (missing.length ? "，背包缺：" + missing.join("、") : ""));
+    gearLog("换装「" + ps.name + "」开始：待脱 " + offs.length + " 件，待穿 " + (wears.length) + " 件" + (missing.length ? "，背包缺：" + missing.join("、") : ""));
     var step = 0;
     function nextGear() {
       if (step >= q.length) { gearAfterDeck(ps, missing, sent); return; }
@@ -16136,7 +16150,7 @@
   }
   function gearAfterDeck(ps, missing, sent) {
     var want = (ps.deck || []).map(function (c) { return Number(c.id); });
-    if (!want.length) { gearLog("该预设没有卡册记录，本次只换装备。"); gearVerify(ps, missing, sent, true, undefined); return; }
+    if (!Array.isArray(ps.deck)) { gearLog("该预设卡册读取失败，保留现有卡组。"); gearVerify(ps, missing, sent, true, undefined); return; }
     gearDeckSnapshot(function (snap) {
       if (!snap.ok) { gearLog("卡册读不到（" + (snap.why || "未知") + "），只换装备。"); gearVerify(ps, missing, sent, true, snap.wasOpen); return; }
       var cur = snap.cards.map(function (c) { return Number(c.id); });
@@ -16157,12 +16171,14 @@
       for (var a1 = 0; a1 < add.length; a1++) {
         var rid = add[a1], r0 = null;
         for (var a2 = 0; a2 < (ps.deck || []).length; a2++) if (Number(ps.deck[a2].id) === rid) { r0 = ps.deck[a2]; break; }
-        q.push({ op: "add", id: rid, tab: (r0 && r0.tab) ? r0.tab : ((map && map[rid] && map[rid].tab) || 1), level: (r0 && r0.level) ? r0.level : ((map && map[rid] && map[rid].level) || 1) });
+        var rr = (r0 && r0.tab && r0.level) ? r0 : (map && map[rid]);
+        if (!rr || !rr.tab || !rr.level) { missing.push("卡片" + rid + "页签/等级未知"); continue; }
+        q.push({ op: "add", id: rid, tab: rr.tab, level: rr.level });
       }
       gearLog("卡册：当前 " + cur.length + " 张 → 目标 " + want.length + " 张（加 " + add.length + " / 减 " + del.length + "）");
       var k2 = 0, res = { add: 0, del: 0, fail: 0 };
       function nextCard() {
-        if (k2 >= q.length) { gearVerify(ps, missing, sent, false, snap.wasOpen); return; }
+        if (k2 >= q.length) { sent.cardFail = res.fail; gearVerify(ps, missing, sent, false, snap.wasOpen); return; }
         var t = q[k2++];
         try {
           if (t.op === "del") { var p1 = new CLIENT.PS.CZ.REQUEST_CARDCONNECTION_CANCEL(); p1.tab = 0; p1.level = 1; p1.cardid = t.id; CLIENT.NM.sendPacket(p1); res.del++; }
@@ -16180,29 +16196,32 @@
         var m = GEAR_SLOTS[s].m, want = (ps.eq || {})[m] || null, have = cur.slots[m] || null;
         if (!want) { if (have) bad.push(gearSlotName(m) + "未脱下"); else sameN++; continue; }
         if (!have) { bad.push(gearSlotName(m) + "未穿上"); continue; }
-        if (Number(want.itid) !== Number(have.itid)) { bad.push(gearSlotName(m) + "仍不是目标"); continue; }
+        if (!gearSigEqual(want, have)) { bad.push(gearSlotName(m) + "签名不符"); continue; }
         sameN++;
       }
-      function finish(deckBad, deckN, deckOk) {
-        var okAll = !bad.length && !deckBad && !missing.length;
+      function finish(deckMissing, deckExcess, deckN, deckOk) {
+        if (sent.fail) bad.push("装备发包失败" + sent.fail + " 次");
+        if (sent.cardFail) bad.push("卡册发包失败" + sent.cardFail + " 次");
+        var okAll = !bad.length && !deckMissing && !deckExcess && !missing.length && deckOk;
         var msg = "换装「" + ps.name + "」" + (okAll ? "完成" : "完成（有未生效项）") + "：装备脱 " + sent.off + " / 穿 " + sent.on + "，一致 " + sameN + " 槽" +
-          (deckOk ? ("；卡册 " + (deckN - deckBad) + "/" + deckN + " 张一致") : "；卡册未校验") +
-          (missing.length ? "；背包缺：" + missing.join("、") : "") + (bad.length ? "；装备问题：" + bad.join("、") : "") + (deckBad ? "；卡册还差 " + deckBad + " 张" : "");
+          (deckOk ? ("；卡册 " + deckN + " 张目标") : "；卡册未校验") +
+          (missing.length ? "；背包缺：" + missing.join("、") : "") + (bad.length ? "；装备问题：" + bad.join("、") : "") + (deckMissing ? "；卡册缺少 " + deckMissing + " 张" : "") + (deckExcess ? "；卡册多出 " + deckExcess + " 张" : "");
         gearLog(msg); try { setStatus(msg, okAll ? "ok" : "warn"); } catch (e2) {}
         gearBusy = false;
         if (gearWatchdog) { clearTimeout(gearWatchdog); gearWatchdog = null; }
         renderGearAll();
       }
-      if (skipDeck) { finish(0, (ps.deck || []).length, false); return; }
+      if (skipDeck) { finish(0, 0, (ps.deck || []).length, false); return; }
       gearDeckSnapshot(function (snap2) {
-        var wr = (ps.deck || []).map(function (c) { return Number(c.id); }), deckBad = 0;
+        var wr = (ps.deck || []).map(function (c) { return Number(c.id); }), deckMissing = 0, deckExcess = 0;
         if (snap2.ok) {
           var ids = snap2.cards.map(function (c) { return Number(c.id); });
-          for (var i = 0; i < wr.length; i++) if (ids.indexOf(wr[i]) < 0) deckBad++;
+          for (var i = 0; i < wr.length; i++) if (ids.indexOf(wr[i]) < 0) deckMissing++;
+          for (var x = 0; x < ids.length; x++) if (wr.indexOf(ids[x]) < 0) deckExcess++;
         }
         var CC = gearCardComp();
         if (CC && !deckWasOpen) { try { var t0 = CC.ui.find(".tabs button[data-tab='0']"); if (t0.length) t0.trigger("click"); CC.remove(); } catch (e1) {} }
-        finish(snap2.ok ? deckBad : wr.length, wr.length, !!snap2.ok);
+        finish(snap2.ok ? deckMissing : wr.length, snap2.ok ? deckExcess : 0, wr.length, !!snap2.ok);
       });
     }, 1400);
   }
@@ -16294,11 +16313,12 @@
   }
   setInterval(function () { try { var h = $id("dsh-fw-gear"); if (h && h.offsetParent) renderGearKeys(); } catch (e) {} }, 1500);
   // V2.37.0：buff 预设（askList）与换装预设同层（都在角色档案）——这里补一次「旧全局键 / 本地备份」找回，只补空档、只跑一次。
-  (function gearAskRecover() {
+  function gearAskRecover() {
     try {
-      if (localStorage.getItem("dsh_ro_askrecover_v1") === "1") return;
-      var k = activeProfileKey(), p = profiles[k];
-      if (p && p.askList && p.askList.length) { try { localStorage.setItem("dsh_ro_askrecover_v1", "1"); } catch (e0) {} return; }
+      var k = activeProfileKey(), mark = "dsh_ro_askrecover_v1_" + k;
+      if (!k || k === "default" || localStorage.getItem(mark) === "1") return;
+      var p = profiles[k];
+      if (p && p.askList && p.askList.length) { try { localStorage.setItem(mark, "1"); } catch (e0) {} return; }
       var cand = [];
       try { var a1 = JSON.parse(localStorage.getItem("dsh_ro_asklist") || "[]"); if (Array.isArray(a1) && a1.length) cand = a1; } catch (e1) {}
       if (!cand.length) {
@@ -16313,10 +16333,10 @@
       profiles[k].lastAt = Date.now();
       saveProfiles();
       try { askList = profiles[k].askList; renderAskList(); } catch (e3) {}
-      try { localStorage.setItem("dsh_ro_askrecover_v1", "1"); } catch (e4) {}
+      try { localStorage.setItem(mark, "1"); } catch (e4) {}
       gearLog("已从旧存档找回 buff 预设 " + cand.length + " 项，写入角色档案「" + k + "」");
     } catch (e) {}
-  })();
+  }
 
   // ================= V2.32.0 跨入口 KV 互通（纯本地 8899 中继，last-write-wins）=================
   // post.lastro.cn / game.lastro.cn 两 origin 的 localStorage 相互隔离，经本机 8899 中转互通下列 7 键；
@@ -16324,7 +16344,8 @@
   var KV_BASE = "http://127.0.0.1:8899/api/kv";
   var KV_KEYS = ["dsh_ro_profiles_v2", "dsh_ro_last_active", "dsh_ro_tp_global_v1", "dsh_ro_hotkeys_v2", "dsh_ro_hlrules", "dsh_ro_whitelist", "dsh_ro_itemlist", "dsh_ro_casttrace"];
   var KV_TS_PRE = "dsh_kv_ts_";
-  var KV_PREV = {}; // 上一轮各 key 本地值（用于判定「本地值较上一轮变化」）
+  var KV_PREV = {}; // 上一轮各 key 本地值
+  function kvMarkLocal(key, value) { try { if (arguments.length < 2) value = localStorage.getItem(key); if (KV_PREV && typeof KV_PREV === "object") KV_PREV[key] = value; var ts = Date.now(), pre = (typeof KV_TS_PRE === "string" && KV_TS_PRE) ? KV_TS_PRE : "dsh_kv_ts_"; localStorage.setItem(pre + key, String(ts)); return ts; } catch (e) { return 0; } }
   function kvTs(key) { try { var t = parseInt(localStorage.getItem(KV_TS_PRE + key), 10); return (isFinite(t) && t > 0) ? t : 0; } catch (e) { return 0; } }
   function kvSetTs(key, t) { try { localStorage.setItem(KV_TS_PRE + key, String(t)); } catch (e) {} }
   function kvRefreshProfile() {
@@ -16333,39 +16354,29 @@
       var ak = localStorage.getItem("dsh_ro_last_active");
       if (ak && profiles[ak]) activeCharKey = ak;
       else if (!profiles[activeCharKey]) activeCharKey = "default";
-      saved = loadSaved();
+      ensureProfile(activeCharKey); saved = loadSaved(); lockList = profiles[activeCharKey].lockList || {}; askList = profiles[activeCharKey].askList || []; profMemKey = activeCharKey;
       if (panel && panel.style.display !== "none") applyProfileUI();
-    } catch (e) {}
+      try { renderLockList(); renderAskList(); renderGearAll(); } catch (e1) {}
+    } catch (e) { try { setStatus("远端角色档刷新失败：" + (e.message || e), "err"); } catch (e2) {} }
   }
+  function kvRefreshHotkeys() { try { hkCfg = null; hkLoad(); roMenuRender(); renderGearKeys(); } catch (e) { try { setStatus("远端快捷键刷新失败：" + (e.message || e), "err"); } catch (e2) {} } }
   function kvSyncKey(key) {
     try {
-      var localTs = kvTs(key);
-      fetch(KV_BASE + "/get?key=" + encodeURIComponent(key))
-        .then(function (r) { return r.json(); })
-        .then(function (j) {
-          if (j && j.ok) {
-            var rts = parseInt(j.ts, 10); if (isNaN(rts)) rts = 0;
-            if (rts > localTs && typeof j.value === "string") {
-              try { localStorage.setItem(key, j.value); } catch (e) {}
-              kvSetTs(key, rts);
-              if (key === "dsh_ro_profiles_v2" || key === "dsh_ro_last_active") kvRefreshProfile();
-            }
-          }
-          var cur = null; try { cur = localStorage.getItem(key); } catch (e) {}
-          if (cur !== KV_PREV[key]) {
-            KV_PREV[key] = cur;
-            var now = Date.now();
-            kvSetTs(key, now);
-            if (cur != null) {
-              fetch(KV_BASE + "/save", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ key: key, value: cur, ts: now })
-              }).catch(function () {});
-            }
-          }
-        })
-        .catch(function () {});
+      var startValue = localStorage.getItem(key), startTs = kvTs(key);
+      if (!Object.prototype.hasOwnProperty.call(KV_PREV, key)) KV_PREV[key] = startValue;
+      else if (startValue !== KV_PREV[key]) startTs = kvMarkLocal(key, startValue);
+      fetch(KV_BASE + "/get?key=" + encodeURIComponent(key)).then(function (r) { return r.json(); }).then(function (j) {
+        var cur = localStorage.getItem(key), curTs = kvTs(key);
+        if (cur !== startValue || curTs !== startTs) return;
+        var rts = j && j.ok ? parseInt(j.ts, 10) || 0 : 0;
+        if (rts > curTs && typeof j.value === "string") {
+          localStorage.setItem(key, j.value); KV_PREV[key] = j.value; kvSetTs(key, rts);
+          if (key === "dsh_ro_profiles_v2" || key === "dsh_ro_last_active") kvRefreshProfile();
+          else if (key === "dsh_ro_hotkeys_v2") kvRefreshHotkeys();
+          return; // pull 只应用，不立即反推
+        }
+        if (cur != null && cur !== j.value) fetch(KV_BASE + "/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: key, value: cur, ts: curTs }) }).catch(function () {});
+      }).catch(function () {});
     } catch (e) {}
   }
   function kvSyncLoop() {
@@ -16461,6 +16472,7 @@
           if (!lp.lockList || typeof lp.lockList !== "object") lp.lockList = {};
           for (var lk in gp.lockList) { if (!has(lp.lockList, lk)) { lp.lockList[lk] = cp(gp.lockList[lk]); changed = true; } }
         }
+        if (!has(lp, "gearSets") && gp.gearSets && typeof gp.gearSets === "object") { lp.gearSets = cp(gp.gearSets); changed = true; }
         if (Array.isArray(gp.askList)) { // 只补缺失条目（同 skid 视为已有；无 skid 时按整体相等判定）
           if (!Array.isArray(lp.askList)) lp.askList = [];
           for (var ai = 0; ai < gp.askList.length; ai++) {

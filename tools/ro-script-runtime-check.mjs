@@ -793,8 +793,8 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
   // 1) 版本号：稳定版与实验版都必须是 2.36.1（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.37.0', name + ' @version 必须是 2.37.0');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.37.0', name + ' 运行时常量 VER 必须是 2.37.0');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.37.1', name + ' @version 必须是 2.37.1');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.37.1', name + ' 运行时常量 VER 必须是 2.37.1');
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
   const stripHead = (s) => s.replace(/\r\n/g,'\n').split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
@@ -1166,8 +1166,8 @@ test('V2.34.5 战斗诊断快照 prof 字段已就位（不改既有字段）', 
 // ================= V2.34.5：配置自动备份（两代）/ 黄金副本找回（纯函数真值表 / 按钮 / 键隔离）=================
 test('V2.34.5 版本号升到 2.34.5（@version 与运行时常量一致，两文件同步）', () => {
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.37.0', name + ' @version 必须是 2.37.0');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.37.0', name + ' 运行时常量 VER 必须是 2.37.0');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.37.1', name + ' @version 必须是 2.37.1');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.37.1', name + ' 运行时常量 VER 必须是 2.37.1');
   }
 });
 
@@ -1411,7 +1411,7 @@ test('bagClean v2 UI and storage contract is lockstep and documents unsupported 
 
 // ================= V2.35.1 assistant API + standalone dojo =================
 const splitSources=[['stable',source],['exp',expSource]];
-test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.37\.0/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
+test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.37\.1/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
 test('V2.35.1 public API uses owner-only external signatures and validates the current lease owner',()=>{for(const[,s]of splitSources){assert.ok(s.includes('/^[A-Za-z0-9_.:-]{8,128}$/'));assert.ok(s.includes('dojo:1,battle:1,movement:1,dialog:1,arrow:1,fly:1'));assert.ok(s.includes('if(apiLease&&apiLease.owner!==owner)'));for(const sig of ['apiHas(owner,scope)','apiSnapshot(owner)','apiRelease(owner)','apiContact(owner,gid)','apiWalk(owner,payload)','apiChoose(owner,payload)','apiBattle(owner,on)','apiSetArrow(owner,target)','apiClearArrow(owner)','apiFly(owner,payload)'])assert.ok(s.includes('function '+sig),sig);assert.ok(s.includes('apiLease.generation===generation'));assert.ok(!s.includes('apiHas(owner,generation'));}});
 test('V2.35.1 snapshot and battle/menu ownership contracts are explicit',()=>{for(const[,s]of splitSources){for(const key of ['ready:','map:','player:','mobs:','npcs:','target:','inDojoMap:','dialogOpen:','menu:','battleState:','busy:','arrow:'])assert.ok(s.includes(key),key);assert.ok(s.includes('if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"}'));assert.ok(s.includes('b.state="pending-on"'));assert.ok(s.includes('if(b.state!=="owned")return {ok:true,result:"not-owned"}'));assert.ok(s.includes('l.battle.state==="owned"||l.battle.state==="pending-off"'));assert.ok(s.includes('if(s!==false)return {ok:true,result:s===true?"preexisting":"unknown"}'));}});
 test('V2.36.11 arrow rules use a per-monster table plus a default arrow',()=>{for(const[name,s]of splitSources){
@@ -2345,7 +2345,7 @@ test('V2.36.17 「跳转」改走客户端世界地图（select + selectMob）�
   assert.ok(status[status.length - 1].indexOf('世界地图窗口不可用') >= 0, '缺失时状态=' + status[status.length - 1]);
 });
 
-test('V2.37.0 「一键换装 · 卡册」挂在菜单首页第一行且只发可逆包',()=>{
+test('V2.37.1 「一键换装 · 卡册」挂在菜单首页第一行且只发可逆包',()=>{
   const g = source.indexOf('{ id: "gear"'), m = source.indexOf('{ id: "menu"');
   assert.ok(g > 0, '必须登记 gear 模块');
   assert.match(source.slice(g, g + 120), /name: "\u4e00\u952e\u6362\u88c5 \u00b7 \u5361\u518c"/);
@@ -2356,7 +2356,7 @@ test('V2.37.0 「一键换装 · 卡册」挂在菜单首页第一行且只发�
   assert.ok(source.includes('var GEAR_HK_PRE = "gearpreset:"'), '预设快捷键 id 前缀');
   assert.ok(source.includes('hkBeginSet(GEAR_HK_PRE + ps.id)'), '每套预设要能单独设键');
   assert.ok(source.includes('id.indexOf(GEAR_HK_PRE) === 0'), 'hkAction 要能派发预设快捷键');
-  assert.ok(source.includes('renderGearAll(); } catch (e6) {}'), '换角色后要刷新该角色的换装预设');
+  assert.ok(source.includes('renderGearAll(); gearAskRecover(); } catch (e6) {}'), '换角色后要刷新该角色的换装预设');
   // 执行：只发客户端自己的穿/脱包与卡册加/减包
   assert.ok(source.includes('CLIENT.PS.CZ.REQ_TAKEOFF_EQUIP()'), '装备脱包');
   assert.ok(source.includes('CLIENT.PS.CZ.REQ_WEAR_EQUIP()'), '装备穿包');
@@ -2366,7 +2366,7 @@ test('V2.37.0 「一键换装 · 卡册」挂在菜单首页第一行且只发�
   // buff 预设同层找回
   assert.ok(source.includes('dsh_ro_askrecover_v1'), 'buff 预设要有一次旧存档找回');
 });
-test('V2.37.0 换装读取/匹配（VM）',()=>{
+test('V2.37.1 换装读取/匹配（VM）',()=>{
   const code = extract('  var GEAR_HK_PRE = "gearpreset:";', '  // ---- 卡册（卡片典藏）读取');
   const saved = [];
   const inv = [
@@ -2384,7 +2384,7 @@ test('V2.37.0 换装读取/匹配（VM）',()=>{
     saveProfiles: () => saved.push(1),
     findInventory: () => inv,
     clientReady: () => true,
-    requireDB: () => null,
+    requireDB: (n) => n.includes('Equipment') ? { ui: { find: q => { const idx=q.includes('.weapon ')?5:q.includes('.armor ')?9:null; return idx==null?{length:0}:{length:1,eq(){return this},attr:()=>String(idx)}; } }, getItemByIndex: idx => inv.find(x=>x.index===idx) } : null,
     CLIENT: {},
   };
   vm.createContext(ctx);
@@ -2407,19 +2407,69 @@ test('V2.37.0 换装读取/匹配（VM）',()=>{
   // 读当前装备：按 WearState 位归类，精炼/插卡一并带上
   const cur = G.gearReadEquipped();
   assert.equal(cur.n, 2);
-  assert.equal(JSON.stringify(cur.slots[2]), JSON.stringify({ itid: 1101, refine: 7, cards: [4001], idx: 5, name: 'ID 1101' }));
-  assert.equal(JSON.stringify(cur.slots[16]), JSON.stringify({ itid: 2301, refine: 0, cards: [], idx: 9, name: 'ID 2301' }));
+  assert.equal(JSON.stringify(cur.slots[2]), JSON.stringify({ itid: 1101, refine: 7, cards: [4001], idx: 5, name: 'ID 1101', wearLocation: 2, instanceKey: 'idx:5' }));
+  assert.equal(JSON.stringify(cur.slots[16]), JSON.stringify({ itid: 2301, refine: 0, cards: [], idx: 9, name: 'ID 2301', wearLocation: 16, instanceKey: 'idx:9' }));
   assert.equal(cur.slots[64], undefined);
   // 背包匹配：必须在未穿的同 ID 里挑，优先精炼+插卡全同
-  const cand = G.gearFindInvItem(1101, 7, [4001], false);
+  const cand = G.gearFindInvItem(1101, 7, [4001], {});
   assert.equal(cand.index, 12, '不能挑到身上那件，也不能挑不同精炼/插卡的');
-  assert.equal(G.gearFindInvItem(1101, 0, [], false).index, 13);
-  assert.equal(G.gearFindInvItem(1601, 0, [], false).index, 20);
-  assert.equal(G.gearFindInvItem(9999, 0, [], false), null);
+  assert.equal(G.gearFindInvItem(1101, 0, [], {}).index, 13);
+  assert.equal(G.gearFindInvItem(1601, 0, [], {}).index, 20);
+  assert.equal(G.gearFindInvItem(9999, 0, [], {}), null);
   // 槽名 + 字段兜底（旧客户端用 itemid/refine/cards 数组）
-  assert.equal(G.gearSlotName(32768), '\u7bad\u77e2');
+  assert.equal(G.gearSlotName(32768), '\u7bad');
   assert.equal(G.gearSlotName(3), '\u69fd3');
   assert.equal(G.gearItid({ itemid: 501 }), 501);
   assert.equal(G.gearRefine({ refine: 4 }), 4);
   assert.equal(JSON.stringify(G.gearCards({ cards: [4001, 4002] })), '[4001,4002]');
+});
+
+test('V2.37.1 装备槽位与严格签名 VM 回归',()=>{
+  const code=extract('  function gearLocation(', '  // ---- 卡册（卡片典藏）读取');
+  const items={5:{ITID:1101,index:5,RefiningLevel:7,slot:{card1:4001}},9:{ITID:2301,index:9,RefiningLevel:0,slot:{}}};
+  const mk=(idx)=>({length:1,eq(){return this},attr:k=>k==='data-index'?String(idx):null});
+  const ctx={CLIENT:{EquipmentLocation:{WEAPON:2,ARMOR:16}},requireDB:n=>n.includes('Equipment')?{ui:{find:q=>q.includes('.weapon ')?mk(5):q.includes('.armor ')?mk(9):{length:0}},getItemByIndex:i=>items[i]}:null,profiles:{},activeProfileKey:()=> 'hero',ensureProfile:k=>ctx.profiles[k]||(ctx.profiles[k]={}),saveProfiles(){},findInventory:()=>[{ITID:1101,index:12,RefiningLevel:7,slot:{card1:4001}},{ITID:1101,index:13,RefiningLevel:0,slot:{}}],clientReady:()=>true,Number,String,Array,Object,Math,JSON,isFinite};
+  vm.createContext(ctx);vm.runInContext(code+';this.G={GEAR_SLOTS,gearReadEquipped,gearFindInvItem,gearSigEqual};',ctx);
+  assert.deepEqual(Array.from(ctx.G.GEAR_SLOTS,x=>x.m),[1,2,4,8,16,32,64,128,256,512,32768]);
+  const cur=ctx.G.gearReadEquipped();assert.equal(cur.ok,true);assert.equal(cur.slots[2].idx,5);assert.equal(cur.slots[16].idx,9);
+  assert.equal(ctx.G.gearFindInvItem(1101,7,[4001],{}).index,12);assert.equal(ctx.G.gearFindInvItem(1101,7,[],{}),null);assert.equal(ctx.G.gearFindInvItem(1101,7,[4001],{12:true}),null);
+});
+
+test('V2.37.1 双槽组合与同款双饰品行为 VM',()=>{
+  const readCode=extract('  function gearLocation(', '  // ---- 卡册（卡片典藏）读取');
+  const combo={ITID:1101,index:5,WearState:34,slot:{}}, mk=idx=>({length:1,eq(){return this},attr:()=>String(idx)});
+  const readCtx={CLIENT:{EquipmentLocation:{WEAPON:2,SHIELD:32}},requireDB:n=>n.includes('Equipment')?{ui:{find:q=>q.includes('.weapon ')?mk(5):q.includes('.shield ')?mk(5):{length:0}},getItemByIndex:i=>i===5?combo:null}:null,profiles:{},activeProfileKey:()=>'h',ensureProfile:k=>readCtx.profiles[k]||(readCtx.profiles[k]={}),saveProfiles(){},findInventory:()=>[combo],clientReady:()=>true,Number,String,Array,Object,Math,JSON,isFinite};
+  vm.createContext(readCtx);vm.runInContext(readCode+';this.G={gearReadEquipped};',readCtx);
+  const cur=readCtx.G.gearReadEquipped();
+  assert.equal(cur.slots[2].idx,5); assert.equal(cur.slots[32].idx,5); assert.equal(cur.slots[2].wearLocation,34); assert.equal(cur.slots[32].instanceKey,'idx:5');
+
+  const applyCode=extract('  function gearApply(', '  function gearAfterDeck(');
+  function run(eq, inventory){
+    const packets=[];
+    const ctx={gearBusy:false,gearWatchdog:null,gearPreset:()=>({name:'套装',eq}),gearInGame:()=>true,setStatus(){},gearLog(){},gearReadEquipped:()=>({ok:true,slots:{2:{itid:999,refine:0,cards:[],idx:5,name:'旧双手',wearLocation:34,instanceKey:'idx:5'},32:{itid:999,refine:0,cards:[],idx:5,name:'旧双手',wearLocation:34,instanceKey:'idx:5'}}}),gearSigEqual:(a,b)=>!!(a&&b&&a.itid===b.itid&&(a.cards||[]).join(',')===(b.cards||[]).join(',')),gearFindInvItem:(id,r,c,res)=>inventory.find(x=>x.ITID===id&&!res[x.index])||null,gearSlotName:m=>'槽'+m,gearAfterDeck(){},setTimeout:fn=>{fn();return 1},clearTimeout(){},GEAR_SLOTS:[{m:2},{m:32},{m:8},{m:128}],CLIENT:{PS:{CZ:{REQ_TAKEOFF_EQUIP:function(){this.op='off'},REQ_WEAR_EQUIP:function(){this.op='on'}}},NM:{sendPacket:p=>packets.push({op:p.op,index:p.index,wearLocation:p.wearLocation})}},Number,Array,Object,isFinite};
+    vm.createContext(ctx);vm.runInContext(applyCode+';this.run=gearApply;',ctx);ctx.run('x');return packets;
+  }
+  const shared={itid:1101,refine:0,cards:[],name:'双手剑',wearLocation:34,instanceKey:'idx:20'};
+  let packets=run({2:shared,32:shared},[{ITID:1101,index:20}]);
+  assert.deepEqual(packets,[{op:'off',index:5,wearLocation:undefined},{op:'on',index:20,wearLocation:34}]);
+  const ring1={itid:2201,refine:0,cards:[],name:'戒指'}, ring2={itid:2201,refine:0,cards:[],name:'戒指'};
+  packets=run({8:ring1,128:ring2},[{ITID:2201,index:21},{ITID:2201,index:22}]);
+  assert.deepEqual(packets.filter(x=>x.op==='on').map(x=>x.index),[21,22]);
+});
+
+test('V2.37.1 主审回归：真实装备接口、失败保护与 KV dirty',()=>{
+  assert.ok(source.includes('requireDB("DB/Items/EquipmentLocation")'));
+  assert.doesNotMatch(source,/DB\/Enum\/EquipmentLocation|LOWER_HEADGEAR|UPPER_HEADGEAR|MIDDLE_HEADGEAR|headgear-bottom/);
+  for(const x of ['HEAD_BOTTOM','HEAD_TOP','HEAD_MID','WEAPON','GARMENT','ACCESSORY1','ARMOR','SHIELD','SHOES','ACCESSORY2','AMMO','head_bottom','head_top','head_mid']) assert.ok(source.includes(x),x);
+  assert.ok(source.includes('eqOk: !!eq.ok')); assert.ok(source.includes('if (!cap.eqOk)')); assert.ok(source.includes('if (cap.eqOk) { ps.eq = cap.eq'));
+  assert.ok(source.includes('(cap.deck ? cap.deck.length : 0)')); assert.ok(source.includes('待穿 " + (wears.length)'));
+  assert.ok(source.includes('deckMissing')); assert.ok(source.includes('deckExcess')); assert.doesNotMatch(source,/deckN - deckBad/);
+  assert.ok(source.includes("#all,input#all")); assert.ok(source.includes('oldFilter')); assert.ok(source.includes('oldTab'));
+  assert.ok(source.includes('function kvMarkLocal(key, value)')); assert.ok(source.includes('kvMarkLocal(PROF_KEY, value)')); assert.ok(source.includes('kvMarkLocal(HK_KEY2, value)'));
+  assert.ok(source.includes('Object.prototype.hasOwnProperty.call(KV_PREV, key)')); assert.ok(source.includes('hkLoad(); roMenuRender();'));
+});
+
+test('V2.37.1 安全语义结构守卫',()=>{
+  ['if (!Array.isArray(ps.deck))','for (var x = 0; x < ids.length; x++)','if (sent.cardFail) bad.push','if (cap.deckOk) { ps.deck = cap.deck','if (!has(lp, "gearSets")','if (cur !== startValue || curTs !== startTs) return;','return; // pull 只应用，不立即反推'].forEach(x=>assert.ok(source.includes(x),x));
+  assert.ok(source.includes("var mk = 'dsh_ro_st_migrate_v21530_' + activeProfileKey()"));
 });

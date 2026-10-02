@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.38.2
+// @version      2.38.4
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -120,6 +120,82 @@
 // 4. 临时战斗目标 API 在任何发包前严格验证 GID/MID、活体怪物和 MvpDropsNum；失效时自动清理。保留 v2.38.0 opcode 能力探测与启动自检修复。
 // 5. 版本：@version 2.38.0 → 2.38.1（VER 同步）；实验版同步。离线 runtime 151/151、opcode 9/9，独立定点复核 8/8 通过。
 
+// ---------------- V2.38.4 变更摘要 ----------------
+// 1. 入站分帧修复（根因）：客户端一条 WebSocket 消息里可以装多个包，旧实现只取 dv.getUint16(0) 当 opcode、把整条消息当成一个包，
+//    第 2 个包之后的全部被丢弃；武僧气弹包 ZC.SPIRITS(464/0x1d0) 永远跟在 ZC.USE_SKILL2(2507/0x9cb) 后面，所以几乎从不被处理。
+//    新增运行时长度表 zcLenTable()（遍历 CLIENT.PS 各命名空间收集已注册包类的 id/size，负长度=变长包）与 walkInboundFrames()
+//    按 offset 逐帧切分；dispatchInbound 对每一帧执行原有 opcode 分派链（条件与顺序逐字不变）。长度表不可用、或首包长度未知时只处理整条消息
+//    （与旧行为逐字等价）；尾部切不出的残包直接停止并只累加诊断计数 framePartial，不做跨消息缓冲，只会漏读、绝不错位串包。
+// 2. 武僧气弹读取恢复：onSelfSpirits 重新被逐帧调用，selfSpirits 缓存恢复更新，挂机蓄气后正常出弹指；
+//    气弹诊断补记帧偏移与长度表是否可用，并在 AID 不匹配时留下可见证据（只认自己 AID 的判定不放宽）。
+// 3. 数据抓包改为按帧记录：每条记录 = 一个真实帧（op/len/hex 都取该帧真实值），消息尾部切不出的残包单独记一条 partial 记录，
+//    下次抓包即可直接看到 464 这样的独立帧。
+// 4. 版本：@version 2.38.3 → 2.38.4（VER 同步）；实验版同步。
+// 5. 隐藏其他玩家摊位/商店名字牌：修两个已复现缺陷——客户端 Room.create() 在节点已存在时复用同一个牌子 DOM 节点，
+//    同一实体「先开商店再开聊天室」时旧实现按 room.type 直接 return，被置成 none 的节点会在聊天室牌子上一直不可见（直到关开关或刷新）；
+//    现在非 0/1 类型会做一次还原，且只碰我们自己记录过的元素；跟踪表剪枝（>600）改为丢弃前先还原 display，
+//    已被客户端摘掉的节点不会被永久留在隐藏态。
+// 6. 补球来源修正：262=吸气(MO_ABSORBSPIRITS) 是气弹的消耗方（消耗自身气球换 SP），已从补球名单彻底移除；
+//    名单改为 401 狂蓄气(CH_SOULCOLLECT，Lv1，SP20/次，一次补满 5 颗、无冷却可无限放) 与 261 蓄气(MO_CALLSPIRITS，SP8/次，一次 1 颗、最多充到技能等级)。
+//    新增「补球来源」全局下拉（自动 / 只用蓄气（省蓝）/ 只用狂蓄气（最快））与逐技能条件词 球源401 / 球源261 / 球源自动（条件优先于全局默认）；
+//    V2.38.4 收口：撤掉「放下补球技能后 1 秒复查球数、没涨就拉黑 10 秒」整套机制（复查记录、拉黑表与 1 秒等待一并删除）——
+//    用户口径：能读到球数就足够判定「缺不缺、缺几个」，不需要去猜服务器认不认某个技能；读数偶发滞后还会把正常技能误拉黑，退化成更费蓝的来源。
+// 7. 补球只认「数据异常」：连续补球球数始终无变化（沿用 zPrepSpam 阈值 6）→ 状态栏写一行「气弹数据未更新（可能没收到 464 包）」+ tlog 一条，然后停止补球；
+//    只认数据异常，不判断技能可用性、不换技能、不拉黑。
+// 8. 弹指(267) 耗球口径统一：去掉「按实际技能等级吃球」的特例，一律用释放需求表的值（267 = 1 颗）。本服实测每次弹指只消耗 1 个气球，
+//    按等级算会先充到 5 颗、白烧蓝；顺序行显示与运行时口径由此统一为 1。
+// 9. 手机版/登录页启动异常修复（用户截图实证：整页变成客户端「出错了！」）：
+//    ① requireDB 永不抛——先探测 require.defined/specified，未加载一律返回 null，绝不触发 RequireJS 的 notloaded 错误路径；
+//    ② 全文 window.require(...) 调用点统一走 requireDB（拿不到模块只是「该功能本次不生效」，绝不抛到宿主页面）；
+//    ③ 背包/清包初始化改为「客户端就绪才做」（有界重试，超限放弃，只记 tlog，不抛）；
+//    ④ 启动引导整体包一层 try/catch，助手自身异常绝不冒泡到宿主页面；
+//    ⑤ 页面闸门：只在 127.0.0.1/localhost:8971、lastro.cn 下 URL 含 /ro/api、URL 含 r=mn 的页面启动，其它页面（首页/登录门户/公告页）一律不注入。
+// 10. 独立审计小缺陷收口：zcLenTable() 注释纠偏（正 size 非客户端权威长度、多帧切分限制与实测口径一并写明）、长度表缓存键补 CLIENT.PS 可枚举函数计数、
+//     补球来源下拉非法值显式回填 auto、walkInboundFrames 的 DataView 失败路径改记整条消息（rest=total）。
+// 11. 功能菜单归位：把「点击其他玩家的摆摊商店不弹出窗口（默认开）」「隐藏其他玩家摊位/商店的名字牌（默认关闭）」两行
+//     从「通用」区移到「常用」区（DOM 顺序排在 RO_MODULES 各行之后、「通用」小标题之前，显示在「常用」标题下面）；
+//     默认值、文案与「（默认开）/（默认关闭）」字样、开关行为、全局键（dsh_ro_blockmc_v1 / dsh_ro_hideshopname_v1）全部不变，
+//     界面缩放 / 自动缩放下限 / RO 原生皮肤仍留在「通用」区。
+// 12. 手机版旁观模式（仅 IS_MN，用户口径：手机要有助手，但不许抢加载，直接用官方登录资源，目的就是不再弹「出错了」）：
+//     boot() 不再 append 任何客户端脚本、不设置或覆盖 window.ROConfig、不做本地数据源探测，一律用官方 /ro/client_re/ 资源；
+//     detectDataServer 的回调在手机版同步直接调用（零 XMLHttpRequest）。悬浮球/功能菜单/挂机/自动吃药/一键 buff/传送/
+//     WebSocket 收发钩子与就绪检测 waitForReady/clientReady 全部保留，手机版不再被塞进 PC 客户端/双载。
+// 13. PC 端兜底注入：官方页面（非手机版、非本机私有入口）改为「让官方先起，助手只在没起来时补位」——
+//     每 250ms 探测一次，12 次（约 3 秒）内出现任一信号（Online(_mn).js 脚本标签 / 页面自己设过 window.ROConfig /
+//     window.require 引擎已执行）即退让并写 state.officialBooted 标记，彻底不再注入；等满仍无信号才走原兜底注入路径，
+//     且注入前再复核一次三个信号、兜底注入加 if (!window.ROConfig) 守卫绝不覆盖页面配置；本机私有入口不等待立即注入，
+//     state.bootedByPlugin / bootedByWrapper / ready 去重照旧。
+
+// 14. 身份修复（用户实机定案）：角色档键不再由「角色名_GID」派生 —— 实机 display.name 恒为空，旧代码回落成「角色_<GID>」，
+//     永远指向空档，用户原有预设（真名_GID）从未被读到。改为：档键一律 "ch" + 角色 ID（CLIENT.SS.GID = char_id，跨登录恒定；
+//     取不到才回落实体 GID），名字只用于显示、绝不进键；旧的名字_GID / 角色_GID / 任意历史脏键按 charId→gid 认领迁移
+//     （深拷贝 + _movedTo 标记，旧键保留不删；pruneProfiles 也不得删含预设 / 刚迁移 / 24 小时内的档）。
+//     名字未知一律显示「识别中」（不再用「角色」占位，lastCharName 未知写 null），真名由 CLIENT.DB.getNameByGID(char_id) 异步补齐
+//     （只读客户端 DB，存本会话缓存 + 写回该档 name，绝不写实体）；自愈：即使 GID/名字都没变，只要当前档不是 "ch"+角色ID 就重新切档；
+//     防串档：中继来的 dsh_ro_last_active 必须与该键对应档的 charId（老档比 gid）一致才采纳，否则忽略并写回本地正确值；
+//     安全侧：连续死亡自动下线 / 死亡回图的身份判定也改按角色 ID（无则回落实体 GID）——旧的名字比较在名字恒空时恒为「不等」，
+//     这两处保护一直是空转的；换装浮窗未识别角色时显示「角色 识别中」并暂停换装，读取失败显示原因。
+// 15. 换装浮窗说明精简为「用法 / 限制」两行短句（不再出现发包/客户端/字段等实现词）。
+// 16. 装备与背包读取修复（用户实机 + 只读诊断定案）：线上客户端桥接模块的 window.require 是冻结的 23 项白名单，
+//     Equipment / Inventory / BasicInventory / UIManager 都不在内 → 旧读取路径恒 null，已穿戴装备读不到、自动换箭一直在空转。
+//     新增桥接 clientUIManager()（走白名单内的 StatusIcons.manager）与 uiComp(公开名)（UIManager.getComponent）——
+//     不再新增任何白名单外的 require 依赖；背包读取新增首选路线 uiComp("Inventory").list / getItemByIndex（返回形状与旧契约完全一致），
+//     旧的三条路线保留为兜底；gearReadEquipped 重写为「EQ.isInEquipList(mask) → 槽位 DOM 索引（getRoot().querySelector）→ Inventory/
+//     SwitchEquip._list → __lastroDiagnostics」并逐槽记录路线与失败原因，结果新增 routes / missing，一个槽都没读到一律 ok:false（0 槽不是成功）；
+//     自动换箭的武器/箭矢读取改走同一批新路线（readEquippedWeaponType 的武器类型判断逐字未动）；字段兼容补齐 refiningLevel/Refine/grade 与
+//     1 起始 Options / 0 起始 options（删掉凭空虚构的 Index0/Value0/Param0 分支）；预存档不再依赖 index；换装浮窗新增「读取诊断」按钮
+//     （可复制文本含每槽路线、missing、档键+charId+角色名、背包数据源=、本服 Equipment 组件名）；删除已无调用点的死代码（旧的角色名读取函数）。
+// ---------------- V2.38.3 变更摘要 ----------------
+// 1. 新增「隐藏其他玩家摊位/商店的名字牌」（默认关闭，全局键 dsh_ro_hideshopname_v1，功能菜单·通用分区）：纯本地显示层，
+//    把其他玩家摊位(实体 room.type=0)/收购店(room.type=1)头顶名字牌元素（room.node.ui[0]）的 style.display 置 none，
+//    人物本体与所有交互完全不受影响（只影响显示，不影响能否点击人物）；聊天室牌子(type 2/3)一律原样可见；自己的实体按 GID 跳过。
+//    开启时 400ms 低频维持，关闭时立刻恢复被隐藏过的牌子并停止轮询（关闭状态零成本、零轮询）；不 hook 客户端任何方法、不发任何包。
+// 2. D1：第二层（点击其他玩家摊位/收购店）丢包的 opcode 解析缓存改为「解析出的 opcode 数量等于待解析类数量才写缓存」；
+//    此前部分成功也写缓存（例如只解析出 REQ_BUY_FROMMC 就缓存 [304]），补齐另一个包类后永远不再解析 → 永久漏拦；
+//    不完整/失败时按 5 秒限流重试，窗口内沿用上次结果（已解析出来的那个包照拦，绝不写正式缓存）。
+// 3. D2：出站抓包的被拦截计数 txCap.drop 在开始抓包时清零，并在导出文本与停止提示里体现被拦截未发出的条数。
+// 4. 版本：@version 2.38.2 → 2.38.3（VER 同步）；实验版同步。
+
 // ---------------- V2.38.2 变更摘要 ----------------
 // 1. 统一背包读取器 bagList()：依次尝试 Inventory/BasicInventory 组件 .list、UIManager 组件表、UIManager.getComponent 与 CLIENT.SS 兜底，逐个校验并记录
 //    来源名/件数/箭矢种数；findInventory/readBagArrows/useItemById/arrowQuiverFor 共用同一读取器，修「换箭整条链静默失效」；换箭设置浮窗与自动装箭矢栏各加一行诊断。
@@ -222,6 +298,30 @@
 (function () {
   "use strict";
 
+  // ================= V2.38.4 页面闸门：助手只在客户端页面启动 =================
+  // 用户口径：不该在站内所有页面都注入（站点首页 / 登录门户 / 公告页等一律不启动助手）。
+  //   必须在任何 DOM 创建 / 全局污染 / 定时器 / WebSocket 包装之前判定 —— 这里的 return 是唯一的早退点。
+  //   放行三类：① 本机私有客户端 127.0.0.1 / localhost 端口 8971；② lastro.cn 域名下 URL 含 /ro/api（api.html / api-old.html）；
+  //             ③ 手机版客户端 URL 含 r=mn（用户未否决，保留放行并修好不抛）。
+  function roAssistPageAllowed() {
+    try {
+      var loc = window.location || {};
+      var host = String(loc.hostname || "").toLowerCase();
+      var port = String(loc.port || "");
+      var href = String(loc.href || "");
+      if ((host === "127.0.0.1" || host === "localhost") && port === "8971") return true;
+      if (/(^|\.)lastro\.cn$/.test(host) && href.indexOf("/ro/api") >= 0) return true;
+      if (href.indexOf("r=mn") >= 0) return true;
+      return false;
+    } catch (e) { return false; }
+  }
+  if (!roAssistPageAllowed()) return; // 非客户端页面：直接不启动助手（不建 DOM、不加样式、不挂定时器、不包装 WebSocket）
+  // V2.38.4 手机版启动异常修复（B4）：启动引导整体包一层 try/catch ——
+  //   助手自身任何同步异常都只记一条 console.error，绝不冒泡到宿主页面（此前会把整页变成客户端的「出错了！」）。
+  try { roAssistMain(); } catch (e) {
+    try { if (typeof console !== "undefined" && console.error) console.error("[RO-ASSIST] 启动异常已拦截（不冒泡到宿主页面）:", e); } catch (e0) {}
+  }
+  function roAssistMain() {
   // ---------------- 配置 ----------------
   // 服务器选择（原站 initialize(nid) 机制）：ClientVer 3 = V6-Online[三转]，5 = V6-Eden[进阶二转]
   // 默认进阶二转；URL 加 ?cv=3 可切回三转（如 api.html?69.32&cv=3）；也可用面板「线路」下拉切换
@@ -247,7 +347,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.38.2"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.38.4"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -306,7 +406,10 @@
   // V2.16.7：刷新后恢复上次活跃角色档（防 activeCharKey 重置 default → 面板用错档丢配置）
   try { var _lastAk = localStorage.getItem("dsh_ro_last_active"); if (_lastAk && profiles[_lastAk]) activeCharKey = _lastAk; } catch (e) {}
   var lastCharGid = null; // 已识别的主角色 GID（换角色自动切档）
-  var lastCharName = null; // V2.32.2 已识别角色名（游戏内切角色 GID 可能不变，加角色名双检测）
+  var lastCharId = 0; // V2.38.4-身份修复：已识别的角色 ID（CLIENT.SS.GID，跨登录恒定；0=未识别）
+  var lastCharName = null; // V2.32.2 已识别角色名（V2.38.4 起只作显示/日志，身份判定改按 lastCharId；未知保持 null，绝不写占位）
+  var selfNameCache = {}; // V2.38.4-身份修复：本会话真名缓存（charId → name，只读客户端 DB，绝不写实体）
+  var selfNamePending = 0; // V2.38.4-身份修复：在途名字解析请求所属 charId（0=无在途请求）
   var profUIApplied = false; // V2.34.5：仅在 applyProfileUI 完成对当前档的填充后，才允许把界面值落盘
   var profMemKey = null; // V2.34.5：内存 lockList/askList 当前所属档案键
   function activeProfileKey() { return activeCharKey; }
@@ -334,18 +437,88 @@
       return true;
     } catch (e) { return false; }
   }
-  function ensureProfile(k) { if (!profiles[k]) profiles[k] = { name: k, gid: 0, saved: {}, lockList: {}, askList: [], lastAt: 0 }; return profiles[k]; }
+  function ensureProfile(k) { if (!profiles[k]) profiles[k] = { name: k, gid: 0, charId: 0, saved: {}, lockList: {}, askList: [], lastAt: 0 }; return profiles[k]; }
   // V2.8.9：lastro 自身实体 GID 是带随机小数的浮点（引擎自己用 parseInt 比较），
   // 这里统一取整（Math.floor），非法/非正数返回 0，避免每秒拼出 name_GID.<小数> 的新档键。
   function gidInt(v) { var n = Math.floor(Number(v)); return (isFinite(n) && n > 0) ? n : 0; }
-  // V2.32.2 角色名读取统一（换角色双检测：游戏内切角色 GID 可能不变，加角色名比对）
-  function charNameOf(ent) { try { return ((ent && ent.display && ent.display.name) || (ent && ent.displayName) || (ent && ent.name) || (ent && ent.character && ent.character.name) || "") || ""; } catch (e) { return ""; } }
+  // V2.38.4-身份修复：稳定的角色 ID = CLIENT.SS.GID（= HC.NOTIFY_ZONESVR.GID，char_id，uint32，跨登录恒定）。
+  // V2.38.4-审计修正（F2）：档身份只认 char_id。实体 GID 在本服就是账号级 SS.AID（Online.js: SS.Entity.GID = SS.AID，
+  //   同账号所有角色相同），退回它建键会让账号下所有角色共用一个档；这里彻底去掉退回分支，
+  //   取不到 char_id 就返回 0 = 未识别（不新建档、不切档、不认领，gearIdentified() 为 false，每拍继续尝试）。
+  function selfCharId() {
+    try {
+      return gidInt(CLIENT.SS && CLIENT.SS.GID);
+    } catch (e) { return 0; }
+  }
+  // V2.38.4-身份修复：名字只用于显示。① 实体 display.name ② 本会话按 charId 的真名缓存 ③ 都没有 → ""（显示层写「识别中」）。
+  function selfDisplayNameRaw() {
+    try {
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      var nm = (ent && ((ent.display && ent.display.name) || ent.displayName || ent.name || (ent.character && ent.character.name))) || "";
+      return String(nm).trim();
+    } catch (e) { return ""; }
+  }
+  function selfName() {
+    try {
+      var nm = selfDisplayNameRaw();
+      if (nm) return nm;
+      var cid = selfCharId();
+      return (cid > 0 && selfNameCache[cid]) ? String(selfNameCache[cid]) : "";
+    } catch (e) { return ""; }
+  }
+  // V2.38.4-身份修复：名字解析走客户端自带的 CLIENT.DB.getNameByGID(char_id, ttl)——按 GID 查，命中缓存立即 resolve，
+  //   未命中会发客户端自己的 CZ.REQNAME_BYGID2 并解析出真名，超时 resolve "Unknown"。只有 charId>0 且无在途请求时才发起。
+  //   resolve 到非空且非 "Unknown" 的真名 → 存本会话缓存 + 写回该档 name + 重渲染名称/换装浮窗；失败一律静默保持「识别中」。
+  //   绝不写客户端实体（不改 display.name / fakename），只用我们自己的缓存。
+  function selfNameAsk(cid) {
+    try {
+      if (!(cid > 0) || selfNamePending) return;
+      if (selfNameCache[cid]) return;
+      var DB = CLIENT.DB;
+      if (!DB || typeof DB.getNameByGID !== "function") return;
+      selfNamePending = cid;
+      var pr = DB.getNameByGID(cid, 8000);
+      if (!pr || typeof pr.then !== "function") { selfNamePending = 0; return; }
+      pr.then(function (nm) {
+        if (selfNamePending === cid) selfNamePending = 0;
+        nm = nm == null ? "" : String(nm).trim();
+        if (!nm || nm === "Unknown") return;
+        selfNameCache[cid] = nm;
+        try { var k = "ch" + cid; if (profiles[k] && typeof profiles[k] === "object") { profiles[k].name = nm; saveProfiles(); } } catch (e1) {}
+        try { renderWinInfo(); } catch (e2) {}
+        try { renderStatbar(); } catch (e3) {}
+        try { renderGearAll(); } catch (e4) {}
+      }, function () { if (selfNamePending === cid) selfNamePending = 0; });
+    } catch (e) { selfNamePending = 0; }
+  }
+  // V2.38.4-身份修复：当前档是否已与当前角色对齐（自愈判定：GID/名字都没变也要重新切档）。
+  function selfProfileInSync() {
+    try {
+      var cid = selfCharId();
+      if (!(cid > 0)) return true; // 角色 ID 未就绪：保持未识别，不算失配（首帧绝不新建档）
+      var k = "ch" + cid;
+      if (activeProfileKey() !== k) return false;
+      var p = profiles[k];
+      if (!p || typeof p !== "object") return false;
+      return gidInt(p.charId) === cid;
+    } catch (e) { return true; }
+  }
+  // V2.38.4-身份修复：pruneProfiles 不得删掉「含 gearSets 的档 / 刚认领迁移的旧键 / 24 小时内创建的档」。
+  function pruneProfileKeep(p, now) {
+    try {
+      if (!p || typeof p !== "object") return false;
+      if (p.gearSets && typeof p.gearSets === "object") return true; // 带换装预设的档
+      if (p._movedTo) return true; // 刚认领迁移过的旧键
+      var at = Number(p.lastAt) || 0;
+      return at > 0 && (now - at) < 86400000; // 24 小时内创建/更新的档
+    } catch (e) { return false; }
+  }
   // V2.8.9：归并历史小数垃圾键（角色_2007018.9392906795 → 角色_2007018），同一基键只留 lastAt 最新的一份。
   function pruneProfiles() {
     try {
       var keys = Object.keys(profiles);
       if (!keys.length) return;
-      var groups = {}, changed = false;
+      var groups = {}, changed = false, now = Date.now();
       for (var i = 0; i < keys.length; i++) {
         var k = keys[i];
         var base = String(k).replace(/\.\d+$/, ""); // 剥掉末尾 .<小数>
@@ -357,15 +530,20 @@
       var out = {};
       for (var b in groups) {
         var list = groups[b];
-        var best = null, bestT = -1;
-        if (profiles[b]) { best = profiles[b]; bestT = (profiles[b].lastAt) || 0; } // 存在整数基键（真实档）优先保留，小数垃圾只作兜底
+        if (profiles[b]) out[b] = profiles[b]; // 整数基键（真实档）优先保留
+        var losers = [];
         for (var j = 0; j < list.length; j++) {
-          var p = profiles[list[j]];
-          if (p === best) continue;
-          var t = (p && p.lastAt) || 0;
-          if (!best || t > bestT) { bestT = t; best = p; }
+          var k2 = list[j];
+          if (k2 === b) continue;
+          var p2 = profiles[k2];
+          if (pruneProfileKeep(p2, now)) { out[k2] = p2; continue; } // 受保护键：一律保留，不进归并
+          losers.push(k2);
         }
-        out[b] = best || {};
+        if (!out[b] && losers.length) {
+          var best = losers[0], bestT = (profiles[best] && profiles[best].lastAt) || 0;
+          for (var m = 1; m < losers.length; m++) { var t2 = (profiles[losers[m]] && profiles[losers[m]].lastAt) || 0; if (t2 > bestT) { bestT = t2; best = losers[m]; } }
+          out[b] = profiles[best];
+        }
       }
       profiles = out;
       saveProfiles();
@@ -475,6 +653,7 @@
     ready: false,
     bootedByWrapper: false,
     bootedByPlugin: false,
+    officialBooted: false, // V2.38.4：PC 端等待窗口内判定「官方已接管」→ 彻底放弃注入
     account: null
   };
 
@@ -552,46 +731,105 @@
         xhr.send();
       } catch (e) { tlog("detect=exception base=" + base); tryNext(); }
     }
+    // V2.38.4 手机版旁观模式：手机版一律用官方 /ro/client_re/ 资源，不做任何本地数据源探测
+    //   （零 XMLHttpRequest），回调同步直接调用（不探测、不等待），启动顺序完全不变。
+    if (IS_MN) { tlog("detect=mn-official-resource skip-probe"); return finish(); }
     tryNext();
   }
 
-  function boot() {
-    if (state.ready || state.bootedByWrapper || state.bootedByPlugin) return;
-    state.bootedByPlugin = true;
-    var cfg = buildConfig();
-    tlog("post-config source=" + (useLocalData ? "local" : "remote") + " version=" + version + " clientver=" + cfg.ClientVer + " autoLogin=" + (cfg.autoLogin.length ? "yes" : "no"));
-    var already = false;
+  // ================= V2.38.4 启动口径：手机版旁观模式 / PC 端兜底注入 =================
+  // PC 端等待官方启动的窗口：12 次 × 250ms ≈ 3 秒（等满仍无信号才走兜底注入）
+  var PC_OFFICIAL_WAIT_TRIES = 12;
+  var PC_OFFICIAL_WAIT_MS = 250;
+
+  // DOM 里是否已有客户端引擎脚本标签（src 匹配 Online.js / Online_mn.js）
+  function clientScriptPresent() {
     try {
       var scripts = document.getElementsByTagName("script");
       for (var i = 0; i < scripts.length; i++) {
-        if (/Online(_mn)?\.js/.test(scripts[i].src)) { already = true; break; }
+        if (/Online(_mn)?\.js/.test(scripts[i].src)) return true;
       }
     } catch (e) {}
-    if (!already) {
-      var directInjected = false;
-      try {
-        window.ROConfig = cfg;
-        var app = document.createElement("script");
-        // V2.36.7：本机私有宿主的 Online.js 是含 import.meta 的 ESM 构建（13MB rolldown 产物），
-        // 按经典脚本注入会抛 SyntaxError: Cannot use 'import.meta' outside a module → 白屏/黑屏无引擎画面。
-        // 与宿主页 api.html 同款：本机私有入口必须按 module 注入；原站维持 text/javascript 不变。
-        app.type = IS_LOCAL_HOST ? "module" : "text/javascript";
-        app.src = "Online.js?" + version;
-        document.getElementsByTagName("head")[0].appendChild(app);
-        directInjected = true;
-        setStatus("已注入配置，正在启动客户端…");
-      } catch (e) {
-        tlog("inject-error " + (e && e.message));
-      }
-      if (!directInjected) {
-        setTimeout(function () {
-          if (!state.ready) {
-            window.postMessage(cfg, "*");
-            tlog("postMessage-fallback");
-          }
-        }, 1200);
-      }
+    return false;
+  }
+
+  // 「官方客户端已经自己启动」的三个信号（任一命中即认定官方已接管，助手彻底放弃注入）：
+  //   ① DOM 里已有 Online(_mn).js 脚本标签；
+  //   ② window.ROConfig 已被【页面自己】设置过——助手写入 ROConfig 时会打 window.__dshSetROConfig 标记，
+  //      借此把「助手写的」排除在外，只认页面自己的配置；
+  //   ③ 客户端引擎全局已存在（RequireJS 已执行：window.require 与 window.require.defined 都是函数）。
+  function officialBootSignal() {
+    if (clientScriptPresent()) return true;
+    try { if (window.ROConfig && !window.__dshSetROConfig) return true; } catch (e1) {}
+    try { if (typeof window.require === "function" && typeof window.require.defined === "function") return true; } catch (e2) {}
+    return false;
+  }
+
+  // 兜底注入：写 ROConfig + append Online.js（写配置失败时 1.2s 后 postMessage 兜底）。
+  //   只有本机私有入口（没有官方启动，助手就是它的启动器）与 PC 官方页等满等待窗口仍无信号时才会走到这里。
+  //   guardPageCfg=true（PC 官方页）：④ 永不覆盖页面已经设好的 window.ROConfig；
+  //   guardPageCfg=false（本机私有入口·保持现状）：用 ROConfigBase 构建的配置覆盖宿主页占位对象。
+  function injectClient(cfg, guardPageCfg) {
+    var directInjected = false;
+    try {
+      if (!guardPageCfg || !window.ROConfig) { window.ROConfig = cfg; window.__dshSetROConfig = true; }
+      var app = document.createElement("script");
+      // V2.36.7：本机私有宿主的 Online.js 是含 import.meta 的 ESM 构建（13MB rolldown 产物），
+      // 按经典脚本注入会抛 SyntaxError: Cannot use 'import.meta' outside a module → 白屏/黑屏无引擎画面。
+      // 与宿主页 api.html 同款：本机私有入口必须按 module 注入；原站维持 text/javascript 不变。
+      app.type = IS_LOCAL_HOST ? "module" : "text/javascript";
+      app.src = "Online.js?" + version;
+      document.getElementsByTagName("head")[0].appendChild(app);
+      directInjected = true;
+      setStatus("已注入配置，正在启动客户端…");
+    } catch (e) {
+      tlog("inject-error " + (e && e.message));
     }
+    if (!directInjected) {
+      setTimeout(function () {
+        if (!state.ready) {
+          window.postMessage(cfg, "*");
+          tlog("postMessage-fallback");
+        }
+      }, 1200);
+    }
+  }
+
+  function boot() {
+    // ⑥ 原有去重一律保留：ready / bootedByWrapper / bootedByPlugin 任一为真都不再启动
+    if (state.ready || state.bootedByWrapper || state.bootedByPlugin) return;
+    state.bootedByPlugin = true;
+    // 手机版旁观模式（仅 IS_MN）：手机要有助手，但不许抢加载——直接用官方登录资源。
+    //   手机版官方脚本是异步挂上去的，助手启动稍早会命中旧的注入分支 → 手机上被塞进 PC 客户端/双载。
+    //   现在：① 绝不 append 任何客户端脚本（Online.js / Online_mn.js 都不碰，也不走 postMessage 注入）；
+    //   ② 绝不设置或覆盖 window.ROConfig（官方配置原样不动，不改 ClientVer/线路/资源路径）；
+    //   ③ 不做本地数据源探测（见 detectDataServer，一律用官方 /ro/client_re/ 资源）；
+    //   ④ 悬浮球/功能菜单/挂机/自动吃药/一键 buff/传送/WebSocket 收发钩子等全部助手功能照旧，
+    //      就绪检测 waitForReady / clientReady 不受影响（官方客户端起来自会发 ready）。
+    if (IS_MN) { tlog("mn-spectator skip-client-inject"); return; }
+    var cfg = buildConfig();
+    tlog("post-config source=" + (useLocalData ? "local" : "remote") + " version=" + version + " clientver=" + cfg.ClientVer + " autoLogin=" + (cfg.autoLogin.length ? "yes" : "no"));
+    if (IS_LOCAL_HOST) {
+      // ⑤ 本机私有入口保持现状（这页没有官方启动，助手就是它的启动器）：不等待、立即注入；DOM 去重照旧。
+      if (!clientScriptPresent()) injectClient(cfg, false);
+      return;
+    }
+    // ② 先等官方：任一信号已出现 → 立刻认定官方已接管，彻底放弃注入（写 officialBooted 标记）
+    if (officialBootSignal()) { state.officialBooted = true; tlog("official-booted-immediate"); return; }
+    var waited = 0; // 已探测轮数
+    var waitOfficial = function () {
+      waited++;
+      if (state.ready || state.bootedByWrapper) return; // 客户端/宿主已就绪 → 收手，绝不注入
+      if (officialBootSignal()) { state.officialBooted = true; tlog("official-booted waited=" + waited); return; }
+      if (waited >= PC_OFFICIAL_WAIT_TRIES) {
+        // ③ 注入前再复核一次上面三个信号：等待窗口最后一刻官方起来了 → 退让，绝不注入
+        if (officialBootSignal()) { state.officialBooted = true; tlog("official-booted-late waited=" + waited); return; }
+        injectClient(cfg, true);
+        return;
+      }
+      setTimeout(waitOfficial, PC_OFFICIAL_WAIT_MS);
+    };
+    setTimeout(waitOfficial, PC_OFFICIAL_WAIT_MS);
   }
 
   // ---------------- 工具 ----------------
@@ -657,9 +895,9 @@
   function clientReady() {
     try {
       if (!window.require) return false;
-      if (!CLIENT.SS) CLIENT.SS = window.require("Engine/SessionStorage");
-      if (!CLIENT.NM) CLIENT.NM = window.require("Network/NetworkManager");
-      if (!CLIENT.PS) CLIENT.PS = window.require("Network/PacketStructure");
+      if (!CLIENT.SS) CLIENT.SS = requireDB("Engine/SessionStorage");
+      if (!CLIENT.NM) CLIENT.NM = requireDB("Network/NetworkManager");
+      if (!CLIENT.PS) CLIENT.PS = requireDB("Network/PacketStructure");
       var _ok = !!(CLIENT.SS && CLIENT.NM && CLIENT.NM.sendPacket && CLIENT.PS);
       // V2.38.0：客户端就绪即做一次 CZ 包体探测 + 就地安装（重登/刷新后的重放由 CZ-PROBE 定时器负责）
       if (_ok && !CZ_PROBE.done) { try { czResolve(); czRenderLine(); } catch (e0) {} }
@@ -699,7 +937,7 @@
       if (v > 0) return v;
     } catch (e) {}
     try {
-      var PVM = window.require && window.require("Network/PacketVerManager");
+      var PVM = requireDB("Network/PacketVerManager");
       var v2 = PVM && (PVM.value || (PVM.default && PVM.default.value));
       if (v2) return Number(v2);
     } catch (e) {}
@@ -859,7 +1097,7 @@
   // ===== CZ-PROBE-END =====
   function getMapName() {
     try {
-      if (!CLIENT.MR) CLIENT.MR = window.require && window.require("Renderer/MapRenderer");
+      if (!CLIENT.MR) CLIENT.MR = requireDB("Renderer/MapRenderer");
       var cur = CLIENT.MR && CLIENT.MR.currentMap;
       if (cur) return cur;
       if (CLIENT.DB) {
@@ -898,10 +1136,41 @@
       return map[jobId] || String(jobId);
     } catch (e) { return String(jobId); }
   }
+  // V2.38.4 手机版/登录页启动异常修复（B1）：requireDB 必须永不抛。
+  //   手机版构建（Online_mn.js）在页面启动阶段还没加载 UI/Components/BasicInventory/BasicInventory 等模块，
+  //   直接 window.require(name) 会触发 RequireJS 的 notloaded 错误（经 req.onError 冒泡到宿主），整页变成客户端「出错了！」。
+  //   这里先探测 defined / specified：未加载一律返回 null，绝不进入 RequireJS 的错误路径；最后整体 try/catch 兜底。
   function requireDB(name) {
     try {
-      if (!window.require) return null;
-      return window.require(name);
+      var req = window.require;
+      if (typeof req !== "function") return null;
+      if (typeof req.defined === "function" && !req.defined(name)) return null;
+      if (typeof req.specified === "function" && !req.specified(name)) return null;
+      return req(name);
+    } catch (e) { return null; }
+  }
+  // V2.38.4-装备/背包读取修复：线上客户端桥接模块的 window.require 是冻结的 23 项模块白名单（Online.js:325247-325305），
+  //   Equipment / Inventory / BasicInventory / UIManager 都不在名单里 → requireDB 恒 null，装备槽与背包必然读不到。
+  //   可达后门：白名单里的 UI/Components/StatusIcons/StatusIcons 组件带 .manager（addComponent 里 component.manager=this，315124；
+  //   StatusIcons 注册 321732），那就是 UIManager；再用 UM.getComponent(公开名)（315134-315139，内部经 UIVersionManager 别名解析）
+  //   取回真实组件（Equipment 249990 / Inventory 247717 / SwitchEquip 227473）。全 try/catch，拿不到就返回 null；
+  //   这里绝不新增任何对白名单外模块的 require 依赖。
+  function clientUIManager() {
+    try {
+      var SI = requireDB("UI/Components/StatusIcons/StatusIcons");
+      if (SI && SI.manager) return SI.manager;
+    } catch (e) {}
+    return null;
+  }
+  function uiComp(publicName) {
+    try {
+      var nm = String(publicName == null ? "" : publicName);
+      if (!nm) return null;
+      var UM = clientUIManager();
+      if (!UM || typeof UM.getComponent !== "function") return null;
+      var c = null;
+      try { c = UM.getComponent(nm); } catch (e1) { c = null; } // 组件不存在时 getComponent 直接抛，必须整个包住
+      return c || null;
     } catch (e) { return null; }
   }
 
@@ -1252,6 +1521,8 @@
       '<div class="row"><span class="st">技能还剩不到「让位余量」就冷却好时不补普攻，先等技能；完全没配技能时直接普攻。</span></div>' +
       '<div class="sec">技能释放与顺序（自动判断释放前置 · 自动补状态）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-prereq" type="checkbox" checked>自动补充释放前置（状态/气弹）</label>' +
+      '<span class="lb">补球来源</span>' +
+      '<select id="dsh-spheresrc" style="flex:0 0 auto" title="自动补气弹时用哪个技能。261 蓄气=SP8/次、一次 1 颗、最多充到技能等级（省蓝）；401 狂蓄气=SP20/次、一次补满 5 颗、无冷却可无限放（最快）；技能条件里的 球源401/球源261/球源自动 优先于这里"><option value="auto" selected>自动（缺 1-2 颗用蓄气 / 缺 3 颗以上用狂蓄气）</option><option value="261">只用蓄气（省蓝）</option><option value="401">只用狂蓄气（最快）</option></select>' +
       '<span class="tag blue" id="dsh-prereqcnt" style="margin-left:auto">释放需求表: 94技能</span></div>' +
       '<details id="dsh-skillpickbox" style="margin:6px 0"><summary>点选技能释放（展开/收缩）</summary>' +
       '<div class="box"><div class="b-hd">点选已学主动技能 → 自动生成技能顺序</div>' +
@@ -1261,8 +1532,8 @@
       '<div class="row" style="margin-top:2px"><button class="ghost" id="dsh-skillclear" style="flex:0 0 auto">清空</button>' +
       '<button class="ghost" id="dsh-skillimp" style="flex:0 0 auto">导入已学技能</button></div></div>' +
       '<details style="margin:6px 0"><summary>手动编辑技能顺序/条件（高级用法）</summary>' +
-      '<textarea id="dsh-skillorder" rows="3" placeholder="技能顺序：每行 技能ID:等级:条件:释放%:次数:锁定次数:冷却秒&#10;例：271  :5   :球5,爆气:80 :20 :3:2&#10;   技能ID :等级:条件    :概率:次数:锁定次数:冷却秒&#10;条件=释放前置，须全满足，可空；释放%=0-100（省略=100）&#10;次数=整轮最多放N次（0=不限，重开重置）；锁定次数=每只怪最多放N次（0=不限，换怪重置）&#10;冷却秒=该技能间隔兜底秒数（0/省略=自动跟随服务器2842真实后摇，无数据默认250ms）&#10;等级超已学自动降级、未学自动跳过；只填ID也能用"></textarea>' +
-      '<div class="log" style="margin-top:2px">字段说明：技能ID:等级:条件:释放%:次数:锁定次数:冷却秒。条件=释放前置（如阿修罗需球5,爆气，自动补状态）；释放%=0-100（省略=100）；次数=整轮上限（OpenKore maxUses，重开自动战斗重置）；锁定次数=每只怪上限（换目标/解锁清零重计）；冷却秒=该技能释放间隔兜底（0/省略=自动跟随服务器2842真实后摇[动态]，无数据默认250ms）。技能按各自冷却独立释放，不再按攻击轮次重复发包。点选/拖拽生成的行只填前2段，无需手写。例：271:5:球5,爆气:80:20:3:2 = 阿修罗5级，需5球+爆气，80%概率，整轮最多20次，每只怪最多3次，间隔兜底2秒。</div>' +
+      '<textarea id="dsh-skillorder" rows="3" placeholder="技能顺序：每行 技能ID:等级:条件:释放%:次数:锁定次数:冷却秒&#10;例：271  :5   :球5,爆气:80 :20 :3:2&#10;   技能ID :等级:条件    :概率:次数:锁定次数:冷却秒&#10;条件=释放前置，须全满足，可空；球源401=该技能补球只用狂蓄气 / 球源261=只用蓄气 / 球源自动=按缺口现算（缺1-2颗用蓄气、缺3颗以上用狂蓄气）；该词不是门槛&#10;例：267:1:球1,球源261:100；271:5:球5,球源401,爆气:80:20:3:2&#10;释放%=0-100（省略=100）&#10;次数=整轮最多放N次（0=不限，重开重置）；锁定次数=每只怪最多放N次（0=不限，换怪重置）&#10;冷却秒=该技能间隔兜底秒数（0/省略=自动跟随服务器2842真实后摇，无数据默认250ms）&#10;等级超已学自动降级、未学自动跳过；只填ID也能用"></textarea>' +
+      '<div class="log" style="margin-top:2px">字段说明：技能ID:等级:条件:释放%:次数:锁定次数:冷却秒。条件=释放前置（如阿修罗需球5,爆气，自动补状态）；释放%=0-100（省略=100）；次数=整轮上限（OpenKore maxUses，重开自动战斗重置）；锁定次数=每只怪上限（换目标/解锁清零重计）；冷却秒=该技能释放间隔兜底（0/省略=自动跟随服务器2842真实后摇[动态]，无数据默认250ms）。技能按各自冷却独立释放，不再按攻击轮次重复发包。点选/拖拽生成的行只填前2段，无需手写。例：271:5:球5,爆气:80:20:3:2 = 阿修罗5级，需5球+爆气，80%概率，整轮最多20次，每只怪最多3次，间隔兜底2秒。 条件里还能写补球来源词 球源401（该技能补球只用狂蓄气）/ 球源261（只用蓄气）/ 球源自动（缺 1-2 颗用蓄气、缺 3 颗以上用狂蓄气），优先级高于上面的「补球来源」下拉；不写则跟随全局默认。例：267:1:球1,球源261:100 = 该技能需 1 颗球，且补球只用蓄气。</div>' +
       '</details>' +
       '<div class="sec">辅助技能（选技能自动加判定条件 · 按间隔施放）</div>' +
       '<div class="row"><span class="lb">技能</span><select id="dsh-askskill" style="flex:0 0 auto;max-width:130px"><option value="">选择技能…</option></select>' +
@@ -2590,6 +2861,30 @@
         body.appendChild(row);
       })(RO_MODULES[i]);
     }
+    // V2.38.4 菜单归位：下面这两个全局开关从「通用」区移到「常用」区（DOM 顺序排在 RO_MODULES 各行之后、
+    //   「通用」小标题之前，让它们显示在「常用」标题下面）；默认值 / 文案与「（默认开）/（默认关闭）」字样 /
+    //   开关行为 / 全局键一律不变，界面缩放 / 自动缩放下限 / RO 原生皮肤仍留在「通用」区。
+    // V2.38.2：点击其他玩家的摆摊商店不弹出窗口（全局设置，非角色档 · 默认开）
+    //   第一层：客户端发出请求前直接丢弃点击摊位/收购店的请求 → 服务器不返列表，窗口根本不会生成（点击等于没发生）
+    //   第二层：万一列表仍到达，回包后同帧自动关窗兜底
+    var bmc = document.createElement("input"); bmc.type = "checkbox"; bmc.className = "ro-cb";
+    bmc.checked = blockMcEnabled();
+    bmc.addEventListener("change", function () {
+      blockMcSave(bmc.checked);
+      setStatus(bmc.checked ? "已开启：点击其他玩家的摆摊商店不弹出窗口（请求直接拦截，窗口不会出现）" : "已关闭：点击立即恢复正常，其他玩家的摆摊商店照原样弹出", "ok");
+      tlog("block-mc-set enabled=" + (bmc.checked === true));
+    });
+    roMenuRow(body, "点击其他玩家的摆摊商店不弹出窗口（默认开）", bmc);
+    // V2.38.3：隐藏其他玩家摊位/商店的名字牌（纯本地显示层 · 全局设置 · 默认关闭；V2.38.4 起归位到「常用」区）
+    var hsn = document.createElement("input"); hsn.type = "checkbox"; hsn.className = "ro-cb";
+    hsn.checked = hideShopNameEnabled();
+    hsn.addEventListener("change", function () {
+      hideShopNameSave(hsn.checked);
+      hideShopNameApply();
+      setStatus(hsn.checked ? "已开启：隐藏其他玩家的摊位/商店名字牌（只影响显示，不影响能否点击人物）" : "已关闭：其他玩家的名字牌立即恢复显示，轮询已停", "ok");
+      tlog("hideshopname-set enabled=" + (hsn.checked === true));
+    });
+    roMenuRow(body, "隐藏其他玩家摊位/商店的名字牌（默认关闭）", hsn);
     // ---- 通用设置 ----
     var sec2 = document.createElement("div"); sec2.className = "ro-sec"; sec2.style.marginTop = "9px";
     sec2.textContent = "通用";
@@ -2615,17 +2910,7 @@
     sk.checked = roSkinOn();
     sk.addEventListener("change", function () { roSkinSet(sk.checked); });
     roMenuRow(body, "RO 原生皮肤", sk);
-    // V2.38.2：点击其他玩家的摆摊商店不弹出窗口（全局设置，非角色档 · 默认开）
-    //   第一层：客户端发出请求前直接丢弃点击摊位/收购店的请求 → 服务器不返列表，窗口根本不会生成（点击等于没发生）
-    //   第二层：万一列表仍到达，回包后同帧自动关窗兜底
-    var bmc = document.createElement("input"); bmc.type = "checkbox"; bmc.className = "ro-cb";
-    bmc.checked = blockMcEnabled();
-    bmc.addEventListener("change", function () {
-      blockMcSave(bmc.checked);
-      setStatus(bmc.checked ? "已开启：点击其他玩家的摆摊商店不弹出窗口（请求直接拦截，窗口不会出现）" : "已关闭：点击立即恢复正常，其他玩家的摆摊商店照原样弹出", "ok");
-      tlog("block-mc-set enabled=" + (bmc.checked === true));
-    });
-    roMenuRow(body, "点击其他玩家的摆摊商店不弹出窗口（默认开）", bmc);
+
     var info = document.createElement("div"); info.className = "ro-info";
     info.textContent = "当前视口 " + roVw() + "×" + roVh() + " · 实际缩放 " + Math.round(roScale() * 100) + "%";
     body.appendChild(info);
@@ -3278,10 +3563,10 @@
     try {
       var ent = CLIENT.SS && CLIENT.SS.Entity;
       // V1.7.0：登录后识别角色 → 自动切档并加载上次保存
-      if (ent && ent.GID != null && gidInt(ent.GID) && (gidInt(ent.GID) !== lastCharGid || charNameOf(ent) !== lastCharName)) { try { onCharChanged(ent); } catch (e) {} }
+      if (ent && ent.GID != null && gidInt(ent.GID) && (gidInt(ent.GID) !== lastCharGid || selfCharId() !== lastCharId || !selfProfileInSync())) { try { onCharChanged(ent); } catch (e) {} }
       if (!ent) { sb.querySelector(".nm").textContent = "—"; sb.querySelector(".job").textContent = "未登录"; return; }
       var life = ent.life || {};
-      var name = (ent.display && ent.display.name) || ent.displayName || ent.name || (ent.character && ent.character.name) || "角色"; // V2.12.3：角色名在 display.name
+      var name = selfName() || "识别中"; // V2.38.4-身份修复：真名走 selfName（实体 display.name / 本会话缓存 / DB 解析），未知显示「识别中」，不再用「角色」占位
       sb.querySelector(".nm").textContent = name;
       sb.querySelector(".job").textContent = getJobName(ent.job || (ent.character && ent.character.job)) + " · " + (getMapNameCn() || (ent.map ? ent.map : ""));
       // 基础/职业等级：优先客户端 BasicInfo DOM（PAR_CHANGE 实时更新）；fallback 实体字段
@@ -3436,8 +3721,8 @@
     if (btn !== 1) return; // 仅左键
     if (ev.altKey && !ev.ctrlKey && !ev.shiftKey) return; // ALT=佣兵攻击，不同步
     try {
-      var Mouse = window.require && window.require("Controls/MouseEventHandler");
-      var EM = window.require && window.require("Renderer/EntityManager");
+      var Mouse = requireDB("Controls/MouseEventHandler");
+      var EM = requireDB("Renderer/EntityManager");
       var SS = CLIENT.SS;
       if (!Mouse || !EM || !SS || !SS.Entity) return;
       if (!Mouse.intersect) return; // 点的是 UI 不是地图
@@ -3469,7 +3754,7 @@
   // ---- 执行（从号侧）：执行中心广播的指令 ----
   function syncNpc(gid, nx, ny) {
     try {
-      var EM = window.require && window.require("Renderer/EntityManager");
+      var EM = requireDB("Renderer/EntityManager");
       var npc = null;
       if (EM && typeof EM.forEach === "function") {
         EM.forEach(function (e) { if (!npc && e && e.GID === gid && (e.objecttype === 6 || e.objecttype === 12)) npc = e; });
@@ -3490,7 +3775,7 @@
       if (isFinite(nx) && isFinite(ny)) {
         walkToXY(nx, ny, function () {
           try {
-            var EM2 = window.require && window.require("Renderer/EntityManager");
+            var EM2 = requireDB("Renderer/EntityManager");
             var npc2 = null;
             if (EM2 && EM2.forEach) EM2.forEach(function (e) { if (!npc2 && e && e.GID === gid && (e.objecttype === 6 || e.objecttype === 12)) npc2 = e; });
             if (npc2) talk(npc2);
@@ -3855,7 +4140,7 @@
   // 渲染坐标(Renderer尺寸) → 页面坐标(dispatchEvent 用 clientX/Y)
   function btToPage(rx, ry) {
     try {
-      var R = window.require && window.require('Renderer/Renderer');
+      var R = requireDB('Renderer/Renderer');
       var cv = btCanvas();
       if (!R || !cv) return { x: rx, y: ry };
       var br = cv.getBoundingClientRect();
@@ -3866,7 +4151,7 @@
   function btFindTarget() {
     try {
       if (!window.require) return null;
-      var EM = window.require('Renderer/EntityManager');
+      var EM = requireDB('Renderer/EntityManager');
       if (!EM || typeof EM.forEach !== 'function') return null;
       var ent = CLIENT.SS && CLIENT.SS.Entity;
       var best = null, bestD = 1e9;
@@ -4014,6 +4299,8 @@
     ["dsh-perf-on", "c"], ["dsh-perf-q", "v"], ["dsh-perf-fog", "c"], ["dsh-perf-lightmap", "c"], ["dsh-perf-effect", "c"], ["dsh-perf-mineffect", "c"], ["dsh-perf-miss", "c"], ["dsh-perf-fpslock", "c"], ["dsh-perf-fps", "v"],
     // V2.34.5：补齐此前漏登记的用户设置控件（这些控件运行时直接读 DOM，登记后才会随档保存/恢复）
     ["dsh-z-allmobs", "c"], ["dsh-z-astar", "c"], ["dsh-z-attmixmargin", "v"],
+    // V2.38.4：补球来源下拉（auto/261/401）随角色档保存/恢复
+    ["dsh-spheresrc", "v"],
     ["dsh-np-huntmode", "v"], ["dsh-boss-range", "v"], ["dsh-boss-toast", "c"],
     ["dsh-alert", "c"], ["dsh-reconn", "c"], ["dsh-party-self", "c"]
   ];
@@ -4026,6 +4313,17 @@
       for (var i = 0; i < PROF_CONTROLS.length; i++) {
         var id = PROF_CONTROLS[i][0], tp = PROF_CONTROLS[i][1];
         var el = $id(id); if (!el) continue;
+        // V2.38.4 ④⑤：解围技能下拉存档保护——读到空技能列表（读取不可用）或战斗中清空时，跳过写入，保留档里已存值
+        if (id === "dsh-z-qoaskill") {
+          var qsv = String(el.value || "");
+          if (!qsv) {
+            var qUnread = true;
+            try { var ql = learnedActiveSkills(); qUnread = !(ql && ql.length); } catch (eq) { qUnread = true; }
+            var qFight = false;
+            try { qFight = !!zRunning || !!npHuntOn || (Date.now() - zHpWatch.lastHitAt < 3000); } catch (eq2) {}
+            if (qUnread || (qFight && zQoaSkillCleared && (Date.now() - zQoaSkillCleared) < 60000)) continue;
+          }
+        }
         if (tp === "c") ui[id] = el.checked ? 1 : 0;
         else ui[id] = String(el.value || "");
       }
@@ -4106,26 +4404,111 @@
       profUIApplied = true; // V2.34.5：当前档已填充完毕，此后才允许 captureAll 落盘
     } catch (e) {}
   }
+  // V2.38.4-身份修复：旧档认领（复制语义）
+  //   只新增目标键：深拷贝 + 补 charId，旧键原样保留并打 _movedTo 标记。
+  // V2.38.4-审计修正（F1）：候选改三级阶梯，取不到就绝不认领：
+  //   ① 已带同一 charId 的档 → 直接沿用；② 无 charId 的老档里 name 恰等于当前角色真名（非空、非占位）且恰好 1 个；
+  //   ③ 无 charId 的老档里 gid 相同且恰好 1 个。多于 1 个一律不认领。
+  //   绝不把「已带 charId 且 charId 不是自己的档」列为候选（旧实现会按 gid 把 A 的换装预设复制给 B）。
+  function gearSetsCount(p) {
+    try { return (p && p.gearSets && Array.isArray(p.gearSets.list)) ? p.gearSets.list.length : 0; } catch (e) { return 0; }
+  }
+  // V2.38.4-审计修正（F1④）：无 charId 的「老档」键清单，是 ②③ 两级唯一的候选池；已带 charId 的档一律不列入。
+  function gearOldProfileKeys() {
+    var out = [];
+    try {
+      for (var k in profiles) {
+        var p = profiles[k];
+        if (!p || typeof p !== "object") continue;
+        if (gidInt(p.charId) > 0) continue;
+        out.push(k);
+      }
+    } catch (e) {}
+    return out;
+  }
+  function claimCandidate(cid, gid, selfNm) {
+    try {
+      // ① 已经带同一 charId 的档：直接沿用（同档内优先含 gearSets 的，再比 lastAt 取最新）
+      var byId = null, byIdSets = -1, byIdAt = -1;
+      for (var k in profiles) {
+        var p = profiles[k];
+        if (!p || typeof p !== "object") continue;
+        if (gidInt(p.charId) !== cid) continue; // 老档与「别人的档」都不在这里命中
+        var sets = gearSetsCount(p), at = Number(p.lastAt) || 0;
+        if (sets > byIdSets || (sets === byIdSets && at > byIdAt)) { byId = k; byIdSets = sets; byIdAt = at; }
+      }
+      if (byId) return byId;
+      var olds = gearOldProfileKeys();
+      // ② 名字阶梯：真名已解析（非空、非「角色」/chN 占位）时按 name 精确匹配，恰好 1 个才认领
+      var nm = selfNm == null ? "" : String(selfNm).trim();
+      if (nm && nm !== "角色" && !/^ch\d+$/.test(nm)) {
+        var byName = [];
+        for (var a = 0; a < olds.length; a++) {
+          var pa = profiles[olds[a]];
+          if (pa && String(pa.name == null ? "" : pa.name).trim() === nm) byName.push(olds[a]);
+        }
+        if (byName.length === 1) return byName[0];
+        if (byName.length > 1) return null; // 同名多于 1 个：一律不认领，绝不猜
+      }
+      // ③ 实体 GID 阶梯（只用于老档匹配，绝不进键名/charId）：恰好 1 个才认领，0 个或多于 1 个都不认领
+      if (gid > 0) {
+        var byGid = [];
+        for (var b = 0; b < olds.length; b++) {
+          var pb = profiles[olds[b]];
+          if (pb && gidInt(pb.gid) === gid) byGid.push(olds[b]);
+        }
+        if (byGid.length === 1) return byGid[0];
+      }
+      return null;
+    } catch (e) { return null; }
+  }
+  // 目标键不存在时：找候选 → 深拷贝迁移 → 补 charId/gid；找不到候选才建空档。旧键绝不删除。
+  function claimProfileForChar(key, cid, gid) {
+    try {
+      var cur = profiles[key];
+      if (cur && typeof cur === "object") { cur.charId = cid; if (gid > 0) cur.gid = gid; return key; }
+      var cand = claimCandidate(cid, gid, selfName());
+      ensureProfile(key);
+      var dst = profiles[key];
+      if (cand && profiles[cand] && typeof profiles[cand] === "object") {
+        var copy = null;
+        try { copy = JSON.parse(JSON.stringify(profiles[cand])); } catch (e0) { copy = null; }
+        if (copy && typeof copy === "object") {
+          if (!copy.saved || typeof copy.saved !== "object") copy.saved = {};
+          if (!copy.lockList || typeof copy.lockList !== "object") copy.lockList = {};
+          if (!Array.isArray(copy.askList)) copy.askList = [];
+          copy.lastAt = Number(copy.lastAt) || Date.now();
+          dst = profiles[key] = copy;
+          try { profiles[cand]._movedTo = key; } catch (e1) {}
+          try { console.log("[PROFILE] 档案认领: " + cand + " → " + key); } catch (e2) {}
+          try { tlog("profile-claim " + cand + " -> " + key); } catch (e3) {}
+        }
+      }
+      dst.charId = cid; if (gid > 0) dst.gid = gid;
+      saveProfiles();
+      return key;
+    } catch (e) { return key; }
+  }
   // 角色切换 → 切档 + 自动加载上次保存（第8项）
+  // V2.38.4-身份修复：档键一律由「角色 ID」派生（ch<charId>），名字只用于显示、绝不进键；
+  //   旧的名字_GID / 角色_GID / 任意历史脏键都按 charId→gid 认领迁移（复制语义，旧档保留）。
   function onCharChanged(ent) {
     try {
-      // V2.12.3：真实角色名在 ent.display.name；旧占位键「角色_GID」自动迁移到真实角色名键
-      var nm = charNameOf(ent) || "角色";
-      var gid = gidInt(ent.GID);
-      if (!gid) return;
-      var key = (nm + "_" + gid).replace(/[\\\/:"*?<>|]/g, "_");
-      try {
-        var legacyKey = ("角色_" + gid);
-        if (key !== legacyKey && !profiles[key] && profiles[legacyKey]) {
-          profiles[key] = profiles[legacyKey];
-          profiles[key].name = nm;
-          delete profiles[legacyKey];
-          saveProfiles();
-          console.log("[PROFILE] 档案迁移: " + legacyKey + " → " + key);
-        }
-      } catch (me) {}
-      if (activeProfileKey() === key && lastCharGid === gid) return;
+      var gid = gidInt(ent && ent.GID);
+      var cid = selfCharId();
+      if (!(cid > 0)) return; // 首帧角色 ID 尚未就绪：保持未识别，绝不新建档（等 charId 到位）
+      var key = "ch" + cid;
+      claimProfileForChar(key, cid, gid);
+      var curKey = activeProfileKey(), curP = profiles[curKey];
+      if (curKey === key && curP && gidInt(curP.charId) === cid && lastCharId === cid && lastCharGid === gid) {
+        var nmKeep = selfName(); // 档已对齐：只顺手刷新显示名，绝不重跑切档
+        if (nmKeep && curP.name !== nmKeep) { curP.name = nmKeep; try { saveProfiles(); } catch (eN) {} }
+        return;
+      }
       try { deathReturnCancel("切换角色"); } catch (e0) {}
+      // V2.38.4-审计修正（F3）：连续死亡保护是页面会话级计数，真正切档时必须清零。
+      //   否则「A 死 2 次 → 切到 B → B 再死 1 次」会累计到 3 次把 B 自动下线；deathGuardDone 同理会让本页面内永久不再保护。
+      try { deathGuardAt = []; deathGuardDone = false; deathGuardDead = false; } catch (eDG) {}
       var npZeroWasOn = false; try { npZeroWasOn = (npBattleState() === true); } catch (e0) {} // V2.38.2：换角色=挂机结束，先记下旧角色内挂是否确认在跑（下一行 reset 之后就查不到了）
       try { npResetBattleState(); } catch (e0) {} // 换角色：旧角色排队意图绝不能落到新角色
       try { dojoStop("换角色"); } catch (e5) {} // V2.36.0：换角色立即停止内置道馆并释放租约
@@ -4134,7 +4517,12 @@
       try { captureAll(); } catch (e) {} // 旧档先落盘
       setActiveProfile(key);
       ensureProfile(key);
-      profiles[key].name = nm; profiles[key].gid = gid;
+      profiles[key].charId = cid; profiles[key].gid = gid > 0 ? gid : profiles[key].gid;
+      var nm = selfName();
+      if (nm) profiles[key].name = nm;
+      else if (!profiles[key].name || String(profiles[key].name) === "角色" || /^ch\d+$/.test(String(profiles[key].name))) profiles[key].name = "";
+      selfNameAsk(cid);
+      saveProfiles();
       saved = loadSaved();
       if (btDiagOn) { try { btLog('hk', '切档=' + key + ' panel=' + JSON.stringify(hkOf('panel')) + ' np=' + JSON.stringify(hkOf('np')) + ' zhu=' + JSON.stringify(hkOf('zhu'))); } catch (e) {} }
       lockList = profiles[key].lockList || {};
@@ -4161,8 +4549,9 @@
       try { renderGearAll(); gearAskRecover(); } catch (e6) {} // V2.37.1：角色识别后按角色恢复 buff 并刷新换装
       try { fwRefreshHosts(); fwRestore(); } catch (e4) {}
       lastCharGid = gid;
-      lastCharName = nm;
-      setStatus("已加载角色档 " + nm + "（ID" + gid + "）", "ok");
+      lastCharId = cid;
+      lastCharName = nm || null; // V2.38.4-身份修复：未知一律 null，绝不写「角色」占位
+      setStatus("已加载角色档 " + (nm || "识别中") + "（ID" + cid + "）", "ok");
       tlog("profile-load " + key);
       try { syncRealAtkRange(); } catch (e) {} // V2.16.7：切档后读真实射程并回写物理距离设置
     } catch (e) { try { roFeedback("角色设置切换失败：" + (e.message || e), "err"); } catch (e2) {} }
@@ -4713,7 +5102,7 @@
       //（实测 ALL_RIDING=613/SIT=622 一一对应）。故 StatusConst 运行时查询优先（权威），
       // 硬编码表与日志补充表 DSH_EFST_EXTRA 仅作 StatusConst 模块不可用时的兜底。
       try {
-        var SC = window.require && window.require("DB/Status/StatusConst");
+        var SC = requireDB("DB/Status/StatusConst");
         if (SC) {
           if (typeof SC[tryN] === "number") return SC[tryN];
           if (typeof SC["SC_" + tryN] === "number") return SC["SC_" + tryN];
@@ -4757,7 +5146,7 @@
       var SI = null;
       var cands = ["UI/Components/StatusIcons/StatusIcons", "UI/Components/StatusIcons", "UI/Components/StatusIcons/StatusIcons.js", "UI/Components/StatusIcons.js"];
       for (var ci = 0; ci < cands.length; ci++) {
-        try { var m = window.require(cands[ci]); if (m && typeof m.update === "function") { SI = m; break; } } catch (e2) {}
+        try { var m = requireDB(cands[ci]); if (m && typeof m.update === "function") { SI = m; break; } } catch (e2) {}
       }
       if (!SI) { dshSIState = "no-mod"; return; }
       var orig = SI.update;
@@ -4869,7 +5258,7 @@
   function getPetEntity() {
     try {
       if (!window.require) return null;
-      var EM = window.require("Renderer/EntityManager");
+      var EM = requireDB("Renderer/EntityManager");
       var pet = null;
       if (EM && typeof EM.forEach === "function") {
         EM.forEach(function (e) {
@@ -5036,7 +5425,7 @@
     var list = [];
     try {
       if (!window.require) return;
-      var EM = window.require("Renderer/EntityManager");
+      var EM = requireDB("Renderer/EntityManager");
       var ent = CLIENT.SS && CLIENT.SS.Entity;
       var myGID = ent && ent.GID;
       EM.forEach(function (e) {
@@ -5059,7 +5448,7 @@
   function getFollowTarget() {
     try {
       if (!window.require || !CLIENT.SS) return null;
-      var EM = window.require("Renderer/EntityManager");
+      var EM = requireDB("Renderer/EntityManager");
       var target = null;
       EM.forEach(function (e) {
         if (e.objecttype !== 0) return;
@@ -5094,6 +5483,7 @@
       var pm = new (czp("REQUEST_MOVE"))();
       pm.dest = [r.x, r.y];
       CLIENT.NM.sendPacket(pm);
+      zMarkSelfMove(); // V2.38.4 G1①：助手自己的跟随位移 → 打时间戳
       followLog("跟随中… 距离 " + d + " 格（目标 " + ((tg.display && tg.display.name) || tg.name || tg.GID) + "）");
     } catch (e) {}
   }
@@ -5362,20 +5752,43 @@
   // V2.16.27：读当前装备武器的武器类型（客户端 WeaponType：11=弓 13=乐器 14=鞭子）
   // 自动换箭只在手持这三类武器时生效——其它职业没有箭矢槽，旧代码会一路走到
   // 「背包无箭矢 → 使用魔法箭袋(2000030)」，白白消耗箭袋。
-  // V2.38.2：线上客户端桥接模块的白名单里没有 UI/Components/Equipment/Equipment，组件路径必然读不到，
-  // 这里统一改走 equippedWeaponItid()（组件优先，其次背包列表的穿戴标记兜底）。
-  function equippedWeaponItid() {
+  // V2.38.2：线上客户端桥接模块的白名单里没有 UI/Components/Equipment/Equipment，requireDB 组件路径必然读不到，
+  // 这里统一改走 equippedWeaponItid()；V2.38.4 起该方法先走 uiComp("Equipment")（StatusIcons.manager → UIManager），
+  // 再按槽位 DOM 索引走 SwitchEquip._list / Inventory，最后才用背包列表的穿戴标记兜底。
+  function gearCountOf(it) {
+    try { if (!it) return 0; var c = it.count != null ? it.count : (it.amount != null ? it.amount : 0); return Number(c) || 0; } catch (e) { return 0; }
+  }
+  // V2.38.4：槽位 index 未知时按掩码在 SwitchEquip._list 里找；index 已知时先 SW 再 Inventory。全程只读、绝不抛。
+  function gearRouteItem(mask, cls) {
     try {
-      var eq = null;
-      try { eq = window.require && window.require("UI/Components/Equipment/Equipment"); } catch (e1) {}
-      if (!eq && typeof requireDB === "function") { try { eq = requireDB("UI/Components/Equipment/Equipment"); } catch (e2) {} }
-      var slot = eq && eq.ui && eq.ui.find('.weapon .item[data-index]');
-      var index = slot && slot.length ? Number(slot.attr('data-index')) : null;
-      if (index != null && !isNaN(index)) {
-        var item = (eq.getItemByIndex && eq.getItemByIndex(index)) || null;
-        if (item && item.ITID != null) return { itid: item.ITID, src: "装备组件" };
+      var idx = gearDomIdx(gearEqRoot(gearEquipmentComp()), cls);
+      if (idx != null) {
+        var swIt = gearSwitchItem(idx);
+        if (gearItid(swIt) != null) return { it: swIt, src: "switchEquip", idx: idx };
+        var inIt = bagItemByIndex(idx);
+        if (gearItid(inIt) != null) return { it: inIt, src: "inventory", idx: idx };
+        return { it: null, src: "", idx: idx };
       }
-    } catch (e3) {}
+      var swM = gearSwitchByMask(mask);
+      if (gearItid(swM) != null) return { it: swM, src: "switchEquip", idx: (swM.index != null ? Number(swM.index) : null) };
+      return { it: null, src: "", idx: null };
+    } catch (e) { return { it: null, src: "", idx: null }; }
+  }
+  function equippedWeaponItid() {
+    // V2.38.4：首选 EQ.isInEquipList(WEAPON=2)（装备组件侧真实已穿数据），其次按槽位 DOM 的 index 走 SW._list / Inventory，
+    //   最后才用背包列表的穿戴标记兜底。三段全 try/catch，拿不到就返回 null。
+    try {
+      var EQ = gearEquipmentComp();
+      if (EQ && typeof EQ.isInEquipList === "function") {
+        var id0 = gearItid(gearPickItem(EQ.isInEquipList(2)));
+        if (id0 != null) return { itid: id0, src: "isInEquipList" };
+      }
+    } catch (e0) {}
+    try {
+      var r = gearRouteItem(2, "weapon");
+      var id1 = gearItid(r.it);
+      if (id1 != null) return { itid: id1, src: r.src };
+    } catch (e1) {}
     // V2.38.2 兜底：背包列表里带武器槽穿戴标记（EquipmentLocation.WEAPON=2）的那件
     var worn = readBagWorn(2);
     if (worn) return { itid: (worn.ITID != null ? worn.ITID : worn.itemid), src: "背包穿戴标记" };
@@ -5400,17 +5813,19 @@
   }
   function readEquippedAmmo() {
     try {
-      var eq = null;
-      try { eq = window.require && window.require("UI/Components/Equipment/Equipment"); } catch (e1) {}
-      if (!eq && typeof requireDB === "function") { try { eq = requireDB("UI/Components/Equipment/Equipment"); } catch (e2) {} }
-      var slot = eq && eq.ui && eq.ui.find('.ammo .item[data-index]');
-      var index = slot && slot.length ? Number(slot.attr('data-index')) : null;
-      if (index == null || isNaN(index)) return readBagAmmo(); // 空槽/无箭矢槽/组件读不到 → 背包穿戴标记兜底
-      var item = (eq.getItemByIndex && eq.getItemByIndex(index)) || null;
-      if (!item) return readBagAmmo();
-      var cnt = item.count != null ? item.count : (item.amount != null ? item.amount : 0);
-      return { index: index, count: cnt, itid: item.ITID != null ? item.ITID : item.itemid, src: "装备组件" };
-    } catch (e) { try { return readBagAmmo(); } catch (e2) { return null; } }
+      var EQ = gearEquipmentComp();
+      if (EQ && typeof EQ.isInEquipList === "function") {
+        var iso = gearPickItem(EQ.isInEquipList(32768));
+        var id0 = gearItid(iso);
+        if (id0 != null) return { index: (iso.index != null ? Number(iso.index) : null), count: gearCountOf(iso), itid: id0, src: "isInEquipList" };
+      }
+    } catch (e0) {}
+    try {
+      var r = gearRouteItem(32768, "ammo");
+      var id1 = gearItid(r.it);
+      if (id1 != null) return { index: (r.it.index != null ? Number(r.it.index) : r.idx), count: gearCountOf(r.it), itid: id1, src: r.src };
+    } catch (e1) {}
+    return readBagAmmo(); // 空槽/无箭矢槽/组件都读不到 → 背包穿戴标记兜底
   }
   // V2.38.2：按穿戴位掩码从背包列表找已穿戴的那件（readEquippedWeaponType / readEquippedAmmo 的共用兜底）。
   // 掩码口径与发包一致：2=武器槽、32768=箭矢槽。
@@ -5420,7 +5835,7 @@
       if (!inv) return null;
       for (var i = 0; i < inv.length; i++) {
         var it = inv[i] || {};
-        var w = it.WearState != null ? it.WearState : (it.wearState != null ? it.wearState : (it.IsEquipped != null ? it.IsEquipped : it.equipped));
+        var w = it.WearState != null ? it.WearState : (it.wearState != null ? it.wearState : (it.location != null ? it.location : (it.IsEquipped != null ? it.IsEquipped : it.equipped))); // V2.38.4-审计修正（F4）：补 location 兜底，口径与 gearWearState 一致（位掩码比较）
         if (w == null || w === false || w === true) continue;
         if (!(Number(w) & slotBit)) continue;
         return it;
@@ -5887,7 +6302,7 @@
   function hookDisconnect() {
     try {
       if (CLIENT.hooked) return;
-      if (!CLIENT.UI) CLIENT.UI = window.require && window.require("UI/UIManager");
+      if (!CLIENT.UI) CLIENT.UI = requireDB("UI/UIManager");
       if (!CLIENT.UI || typeof CLIENT.UI.showErrorBox !== "function") return;
       var orig = CLIENT.UI.showErrorBox;
       CLIENT.hooked = true;
@@ -6134,6 +6549,7 @@
   // V2.16.5 解围技能下拉填充：独立函数，无论内挂 DOM 是否存在都执行（角色已学技能，保留已选值）。
   //   根因：旧实现只在 fillSkillSelects 的 DB 分支（domSynced=false 时）填充 dsh-z-qoaskill，
   //   而内挂窗口开过（DOM 存在）时 domSynced 提前 return，解围下拉永远停在空的「- 请选择 -」。
+  var zQoaSkillCleared = 0; // V2.38.4：解围技能「清空」发生时间（战斗中清空只清 UI，不写空值进档）
   function fillZhuQoaskill() {
     try {
       var sel = $id("dsh-z-qoaskill");
@@ -6141,6 +6557,10 @@
       // V2.35.2：改读 learnedActiveSkills()（优先客户端 SkillList 组件，真实已学主动技能、随换角色刷新），
       //   弃用 DB.getAllSkillInfo()（静态技能库无 level 字段 → 列表永远为空/残留上个角色技能）。
       var skills = learnedActiveSkills();
+      // V2.38.4：读不到已学技能（SkillList 未就绪 / 读取失败 / 空列表）→ 直接返回：绝不重建下拉、绝不清空当前选择。
+      //   根因：旧实现每次重建下拉后 `sel.value = keep ? cur : ""`，读空时 keep=false → 选择被清成「- 请选择 -」，
+      //   而 dsh-z-qoaskill 在 PROF_CONTROLS 里按角色落盘 → 下一次存档把空值写进档，用户选择被永久清掉。
+      if (!skills || !skills.length) return;
       var cur = sel.value;
       var html = '<option value="">- 请选择 -</option>';
       for (var i = 0; i < skills.length; i++) {
@@ -6151,7 +6571,13 @@
       sel.innerHTML = html;
       var keep = false;
       for (var j = 0; j < skills.length; j++) if (String(skills[j].skid) === String(cur)) { keep = true; break; }
-      sel.value = keep ? cur : "";
+      if (keep) { sel.value = cur; return; }
+      // V2.38.4：只有「读到了非空列表」且「当前值确实不在列表里」才允许清空（换角色/洗点语义）
+      sel.value = "";
+      if (cur) {
+        zQoaSkillCleared = Date.now();
+        tlog("qoaskill-clear 当前技能 " + cur + " 不在已学主动技能(" + skills.length + "个)里 → 清空下拉（战斗中只清 UI 不写空值）");
+      }
     } catch (e) {}
   }
   // V2.16.5 周期兜底：解围下拉仍是空（未点「读取内挂」）且客户端 DB 就绪 → 自动填充；每 ~8s 检查一次，填上即停
@@ -6160,8 +6586,8 @@
       try {
         var selQ = $id("dsh-z-qoaskill");
         if (!selQ) return;
-        if (selQ.options.length > 1) return; // 已有技能选项 → 不再重复填
-        fillZhuQoaskill();
+        if (selQ.value) return; // V2.38.4：当前选择非空 → 不重复填（原按选项数判断：选项被重建但选择被清空时永远不会自愈）
+        fillZhuQoaskill(); // V2.38.4：读不到已学技能时 fillZhuQoaskill 内部直接返回，绝不清空当前选择
       } catch (e) {}
     }, 8000);
   } catch (e) {}
@@ -6192,7 +6618,7 @@
       if (domSynced) return;
       neiAddiFillOptions(); // V2.8.0：多槽辅助技能下拉填充（面板 option 优先，兜底已学技能）
       var DB = CLIENT.DB;
-      if (!DB) { CLIENT.DB = window.require && window.require("DB/DBManager"); DB = CLIENT.DB; }
+      if (!DB) { CLIENT.DB = requireDB("DB/DBManager"); DB = CLIENT.DB; }
       if (!DB || typeof DB.getAllSkillInfo !== "function") return;
       var info = DB.getAllSkillInfo();
       if (!info) return;
@@ -6252,7 +6678,7 @@
         }
       } else {
         var DB = CLIENT.DB;
-        if (!DB) { CLIENT.DB = window.require && window.require("DB/DBManager"); DB = CLIENT.DB; }
+        if (!DB) { CLIENT.DB = requireDB("DB/DBManager"); DB = CLIENT.DB; }
         if (!DB || typeof DB.getAllSkillInfo !== "function") return;
         var info = DB.getAllSkillInfo();
         if (!info) return;
@@ -6396,7 +6822,7 @@
   function neiSkillIdByName(nm) {
     try {
       var DB = CLIENT.DB;
-      if (!DB) { CLIENT.DB = window.require && window.require("DB/DBManager"); DB = CLIENT.DB; }
+      if (!DB) { CLIENT.DB = requireDB("DB/DBManager"); DB = CLIENT.DB; }
       if (!DB || typeof DB.getAllSkillInfo !== "function") {
         var dsel = document.querySelector(".dsh-addi-sel");
         if (dsel) {
@@ -7060,7 +7486,7 @@
     try {
       if (!window.require) return null;
       var MR = null;
-      try { MR = window.require("Renderer/MapRenderer"); } catch (e) {}
+      try { MR = requireDB("Renderer/MapRenderer"); } catch (e) {}
       var mapKey = MR && MR.currentMap ? String(MR.currentMap).split(".")[0] : "";
       if (!mapKey) return null;
       var DB = CLIENT.DB || requireDB("DB/DBManager");
@@ -7165,7 +7591,7 @@
       var el = $id("dsh-scanlist");
       if (!el) return;
       if (!window.require) { el.textContent = "客户端未就绪"; return; }
-      var EM = window.require("Renderer/EntityManager");
+      var EM = requireDB("Renderer/EntityManager");
       if (!EM || !EM.forEach) { el.textContent = "实体管理器不可用"; return; }
       var ent = CLIENT.SS && CLIENT.SS.Entity;
       var mobs = [];
@@ -7405,7 +7831,7 @@
       if (!att) {
         // 攻击者未知 → 扫 EM 最近的怪当方向参照
         try {
-          var EM2 = window.require("Renderer/EntityManager");
+          var EM2 = requireDB("Renderer/EntityManager");
           var bestE = 1e9;
           EM2.forEach(function (e2) {
             try {
@@ -7429,6 +7855,7 @@
       var pmE = new (czp("REQUEST_MOVE"))();
       pmE.dest = [dest[0], dest[1]];
       CLIENT.NM.sendPacket(pmE);
+      zMarkSelfMove(); // V2.38.4 G1①：逃脱位移也是助手自己发的 → 打时间戳（安全保护优先级最高，不受路线门限制）
       zEscape.until = nowE + 4000;
       zWalkState.lastPos = null; zWalkState.stuckCnt = 0; zWalkState.tried = 0;
       tlog("escape-walk 远离怪 " + (att._job != null ? att._job : att.GID) + " -> " + dest[0] + "," + dest[1]);
@@ -7495,7 +7922,7 @@
       try { wf = findFlyWing(); } catch (e0) { wf = null; }
       if (wf && useItemByIndex(wf.index)) {
         escapeState.ackAt = now;
-        zWalkState.dir = Math.floor(Math.random() * 8);
+        zWalkState.dir = Math.floor(Math.random() * 8); zWalkState.dirAt = Date.now();
         zWalkState.lastPos = null; zWalkState.stuckCnt = 0; zWalkState.tried = 0;
         tlog("escape-wing-" + wf.itid);
         setStatus("紧急脱战：翅膀(" + escapeState.reason + ")，等待位移…", "warn");
@@ -7507,7 +7934,7 @@
       try { wf = findFlyWing(); } catch (e1) { wf = null; }
       if (wf && useItemByIndex(wf.index)) {
         escapeState.ackAt = now;
-        zWalkState.dir = Math.floor(Math.random() * 8);
+        zWalkState.dir = Math.floor(Math.random() * 8); zWalkState.dirAt = Date.now();
         zWalkState.lastPos = null; zWalkState.stuckCnt = 0; zWalkState.tried = 0;
         tlog("escape-wing-" + wf.itid);
         setStatus("紧急脱战：翅膀(" + escapeState.reason + ")，等待位移…", "warn");
@@ -7580,7 +8007,7 @@
       gid = gidInt(gid); if (!gid) return;
       var d = -1;
       try {
-        var EMz = window.require && window.require("Renderer/EntityManager");
+        var EMz = requireDB("Renderer/EntityManager");
         var me = CLIENT.SS && CLIENT.SS.Entity, e = EMz && EMz.get ? EMz.get(gid) : null;
         if (me && me.position && e && e.position) d = Math.abs(e.position[0] - me.position[0]) + Math.abs(e.position[1] - me.position[1]);
       } catch (e1) {}
@@ -7640,7 +8067,7 @@
   function zEntOf(gid) {
     try {
       if (gid == null || gid === "") return null;
-      var EMz = window.require && window.require("Renderer/EntityManager");
+      var EMz = requireDB("Renderer/EntityManager");
       var e = null;
       try { e = EMz && EMz.get ? EMz.get(gid) : null; } catch (e0) {}
       if (!e) { var gi = gidInt(gid); if (gi) e = EMz && EMz.get ? EMz.get(gi) : null; }
@@ -7695,6 +8122,7 @@
       var cd = Math.max(skillCdMs({ skid: skid, cd: 0 }), 1000); // 保底 1s：扫描拍 0.3-0.5s 不可能重放同一解围技能
       skillNextAt[skid] = now + cd; zQoaNextAt = now + cd;
       dshCastMark(skid, lv, tg.GID, "qoa");
+      zReinAoeAt = Date.now(); // V2.38.4+：解围技能触发戳（自动上马判据④「群殴/解围触发中」用）
       setStatus("解围技能 " + getSkillNameById(skid) + "（贴身" + cnt + "只）", "warn");
       tlog("defense-qoa skill=" + skid + " n=" + cnt);
       return true;
@@ -7986,13 +8414,14 @@
   function doFly() {
     try {
       if (!clientReady()) return false;
+      zMarkSelfMove(); // V2.38.4 G1①：瞬移也是助手自己发起的位移 → 打时间戳（不得被当成外部客户端路线）
       var mode = $id("dsh-z-flymode").value;
       // V1.7.0 默认「瞬移术→翅膀」：瞬移术Lv1 成功判定（已学+SP足）失败才回退苍蝇翅膀
       if (mode === "瞬移术→翅膀") {
         if (castTeleport()) return true;
         var wingfb = findFlyWing();
         if (wingfb && useItemByIndex(wingfb.index)) {
-          zWalkState.dir = Math.floor(Math.random() * 8); // 瞬移后随机换方向，避免走回原地
+          zWalkState.dir = Math.floor(Math.random() * 8); zWalkState.dirAt = Date.now(); // 瞬移后随机换方向，避免走回原地
           zWalkState.lastPos = null; zWalkState.stuckCnt = 0; zWalkState.tried = 0;
           tlog("fly-item-" + wingfb.itid);
           return true;
@@ -8003,7 +8432,7 @@
       if (mode === "苍蝇翅膀优先" || mode === "翅膀→瞬移术") {
         var wing = findFlyWing();
         if (wing && useItemByIndex(wing.index)) {
-          zWalkState.dir = Math.floor(Math.random() * 8); // 瞬移后随机换方向，避免走回原地
+          zWalkState.dir = Math.floor(Math.random() * 8); zWalkState.dirAt = Date.now(); // 瞬移后随机换方向，避免走回原地
           zWalkState.lastPos = null; zWalkState.stuckCnt = 0; zWalkState.tried = 0;
           tlog("fly-item-" + wing.itid);
           return true;
@@ -8073,7 +8502,7 @@
       p.selectedLevel = 1;
       p.targetID = 0;
       CLIENT.NM.sendPacket(p);
-      zWalkState.dir = Math.floor(Math.random() * 8); // 瞬移后随机换方向
+      zWalkState.dir = Math.floor(Math.random() * 8); zWalkState.dirAt = Date.now(); // 瞬移后随机换方向
       zWalkState.lastPos = null; zWalkState.stuckCnt = 0; zWalkState.tried = 0;
       tlog("fly-skill-teleport");
       return true;
@@ -8110,22 +8539,46 @@
     bagRead.source = tag; bagRead.count = list.length; bagRead.arrows = bagCountArrows(list);
     return list;
   }
+  // V2.38.4-背包读取修复：新增首选路线 uiComp("Inventory")（require 白名单里没有 Inventory，
+  //   但经 StatusIcons.manager → UIManager.getComponent("Inventory") 能拿到真实组件）。
+  //   返回形状与旧契约完全一致（数组；元素 {ITID,index,count/amount,type,WearState,...}），下面几条旧路线全部保留为兜底。
+  function bagInvComp() { try { return uiComp("Inventory"); } catch (e) { return null; } }
+  function bagItemByIndex(idx) {
+    try {
+      if (idx == null) return null;
+      var i = Number(idx);
+      if (isNaN(i)) return null;
+      var c = bagInvComp();
+      if (c && typeof c.getItemByIndex === "function") { try { var it = c.getItemByIndex(i); if (it) return it; } catch (e1) {} }
+      var mods = ["UI/Components/Inventory/Inventory", "UI/Components/BasicInventory/BasicInventory"];
+      for (var m = 0; m < mods.length; m++) {
+        var mod = null; try { mod = requireDB(mods[m]); } catch (e2) {}
+        if (mod && typeof mod.getItemByIndex === "function") { try { var it2 = mod.getItemByIndex(i); if (it2) return it2; } catch (e3) {} }
+      }
+      var list = bagList();
+      if (list) for (var k = 0; k < list.length; k++) { var x = list[k] || {}; if (Number(x.index) === i) return x; }
+    } catch (e) {}
+    return null;
+  }
   function bagList() {
     var list = null;
     bagRead.source = "读取失败"; bagRead.count = 0; bagRead.arrows = 0;
     try {
+      // ⓪ V2.38.4 首选：uiComp("Inventory")（线上唯一可达的路线）
+      var _ic = bagInvComp();
+      if (_ic) list = bagSourceTry("uiComp.Inventory.list", _ic.list);
       // ①/② 组件模块的 .list（先 requireDB；桥接模块 require 白名单没有这些路径时静默跳过）
       var paths = [["UI/Components/Inventory/Inventory", "Inventory.list"], ["UI/Components/BasicInventory/BasicInventory", "BasicInventory.list"]];
       for (var i = 0; i < paths.length && !list; i++) {
         var mod = null;
         try { mod = requireDB(paths[i][0]); } catch (e1) {}
-        if (!mod) { try { mod = window.require && window.require(paths[i][0]); } catch (e2) {} }
+        if (!mod) { try { mod = requireDB(paths[i][0]); } catch (e2) {} }
         if (mod) list = bagSourceTry(paths[i][1], mod.list);
       }
       // ③ UIManager 组件表（require 可能直接抛异常，整个包住）
       if (!list) {
         try {
-          if (!CLIENT.UI) CLIENT.UI = window.require && window.require("UI/UIManager");
+          if (!CLIENT.UI) CLIENT.UI = requireDB("UI/UIManager");
           var UM = CLIENT.UI;
           var names = ["Inventory", "BasicInventory"];
           for (var c = 0; c < names.length && !list; c++) {
@@ -8350,7 +8803,7 @@
   // 引擎点地走 y() 同款：目标格不可走时 3×3 由近及远吸附到最近可走格（防终点在墙/障碍上被服务器拒收）
   function mvSnapWalkable(tx, ty) {
     try {
-      var ALT = window.require && window.require("Renderer/Map/Altitude");
+      var ALT = requireDB("Renderer/Map/Altitude");
       var WALK = ALT && ALT.TYPE && ALT.TYPE.WALKABLE;
       if (!ALT || !ALT.getCellType || !WALK) return [tx, ty];
       // V2.15.17：目标点边界钳制——越界坐标环形索引/不可走，先拉回界内再找可走格
@@ -8370,28 +8823,25 @@
     } catch (e) {}
     return [tx, ty];
   }
-  // V2.10.0 客户端 A* 寻路：基于本图全量地形数据（Renderer/Map/Altitude.getGat().cells）
+  // 客户端 A* 寻路：复用当前地图 Altitude.getCellType，不重复下载地形。
   // 8 方向、WALKABLE=2 判定、终点吸附可走格；节点上限防卡死，返回路径点数组（不含起点）或 null
-  var dshAStarCache = null; // {w, h, cells, types} 缓存（换图自动失效：地图名变化重建）
   function dshAStarData() {
     try {
-      var ALT = window.require && window.require("Renderer/Map/Altitude");
-      if (!ALT || !ALT.getGat || !ALT.TYPE) return null;
-      var g = ALT.getGat();
-      if (!g || !g.cells || !g.width || !g.height) return null;
-      var mapK = ""; try { var MR2 = window.require && window.require("Renderer/MapRenderer"); if (MR2 && MR2.currentMap) mapK = String(MR2.currentMap); } catch (e) {}
-      var mk = mapK + "|" + g.width + "x" + g.height;
-      if (!dshAStarCache || dshAStarCache.k !== mk) dshAStarCache = { k: mk, w: g.width, h: g.height, cells: g.cells, walk: ALT.TYPE.WALKABLE || 2 };
-      return dshAStarCache;
+      var ALT = requireDB("Renderer/Map/Altitude");
+      if (!ALT || typeof ALT.getCellType !== "function" || !ALT.TYPE || !ALT.TYPE.WALKABLE || !Number.isInteger(ALT.width) || !Number.isInteger(ALT.height) || ALT.width <= 0 || ALT.height <= 0) return null;
+      // Read live types: same-size map changes and dynamic cells must not reuse a stale snapshot.
+      return { w: ALT.width, h: ALT.height, altitude: ALT, walk: ALT.TYPE.WALKABLE };
     } catch (e) { return null; }
   }
   function dshWalkable(x, y) {
     try {
       var d = dshAStarData();
       if (!d) return true;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+      x = Math.floor(x); y = Math.floor(y);
       if (x < 0 || y < 0 || x >= d.w || y >= d.h) return false;
-      return (d.cells[x + y * d.w] & d.walk) !== 0;
-    } catch (e) { return true; }
+      return (d.altitude.getCellType(x, y) & d.walk) !== 0;
+    } catch (e) { return false; }
   }
   function dshFindPath(sx, sy, tx, ty) {
     try {
@@ -8440,6 +8890,8 @@
   }
   function dshSnapWalk(x, y) {
     try {
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      x = Math.floor(x); y = Math.floor(y);
       var d = dshAStarData();
       if (!d) return [x, y];
       if (dshWalkable(x, y)) return [Math.floor(x), Math.floor(y)];
@@ -8450,7 +8902,7 @@
             if (nx >= 0 && ny >= 0 && nx < d.w && ny < d.h && dshWalkable(nx, ny)) return [nx, ny];
           }
       return null;
-    } catch (e) { return [x, y]; }
+    } catch (e) { return null; }
   }
 
   function tickMoveXY() {
@@ -8477,19 +8929,123 @@
       var pm = new (czp("REQUEST_MOVE"))();
       pm.dest = [dest[0], dest[1]];
       CLIENT.NM.sendPacket(pm);
+      zMarkSelfMove(); // V2.38.4 G1①：助手自己的坐标走路位移 → 打时间戳
     } catch (e) {}
   }
   masterTickReg(function () { try { tickMoveXY(); } catch (e) {} });
   // ---------------- V2.14.0 寻怪自动上马（缰绳 12622：骑乘状态不在身即用，1s 防抖，连续失败退避30s）----------------
   var reinLastUse = 0, reinFailStreak = 0, reinBackoffUntil = 0;
-  // V2.16.7：锁定怪是否在攻击距离内（正在打）——超射程=追怪赶路中，允许上马
+  var reinPendingAt = 0, reinWarnAt = 0; // V2.38.4：缰绳使用后 1.5s 骑乘状态验证计时 / 读取不可用提示 30s 节流
+  var zReinSkipWhy = "", zReinAoeAt = 0, zReinMapAt = 0; // V2.38.4+：最近一次拦下自动上马的判据名（rein-skip-*）/ 解围技能触发戳 / 换图瞬间戳
+  // V2.38.4：骑乘状态多来源判定（取并集）——实体字段 riding/riding_、StatusIcons 判活环 613(ALL_RIDING)/27(骑乘)、
+  //   判活环快照条目、状态表 entStatus().riding。任一来源可读即采用；全部来源都读不到 → known=false（fail-closed）。
+  function reinMountState() {
+    var known = false, riding = false, src = "";
+    try {
+      var en = CLIENT.SS && CLIENT.SS.Entity;
+      if (en && (en.riding !== undefined || en.riding_ !== undefined)) {
+        known = true; src += "entity;";
+        if (en.riding === 1 || en.riding_ === 1 || en.riding === true || en.riding_ === true) { riding = true; src += "riding;"; }
+      }
+    } catch (e1) {}
+    try {
+      var hookOk = false, snapOk = false;
+      try { hookOk = (typeof dshSIState !== "undefined" && dshSIState === "ok"); } catch (eS) {}
+      try { snapOk = !!(buffActive && (buffActive[613] || buffActive[27])); } catch (eB) {}
+      if (hookOk || snapOk) {
+        known = true; src += "buff;";
+        if (buffStateOn(613) || buffStateOn(27)) { riding = true; src += "buff-on;"; }
+      }
+    } catch (e2) {}
+    if (!known) { // 前三个来源都读不到 → 才回落状态表（entStatus 带节流快照副作用，正常路径不调用）
+      try {
+        var st = entStatus();
+        if (st && st.ent) { known = true; src += "st;"; if (st.riding === 1) { riding = true; src += "st-riding;"; } }
+      } catch (e3) {}
+    }
+    return { known: known, riding: riding, src: src };
+  }
+  // V2.38.4 G3：是否处于「真正的赶路场景」——只有这种状态才允许自动上马（追怪窗口与内挂打怪期间一律不用缰绳）
+  //   收窄回调原因：上一批要求「无目标直走 lastMove 5s 内」，而混合/内挂模式下 zWalk 提前 return、lastMove 不刷新，
+  //   等于这两种模式再也上不了马。
+  // V2.38.4+ 上马口径小改（用户口径：「建议只要非战斗都能触发自动上马」）：把「必须正在赶路」彻底改成「非战斗即允许」。
+  //   允许上马 ⇔ 判据①-⑦全部不成立（任一成立即不上马）。未知不再算战斗：npBattleState()===null 但只要没有其它
+  //   战斗迹象就一律放行；「骑乘状态读取不可用 → fail-closed 不上马」（tickRein 里读 reinMountState().known）
+  //   是另一件事，保持不变。
+  // 判据①：有锁定怪（含正在追怪）
+  function zReinInCombatLock() {
+    try { return !!(zLock && zLock.gid); } catch (e) { return false; }
+  }
+  // 判据②：平A锁定/攻击窗口内（zAtkLast 仍锁定且目标未出射程）
+  function zReinInCombatAtk() {
+    try { return !!(zAtkLast && zAtkLast.gid && !zAtkLast.outOfRange); } catch (e) { return false; }
+  }
+  // 判据③：最近 3 秒受击 且「非选中怪攻击」（dsh-z-ona）设置为还击/瞬移——「无视」不算战斗
+  function zReinInCombatHit() {
+    try {
+      if (Date.now() - zHpWatch.lastHitAt >= 3000) return false;
+      var onaR = ($id("dsh-z-ona") && $id("dsh-z-ona").value) || "还击";
+      return onaR === "还击" || onaR === "瞬移";
+    } catch (e) { return false; }
+  }
+  // 判据④：群殴瞬移 / 解围技能正在触发（瞬移挂起中、刚发起群殴瞬移、刚放解围技能）
+  function zReinInCombatAoe() {
+    try {
+      if (typeof escapePending === "function" && escapePending()) return true;
+      var nowA = Date.now();
+      if (zReinAoeAt && nowA - zReinAoeAt < 1500) return true;
+      if (zLastFlyReasonAt && nowA - zLastFlyReasonAt < 1500 && /群殴|解围/.test(zLastFlyReason || "")) return true;
+      return false;
+    } catch (e) { return false; }
+  }
+  // 判据⑤：内挂战斗中——只有 npBattleState()===true 才算战斗；false=确认没跑、null=状态未知 → 都不算战斗
+  function zReinInCombatNp() {
+    try { return npBattleState() === true; } catch (e) { return false; }
+  }
+  // 判据⑥：正在坐下 / 需要坐下（回血回蓝）——保护性排除，避免打断坐姿
+  function zReinInCombatSit() {
+    try {
+      if (typeof isSitting === "function" && isSitting()) return true;
+      if (typeof needSitNow === "function" && needSitNow()) return true;
+      return false;
+    } catch (e) { return false; }
+  }
+  // 判据⑦：换图 / 瞬移瞬间的短窗口
+  function zReinInCombatMapChg() {
+    try {
+      var nowM = Date.now();
+      if (zReinMapAt && nowM - zReinMapAt < 3000) return true;
+      if (typeof lastFly !== "undefined" && lastFly && nowM - lastFly < 3000) return true;
+      if (typeof escapeState !== "undefined" && escapeState && escapeState.lastCast && nowM - escapeState.lastCast < 3000) return true;
+      return false;
+    } catch (e) { return false; }
+  }
+  function zReinRoadMoving() {
+    var checks = [
+      ["lock", zReinInCombatLock],       // ① 有锁定怪（含正在追怪）
+      ["atk", zReinInCombatAtk],         // ② 平A锁定/攻击窗口内
+      ["hit", zReinInCombatHit],         // ③ 最近 3 秒受击且设置为还击/瞬移
+      ["aoe", zReinInCombatAoe],         // ④ 群殴瞬移/解围技能正在触发
+      ["npbattle", zReinInCombatNp],     // ⑤ 内挂战斗中（仅 true）
+      ["sit", zReinInCombatSit],         // ⑥ 正在坐下/需要坐下
+      ["mapchg", zReinInCombatMapChg]    // ⑦ 换图/瞬移瞬间短窗口
+    ];
+    for (var i = 0; i < checks.length; i++) {
+      var hit = true;
+      try { hit = !!checks[i][1](); } catch (eC) { hit = true; } // 判据自身异常 → 保守按「在战斗」处理
+      if (hit) { zReinSkipWhy = "rein-skip-" + checks[i][0]; return false; }
+    }
+    zReinSkipWhy = "";
+    return true; // 用户口径：非战斗即允许（站着不动 / 无目标直走 / 混合或内挂单纯寻路 / 内挂状态未知）
+  }
+  // V2.16.7：锁定怪是否在攻击距离内（正在打）——V2.38.4 起仅用于「追怪窗口不使用缰绳」的日志说明
   function lockMobInAtkRange() {
     try {
       if (!zLock.gid) return false;
       var entR = CLIENT.SS && CLIENT.SS.Entity;
       if (!entR || !entR.position) return false;
       var atkR = calcAtkRange();
-      var EM = window.require && window.require("Renderer/EntityManager");
+      var EM = requireDB("Renderer/EntityManager");
       var inR = false;
       if (EM && typeof EM.forEach === "function") {
         EM.forEach(function (e) {
@@ -8506,36 +9062,50 @@
   function tickRein() {
     try {
       var sw = $id("dsh-z-rein");
-      if (!sw || !sw.checked) { reinFailStreak = 0; return; }
-      if (!zRunning) { reinFailStreak = 0; return; } // V2.16.9：寻怪自动上马只在助手运行时生效
+      if (!sw || !sw.checked) { reinFailStreak = 0; reinPendingAt = 0; return; }
+      if (!zRunning) { reinFailStreak = 0; reinPendingAt = 0; return; } // V2.16.9：寻怪自动上马只在助手运行时生效
       var now = Date.now();
-      if (now < reinBackoffUntil) return;
       if (!clientReady()) return;
       var ent = CLIENT.SS && CLIENT.SS.Entity;
       if (!ent || !ent.life) return;
-      // V2.16.7 上马判定细化：锁定怪在攻击距离内（正在打）→ 不上马；超射程（追怪赶路）→ 允许上马（骑马追怪）
-      //   平A noctrl 连击锁定中 → 不上马；内挂指挥打怪（npHuntOn）→ 不上马
-      //   被打 3s 内：仅当需反击（非选中怪攻击=还击）或瞬移（=瞬移）时视为战斗不上马；「无视」→ 继续骑马跑
-      try {
-        if (zLock.gid && lockMobInAtkRange()) { reinFailStreak = 0; return; }
-        if (zAtkLast && zAtkLast.gid && !zAtkLast.outOfRange) { reinFailStreak = 0; return; } // 平A锁定中（目标在射程内正在打）；出射程追怪放行上马
-        if (npHuntOn) { reinFailStreak = 0; return; } // 内挂自动战斗开（角色正在打怪）
-        if (zRunning && Date.now() - zHpWatch.lastHitAt < 3000) {
-          var onaR = ($id("dsh-z-ona") && $id("dsh-z-ona").value) || "还击";
-          if (onaR === "还击" || onaR === "瞬移") { reinFailStreak = 0; return; } // 需反击/瞬移 → 不上马；无视 → 继续骑马
-        }
-      } catch (e) {}
       try { hookStatusIcons(); } catch (e3) {} // 确保判活表工作（幂等）
-      if (buffStateOn(613) || buffStateOn(27)) { reinFailStreak = 0; return; }
-      if (now - reinLastUse < 1000) return;
-      if (useItemById(12622)) {
-        reinLastUse = now; reinFailStreak++;
-        if (reinFailStreak >= 3) { reinBackoffUntil = now + 30000; reinFailStreak = 0; }
+      var mnt = reinMountState();
+      // V2.38.4 ③：使用缰绳后 1.5s 内必须验证骑乘状态是否真的变化——状态未变化绝不再连续使用同一道具
+      if (reinPendingAt) {
+        if (now - reinPendingAt < 1500) return;
+        var pendAt = reinPendingAt; reinPendingAt = 0;
+        if (mnt.known && mnt.riding) { reinFailStreak = 0; tlog("rein-ok 上马生效（" + (now - pendAt) + "ms）"); return; }
+        reinFailStreak++;
+        tlog("rein-verify-fail 使用后 1.5s 骑乘状态仍未变化（known=" + mnt.known + " src=" + mnt.src + "）连续失败=" + reinFailStreak);
+        if (reinFailStreak >= 3) { reinBackoffUntil = now + 30000; reinFailStreak = 0; tlog("rein-backoff 连续 3 次未生效，暂停自动上马 30s"); }
+        return;
       }
+      if (now < reinBackoffUntil) return;
+      // V2.38.4+ 上马口径小改：非战斗即允许。被拦下时记下是哪条判据（rein-skip-lock/atk/hit/aoe/npbattle/sit/mapchg）
+      //   日志本身仍按 30s 节流（不使用缰绳时不需要每拍刷日志），只保证原因串能区分判据。
+      if (!zReinRoadMoving()) {
+        reinFailStreak = 0;
+        if (now - reinWarnAt >= 30000) {
+          reinWarnAt = now;
+          try { tlog(zReinSkipWhy + (zReinSkipWhy === "rein-skip-lock" ? " 有锁定怪（" + (lockMobInAtkRange() ? "在射程内" : "在射程外，助手追怪中") + "）不使用缰绳" : " 命中战斗判据，不使用缰绳（非战斗才允许自动上马）")); } catch (eR1) {}
+        }
+        return;
+      }
+      // V2.38.4 ②：所有来源都读不到骑乘状态 → 本拍不上马（fail-closed），每 30s 记一条提示
+      if (!mnt.known) {
+        reinFailStreak = 0;
+        if (now - reinWarnAt >= 30000) { reinWarnAt = now; tlog("rein-state-unknown 骑乘状态读取不可用，暂停自动上马"); try { setStatus("骑乘状态读取不可用，已暂停自动上马", "warn"); } catch (eS2) {} }
+        return;
+      }
+      if (mnt.riding) { reinFailStreak = 0; return; }
+      if (now - reinLastUse < 1500) return;
+      if (useItemById(12622)) { reinLastUse = now; reinPendingAt = now; }
     } catch (e) {}
   }
   masterTickReg(function () { try { tickRein(); } catch (e) {} });
-  var zWalkState = { lastMove: 0, lastChase: 0, dir: 0, noTargetSince: 0, lastIdleFly: 0, lastPos: null, stuckCnt: 0, stuckAt: 0, tried: 0, lastSeenDir: null, lastSeenAt: 0, center: null, chaseGid: null, chaseDist: 0, chaseSince: 0, startMap: null, lastMoveDir: 0, backMapAt: 0, backDir: 0, backTeleportAt: 0, hySince: 0, hyGid: 0, hyPos: null, hyTakeoverUntil: 0 }; // V2.16.4 stuckAt=卡住时间窗口起点；center=地图边界锚点(启动点)；V2.16.7 chase*=追怪卡住检测；V2.34.3 hy*=混合寻怪「内挂是否真的在接管」判定（内挂死等兜底）
+  var zWalkState = { lastMove: 0, lastChase: 0, dir: 0, noTargetSince: 0, lastIdleFly: 0, lastPos: null, stuckCnt: 0, stuckAt: 0, tried: 0, lastSeenDir: null, lastSeenAt: 0, center: null, chaseGid: null, chaseDist: 0, chaseSince: 0, startMap: null, lastMoveDir: 0, backMapAt: 0, backDir: 0, backTeleportAt: 0, hySince: 0, hyGid: 0, hyPos: null, hyTakeoverUntil: 0, hyDist: 0, hyStillSince: 0, chaseFrom: null, chaseReplan: false, lastLockMissLog: 0, lastSelfMoveAt: 0, routeExt: false, routeActive: false, routeTotal: 0, routeIdx: 0, seenDirCand: null, seenDirCandAt: 0, dirAt: 0, chaseHold: null, chaseHoldDist: null, chaseHoldProgressAt: 0, stuckEvent: 0, stuckDirs: null, stuckTurns: 0, stuckEscapeAt: 0, lastMapName: null, backDone: 0, backCooldownAt: 0 }; // V2.16.4 stuckAt=卡住时间窗口起点；center=地图边界锚点(启动点)；V2.16.7 chase*=追怪卡住检测；V2.34.3 hy*=混合寻怪「内挂是否真的在接管」判定（内挂死等兜底）；V2.38.4 G1 lastSelfMoveAt/route*=「自己发的位移」时间戳与客户端外部路线状态；G2 seenDirCand/dirAt/chaseHold/stuck*/lastMapName/back* = 方向滞回、追怪保持、卡住转向、换图反向走
+  // V2.38.4 G1①：助手每次自己发位移都要打时间戳——用于区分「自己发的移动」与外部（用户点大地图/客户端其它来源）的路线
+  function zMarkSelfMove() { try { zWalkState.lastSelfMoveAt = Date.now(); } catch (e) {} }
   var zEscape = { until: 0 };                 // V2.15.23：逃脱状态（坐下被打→移动避开怪，期间不寻怪不打怪）
   var zAStarState = { active: false, tx: 0, ty: 0, since: 0, lastTry: 0, stuckSince: 0, lastPos: null, aim: null }; // V2.10.0 A* 绕障行走状态
   // 状态前置穿插平A计时：zWaitSince = 上次穿插普攻时间（间隔跟随攻击循环，见 zAttack wait 分支）
@@ -8543,6 +9113,11 @@
   // 补状态节流：距上次补状态技能 <1s 不重复补 → 间隙让普攻穿插（蓄气链不再霸占每轮）
   var zPrepAt = 0;
   var zPrepSpam = 0; // V2.32.2 补球节流：连续补球仍无球则封顶，杜绝无限狂蓄气（气弹数>0 即清零）
+  // V2.38.4 收口：撤掉「放下补球技能后 1 秒复查球数、没涨就把该技能拉黑 10 秒」整套机制
+  //   （含「上次补球记录」「拉黑表」与那处 1 秒等待）。用户口径：能读到球数就足够判定「缺不缺、缺几个」，
+  //   不需要去猜服务器认不认某个技能；而且读数偶发滞后会把正常技能误拉黑，反而退化成更费蓝的那个来源。
+  //   现在只认「数据异常」：连续补球球数始终无变化 → 状态栏提示 + 停止补球，不判断技能可用性、不换技能、不拉黑。
+  var zSphereStallWarned = false; // 「气弹数据未更新」本轮是否已提示过（看到球即复位）
   // 技能释放最小间隔：放完一次技能（含补状态）后 800ms 内不再放 → 转 wait 穿插普攻（避免技能链霸占每轮）
   var zLastCastAt = 0;
   var zLastCastSkid = 0; // V2.15.24：最近一次释放的技能ID（配合 skillDelay 用真实后摇等待）
@@ -8585,7 +9160,7 @@
   //   故同目标 1s 节流防重复点击打断服务器攻击循环；换目标/重进射程自然触发新包。
   function npNoCtrlOn() {
     try {
-      var PC = window.require && window.require("Preferences/Controls");
+      var PC = requireDB("Preferences/Controls");
       if (PC && PC.noctrl != null) return !!PC.noctrl;
     } catch (e) {}
     return true; // 读不到默认 noctrl 开（该服默认开启）
@@ -8643,7 +9218,7 @@
       if (zAtkLast.gid === gid && now - zAtkLast.at >= 1500) {
         var entT = null;
         try {
-          var EM2 = window.require && window.require("Renderer/EntityManager");
+          var EM2 = requireDB("Renderer/EntityManager");
           if (EM2 && typeof EM2.forEach === "function") {
             EM2.forEach(function (e) { if (e && e.GID === gid) entT = e; });
           }
@@ -8653,7 +9228,7 @@
       if (zAtkLast.gid === gid && !zAtkLast.outOfRange) {
         // 正常连击中：只追踪 HP（不进点选路径），不重发包
         try {
-          var EM3 = window.require && window.require("Renderer/EntityManager");
+          var EM3 = requireDB("Renderer/EntityManager");
           if (EM3 && typeof EM3.forEach === "function") {
             EM3.forEach(function (e) { if (e && e.GID === gid) zAtkTrackHp(gid, e); });
           }
@@ -8689,7 +9264,7 @@
   // 客户端 A* 避障寻路：从玩家到目标点，返回沿路径约 5 格处的移动目标点（含路径点数）
   function pathFindTo(tx, ty) {
     try {
-      var PF = window.require("Utils/PathFinding");
+      var PF = requireDB("Utils/PathFinding");
       var ent = CLIENT.SS.Entity;
       if (!PF || typeof PF.search !== "function" || !ent || !ent.position) return null;
       var out = new Int16Array(256);
@@ -8717,42 +9292,68 @@
       // V2.16.8 换图检测 + 反向走回（走路跨图）；反向走 8s 没回图 → GPT 传送回启动图
       try {
         var curKeyB = getMapName();
+        // V2.38.4 G1①：先算「外部（客户端/用户点大地图）本地路线是否进行中」，存入状态供换图段与寻怪段共用
+        //   判定：客户端实体 walk.total>0 且 walk.index<walk.total 且距「助手自己发位移」>1500ms
+        var zRouteW = null;
+        try { var zEnRW = CLIENT.SS && CLIENT.SS.Entity; if (zEnRW && zEnRW.walk) zRouteW = zEnRW.walk; } catch (eRW) {}
+        var zRouteTotalW = zRouteW ? (+zRouteW.total || 0) : 0;
+        var zRouteIdxW = zRouteW ? (+zRouteW.index || 0) : 0;
+        var zRouteExtW = !!(zRouteTotalW > 0 && zRouteIdxW < zRouteTotalW && (Date.now() - (zWalkState.lastSelfMoveAt || 0) > 1500));
+        zWalkState.routeExt = zRouteExtW; zWalkState.routeTotal = zRouteTotalW; zWalkState.routeIdx = zRouteIdxW;
         if (zWalkState.startMap && curKeyB && normMapKey(curKeyB) !== normMapKey(zWalkState.startMap)) {
           // V2.32.2 换图加固：换图瞬间地图名/坐标未稳会误触反向走；要求新图名连续稳定 1.2s 且坐标有效才认定
           if (zWalkState.mapChgKey !== curKeyB) { zWalkState.mapChgKey = curKeyB; zWalkState.mapChgAt = Date.now(); return; }
           if (Date.now() - zWalkState.mapChgAt < 1200) return;
           if (!ent.position || !isFinite(ent.position[0]) || !isFinite(ent.position[1])) return;
           var nowB = Date.now();
-          if (!zWalkState.backMapAt) {
-            zWalkState.backMapAt = nowB;
-            zWalkState.backDir = (zWalkState.lastMoveDir + 4) % 8;
-            tlog("walk-mapchange " + zWalkState.startMap + " -> " + curKeyB + "，反向走回");
-          }
-          var sinceTp = zWalkState.backTeleportAt ? nowB - zWalkState.backTeleportAt : 1e9;
-          if (nowB - zWalkState.backMapAt > 8000 && sinceTp > 20000) {
-            zWalkState.backTeleportAt = nowB;
-            setStatus("反向走未回图，传送回启动图…", "warn");
-            try { teleportToMap(zWalkState.startMap); } catch (e) {}
+          var zNewMapChg = (zWalkState.lastMapName == null) || (zWalkState.lastMapName !== curKeyB); // V2.38.4 G2⑤：必须上一拍图名 ≠ 当前图名才算一次新换图
+          if (!zRouteExtW) { // V2.38.4 G1②：外部路线进行中 → 换图反向走/传送一律不发（继续往下扫描，交路线分支处理）
+            zWalkState.lastMapName = curKeyB;
+            if (zNewMapChg) {
+              if (!zWalkState.backMapAt) zWalkState.backMapAt = nowB;
+              zWalkState.backDir = (zWalkState.lastMoveDir + 4) % 8;
+              if (zWalkState.backDone || (zWalkState.backCooldownAt && nowB - zWalkState.backCooldownAt < 10000)) {
+                tlog("walk-mapchange " + zWalkState.startMap + " -> " + curKeyB + "，同一次换图已反向走过（冷却中），不重复发位移");
+              } else {
+                zWalkState.backDone = 1;
+                zWalkState.backCooldownAt = nowB;
+                tlog("walk-mapchange " + zWalkState.startMap + " -> " + curKeyB + "，反向走回");
+                var backDirs = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+                var bd = backDirs[zWalkState.backDir];
+                var btx = Math.round(ent.position[0] + bd[0] * 10);
+                var bty = Math.round(ent.position[1] + bd[1] * 10);
+                var bDest = mvSnapWalkable(btx, bty);
+                var pB = new (czp("REQUEST_MOVE"))();
+                pB.dest = [bDest[0], bDest[1]];
+                CLIENT.NM.sendPacket(pB);
+                zMarkSelfMove(); // V2.38.4 G1①：反向走回是助手自己发的位移
+                zWalkState.lastMoveDir = zWalkState.backDir;
+                setStatus("已换图，反向走回原图…", "warn");
+                return;
+              }
+            }
+            var sinceTp = zWalkState.backTeleportAt ? nowB - zWalkState.backTeleportAt : 1e9;
+            if (nowB - zWalkState.backMapAt > 8000 && sinceTp > 20000) {
+              zWalkState.backTeleportAt = nowB;
+              setStatus("反向走未回图，传送回启动图…", "warn");
+              try { teleportToMap(zWalkState.startMap); } catch (e) {}
+              return;
+            }
             return;
           }
-          var backDirs = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
-          var bd = backDirs[zWalkState.backDir];
-          var btx = Math.round(ent.position[0] + bd[0] * 10);
-          var bty = Math.round(ent.position[1] + bd[1] * 10);
-          var bDest = mvSnapWalkable(btx, bty);
-          var pB = new (czp("REQUEST_MOVE"))();
-          pB.dest = [bDest[0], bDest[1]];
-          CLIENT.NM.sendPacket(pB);
-          zWalkState.lastMoveDir = zWalkState.backDir;
-          setStatus("已换图，反向走回原图…", "warn");
-          return;
         }
-        if (zWalkState.backMapAt && normMapKey(curKeyB) === normMapKey(zWalkState.startMap)) {
-          zWalkState.backMapAt = 0; zWalkState.backTeleportAt = 0;
-          zWalkState.mapChgKey = ""; zWalkState.mapChgAt = 0;
-          tlog("walk-mapchange 回到原图，恢复寻怪");
+        if (!(zWalkState.startMap && curKeyB && normMapKey(curKeyB) !== normMapKey(zWalkState.startMap))) {
+          // V2.38.4 G1②/G2⑤：只有「当前就在启动图（或图名未就绪）」时才刷新「上一拍图名」；
+          //   外部路线期间不刷新 → 路线结束后仍算一次新换图，届时再走反向走链路
+          zWalkState.lastMapName = curKeyB || zWalkState.lastMapName;
+          if (zWalkState.backMapAt && normMapKey(curKeyB) === normMapKey(zWalkState.startMap)) {
+            zWalkState.backMapAt = 0; zWalkState.backTeleportAt = 0;
+            zWalkState.mapChgKey = ""; zWalkState.mapChgAt = 0;
+            zWalkState.backDone = 0; // 回到原图 → 下一次换图允许再反向走一次（冷却时间戳保留，保证 10s 内不重复）
+            tlog("walk-mapchange 回到原图，恢复寻怪");
+          }
+          if (!zWalkState.startMap || (curKeyB && normMapKey(curKeyB) === normMapKey(zWalkState.startMap))) { zWalkState.mapChgKey = ""; zWalkState.mapChgAt = 0; }
         }
-        if (!zWalkState.startMap || (curKeyB && normMapKey(curKeyB) === normMapKey(zWalkState.startMap))) { zWalkState.mapChgKey = ""; zWalkState.mapChgAt = 0; }
       } catch (e) {}
       doSitCycle(scanMobs || []); // V2.15.22：坐下周期（无目标时间；安全才坐，坐下被打自动站起）
       var now = Date.now();
@@ -8769,7 +9370,7 @@
       var npMode = npHuntMode() === "np" || isHybrid();
       // V2.7.3：2s 判定门槛下移到「无怪直走」段；追怪用独立 1s 节流（缩短锁定→出手周期）
       // 优先：找最近的锁定怪（任意距离）→ 避障寻路走过去
-      var EM = window.require("Renderer/EntityManager");
+      var EM = requireDB("Renderer/EntityManager");
       var anyLock = Object.keys(lockList).length > 0;
       var beingHit = (now - zHpWatch.lastHitAt) < 3000; // 被攻击中
       var onaMode = $id("dsh-z-ona") ? $id("dsh-z-ona").value : "还击";
@@ -8781,7 +9382,9 @@
       var near = null, nearD = 1e9, nearHp = 1e18; // V2.15.25：nearHp=最近候选绝对剩余HP（血少优先抢尾刀）
       var lockNear = null, lockNearD = 1e9, lockNearHp = 1e18, lockNearTier = -1; // 锁定怪候选（优先）
       var hitNear = null, hitNearD = 1e9, hitNearHp = 1e18;    // 还击候选（兜底）
+      var heldNear = null, heldNearD = 1e9, heldNearHp = 1e18; // V2.38.4 G2②：chaseHold 保持中的那只怪（优先，防两只怪之间来回换目标点）
       var zReactiveGid = zLock.reactive ? gidInt(zLock.gid) : 0; // V2.34.4：还击锁定的攻击者必须被追击（与 zAttack 同锚点）
+      var zWalkSeenMob = 0, zWalkBlockedMob = 0; // V2.38.4：视野内活怪数 / 被名单门挡掉的怪数（仅诊断，不参与筛选）
       if (EM && EM.forEach) {
         EM.forEach(function (e) {
           try {
@@ -8794,11 +9397,15 @@
             var mid = e._job != null ? String(e._job) : (e.job != null ? String(e.job) : (e.mobId != null ? String(e.mobId) : null));
             var inLockN = anyLock ? !!(mid && lockList[mid]) : zAllMobsW; // V2.34.4：名单非空→只认名单；名单为空→按「打全部怪」
             if (!inLockN && zReactiveGid && gidInt(e.GID) === zReactiveGid) inLockN = true;
+            zWalkSeenMob++;
+            if (!inLockN && !allowHitTarget) zWalkBlockedMob++; // V2.38.4：被名单门挡掉的怪计数（仅诊断，不参与筛选）
             if (!inLockN && !allowHitTarget) return;
             if (!ent.position || !e.position) return;
             var d = zRangeDist(e.position, ent.position); // V2.34.3：格子距离口径（与客户端一致）
             // V2.36.3：索敌优先级——已攻击我的锁定怪（打死为止）> 身侧(相邻 d<=1) > 血少 > 距离
             var hpNow = (e.life && e.life.hp != null) ? e.life.hp : 1e18;
+            // V2.38.4 G2②：保持中的那只怪只要还在合格候选池里（未死亡/未移出名单）就优先选中
+            if (!heldNear && zWalkState.chaseHold && gidInt(e.GID) === gidInt(zWalkState.chaseHold.gid)) { heldNear = e; heldNearD = d; heldNearHp = hpNow; }
             if (inLockN) {
               var gidK = gidInt(e.GID);
               var tier = (zHitBy[gidK] && (now - zHitBy[gidK].ts) < zHitKeepMs) ? 2 : (d <= 1 ? 1 : 0);
@@ -8809,28 +9416,94 @@
           } catch (e2) {}
         });
         // 锁定怪候选优先；确无锁定怪才用还击候选
-        if (lockNear) { near = lockNear; nearD = lockNearD; nearHp = lockNearHp; }
+        // V2.38.4 G2②：chaseHold 优先；但「还击锁定的攻击者」优先级最高（不得回退 V2.34.4 F2 的还击追击语义）
+        if (heldNear && (zReactiveGid === 0 || gidInt(heldNear.GID) === zReactiveGid)) { near = heldNear; nearD = heldNearD; nearHp = heldNearHp; }
+        else if (lockNear) { near = lockNear; nearD = lockNearD; nearHp = lockNearHp; }
         else if (hitNear) { near = hitNear; nearD = hitNearD; nearHp = hitNearHp; }
+        // V2.38.4：名单门可见提示——视野内确实有怪、却因「锁定名单 / 打全部怪」被排除时不静默直走
+        if (!near && zWalkBlockedMob > 0) {
+          zAtkWhy = "视野内有怪但不在锁定名单";
+          zMon.action = "视野内有怪(" + zWalkBlockedMob + "/" + zWalkSeenMob + ")但不在锁定名单 · 名单" + Object.keys(lockList).length + "只 · 打全部怪" + (zAllMobsW ? "开" : "关");
+          if (now - (zWalkState.lastLockMissLog || 0) >= 5000) {
+            zWalkState.lastLockMissLog = now;
+            tlog("walk-lock-miss 视野内怪=" + zWalkSeenMob + " 被名单挡=" + zWalkBlockedMob + " 名单=" + Object.keys(lockList).length + " allmobs=" + zAllMobsW + " 还击门=" + allowHitTarget);
+          }
+        }
       }
       // V2.9.0 方向记忆：记下最近一次锁定怪相对方位（10s 有效），无怪直走时优先朝该方向
+      // V2.38.4 G2①：滞回——同一候选方向必须连续稳定 ≥1.5s 才允许改写方向记忆（杜绝两只怪分列两侧时每拍翻转）
       try {
         if (near && ent && ent.position && near.position) {
           var rdx = near.position[0] - ent.position[0];
           var rdy = near.position[1] - ent.position[1];
-          zWalkState.lastSeenDir = ((Math.round(Math.atan2(rdy, rdx) / (Math.PI / 4))) % 8 + 8) % 8;
-          zWalkState.lastSeenAt = now;
+          var seenDirRaw = ((Math.round(Math.atan2(rdy, rdx) / (Math.PI / 4))) % 8 + 8) % 8;
+          if (zWalkState.seenDirCand !== seenDirRaw) { zWalkState.seenDirCand = seenDirRaw; zWalkState.seenDirCandAt = now; }
+          var seenCandStable = (now - (zWalkState.seenDirCandAt || now)) >= 1500;
+          if (zWalkState.lastSeenDir == null || zWalkState.lastSeenDir === seenDirRaw || seenCandStable) {
+            zWalkState.lastSeenDir = seenDirRaw;
+            zWalkState.lastSeenAt = now;
+          }
         }
       } catch (e4) {}
 
+      // ===== V2.38.4 G1：尊重客户端本地路线（用户在大地图点选的长路线 / 客户端其它来源）=====
+      var zRouteExtNow = !!zWalkState.routeExt;
+      var zRouteTotalNow = zWalkState.routeTotal || 0;
+      var zRouteIdxNow = zWalkState.routeIdx || 0;
+      if (!zRouteExtNow && zWalkState.routeActive) { // ④ 外部路线结束（走到 / 被服务器打断 / 消失）→ 回到既有寻怪逻辑
+        var zRouteNatural = !!(zRouteTotalNow > 0 && zRouteIdxNow >= zRouteTotalNow);
+        tlog("walk-route-end " + (zRouteNatural ? "客户端路线自然走完" : "客户端路线被中断/消失") + "（上一拍 " + zRouteTotalNow + " 格）");
+        zWalkState.routeActive = false; zWalkState.routeTotal = 0; zWalkState.routeIdx = 0;
+      }
+      if (zRouteExtNow && !near) {
+        // ② 只扫不发：路线进行中绝不发直走 / 换点 / 贴近 / 反向走等任何位移（扫描与安全保护照常执行）
+        zWalkState.routeActive = true;
+        zWalkState.routeTotal = zRouteTotalNow; zWalkState.routeIdx = zRouteIdxNow;
+        zAtkWhy = "客户端路线进行中";
+        zMon.action = "客户端路线进行中（" + zRouteIdxNow + "/" + zRouteTotalNow + "格），仅扫描…";
+        setStatus("客户端路线进行中（" + zRouteIdxNow + "格），仅扫描…", "st");
+        return;
+      }
+      if (zRouteExtNow && near) {
+        // ③ 路线进行中扫到符合判断条件的怪 → 主动接战：先显式取消本地路线，再走既有完整判断流程（不新增任何捷径）
+        zWalkState.routeActive = false;
+        zWalkState.routeTotal = 0; zWalkState.routeIdx = 0;
+        zMarkSelfMove();
+        var zRouteCancel = "none";
+        try { var zEnRC = CLIENT.SS && CLIENT.SS.Entity; if (zEnRC && typeof zEnRC.resetRoute === "function") { zEnRC.resetRoute(); zRouteCancel = "resetRoute"; } } catch (eRC) {}
+        tlog("walk-route-engage 客户端路线进行中（" + zRouteIdxNow + "/" + zRouteTotalNow + "格）扫到目标 " + (near._job != null ? near._job : near.GID) + " → 主动接战，取消本地路线(" + zRouteCancel + ")");
+        setStatus("客户端路线中扫到目标，主动接战…", "ok");
+      }
       if (near) {
+        // V2.38.4 G2②：追怪目标保持——进入追怪记 chaseHold={gid,at} 并优先保持同一只；
+        //   只有该怪死亡/消失/超时（8s 内既没靠近也没在打）才换目标，换目标必须记 tlog
+        var gidHold = gidInt(near.GID);
+        var atkR9 = calcAtkRange();
+        var holdAttacking = !!((zAtkLast && zAtkLast.gid && gidInt(zAtkLast.gid) === gidHold && !zAtkLast.outOfRange) || nearD <= atkR9);
+        if (!zWalkState.chaseHold || gidInt(zWalkState.chaseHold.gid) !== gidHold) {
+          if (zWalkState.chaseHold) tlog("walk-chase-switch 追怪目标 " + zWalkState.chaseHold.gid + " -> " + gidHold + "（原目标已死亡/消失/超时）");
+          zWalkState.chaseHold = { gid: gidHold, at: now };
+          zWalkState.chaseHoldDist = nearD;
+          zWalkState.chaseHoldProgressAt = now;
+        } else {
+          if (zWalkState.chaseHoldDist == null || nearD < zWalkState.chaseHoldDist) { zWalkState.chaseHoldDist = nearD; zWalkState.chaseHoldProgressAt = now; }
+          else if (holdAttacking) { zWalkState.chaseHoldProgressAt = now; }
+          var holdAge = now - zWalkState.chaseHold.at;
+          var holdIdle = now - (zWalkState.chaseHoldProgressAt || zWalkState.chaseHold.at);
+          if (holdAge >= 8000 && holdIdle >= 8000) {
+            tlog("walk-chase-hold-timeout 追怪目标保持超时（8s 内既没靠近也没在打）→ 允许换目标");
+            zWalkState.chaseHold = null;
+          }
+        }
         // V2.9.0 内挂模式主动追怪：锁定怪超射程 → 关内挂一次（防拉锯），助手直发移动靠近（服务器寻路）
         // 完全无锁定怪时才由下方 np 分支重新开内挂兜底
         if (npMode || isHybrid()) {
           var atkR0 = calcAtkRange();
           if (isHybrid()) {
             // V2.33.0 混合寻怪：锁定怪还在接管距离外 → 交内挂长距离寻怪走路，助手不接管移动
-            // V2.34.3 内挂死等兜底：内挂实际关闭、或 2.5s 原地未动且（被打 / 距怪≤接管距离+8）→ 判定内挂没在工作，
-            //   助手自行接管 12s；接管窗口内即使仍在接管距离外也不再让位（修「助手以为内挂开着、其实关了」站桩）
+            // V2.34.3 内挂死等兜底：内挂实际关闭、或判定内挂没在把角色带过去 → 助手自行接管 12s
+            // V2.38.4 接管判定改按进展：窗口内「与锁定怪的距离未缩小」累计 2.5s → 判定内挂没在把它带过去，助手接管；
+            //   不再把 hyMoved（角色自身是否移动）当唯一依据——内挂可能正朝别的方向走、或越跑越远。
             var takeD0 = takeoverDist();
             if (nearD > takeD0) {
               var realNp = npBattleState(), hyNow = Date.now();
@@ -8842,15 +9515,23 @@
                   zWalkState.hySince = hyNow;
                   zWalkState.hyGid = near.GID;
                   zWalkState.hyPos = [ent.position[0], ent.position[1]];
+                  zWalkState.hyDist = nearD;
+                  zWalkState.hyStillSince = 0;
                 }
                 var hyMoved = zWalkState.hyPos ? (Math.abs(ent.position[0] - zWalkState.hyPos[0]) > 1 || Math.abs(ent.position[1] - zWalkState.hyPos[1]) > 1) : false;
                 var hyHit = (hyNow - zHpWatch.lastHitAt) < 3000;
                 var hyWaited = hyNow - zWalkState.hySince;
-                if (realNp === false || (hyWaited >= 2500 && !hyMoved && (hyHit || nearD <= takeD0 + 8))) {
+                // V2.38.4：距离在缩小 → 内挂确实在把它带过去，清零停滞计时；距离没缩小 → 累计停滞时长（2.5s 口径）
+                if (nearD < zWalkState.hyDist) zWalkState.hyStillSince = 0;
+                else if (!zWalkState.hyStillSince) zWalkState.hyStillSince = hyNow;
+                zWalkState.hyDist = nearD;
+                var hyStill = zWalkState.hyStillSince ? (hyNow - zWalkState.hyStillSince) : 0;
+                if (realNp === false || hyStill >= 2500) {
                   zWalkState.hyTakeoverUntil = hyNow + 12000;
                   zWalkState.hySince = 0;
-                  tlog("hybrid-takeover realNp=" + realNp + " waited=" + hyWaited + " moved=" + hyMoved + " hit=" + hyHit + " nearD=" + nearD);
-                  setStatus("内挂未接管（" + (realNp === false ? "内挂实际关闭" : "2.5秒未移动") + "），助手自行接管…", "warn");
+                  zWalkState.hyStillSince = 0;
+                  tlog("hybrid-takeover realNp=" + realNp + " waited=" + hyWaited + " still=" + hyStill + " moved=" + hyMoved + " hit=" + hyHit + " nearD=" + nearD);
+                  setStatus("内挂未接管（" + (realNp === false ? "内挂实际关闭" : "2.5秒距离未缩小") + "），助手自行接管…", "warn");
                 } else {
                   npEnsureHunt();
                   setStatus("锁定怪距" + distInt(nearD) + "格 > 接管距离" + takeD0 + "，内挂寻怪走路中…", "st");
@@ -8871,27 +9552,38 @@
           }
         }
         // V2.16.7：追怪不再直发怪坐标（会走到脸上）——目标改为「距怪 射程-1 格」可走点，停在射程边缘即可攻击（玩家手动点怪同款：射程内直接打）
-        // V2.16.7 追怪卡住检测（与无目标瞬移合并）：追怪目标连续 4s 距离未缩短 → 瞬移（覆盖围殴走不动/障碍物不可达发呆）
+        // V2.38.4 追怪卡住判定加强：不再「4s 距离未缩小就瞬移」。必须同时满足
+        //   ①与锁定怪距离未缩小 ②角色自身在窗口内位移 < 2 格 ③已尝试换一次接近点/重规划；阈值 4s → 6s；
+        //   距离缩小或角色位移达标立刻清零。瞬移仍受 15s 节流与「防御瞬移总开关」约束。
         var cgid7 = near.GID;
         var cdist7 = zRangeDist(near.position, ent.position); // V2.34.3：格子距离口径
         if (zWalkState.chaseGid === cgid7 && cdist7 >= zWalkState.chaseDist) {
-          if (!zWalkState.chaseSince) zWalkState.chaseSince = now;
+          if (!zWalkState.chaseSince) { zWalkState.chaseSince = now; zWalkState.chaseFrom = [ent.position[0], ent.position[1]]; zWalkState.chaseReplan = false; }
         } else if (zWalkState.chaseGid !== cgid7) {
-          zWalkState.chaseGid = cgid7; zWalkState.chaseSince = 0;
+          zWalkState.chaseGid = cgid7; zWalkState.chaseSince = 0; zWalkState.chaseFrom = null; zWalkState.chaseReplan = false;
         } else {
-          zWalkState.chaseSince = 0;
+          zWalkState.chaseSince = 0; zWalkState.chaseFrom = null; zWalkState.chaseReplan = false;
         }
+        var chaseMoved = zWalkState.chaseFrom ? Math.max(Math.abs(ent.position[0] - zWalkState.chaseFrom[0]), Math.abs(ent.position[1] - zWalkState.chaseFrom[1])) : 99;
+        if (chaseMoved >= 2) { zWalkState.chaseSince = 0; zWalkState.chaseFrom = null; zWalkState.chaseReplan = false; } // ②角色确实在位移 → 不算卡住，立刻清零
         zWalkState.chaseDist = cdist7;
-        if (zWalkState.chaseSince && now - zWalkState.chaseSince >= 4000) {
-          var chaseFlyOn = $id("dsh-z-idlefly") && $id("dsh-z-idlefly").checked && !($id("dsh-z-flykill") && !$id("dsh-z-flykill").checked);
-          if (chaseFlyOn && now - zWalkState.lastIdleFly >= 15000) {
-            zWalkState.lastIdleFly = now;
-            zWalkState.chaseSince = 0; zWalkState.chaseGid = null;
-            var fok7 = doFly();
-            if (fok7) markFlyOk(); else markFlyFail();
-            tlog("walk-chase-stuck 追怪卡住4s → 瞬移");
-            setStatus("追怪卡住，自动瞬移换点…", "warn");
-            return;
+        if (zWalkState.chaseSince && chaseMoved < 2) {
+          var chaseStuckMs = now - zWalkState.chaseSince;
+          if (chaseStuckMs >= 4000 && !zWalkState.chaseReplan) {
+            zWalkState.chaseReplan = true; // ③先换一次接近点（下方 ttx/tty 按垂直方向偏一格），仍卡住才允许瞬移
+            tlog("walk-chase-replan 追怪 4s 距离未缩小且角色未位移 → 先换接近点重规划");
+            setStatus("追怪受阻，先换接近点重规划…", "st");
+          } else if (chaseStuckMs >= 6000) {
+            var chaseFlyOn = $id("dsh-z-idlefly") && $id("dsh-z-idlefly").checked && !($id("dsh-z-flykill") && !$id("dsh-z-flykill").checked);
+            if (chaseFlyOn && now - zWalkState.lastIdleFly >= 15000) {
+              zWalkState.lastIdleFly = now;
+              zWalkState.chaseSince = 0; zWalkState.chaseGid = null; zWalkState.chaseFrom = null; zWalkState.chaseReplan = false;
+              var fok7 = doFly();
+              if (fok7) markFlyOk(); else markFlyFail();
+              tlog("walk-chase-stuck 追怪卡住6s（距离未缩小+角色未位移+已重规划）→ 瞬移");
+              setStatus("追怪卡住，自动瞬移换点…", "warn");
+              return;
+            }
           }
         }
         var chaseInt = (parseFloat($id("dsh-z-chaseint").value) || 0.5) * 1000;
@@ -8904,11 +9596,16 @@
         var rdl7 = Math.abs(rdx7) + Math.abs(rdy7);
         var ttx = Math.round(near.position[0] - (rdl7 > 0 ? (rdx7 / rdl7) * stopD : 0));
         var tty = Math.round(near.position[1] - (rdl7 > 0 ? (rdy7 / rdl7) * stopD : 0));
+        if (zWalkState.chaseReplan) { // V2.38.4 ③：换一次接近点——沿怪方向垂直偏一格，绕开卡点（不再直发同一落点）
+          if (Math.abs(rdx7) >= Math.abs(rdy7)) { tty += (rdy7 >= 0 ? 1 : -1); }
+          else { ttx += (rdx7 >= 0 ? -1 : 1); }
+        }
         var cDest = mvSnapWalkable(ttx, tty);
         zWalkState.noTargetSince = 0; // 有目标，重置无目标计时
         var pm = new (czp("REQUEST_MOVE"))();
         pm.dest = [cDest[0], cDest[1]];
         CLIENT.NM.sendPacket(pm);
+        zMarkSelfMove(); // V2.38.4 G1①：追怪位移是助手自己发的 → 打时间戳
         tlog("walk-追怪 " + (near._job != null ? near._job : near.GID) + " 停射程边缘 -> " + cDest[0] + "," + cDest[1] + " (atkRange=" + atkR7 + ")");
         setStatus("发现目标，追至射程边缘…", "ok");
         return;
@@ -8957,9 +9654,15 @@
       // 8 方向（0=右,1=右下,2=下,3=左下,4=左,5=左上,6=上,7=右上）
       var dirs = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
       // V2.9.0 方向记忆：10s 内侦查扫到过锁定怪 → 优先朝该方向走（不再纯 8 方向盲转）
+      // V2.38.4 G2①：直走方向最小保持 ≥3s（撞墙/卡住/换图/瞬移由各自分支直接改 dir 并刷新 dirAt，属例外）
       if (now - zWalkState.lastSeenAt < 10000 && zWalkState.lastSeenDir != null) {
-        zWalkState.dir = zWalkState.lastSeenDir;
-        zWalkState.stuckCnt = 0;
+        if (zWalkState.dir === zWalkState.lastSeenDir) {
+          if (!zWalkState.dirAt) zWalkState.dirAt = now;
+        } else if (now - (zWalkState.dirAt || 0) >= 3000) {
+          zWalkState.dir = zWalkState.lastSeenDir;
+          zWalkState.dirAt = now;
+          zWalkState.stuckCnt = 0;
+        }
       }
       var WALK_RANGE = 12; // 每次向目标方向走 12 格
       var px0 = Math.round(ent.position[0]), py0 = Math.round(ent.position[1]);
@@ -8999,7 +9702,7 @@
       // V2.16.6 地图物理边界：读当前地图尺寸（ALT.width/height），距地图边缘 < 安全距离 → 强制朝图中心走
       //   （用户需求：防止自研寻怪一路直走走进别的图；以启动点为圆心的半径是软约束，这里是地图硬边界）
       try {
-        var ALTb = window.require && window.require("Renderer/Map/Altitude");
+        var ALTb = requireDB("Renderer/Map/Altitude");
         var bndEdge = parseInt($id("dsh-z-mapbound-edge") ? $id("dsh-z-mapbound-edge").value : "15", 10) || 15;
         if (bndOn && bndEdge > 0 && ALTb && ALTb.width && ALTb.height) {
           var mw = ALTb.width, mh = ALTb.height;
@@ -9027,14 +9730,46 @@
         if (moved < 2) {
           if (!zWalkState.stuckAt) zWalkState.stuckAt = now;
           if (now - zWalkState.stuckAt >= 2000) {
-            zWalkState.dir = (zWalkState.dir + 1) % dirs.length; // 卡住 → 顺时针转一个方向
+            // V2.38.4 G2③：记住本次卡住事件已试过的方向，禁止转回刚试过的方向（杜绝墙角 8 次循环）
+            if (!zWalkState.stuckEvent) { zWalkState.stuckEvent = 1; zWalkState.stuckDirs = []; zWalkState.stuckTurns = 0; }
+            if (!zWalkState.stuckDirs) zWalkState.stuckDirs = [];
+            var zTurnFrom = zWalkState.dir;
+            zWalkState.stuckDirs.push(zTurnFrom);
+            var zNewDir = -1;
+            for (var ti3 = 1; ti3 <= dirs.length; ti3++) {
+              var zCandDir = (zTurnFrom + ti3) % dirs.length;
+              if (zWalkState.stuckDirs.indexOf(zCandDir) < 0) { zNewDir = zCandDir; break; }
+            }
+            if (zNewDir < 0) zNewDir = (zTurnFrom + 1) % dirs.length;
+            zWalkState.dir = zNewDir;
+            zWalkState.dirAt = now;
             zWalkState.stuckAt = 0;
             zWalkState.tried = 0;
-            tlog("walk-stuck turn dir=" + zWalkState.dir);
+            zWalkState.stuckTurns = (zWalkState.stuckTurns || 0) + 1;
+            tlog("walk-stuck turn dir=" + zWalkState.dir + " 已试=" + zWalkState.stuckDirs.join("/") + " 第" + zWalkState.stuckTurns + "次");
             setStatus("前方卡住，转向 " + zWalkState.dir, "warn");
+            // 同一卡住事件内累计转向 ≥4 次仍无位移 → 优先复用既有「瞬移换点」链路脱困（沿用 15s 节流与防御瞬移总开关）
+            if (zWalkState.stuckTurns >= 4) {
+              var zEscThrottled = !(idleFly && now - zWalkState.lastIdleFly >= 15000);
+              zWalkState.stuckEvent = 0; zWalkState.stuckDirs = []; zWalkState.stuckTurns = 0;
+              if (!zEscThrottled) {
+                zWalkState.lastIdleFly = now;
+                zWalkState.stuckEscapeAt = now;
+                tlog("walk-stuck-escape 同一卡住事件累计转向4次仍无位移 → 瞬移换点脱困");
+                setStatus("连续卡住，瞬移换点脱困…", "warn");
+                doFly();
+                return;
+              }
+              if (!idleFly) {
+                zWalkState.dir = (zTurnFrom + 4) % dirs.length;
+                zWalkState.dirAt = now;
+                tlog("walk-stuck-reverse 累计转向4次仍无位移且瞬移不可用 → 反向走脱困");
+              }
+            }
           }
         } else {
           zWalkState.stuckAt = 0;
+          zWalkState.stuckEvent = 0; zWalkState.stuckDirs = []; zWalkState.stuckTurns = 0; // 有位移 → 本次卡住事件结束
         }
       } else {
         zWalkState.stuckAt = 0;
@@ -9049,6 +9784,7 @@
         var done = false;
         // A* 行走中状态管理
         if (zAStarState.active) {
+          if (zRouteExtNow) return; // V2.38.4 G2④/G1②：外部客户端路线进行中绝不重发/续走（目标未变也不例外）
           var movedA = Math.abs(px0 - zAStarState.lastPos[0]) + Math.abs(py0 - zAStarState.lastPos[1]);
           var nearA = Math.abs(px0 - zAStarState.tx) + Math.abs(py0 - zAStarState.ty) <= 2;
           if (nearA) { zAStarState.active = false; }
@@ -9061,13 +9797,12 @@
           if (zAStarState.active) {
             if (now - zAStarState.lastTry < 3500) return;
             // 超时仍在走且未卡：重发同目标（幂等续走）
-            if (!zAStarState.stuckSince) { var pmA = new (czp("REQUEST_MOVE"))(); pmA.dest = [zAStarState.tx, zAStarState.ty]; CLIENT.NM.sendPacket(pmA); zAStarState.lastTry = now; tlog("walk-astar keep -> " + zAStarState.tx + "," + zAStarState.ty); return; }
+            if (!zAStarState.stuckSince) { var pmA = new (czp("REQUEST_MOVE"))(); pmA.dest = [zAStarState.tx, zAStarState.ty]; CLIENT.NM.sendPacket(pmA); zMarkSelfMove(); zAStarState.lastTry = now; tlog("walk-astar keep -> " + zAStarState.tx + "," + zAStarState.ty); return; }
           }
         }
         // 选目标：方向记忆（10s 内）→ 朝该方向 50 格外；无记忆 → 当前方向延伸
         if (!zAStarState.active) {
-          var aimD = dirs[zWalkState.dir];
-          if (now - zWalkState.lastSeenAt < 10000 && zWalkState.lastSeenDir != null) aimD = dirs[zWalkState.lastSeenDir];
+          var aimD = dirs[zWalkState.dir]; // V2.38.4 G2①：方向记忆的滞回与最小保持已在直走段统一应用到 zWalkState.dir，此处不再二次覆盖（否则 A* 目标仍会每拍翻转）
           // V2.16.12 停用：区域寻怪半径 + 地图物理边缘钳制（与直走段一并停用，保留 farT=50 兜底）
           var farT = 50;
           /*
@@ -9079,7 +9814,7 @@
           }
           // V2.16.6 A* 目标再按地图物理边界钳制（防 50 格目标越过图边缘走进别的图）
           try {
-            var ALT2 = window.require && window.require("Renderer/Map/Altitude");
+            var ALT2 = requireDB("Renderer/Map/Altitude");
             var bndEdge2 = parseInt($id("dsh-z-mapbound-edge") ? $id("dsh-z-mapbound-edge").value : "15", 10) || 15;
             if (ALT2 && ALT2.width && ALT2.height) {
               var atx2 = Math.round(px0 + aimD[0] * farT), aty2 = Math.round(py0 + aimD[1] * farT);
@@ -9097,6 +9832,7 @@
             var pmA2 = new (czp("REQUEST_MOVE"))();
             pmA2.dest = [snapA[0], snapA[1]];
             CLIENT.NM.sendPacket(pmA2);
+            zMarkSelfMove(); // V2.38.4 G1①：A* 寻路位移是助手自己发的 → 打时间戳
             zWalkState.lastMoveDir = zWalkState.dir; // V2.16.8：记录末次移动方向（换图反向走用）
             zAStarState = { active: true, tx: snapA[0], ty: snapA[1], since: now, lastTry: now, stuckSince: 0, lastPos: [px0, py0], aim: [aimD[0], aimD[1]] };
             zWalkState.stuckCnt = 0;
@@ -9112,7 +9848,7 @@
       //   当前方向 12 格内任意一格不可走 → 顺时针找第一个可走方向；全不通 → 瞬移兜底/不发撞墙包
       function dirWalkable(dd, steps) {
         try {
-          var ALT = window.require && window.require("Renderer/Map/Altitude");
+          var ALT = requireDB("Renderer/Map/Altitude");
           var WALK = ALT && ALT.TYPE && ALT.TYPE.WALKABLE;
           if (!ALT || !ALT.getCellType || !WALK || !ALT.width) return true; // 地形未就绪 → 放行（旧逻辑兜底）
           for (var s = 1; s <= steps; s++) {
@@ -9132,6 +9868,7 @@
         }
         if (foundD >= 0) {
           zWalkState.dir = foundD;
+          zWalkState.dirAt = now; // V2.38.4 G2①：预检转向属「撞墙例外」，刷新方向保持起点
           zWalkState.stuckCnt = 0;
           tlog("walk-precheck turn dir=" + zWalkState.dir);
           setStatus("前方有墙，转到可走方向 " + zWalkState.dir + "…", "st");
@@ -9156,6 +9893,7 @@
       var pmm = new (czp("REQUEST_MOVE"))();
       pmm.dest = [dDest[0], dDest[1]];
       CLIENT.NM.sendPacket(pmm);
+      zMarkSelfMove(); // V2.38.4 G1①：无目标直走位移是助手自己发的 → 打时间戳
       zWalkState.tried = 0;
       zWalkState.lastMoveDir = zWalkState.dir; // V2.16.8：记录末次移动方向（换图反向走用）
       tlog("walk-dir " + zWalkState.dir + " -> " + dDest[0] + "," + dDest[1]);
@@ -9174,6 +9912,7 @@
         }
       }
       zWalkState.dir = (zWalkState.dir + 1) % dirs.length;
+      zWalkState.dirAt = now; // V2.38.4 G2①：撞墙转向属例外，刷新方向保持起点
       tlog("walk-block turn dir=" + zWalkState.dir);
       setStatus("前方障碍，转向 " + zWalkState.dir + "…", "st");
       // 转向后立刻走新方向（V2.7.3：直发新方向终点，服务器寻路）
@@ -9184,6 +9923,7 @@
       var pm2 = new (czp("REQUEST_MOVE"))();
       pm2.dest = [dDest2[0], dDest2[1]];
       CLIENT.NM.sendPacket(pm2);
+      zMarkSelfMove(); // V2.38.4 G1①：转向后前进位移是助手自己发的 → 打时间戳
       tlog("walk-turn-go " + zWalkState.dir + " -> " + dDest2[0] + "," + dDest2[1]);
       setStatus("转向后前进（方向" + zWalkState.dir + "）…", "st");
     } catch (e) {}
@@ -9221,7 +9961,7 @@
       // V2.32.2 坐下优先：sitMaintain 未站起（没被打/没回满/没过看门狗）→ 保持坐下，本拍不锁怪不攻击不追怪
       // V2.34.0 A6：坐着时仍允许防御判定（血量/群殴/受击），攻击可跳过；走路由 zWalk 自行跳过
       if (isSitting()) { zAtkWhy = "已坐下"; zHoldTick("坐下回血中", false); return; }
-      var EM = window.require("Renderer/EntityManager");
+      var EM = requireDB("Renderer/EntityManager");
       var range = parseInt($id("dsh-z-range").value, 10) || 12; // 寻怪范围（触发目标考虑）
       // 攻击距离：物理/魔法按技能射程自动选择（普攻=物理距离；技能=技能射程与对应距离取大）
       var pmRange = parseInt($id("dsh-z-pmrange").value, 10) || 2;
@@ -9655,6 +10395,7 @@
   }
   // 状态前置判断：cond 形如 "球5,爆气,hp>40,sp>30"（逗号分隔，全部满足才 true）
   // 语法：球N=气球≥N；爆气=爆气中；狂暴；灵魂；hp>P/hp<P；sp>P/sp<P；!xxx=无某状态
+  //   V2.38.4 新增 球源401/球源261/球源自动=该技能补球用哪个技能（只影响自动补球，不是门槛、不参与本函数判定）
   function checkSkillCond(cond) {
     if (!cond) return { ok: true, miss: "" };
     var st = entStatus();
@@ -9665,6 +10406,8 @@
       if (!c) continue;
       var neg = c.charAt(0) === "!";
       var cc = neg ? c.substr(1) : c;
+      // V2.38.4：球源词不是释放门槛，也不能当状态名去查 —— 直接跳过，否则含 球源401 的技能会被永远卡死
+      if (/^球源/.test(cc)) continue;
       var hit = false;
       var ms = cc.match(/^球(\d+)$/);
       if (ms) hit = st.spheres >= parseInt(ms[1], 10);
@@ -9698,7 +10441,7 @@
   // 技能类型位（客户端 SkillTargetSelection TYPE）：ENEMY=1 PLACE=2 SELF=4 FRIEND=16 TRAP=32 TARGET=51
   function skillTypeBits(skid) {
     try {
-      var SL = window.require && window.require("UI/Components/SkillList/SkillList");
+      var SL = requireDB("UI/Components/SkillList/SkillList");
       if (SL && typeof SL.getSkillById === "function") {
         var s = SL.getSkillById(skid);
         if (s && s.type != null) return s.type;
@@ -9832,10 +10575,13 @@
     "Second_Judge": [5247], "二阶审判": [5247],
     "Mystery_Powder": [6509], "Assumptio": [361], "ASSUMPTIO": [361], "神秘之粉": [6509]
   };
-  var SKILL_SPHERE_SRC = [261, 262];    // 蓄气 / 吸魂（补气弹）
+  // V2.38.4 补球来源修正：261=蓄气(MO_CALLSPIRITS，SP8/次，一次 1 颗，最多充到技能等级 Lv 颗)；
+  //   401=狂蓄气(CH_SOULCOLLECT，Lv1，SP20/次，一次补满 5 颗，无冷却可无限放，不提升上限)；
+  //   262=吸气(MO_ABSORBSPIRITS) 是气弹的消耗方（消耗自身气球换 SP），绝不能当补球来源；「吸魂」是另一个技能(HW_SOULDRAIN)，不要混。
+  var SKILL_SPHERE_SRC = [401, 261];    // 补球技能来源（默认优先级：狂蓄气 → 蓄气）
   // 解析状态前置条件 → 需要补的资源 { spheres: 需要的球数, statuses: [缺失才补的状态名…] }
   function condNeeds(condStr) {
-    var need = { spheres: 0, statuses: [] };
+    var need = { spheres: 0, statuses: [], sphereSrc: null };
     if (!condStr) return need;
     var parts = String(condStr).split(/[,，]/);
     for (var i = 0; i < parts.length; i++) {
@@ -9844,6 +10590,10 @@
       var neg = c.charAt(0) === "!";
       var cc = neg ? c.substr(1) : c;
       if (neg) continue; // !xxx 是「不需要某状态」，不参与自动补
+      // V2.38.4 补球来源词：球源401 / 球源261 / 球源自动。只决定该技能补球用哪个技能，
+      //   既不能参与门槛判定，也绝不能 push 进 need.statuses（否则会去找一个不存在的补状态技能）。
+      var mss = cc.match(/^球源(401|261|自动|auto)$/);
+      if (mss) { need.sphereSrc = (mss[1] === "自动" || mss[1] === "auto") ? "auto" : mss[1]; continue; }
       var ms = cc.match(/^球(?:([<>]=?|=)\s*)?(\d+)$/);
       if (ms) {
         var op = ms[1] || ">=";
@@ -9870,7 +10620,7 @@
   // 查已学技能等级（SkillList 组件），用于补状态技能等级
   function learnedSkillLv(skid) {
     try {
-      var SL = window.require && window.require("UI/Components/SkillList/SkillList");
+      var SL = requireDB("UI/Components/SkillList/SkillList");
       if (SL && typeof SL.getSkillById === "function") {
         var s = SL.getSkillById(skid);
         if (s && s.level) return s.level;
@@ -9976,25 +10726,71 @@
       return Math.max(base, 80);
     } catch (e) { return 150; }
   }
+  // V2.38.4 全局补球来源：技能设置里的 #dsh-spheresrc 下拉（auto/261/401），技能条件里的 球源XXX 优先于它。
+  function sphereSrcGlobal() {
+    try {
+      var el = $id("dsh-spheresrc");
+      var v = el && el.value != null ? String(el.value) : "";
+      if (v === "261" || v === "401" || v === "auto") return v;
+    } catch (e) {}
+    try { if (saved && (saved.sphereSrc === "261" || saved.sphereSrc === "401" || saved.sphereSrc === "auto")) return saved.sphereSrc; } catch (e2) {}
+    return "auto";
+  }
+  // V2.38.4 补球技能选择（技能条件里的 球源XXX 优先，否则用全局默认）：
+  //   401 狂蓄气 = SP20/次，一次补满 5 颗，无冷却可无限放（最快）；
+  //   261 蓄气   = SP8/次，一次 1 颗，最多充到技能等级（省蓝）；
+  //   自动       = 按缺口现算：缺 1~2 颗用 261，缺 >=3 颗用 401。
+  //   首选不可用（未学 / 261 到等级上限）→ 写一条 tlog 后退回另一个来源；返回 0 = 本次不放。
+  //   V2.38.4 收口：来源选择里不再有「刚被复查判无效拉黑」这一态（拉黑机制整体撤掉）。
+  function pickSphereSkill(need, st) {
+    try {
+      var pref = (need && need.sphereSrc) ? need.sphereSrc : sphereSrcGlobal();
+      var gap = ((need && need.spheres) || 0) - st.spheres;
+      if (pref === "auto") pref = gap >= 3 ? "401" : "261";
+      var order = pref === "401" ? [401, 261] : [261, 401];
+      for (var i = 0; i < order.length; i++) {
+        var sid = order[i];
+        var lv = learnedSkillLv(sid);
+        var why = "";
+        if (lv <= 0) why = "未学";
+        else if (sid === 261 && st.spheres >= lv) why = "球数已达261等级上限";
+        if (why) {
+          if (i === 0) { try { tlog("cast-prep sphere 首选 " + sid + " 不可用（" + why + "），改用另一个补球来源"); } catch (e1) {} }
+          continue;
+        }
+        return sid;
+      }
+      return 0;
+    } catch (e) { return 0; }
+  }
   function castStatusPrep(condStr, order) {
     try {
       var ent = CLIENT.SS && CLIENT.SS.Entity;
       if (!ent) return false;
       var st = entStatus();
       if (!st) return false;
-      if (st.spheres > 0) zPrepSpam = 0; // 看到球 → 补球计数清零
+      if (st.spheres > 0) { zPrepSpam = 0; zSphereStallWarned = false; } // 看到球 → 补球计数清零、「气弹数据未更新」提示复位
       // 补状态节流：距上次补状态 <1s 不重复补 → 让 wait 分支穿插普攻（蓄气×5 链不再霸占每轮）
       if (Date.now() - zPrepAt < 1000) return false;
       var need = condNeeds(condStr);
-      // 1) 气弹不足 → 补气弹（蓄气/吸魂）
+      // 1) 气弹不足 → 补气弹（V2.38.4：来源 401 狂蓄气 / 261 蓄气；条件里的 球源XXX 优先于全局默认）
+      //    硬约束：需要球数 <= 当前球数 → 一颗都不补（由下面这个 if 的条件保证，不满足就完全不碰补球分支）；
+      //            当前球数 >= 5 → 绝不补（需要 >5 颗的技能本客户端无解，直接 return false）。
       if (need.spheres > 0 && st.spheres < need.spheres) {
-        if (st.spheres <= 0 && zPrepSpam >= 6) return false; // 连续6次补球仍无球 → 停，防无限狂蓄气
-        for (var si = 0; si < SKILL_SPHERE_SRC.length; si++) {
-          var sid = SKILL_SPHERE_SRC[si];
+        // V2.38.4 收口（A2）：只认「数据异常」——连续补球球数始终无变化（沿用 zPrepSpam 计数口径，阈值不变）
+        //   → 状态栏提示 + tlog 一条，然后停止补球。不判断技能可用性、不换技能、绝不拉黑。
+        if (st.spheres <= 0 && zPrepSpam >= 6) {
+          if (!zSphereStallWarned) {
+            zSphereStallWarned = true;
+            try { tlog("cast-prep sphere 连续 " + zPrepSpam + " 次补球球数始终无变化，判定气弹数据未更新（可能没收到 464 包），停止补球"); } catch (eSt1) {}
+            setStatus("气弹数据未更新（可能没收到 464 包）", "st");
+          }
+          return false;
+        }
+        if (st.spheres >= 5) return false;                   // 硬约束：已满 5 颗 → 一颗都不补
+        var sid = pickSphereSkill(need, st);
+        if (sid > 0) {
           var lv = learnedSkillLv(sid);
-          if (lv <= 0) continue; // 未学跳过
-          // 蓄气需 气弹 < 技能等级（skill.cpp MO_CALLSPIRITS 判断）；吸魂无条件
-          if (sid === 261 && st.spheres >= lv) continue;
           try {
             var ps = new (czp("USE_SKILL"))();
             ps.SKID = sid;
@@ -10004,10 +10800,10 @@
             zPrepAt = Date.now(); // 补状态节流：1s 内不再补，间隙穿插普攻
             zPrepSpam = (st.spheres <= 0) ? zPrepSpam + 1 : 0; // V2.32.2 补球计数
             skillNextAt[sid] = Date.now() + skillCdMs({ skid: sid, cd: 0 }); // V2.15.28：补球技能独立 CD
-            tlog("cast-prep sphere " + sid + " lv" + lv + " (now " + st.spheres + "/" + need.spheres + ")");
-            setStatus("气弹不足(" + st.spheres + "/" + need.spheres + ")，自动蓄气补球…", "st");
+            tlog("cast-prep sphere " + sid + " lv" + lv + " src=" + (need.sphereSrc || sphereSrcGlobal()) + " (now " + st.spheres + "/" + need.spheres + ")");
+            setStatus("气弹不足(" + st.spheres + "/" + need.spheres + ")，自动补球…", "st");
             return true;
-          } catch (e) { continue; }
+          } catch (e) { return false; }
         }
       }
       // 2) 状态前置不满足 → 补状态技能（遍历条件里的每个状态）
@@ -10119,7 +10915,9 @@
       var req = skillReq(o.skid);
       if (req) {
         var parts2 = [];
-        var sphereNeed = o.skid === 267 ? realLv : req[2]; // 弹指按实际技能等级耗球，且绝不隐含爆气
+        // V2.38.4 收口：弹指(267) 去掉「按实际技能等级吃球」的特例，一律用需求表的值（267 恒为 1 颗）。
+        //   本服实测每次弹指只消耗 1 个气球，按等级算会先充到 5 颗、白烧蓝；顺序行显示与运行时口径由此统一。
+        var sphereNeed = req[2];
         if (sphereNeed > 0) parts2.push("球" + sphereNeed);
         if (req[3]) parts2.push(req[3]);
         autoCond = parts2.join(",");
@@ -10223,6 +11021,13 @@
       if (saved.prereq != null) prereqEl.checked = !!saved.prereq;
       prereqEl.addEventListener("change", function () { saved.prereq = this.checked; saveSaved(saved); });
     }
+    // V2.38.4：补球来源下拉（auto/261/401）与 #dsh-prereq 同一行，随角色档保存/恢复（键 saved.sphereSrc）
+    var sphereSrcEl = $id("dsh-spheresrc");
+    if (sphereSrcEl) {
+      if (saved.sphereSrc === "261" || saved.sphereSrc === "401" || saved.sphereSrc === "auto") sphereSrcEl.value = saved.sphereSrc;
+      else sphereSrcEl.value = "auto"; // V2.38.4（审计 D4）：非法/缺失值必须显式回填 auto，否则会保留上一个角色的显示值 → 跨角色串档
+      sphereSrcEl.addEventListener("change", function () { saved.sphereSrc = this.value; saveSaved(saved); });
+    }
     var attMixEl = $id("dsh-z-attmix");
     if (attMixEl) {
       if (saved.attMix != null) attMixEl.checked = !!saved.attMix;
@@ -10250,7 +11055,7 @@
     // 1) 优先：客户端 SkillList 组件（真实已学技能，含等级/类型/射程，来源服务器 ZC.SKILLINFO_LIST）
     //    之前读 DB.getAllSkillInfo()（静态技能库无 level 字段）导致列表永远为空
     try {
-      var SL = window.require && window.require("UI/Components/SkillList/SkillList");
+      var SL = requireDB("UI/Components/SkillList/SkillList");
       var list = SL && typeof SL.getList === "function" ? SL.getList() : null;
       if (list && list.length) {
         for (var i = 0; i < list.length; i++) {
@@ -10921,7 +11726,7 @@
   function hookItemObjects() {
     try {
       if (itemHookDone || !window.require) return;
-      var IO = window.require("Renderer/ItemObject");
+      var IO = requireDB("Renderer/ItemObject");
       if (!IO || typeof IO.add !== "function") return;
       itemHookDone = true;
       var origAdd = IO.add;
@@ -10976,6 +11781,7 @@
       var pm = new (czp("REQUEST_MOVE"))();
       pm.dest = [r.x, r.y];
       CLIENT.NM.sendPacket(pm);
+      zMarkSelfMove(); // V2.38.4 G1①：走向拾取物的位移也是助手自己发的 → 打时间戳
       try { if (zWalkState) zWalkState.lastMove = now; } catch (e) {} // 占用 zWalk 的 2s 门槛，避免移动互相打架
       var lg = $id("dsh-picklog");
       if (lg) lg.textContent = "拾取目标较远(" + d + "格)，避障接近中…";
@@ -11012,7 +11818,7 @@
       hookItemObjects();
       var wlKeys = Object.keys(wl);
       if (!wlKeys.length) return;
-      var EM = window.require("Renderer/EntityManager");
+      var EM = requireDB("Renderer/EntityManager");
       var picked = 0;
       EM.forEach(function (e) {
         try {
@@ -11094,6 +11900,7 @@
         var mv = new (czp("REQUEST_MOVE"))();
         mv.dest = [dest[1], dest[2]];
         CLIENT.NM.sendPacket(mv);
+        zMarkSelfMove(); // V2.38.4 G1①：脚本「前往」的步行位移 → 打时间戳
         setStatus("书本前往: " + (it.npc || "") + "（步行寻路）", "ok");
         return;
       }
@@ -11106,7 +11913,7 @@
   try { if (Array.isArray(saved.mapCache) && saved.mapCache.length) mapCache = saved.mapCache.map(function (x) { return { map: String(x.map || ""), cn: String(x.cn || "") }; }); } catch (e) {}
   function mapCn(map) {
     try {
-      var db = CLIENT.DB || (window.require ? window.require("DB/DBManager") : null);
+      var db = CLIENT.DB || requireDB("DB/DBManager");
       var nm = db && typeof db.getMapName === "function" ? db.getMapName(map) : "";
       if (nm && nm !== map) return String(nm).trim();
     } catch (e) {}
@@ -11549,7 +12356,7 @@
     selNpc = null;
     try {
       if (!window.require) throw new Error("客户端未就绪");
-      var EM = window.require("Renderer/EntityManager");
+      var EM = requireDB("Renderer/EntityManager");
       EM.forEach(function (e) {
         try {
           if (e.objecttype === 6 || e.objecttype === 12) {
@@ -11605,7 +12412,7 @@
       }
       if (!target) {
         // 选中不在身边（或无选中）→ 回退最近 NPC
-        var EM = window.require("Renderer/EntityManager");
+        var EM = requireDB("Renderer/EntityManager");
         var ent = CLIENT.SS.Entity;
         var best = 1e9;
         EM.forEach(function (e) {
@@ -11746,7 +12553,7 @@
           var gid = lastTalkNpc.GID;
           var gidU = gid < 0 ? gid + 4294967296 : gid;
           var gidS = gid > 2147483647 ? gid - 4294967296 : gid;
-          var EM = CLIENT.EM || (window.require && window.require("Renderer/EntityManager"));
+          var EM = CLIENT.EM || (requireDB("Renderer/EntityManager"));
           if (EM && EM.forEach) EM.forEach(function (e) {
             if (e && (e.GID === gid || e.GID === gidU || e.GID === gidS)) {
               npcName = e.displayName || e.name || (e.display && e.display.name) || npcName;
@@ -11754,7 +12561,7 @@
             }
           });
         } else {
-          var EM2 = CLIENT.EM || (window.require && window.require("Renderer/EntityManager"));
+          var EM2 = CLIENT.EM || (requireDB("Renderer/EntityManager"));
           if (EM2 && EM2.forEach) EM2.forEach(function (e) {
             if (e && (e.GID == NAID || e.GID == NAIDs)) { npcName = e.displayName || e.name || (e.display && e.display.name) || ""; if (e.position) pos = [e.position[0], e.position[1]]; }
           });
@@ -12015,6 +12822,100 @@
       ingest({ type: "opstat", opcode: op, len: len, hex: hex, hp: hpNow, map: getMapName(), ts: new Date().toISOString() });
     } catch (e) {}
   }
+  // V2.38.3：隐藏其他玩家摊位/商店的名字牌（纯本地显示层 · 全局设置 · 默认关闭 · 绝不发任何包）
+  //   客户端把名字牌画在实体头顶的 DOM 里：entity.room = { owner, text, display, node, type, id, title, count, limit }，
+  //   牌子元素 = entity.room.node.ui[0]；Room.render() 每帧只改 style.top/left、从不碰 style.display，所以置 "none" 能稳定生效
+  //   （关闭时清空 "" 即原样恢复；Room.remove() 会自己隐藏并摘掉节点，与本功能互不干扰）。
+  //   只处理商店牌子 type 0（摆摊）/ 1（收购）；type 2/3 是聊天室牌子，一律原样可见。
+  //   自己的实体必须跳过（否则自己摊位的牌子也会没）；只改牌子元素，人物本身还在：点击与交互完全不受影响。
+  var HIDE_SHOP_NAME_KEY = "dsh_ro_hideshopname_v1";
+  var hideShopNameCfg = { enabled: false }; // 默认关闭；读取失败同样按关闭
+  try { var hideShopNameRaw = JSON.parse(localStorage.getItem(HIDE_SHOP_NAME_KEY) || "null"); if (hideShopNameRaw && hideShopNameRaw.enabled === true) hideShopNameCfg.enabled = true; } catch (e) {}
+  var hideShopNameHidden = [];  // 被本功能隐藏过的牌子元素（关闭时只恢复这些，绝不动其它代码的 display）
+  var hideShopNameTimer = null; // 只在开启期间存在；关闭后必须为 null（零轮询）
+  var hideShopNameShown = -1;   // 上次上报的隐藏块数（数量没变就不刷屏）
+  var hideShopNameWarnAt = 0;
+  function hideShopNameEnabled() { return hideShopNameCfg.enabled === true; }
+  function hideShopNameSave(on) {
+    hideShopNameCfg.enabled = on === true;
+    try { localStorage.setItem(HIDE_SHOP_NAME_KEY, JSON.stringify({ enabled: hideShopNameCfg.enabled })); } catch (e) {}
+  }
+  function hideShopNameNote(n) {
+    if (n === hideShopNameShown) return;
+    hideShopNameShown = n;
+    try { setStatus("已隐藏 " + n + " 块其他玩家的摊位/商店名字牌（只影响显示，不影响能否点击人物）", "ok"); } catch (e) {}
+    try { tlog("hideshopname 当前隐藏 " + n + " 块牌子（纯本地显示层，不发任何包）"); } catch (e) {}
+  }
+  function hideShopNameIsSelf(e) {
+    try {
+      var own = CLIENT.SS && CLIENT.SS.Entity;
+      if (!own || !e) return false;
+      if (e === own) return true;
+      var a = gidInt(e.GID), b = gidInt(own.GID); // 复用既有取整：实体 GID 是浮点、AID 是整数，必须归一化后再比
+      return !!(a && b && a === b);
+    } catch (e1) { return false; } // 取不到一律按「不是自己」处理，绝不抛错
+  }
+  function hideShopNameSweep() {
+    try {
+      var EM = requireDB("Renderer/EntityManager");
+      if (!EM || typeof EM.forEach !== "function") return; // 客户端未就绪：静默跳过
+      EM.forEach(function (e) {
+        try {
+          var room = e && e.room;
+          if (!room || room.display !== true || !room.node) return;
+          // V2.38.4 A1：先把牌子元素取出来再判类型。客户端 Room.create() 在节点已存在时复用同一个 DOM 节点
+          //   （Online.js 311472-311476），同一实体「先开商店再开聊天室」时 room.type 变成 2/3；旧实现直接 return，
+          //   被我们置成 none 的节点会在聊天室牌子上一直不可见（直到关开关或刷新）。非 0/1 时做一次还原，只碰自己记录过的元素。
+          var ui = room.node.ui;
+          if (!ui || !ui[0] || !ui[0].style) return;
+          if (room.type !== 0 && room.type !== 1) {
+            var k = hideShopNameHidden.indexOf(ui[0]);
+            if (k >= 0 && ui[0].style.display === "none") {
+              try { ui[0].style.display = ""; } catch (e4) {}
+              hideShopNameHidden.splice(k, 1);
+            }
+            return; // 2/3 = 聊天室牌子，绝不隐藏
+          }
+          if (hideShopNameIsSelf(e)) return; // 自己的牌子保持原样
+          if (ui[0].style.display !== "none") {
+            ui[0].style.display = "none";
+            if (hideShopNameHidden.indexOf(ui[0]) < 0) hideShopNameHidden.push(ui[0]);
+          }
+        } catch (e2) {}
+      });
+      // V2.38.4 A2：剪枝前先把「已被客户端摘掉、但 display 还是我们置的 none」的元素还原
+      //   （Room.remove() 摘节点时不动 display），否则这些元素被丢出跟踪表后再关开关也恢复不了。
+      if (hideShopNameHidden.length > 600) {
+        hideShopNameHidden = hideShopNameHidden.filter(function (el) {
+          if (!el) return false;
+          if (el.parentNode) return true;
+          try { if (el.style) el.style.display = ""; } catch (e5) {}
+          return false;
+        });
+      }
+      hideShopNameNote(hideShopNameHidden.length);
+    } catch (err) {
+      try { if (Date.now() - hideShopNameWarnAt > 5000) { hideShopNameWarnAt = Date.now(); tlog("hideshopname 扫描异常已跳过（只影响显示，不影响能否点击人物）：" + (err && err.message)); } } catch (e3) {}
+    }
+  }
+  function hideShopNameRestore() {
+    var n = hideShopNameHidden.length;
+    for (var i = 0; i < n; i++) { try { if (hideShopNameHidden[i] && hideShopNameHidden[i].style) hideShopNameHidden[i].style.display = ""; } catch (e) {} }
+    hideShopNameHidden = [];
+    hideShopNameShown = -1;
+    if (n) { try { tlog("hideshopname 已恢复 " + n + " 块牌子显示，轮询已停"); } catch (e2) {} }
+  }
+  function hideShopNameStop() { if (hideShopNameTimer) { try { clearInterval(hideShopNameTimer); } catch (e) {} } hideShopNameTimer = null; }
+  function hideShopNameApply() {
+    try {
+      hideShopNameStop(); // 先停旧表，反复调用不会叠表
+      if (!hideShopNameEnabled()) { hideShopNameRestore(); return; } // 关闭：立刻恢复 + 停表（关闭状态零成本、零轮询）
+      hideShopNameSweep();
+      hideShopNameTimer = setInterval(function () { try { hideShopNameSweep(); } catch (e) {} }, 400);
+    } catch (e) { try { tlog("hideshopname 开关应用异常已跳过：" + (e && e.message)); } catch (e2) {} }
+  }
+  try { if (hideShopNameEnabled()) setTimeout(function () { try { hideShopNameApply(); } catch (e) {} }, 0); } catch (e) {}
+
   // V2.38.2：一键屏蔽其他玩家的摆摊商店（全局设置，非角色档 · 默认开 · 完全不动 NPC 商人买卖窗口）
   // 识别：ZC 307 / 2048 / 2877 = PC_PURCHASE_ITEMLIST_FROMMC(2/3) 三选一（取决于客户端包版本）
   //   玩家收购店窗口由另一个包开：ZC 2072 = ACK_ITEMLIST_BUYING_STORE → 同样命中 blockMcHit（窗口类 .WinBuyingStore）
@@ -12087,21 +12988,135 @@
   }
   function dispatchInbound(bytes) {
     try {
-      var dv = new DataView(bytes);
-      var op = dv.getUint16(0, true);
+      if (!bytes || !bytes.byteLength) return;
+      // V2.38.4 入站分帧：一条 WebSocket 消息里可能装着多个包。先按运行时长度表逐帧切分，再对每一帧执行下面的 opcode 分派链；
+      //   长度表不可用、或首包长度未知时 walkInboundFrames 只回调一次整条消息 —— 与旧实现逐字等价，绝不回归。
+      var walk = walkInboundFrames(bytes, dispatchInboundFrame);
+      if (walk && walk.rest < bytes.byteLength) {
+        framePartial++; // 尾部切不出的残包只计数：不做跨消息缓冲（只会漏读，绝不错位串包），下次抓包可见 partial 记录
+        if (typeof txCap !== "undefined" && txCap && txCap.on) txCapPushInbound(bytes, -1, walk.rest, true, walk.rest);
+      }
+    } catch (e) {}
+  }
+  // ---------------- V2.38.4 入站分帧：运行时长度表 + 逐帧遍历（一条消息可能含多个包） ----------------
+  var framePartial = 0; // 消息尾部切不出的残包计数（只做诊断，绝不缓冲）
+  var __zcLenTbl = { tbl: null, src: null, n: 0, sig: -1 }; // V2.38.4：sig = CLIENT.PS 下可枚举函数计数，纳入缓存键（审计 D3）
+  // 运行时 opcode→size 表：遍历 CLIENT.PS 各命名空间，收集 registerPacket 写过 .id、且类自身带 .size 的包结构类。
+  //   与当前客户端构建天然同步（含 LastRO 自定义 2xxx 包）；size<0 = 变长包（真实长度在 offset+2 的 UShort）；
+  //   拿不到 CLIENT.PS（或一项都收不到）返回 null → 上层退化成旧行为（整条消息当第一个包）。
+  // V2.38.4 口径纠偏（审计②）：包类的正 size 只代表「该类自己声明的长度」，未必等于客户端权威长度，本表不是权威表。
+  //   例：ZC.USESKILL_ACK3 类声明 size=32，客户端权威表里 2842=29，线上实测同一 opcode 下发过 29/36/59/62/150 五种长度。
+  //   实测口径（审计 D6：早先报告里的条数口径已更正）：服务器下发的 29B 消息共 4 条（op2842 三条 + op2435 一条），
+  //   其中 op2842 长度 <32 的 3 条。拿 32 当定长去切多帧就会在失真点错位，所以定长包只信声明、不当作权威。
+  //   已知代价（审计 D1，明确不采纳其强形式）：某帧正 size 失真时会在失真点停住、尾部记残包，绝不伪造帧；
+  //   实测 109 条真实消息里 42 条尾部切不完，但前导帧都是真帧（错误只出现在后面那个 size 失真的包上）；
+  //   若改成「只有 rest===byteLength 才接受切分、否则整条退化」，42 条里已正确切出的前导帧会被一起丢掉（38% 消息退化），代价大于收益。
+  // PS 下可枚举函数计数（深度 ≤2）：包结构类由 registerPacket 动态注册，计数变化即说明长度表该重建（审计 D3）。
+  function psFuncSig(PS) {
+    var n = 0;
+    try {
+      for (var k in PS) {
+        var v = null;
+        try { v = PS[k]; } catch (eV) { continue; }
+        if (typeof v === "function") { n++; continue; }
+        if (v && typeof v === "object") { for (var k2 in v) { try { if (typeof v[k2] === "function") n++; } catch (eV2) {} } }
+      }
+    } catch (eS) {}
+    return n;
+  }
+  function zcLenTable() {
+    try {
+      var PS = CLIENT && CLIENT.PS;
+      if (!PS) return null;
+      var sig = psFuncSig(PS); // V2.38.4（审计 D3）：包类注册数变化即重建，不再只认 CLIENT.PS 的对象 identity
+      if (__zcLenTbl.tbl && __zcLenTbl.src === PS && __zcLenTbl.sig === sig) return __zcLenTbl.tbl;
+      var tbl = {}, n = 0;
+      function scan(ns, depth) {
+        if (!ns || depth > 3) return;
+        for (var k in ns) {
+          var S = null;
+          try { S = ns[k]; } catch (eS) { continue; }
+          if (typeof S === "function") { // 包结构类：id/size 由 registerPacket 与类定义写在类自身
+            var id = 0, size = 0;
+            try { id = Number(S.id) || 0; size = Number(S.size); } catch (eId) { continue; }
+            if (!(id > 0)) continue;
+            if (!isFinite(size) || size === 0) continue; // 没声明长度（0/NaN）绝不登记，避免把变长包当定长包猜
+            if (tbl[id] === undefined) { tbl[id] = size; n++; }
+            continue;
+          }
+          if (S && typeof S === "object") scan(S, depth + 1);
+        }
+      }
+      scan(PS, 1);
+      if (!n) return null;
+      __zcLenTbl.tbl = tbl; __zcLenTbl.src = PS; __zcLenTbl.n = n; __zcLenTbl.sig = sig;
+      try { if (typeof console !== "undefined" && console.log) console.log("[INBOUND-FRAME] 运行时 opcode→size 表就绪：" + n + " 项（从 CLIENT.PS 收集）"); } catch (eLog) {}
+      return tbl;
+    } catch (e) { return null; }
+  }
+  // 逐帧遍历：读 op → 查表得 size → size>0 用 size、size<0（变长包）读 offset+2 的 UShort；
+  //   表里没有该 opcode、长度越界或小于 2 → 立即停止遍历（fail-soft，绝不猜）。
+  //   返回 { frames, rest }：rest = 停下来时还没被切走的起点（rest === byteLength 表示整条消息都切完了）。
+  function walkInboundFrames(bytes, onFrame) {
+    var total = (bytes && bytes.byteLength) ? bytes.byteLength : 0;
+    if (total < 2) return { frames: 0, rest: total };
+    var dv = null;
+    // V2.38.4（审计 D5）：DataView 构造失败时一个字节都没切走，rest 必须记 total；
+    //   记 0 会被上层当成「整条都切完了」（dispatchInbound 只在 rest < byteLength 时记残包），整条消息被误计成残包。
+    try { dv = new DataView(bytes); } catch (eDv) { return { frames: 0, rest: total }; }
+    var op0 = 0;
+    try { op0 = dv.getUint16(0, true); } catch (eOp0) { return { frames: 0, rest: total }; } // V2.38.4-审计修正（F5）：一个字节都没切走，rest 记 total（记 0 会被上层误当成「整条都切完了」）
+    var tbl = zcLenTable();
+    var off = 0, frames = 0;
+    while (tbl && off + 2 <= total) {
+      var op = 0, size = 0, len = 0;
+      try { op = dv.getUint16(off, true); } catch (eOp) { break; }
+      size = tbl[op];
+      if (typeof size !== "number") break;               // 表里没有该 opcode：不猜，停止遍历
+      if (size < 0) {                                     // 变长包：真实长度 = offset+2 的 UShort
+        if (off + 4 > total) break;
+        try { len = dv.getUint16(off + 2, true); } catch (eVar) { break; }
+      } else len = size;
+      if (!(len >= 2) || off + len > total) break;         // 长度非法或越界：不猜，停止遍历
+      var frame = null;
+      try { frame = bytes.slice(off, off + len); } catch (eSl) { break; }
+      try { onFrame(frame, op, off, true); } catch (eCb) {} // 单帧异常只丢该帧，不影响后续帧
+      frames++;
+      off += len;
+    }
+    if (!frames) {
+      // 长度表不可用，或首包根本切不出来（表里没有该 opcode / 长度声明越界）：整条消息按一个包处理。
+      // 这是旧行为，也是客户端对未知长度包的兜底口径（按剩余全部），确保任何消息都不会凭空消失。
+      try { onFrame(bytes, op0, 0, tbl ? true : false); } catch (eWhole) {}
+      return { frames: 1, rest: total };
+    }
+    return { frames: frames, rest: off };
+  }
+  // 入站抓包记录：bytes 里从 hexOff 起最多 64 字节；partial=true 时按「残包」单独记一条（op=-1）
+  function txCapPushInbound(bytes, op, hexOff, partial, msgOff) {
+    try {
+      var u8d = new Uint8Array(bytes);
+      var from = (typeof hexOff === "number" && hexOff > 0) ? hexOff : 0;
+      var remain = u8d.length - from; if (remain < 0) remain = 0;
+      var mD = Math.min(remain, 64);
+      var hxD = "";
+      for (var iD = 0; iD < mD; iD++) hxD += (u8d[from + iD] < 16 ? "0" : "") + u8d[from + iD].toString(16);
+      var rec = { t: Date.now(), d: "D", op: op, len: partial ? remain : u8d.length, hex: hxD };
+      if (partial) rec.partial = true;
+      if (typeof msgOff === "number" && msgOff > 0) rec.off = msgOff;
+      txCap.ring.push(rec);
+      if (txCap.ring.length > 3000) txCap.ring.shift();
+      txCap.n++;
+    } catch (e) {}
+  }
+  // V2.38.4 单帧分派：opcode 判定链与 V2.38.2 逐字一致（条件与顺序不变），可被单独一帧调用；异常只吞掉这一帧
+  function dispatchInboundFrame(bytes, op, frameOff, lenTblOk) {
+    try {
+      if (typeof op !== "number") { try { op = new DataView(bytes).getUint16(0, true); } catch (e0) { return; } }
       collectOpStat(bytes, op);
       itipPktProbe(bytes, op); // V2.16.21 自动探查：首次出现的 opcode 记录十六进制
-      // V2.16.16：入站也进抓包环（方向 D），导出时与出站合成一条双向时间线
-      if (typeof txCap !== "undefined" && txCap && txCap.on) {
-        try {
-          var u8d = new Uint8Array(bytes);
-          var hxD = "", mD = Math.min(u8d.length, 64);
-          for (var iD = 0; iD < mD; iD++) hxD += (u8d[iD] < 16 ? "0" : "") + u8d[iD].toString(16);
-          txCap.ring.push({ t: Date.now(), d: "D", op: op, len: u8d.length, hex: hxD });
-          if (txCap.ring.length > 3000) txCap.ring.shift();
-          txCap.n++;
-        } catch (eD) {}
-      }
+      // V2.16.16：入站也进抓包环（方向 D）；V2.38.4：改为按帧记录，op/len/hex 都取该帧真实值
+      if (typeof txCap !== "undefined" && txCap && txCap.on) txCapPushInbound(bytes, op, 0, false, frameOff);
       if (op === 307 || op === 2048 || op === 2877 || op === 2072) blockMcHit(); // V2.38.2：其他玩家的摆摊商店 / 收购店回包 → 命中即关；NPC 商人 198/199 不在此列
       if (DPS_PKTS.indexOf(op) >= 0 && !dpsParsedSeen) dpsOnRawDamage(bytes, op);
       if (op === 0x80) scrOnRawVanish(bytes);
@@ -12110,20 +13125,22 @@
       else if (op === 182) onCloseDialog();
       else if (op === 0x43d || op === 0x43e) onSkillPostDelay(bytes, op);
       else if (op === 0xb1a) onSkillAck3(bytes); // V2.15.28：2842 USESKILL_ACK3 动态技能延迟
-      else if (op === 0x1d0 || op === 0x1e1) onSelfSpirits(bytes);
+      else if (op === 0x1d0 || op === 0x1e1) onSelfSpirits(bytes, frameOff, lenTblOk === true);
       else if (op === 0xc6 || op === 0xc7) itipShopPkt(bytes, op); // V2.16.21 商店买卖列表：取单价（买价/卖价）
       else onRawOpcode(bytes, op);
-    } catch (e) {}
+    } catch (eF) {} // 单帧解析异常只丢该帧，不影响后续帧与其它功能
   }
-  function onSelfSpirits(bytes) {
+  function onSelfSpirits(bytes, frameOff, lenTblOk) {
     try {
       if (!bytes || bytes.byteLength < 8) return;
       var dv = new DataView(bytes), aid = dv.getUint32(2, true), num = Math.max(0, Math.min(5, dv.getUint16(6, true)));
       // V2.32.2 气弹缓存 aid 统一取整对齐（此前包 AID 为整数、实体 GID 为浮点，恒不等 → 缓存永判失效 → 气弹恒0）
       var ent = CLIENT.SS && CLIENT.SS.Entity, selfAid = gidInt((CLIENT.SS && CLIENT.SS.AID) || (ent && ent.GID) || 0);
       if (selfAid && aid === selfAid) selfSpirits = { aid: aid, num: num, map: normMapKey(getMapName()) };
-      // V2.32.2 自采集诊断：记录气弹包解析值
-      dshSphereLog("pkt aid=" + aid + " num=" + num + " selfAid=" + selfAid + " match=" + (aid === selfAid));
+      // V2.32.2 自采集诊断；V2.38.4 补记帧偏移与长度表可用性（定位「气弹包读不到 / 读到了但 AID 不匹配」）
+      dshSphereLog("pkt aid=" + aid + " num=" + num + " selfAid=" + selfAid + " match=" + (aid === selfAid)
+        + " off=" + (typeof frameOff === "number" ? frameOff : 0) + " lenTbl=" + (lenTblOk === true ? "on" : "off")
+        + " ssAid=" + ((CLIENT.SS && CLIENT.SS.AID) || 0) + " entGid=" + ((ent && ent.GID) || 0));
     } catch (e) {}
   }
   // V2.15.24：拦截服务器下发的技能真实后摇（ZC.SKILL_POSTDELAY 0x43d 单技能 / 0x43e 批量列表）
@@ -12338,11 +13355,15 @@
   //   客户端实证 Online.js:307964 Entity.onRoomEnter()：Room.Type.SELL_SHOP → CZ.REQ_CLICK_TO_BUYING_STORE（makerAID）、
   //   Room.Type.BUY_SHOP → CZ.REQ_BUY_FROMMC（AID）；全客户端只有这一条路径 new 这两个包，NPC 商人商店 / 聊天室 / 以物易物都不走它们。
   //   opcode 运行时解析：优先 getPacketVersion()[1]，拿不到再读 build() 前两字节小端；两个都解析不到就一个包都不丢（fail-safe，仍由第一层回包关窗兜底）。
-  var blockMcDropCache = null; // { ver: 解析时的 czPacketVer(), ops }：包版本一变就作废重解析；null=还没成功解析（fail-safe：不丢任何包）
+  var blockMcDropCache = null; // { ver, ops }：只有两个包类都解析出来才写；包版本一变就作废重解析；null=还没解析完整（fail-safe：不丢任何包）
+  var blockMcDropPartial = null; // V2.38.3：不完整的解析结果（绝不写正式缓存，只在限流窗口内沿用，避免已解析出来的那个包反而不拦）
+  var blockMcDropRetryAt = 0; // V2.38.3：不完整解析后的重试时间点（5 秒限流，避免每个包都重解析）
   var blockMcDropWarnAt = 0;
   function blockMcDropResolve() {
     var ver = 0; try { ver = czPacketVer(); } catch (eV) {} // V2.38.2：缓存必须跟包版本绑定（同一页面会话内 packetver 会变，旧数字可能已是别的包）
     if (blockMcDropCache && blockMcDropCache.ver === ver) return blockMcDropCache.ops;
+    // V2.38.3：上一次解析不完整/失败后 5 秒内直接沿用上次结果（失败时就是空集），不每个包都重解析
+    if (blockMcDropPartial && blockMcDropPartial.ver === ver && Date.now() < blockMcDropRetryAt) return blockMcDropPartial.ops;
     var ops = {}, ns = null, names = ["REQ_BUY_FROMMC", "REQ_CLICK_TO_BUYING_STORE"];
     try { ns = CLIENT.PS && CLIENT.PS.CZ; } catch (e) {}
     for (var i = 0; i < (ns ? names.length : 0); i++) {
@@ -12352,12 +13373,15 @@
         if (op > 0) ops[op] = true;
       } catch (e) {}
     }
-    // V2.38.2：只有解析到 opcode 才写缓存；解析不到保持未缓存，下次发包重试（绝不用空集把整场会话钉死）
-    if (!Object.keys(ops).length) {
-      try { if (Date.now() - blockMcDropWarnAt > 1500) { blockMcDropWarnAt = Date.now(); tlog("block-mc 发包拦截：解析不到 REQ_BUY_FROMMC / REQ_CLICK_TO_BUYING_STORE 的 opcode（客户端未就绪或包类缺失），本次不拦任何包，仍由回包关窗兜底（下次发包会重试）"); } } catch (e2) {}
-      return ops;
+    var n = Object.keys(ops).length;
+    // V2.38.3（D1）：只有解析出的 opcode 数量等于待解析类数量时才写缓存。
+    //   此前「部分解析成功也写缓存」（例如只解析出 REQ_BUY_FROMMC 就缓存 [304]）会让之后补齐另一个包类也永远不再解析 → 永久漏拦。
+    if (n >= names.length) { blockMcDropCache = { ver: ver, ops: ops }; blockMcDropPartial = null; return ops; }
+    blockMcDropPartial = { ver: ver, ops: ops };
+    blockMcDropRetryAt = Date.now() + 5000;
+    if (!n) { // 一个都没解析出来：沿用既有 fail-safe（一个包都不丢）+ 既有 1.5 秒限流中文提示
+      try { if (Date.now() - blockMcDropWarnAt > 1500) { blockMcDropWarnAt = Date.now(); tlog("block-mc 发包拦截：解析不到 REQ_BUY_FROMMC / REQ_CLICK_TO_BUYING_STORE 的 opcode（客户端未就绪或包类缺失），本次不拦任何包，仍由回包关窗兜底（5 秒限流后重试）"); } } catch (e2) {}
     }
-    blockMcDropCache = { ver: ver, ops: ops };
     return ops;
   }
   var blockMcDropLastLog = 0;
@@ -12415,12 +13439,12 @@
   function txExport() {
     try {
       var t0 = txCap.ring.length ? txCap.ring[0].t : 0;
-      var lines = ["# ro-assist 双向抓包 共 " + txCap.ring.length + " 条",
+      var lines = ["# ro-assist 双向抓包 共 " + txCap.ring.length + " 条（其中被拦截未发出 " + txCap.drop + " 条）",
                    "# 列: 相对毫秒 方向(U=客户端发出 / D=服务器下发) opcode(十进制/hex) 长度 十六进制(前64B)",
                    "# 地图=" + getMapName() + " 脚本版本=" + VER];
       for (var i = 0; i < txCap.ring.length; i++) {
         var r = txCap.ring[i];
-        lines.push((r.t - t0) + " " + (r.d || "U") + " " + r.op + "(0x" + (r.op < 0 ? "?" : r.op.toString(16)) + ") " + r.len + "B " + r.hex + (r.drop ? " [拦截·未发送]" : ""));
+        lines.push((r.t - t0) + " " + (r.d || "U") + " " + r.op + "(0x" + (r.op < 0 ? "?" : r.op.toString(16)) + ") " + r.len + "B " + r.hex + (r.drop ? " [拦截·未发送]" : "") + (r.partial ? " [残包·未切完]" : "") + (r.off ? (" 帧偏移=" + r.off) : ""));
       }
       var txt = lines.join("\n");
       txCap.lastText = txt;
@@ -12431,12 +13455,12 @@
   }
   onId("dsh-txcap", "click", function () {
     if (!hookSendPacket()) { $id("dsh-txlog").textContent = "客户端未就绪：请先进游戏，再点「开始抓包」"; return; }
-    txCap.on = true; txCap.ring = []; txCap.n = 0;
+    txCap.on = true; txCap.ring = []; txCap.n = 0; txCap.drop = 0; // V2.38.3（D2）：开始抓包清零上一轮的拦截计数
     $id("dsh-txlog").textContent = "出站抓包：已开始（先进图站稳 20 秒，再点停止）";
   });
   onId("dsh-txstop", "click", function () {
     txCap.on = false;
-    $id("dsh-txlog").textContent = "出站抓包：已停止，共 " + txCap.n + " 个包；点「导出出站序列」复制";
+    $id("dsh-txlog").textContent = "出站抓包：已停止，共 " + txCap.n + " 个包（其中被拦截未发出 " + txCap.drop + " 条）；点「导出出站序列」复制";
   });
   onId("dsh-txexp", "click", txExport);
   // V2.16.16：下载成文件（避免几千行粘进聊天框）——存到浏览器默认下载目录
@@ -12455,7 +13479,17 @@
   setInterval(function () { try { hookSendPacket(); } catch (e) {} }, 2000);
   hookMenuRecon();
   // V2.15.1 背包整理初始化（物品子页内）
-  try { if (typeof bagCleanInit === "function") { bagCleanInit(); } } catch (e) {}
+  // V2.38.4 手机版/登录页启动异常修复（B3）：背包/清包等与客户端模块相关的初始化不在启动阶段硬跑。
+  //   启动阶段（手机版尤其）RequireJS 还没加载背包模块，硬跑会抛 notloaded → 改为「客户端就绪才做」：
+  //   要求 DB/DBManager 可用才执行 bagCleanInit，否则最多重试 40 次 × 500ms（20s）后放弃；失败只记 tlog，绝不抛。
+  function bagCleanBoot(attempt) {
+    try {
+      if (attempt > 40) { try { tlog("bagCleanInit 放弃：客户端背包模块 20s 内始终不可用"); } catch (e0) {} return; }
+      if (!requireDB("DB/DBManager")) { setTimeout(function () { try { bagCleanBoot(attempt + 1); } catch (e1) {} }, 500); return; }
+      if (typeof bagCleanInit === "function") bagCleanInit();
+    } catch (e) { try { tlog("bagCleanInit 异常：" + (e && e.message || e)); } catch (e2) {} }
+  }
+  bagCleanBoot(0); // V2.38.4：启动阶段只发起「就绪探测」，真正初始化等客户端模块可用
   // ---------------- V2.14.0 扩展脚本注册表（独立功能包 register 后系统页自动列出并可开关）----------------
   var ROExtList = {};
   function renderExtList() {
@@ -12616,7 +13650,7 @@
     if (!el) return;
     try {
       if (!window.require) { el.textContent = "客户端未就绪"; return; }
-      var EM = window.require("Renderer/EntityManager");
+      var EM = requireDB("Renderer/EntityManager");
       if (!EM || !EM.forEach) { el.textContent = "实体管理器不可用"; return; }
       var mobs = 0, items = 0, parts = [];
       EM.forEach(function (e) {
@@ -12711,7 +13745,7 @@
   }
   function gameFocusMob() {
     try {
-      var EM = window.require && window.require("Renderer/EntityManager");
+      var EM = requireDB("Renderer/EntityManager");
       var e = EM && EM.getFocusEntity && EM.getFocusEntity();
       if (!e || e.objecttype !== 5 || !e.GID || !EM.get || EM.get(Number(e.GID)) !== e) return null;
       if (e.isDeath || e.remove_tick || (e.ACTION && e.action === e.ACTION.DIE)) return null;
@@ -12883,7 +13917,7 @@
       var bar = ensureTgtBar();
       if (!bar) return;
       bar.style.display = "flex";
-      var EM = null; try { EM = window.require && window.require("Renderer/EntityManager"); } catch (e0) {}
+      var EM = null; try { EM = requireDB("Renderer/EntityManager"); } catch (e0) {}
       var game = gameFocusMob(), gid = zLock && zLock.gid ? zLock.gid : null, assist = null;
       try { if (gid && EM && EM.get) assist = EM.get(Number(gid)); } catch (e1) {}
       var ent = assist || game; // 优先助手锁定，其次游戏画面焦点
@@ -13080,7 +14114,7 @@
     var diffMap = !isSelf && !offline && !!memMap && !!myMap && memMap !== myMap;
     var dead = !isSelf && !offline && !diffMap && (o.dead || (hm > 0 && hp <= 0));
     var mapLabel = memMap;
-    if (memMap) { try { if (!CLIENT.DB) CLIENT.DB = window.require && window.require("DB/DBManager"); if (CLIENT.DB && typeof CLIENT.DB.getMapName === "function") { var _mn = CLIENT.DB.getMapName(memMap); if (_mn && String(_mn) !== memMap) mapLabel = String(_mn); } } catch (e) {} }
+    if (memMap) { try { if (!CLIENT.DB) CLIENT.DB = requireDB("DB/DBManager"); if (CLIENT.DB && typeof CLIENT.DB.getMapName === "function") { var _mn = CLIENT.DB.getMapName(memMap); if (_mn && String(_mn) !== memMap) mapLabel = String(_mn); } } catch (e) {} }
     var bg, label, edgeW;
     if (dead) { bg = "#5a5a5a"; label = "死亡"; edgeW = 0; }
     else if (offline) { bg = "#6b7280"; label = "离线"; edgeW = 0; }
@@ -13110,7 +14144,7 @@
   function dpsSelfAid() { try { return (CLIENT.SS && CLIENT.SS.AID) || 0; } catch (e) { return 0; } }
   function dpsEntName(gid) {
     try {
-      var EM = window.require && window.require("Renderer/EntityManager");
+      var EM = requireDB("Renderer/EntityManager");
       var e = (EM && EM.get) ? EM.get(gid) : null;
       if (!e) return "";
       return (e.display && e.display.name) || e.displayName || e.name || "";
@@ -13243,7 +14277,7 @@
       nm.hookPacket.__dshDpsHook = true;
       dpsTapInstalled = true;
       // 当前地图回调已登记，重跑无副作用的登记函数，使现有六个伤害槽位进入旁路。
-      var entityEngine = window.require && window.require("Engine/MapEngine/Entity");
+      var entityEngine = requireDB("Engine/MapEngine/Entity");
       if (typeof entityEngine === "function") entityEngine();
       dpsSource = dpsParsedSeen ? "parsed" : "ready";
       return true;
@@ -13335,7 +14369,7 @@
   function bossScan() {
     var out = [];
     try {
-      var EM = window.require && window.require("Renderer/EntityManager");
+      var EM = requireDB("Renderer/EntityManager");
       if (!EM || !EM.forEach) return out;
       var ent = CLIENT.SS && CLIENT.SS.Entity;
       var dbx = null; try { dbx = getMobDb(); } catch (e0) {}
@@ -13421,7 +14455,7 @@
       if (!_stNameEnRev) {
         _stNameEnRev = {};
         try {
-          var SC = window.require && window.require("DB/Status/StatusConst");
+          var SC = requireDB("DB/Status/StatusConst");
           if (SC) for (var en in SC) { if (typeof SC[en] === "number" && !_stNameEnRev[SC[en]]) _stNameEnRev[SC[en]] = en; }
         } catch (e2) {}
       }
@@ -13707,7 +14741,7 @@
         // V2.15.30：角色切档检测独立于 UI 渲染——后台标签（UI_BG）也执行，切换角色/重登必然切到该角色专属档
         try {
           var _pEnt = CLIENT.SS && CLIENT.SS.Entity;
-          if (_pEnt && _pEnt.GID != null && gidInt(_pEnt.GID) && (gidInt(_pEnt.GID) !== lastCharGid || charNameOf(_pEnt) !== lastCharName)) { try { onCharChanged(_pEnt); } catch (e2) {} }
+          if (_pEnt && _pEnt.GID != null && gidInt(_pEnt.GID) && (gidInt(_pEnt.GID) !== lastCharGid || selfCharId() !== lastCharId || !selfProfileInSync())) { try { onCharChanged(_pEnt); } catch (e2) {} }
         } catch (e3) {}
         // 登录角色后自动读取内挂配置（一次性，延迟等内挂窗口渲染，读不到重试）
         if (!autoReadBotDone) {
@@ -13747,10 +14781,10 @@
         }
         // 地图变更检测（功能性，后台保留）：换图 → 自动刷新 拾取页当前地图 + 本图锁定目录 + 地图怪物表
         try {
-          if (!CLIENT.MR) CLIENT.MR = window.require && window.require("Renderer/MapRenderer");
+          if (!CLIENT.MR) CLIENT.MR = requireDB("Renderer/MapRenderer");
           var curMap = CLIENT.MR && CLIENT.MR.currentMap ? String(CLIENT.MR.currentMap).split(".")[0] : "";
           if (curMap && curMap !== _lastMapKey) {
-            _lastMapKey = curMap;
+            _lastMapKey = curMap; zReinMapAt = Date.now(); // V2.38.4+：换图瞬间时间戳（自动上马判据⑦「换图/瞬移短窗口」用）
             selfSpirits = { aid: 0, num: 0, map: "" };
             dshDiag("map-change", { map: curMap, zRunning: zRunning, npHuntOn: npHuntOn });
             tlog("map-changed " + curMap);
@@ -14035,22 +15069,15 @@
 
   // V2.12.1：获取当前角色名（优先实体，兜底当前档案名，避免显示占位「角色」）
   function getCurrentCharName() {
-    try {
-      var ent = CLIENT.SS && CLIENT.SS.Entity;
-      if (ent) {
-        // V2.12.3：真实角色名在 ent.display.name（displayName/name 是 undefined）
-        var nm = (ent.display && ent.display.name) || ent.displayName || ent.name || (ent.character && ent.character.name);
-        if (nm && String(nm).trim()) return String(nm).trim();
-      }
-    } catch (e) {}
+    try { var nm0 = selfName(); if (nm0) return nm0; } catch (e0) {} // V2.38.4-身份修复：真名统一走 selfName（实体名/缓存/DB 解析）
     try {
       var pk = activeProfileKey();
       var p = profiles[pk] || profiles["default"];
-      if (p && p.name && String(p.name).trim()) return String(p.name).trim();
+      var pn = (p && p.name) ? String(p.name).trim() : "";
+      if (pn && pn !== "角色" && pn.indexOf("角色_") !== 0) return pn;
     } catch (e) {}
-    return "角色";
+    return "识别中"; // V2.38.4-身份修复：名字未知显示「识别中」，不再用「角色」占位
   }
-
   // 物品类型 → 分类
   function categorizeItemType(type) {
     var map = { 0: "回复", 2: "消耗", 3: "材料", 4: "装备", 5: "装备", 6: "卡片", 7: "其他", 8: "其他", 10: "弹药", 11: "消耗", 18: "其他" };
@@ -14086,7 +15113,7 @@
     } catch (e) {}
     // 兜底：尝试组件（理论上不会走到，保留兼容）
     try {
-      if (!CLIENT.UI) CLIENT.UI = window.require && window.require("UI/UIManager");
+      if (!CLIENT.UI) CLIENT.UI = requireDB("UI/UIManager");
       var UM = CLIENT.UI;
       if (UM) {
         var cands = ["BasicStorage", "Storage", "KafraStorage", "Warehouse", "StorageUI"];
@@ -14699,7 +15726,7 @@
   }
   function scrKillScan() {
     try {
-      var EM = window.require("Renderer/EntityManager");
+      var EM = requireDB("Renderer/EntityManager");
       EM.forEach(function (e) {
         try {
           if (e && e.objecttype === 5 && e.GID) {
@@ -14856,7 +15883,7 @@
   function scrTalkNpc(name) {
     try {
       if (!clientReady()) { scrLogLine("talk: 客户端未就绪"); return; }
-      var EM = window.require("Renderer/EntityManager");
+      var EM = requireDB("Renderer/EntityManager");
       var ent = CLIENT.SS.Entity, target = null, best = 1e9;
       EM.forEach(function (e) {
         try {
@@ -15131,7 +16158,7 @@
   function hookStorageEarly() {
     try {
       if (window.__dshStorageHookedEarly) return true;
-      if (!CLIENT.UI) { try { CLIENT.UI = window.require && window.require("UI/UIManager"); } catch (e) {} }
+      if (!CLIENT.UI) { try { CLIENT.UI = requireDB("UI/UIManager"); } catch (e) {} }
       var UM = CLIENT.UI, inst = null;
       if (UM) {
         try { if (typeof UM.get === "function") inst = UM.get("Storage"); } catch (e) {}
@@ -15251,8 +16278,8 @@
   // V2.36.13 boss 粘性 + 目标防抖：无限初级这类随机刷新图上，目标一抖就换箭会把箭换乱
   var arrowStickyBoss=null,arrowStableKey="",arrowStableAt=0,ARROW_STABLE_MS=1500,ARROW_BOSS_KEEP_MS=30000;
   // V2.36.13：这只怪还在不在场（「打完了」判定用）。实体列表读不到或为空时返回 false，退化成原来的 15 秒超时口径，绝不误判。
-  function arrowMobGone(mid){try{var m=arrowPos(mid);if(!m)return false;var em=CLIENT.EM||(window.require&&window.require("Renderer/EntityManager"));if(!em||!em.forEach)return false;var any=false,found=false;em.forEach(function(e){if(!e)return;any=true;if(Number(e.objecttype)!==5)return;var j=Number(e._job!=null?e._job:(e.job!=null?e.job:e.mobId));if(j===m)found=true;});return any&&!found;}catch(e){return false;}}
-  function arrowBossAlive(mid,gid){try{var em=CLIENT.EM||(window.require&&window.require("Renderer/EntityManager")),found=false;if(!em||!em.forEach)return false;em.forEach(function(e){if(found||!e)return;if(Number(e.objecttype)!==5)return;var j=Number(e._job!=null?e._job:(e.job!=null?e.job:e.mobId));if((mid&&j===mid)||(gid&&gidInt(e.GID)===gid))found=true;});return found;}catch(e){return false;}}
+  function arrowMobGone(mid){try{var m=arrowPos(mid);if(!m)return false;var em=CLIENT.EM||(requireDB("Renderer/EntityManager"));if(!em||!em.forEach)return false;var any=false,found=false;em.forEach(function(e){if(!e)return;any=true;if(Number(e.objecttype)!==5)return;var j=Number(e._job!=null?e._job:(e.job!=null?e.job:e.mobId));if(j===m)found=true;});return any&&!found;}catch(e){return false;}}
+  function arrowBossAlive(mid,gid){try{var em=CLIENT.EM||(requireDB("Renderer/EntityManager")),found=false;if(!em||!em.forEach)return false;em.forEach(function(e){if(found||!e)return;if(Number(e.objecttype)!==5)return;var j=Number(e._job!=null?e._job:(e.job!=null?e.job:e.mobId));if((mid&&j===mid)||(gid&&gidInt(e.GID)===gid))found=true;});return found;}catch(e){return false;}}
   function arrowEffectiveMid(mid,gid,now){var m=arrowPos(mid);if(m&&arrowBoss(m))arrowStickyBoss={mid:m,gid:gidInt(gid)||0,at:now};if(arrowStickyBoss&&now-arrowStickyBoss.at<=ARROW_BOSS_KEEP_MS){var b=arrowStickyBoss;if(b.mid===m){b.at=now;if(gid)b.gid=gidInt(gid)||b.gid;}else if(arrowBossAlive(b.mid,b.gid)){b.at=now;return {mid:b.mid,sticky:true};}else arrowStickyBoss=null;}return {mid:m,sticky:false};}
   function arrowStableGate(key,now){if(arrowStableKey!==key){arrowStableKey=key;arrowStableAt=now;arrowPending=null;arrowSelfPending=null;return false;}return now-arrowStableAt>=ARROW_STABLE_MS;}
   function arrowFill(s){if(!s)return;var old=s.value;s.innerHTML='<option value="">选择背包 type10 箭矢</option>';readBagArrows().forEach(function(x){var o=document.createElement("option");o.value=x.itid;o.textContent=(getItemName(x.itid)||("ITID "+x.itid))+" #"+x.itid+" ×"+x.count;s.appendChild(o);});s.value=old;}
@@ -15364,7 +16391,7 @@
   function apiHas(owner,scope){return !!(apiLease&&apiLease.owner===owner&&apiLease.scopes.indexOf(scope)>=0);}
   function apiCurrent(owner,generation){return !!(apiLease&&apiLease.owner===owner&&apiLease.generation===generation);}
   function externalAutomationOwns(scope){return !!(apiLease&&(!scope||apiLease.scopes.indexOf(scope)>=0));}
-  function apiEntities(){var out=[];try{var em=CLIENT.EM||(window.require&&window.require("Renderer/EntityManager"));if(em&&em.forEach)em.forEach(function(e){if(!e||!e.position)return;var type=Number(e.objecttype),mid=type===5?Number(e._job!=null?e._job:(e.job!=null?e.job:e.mobId)):null;var boss=false;try{var db=getMobDb(),mb=db&&db[mid];boss=!!(mb&&mb.MvpDropsNum>0);}catch(x){}out.push({gid:Number(e.GID),type:type,mid:Number.isFinite(mid)?mid:null,name:String(e.displayName||e.name||(e.display&&e.display.name)||""),position:[Number(e.position[0]),Number(e.position[1])],dead:!!(e.isDeath||e.remove_tick||(e.ACTION&&e.action===e.ACTION.DIE)),isBoss:boss});});}catch(e){}return out;}
+  function apiEntities(){var out=[];try{var em=CLIENT.EM||(requireDB("Renderer/EntityManager"));if(em&&em.forEach)em.forEach(function(e){if(!e||!e.position)return;var type=Number(e.objecttype),mid=type===5?Number(e._job!=null?e._job:(e.job!=null?e.job:e.mobId)):null;var boss=false;try{var db=getMobDb(),mb=db&&db[mid];boss=!!(mb&&mb.MvpDropsNum>0);}catch(x){}out.push({gid:Number(e.GID),type:type,mid:Number.isFinite(mid)?mid:null,name:String(e.displayName||e.name||(e.display&&e.display.name)||""),position:[Number(e.position[0]),Number(e.position[1])],dead:!!(e.isDeath||e.remove_tick||(e.ACTION&&e.action===e.ACTION.DIE)),isBoss:boss});});}catch(e){}return out;}
   function apiDialogOpen(){try{var b=requireDB("UI/Components/NpcBox/NpcBox"),m=requireDB("UI/Components/NpcMenu/NpcMenu");return !!((b&&b.ui&&b.ui.is(":visible"))||(m&&m.ui&&m.ui.is(":visible")));}catch(e){return false;}}
   function apiMenu(){var items=(menuRecon.items||[]).slice(),naid=Number(menuRecon.NAID)||0,time=Number(menuRecon.time)||0,generation=Number(menuRecon.generation)||0;return {naid:naid,items:items,time:time,generation:generation,fingerprint:generation+"@"+time+"|"+naid+"|"+items.map(function(x){return String(x).replace(/\s+/g," ").trim();}).join("|")};}
   function apiSnapshot(owner){if(!apiLease||apiLease.owner!==owner)return null;var me=CLIENT.SS&&CLIENT.SS.Entity,entities=apiEntities(),target=zLock&&gidInt(zLock.gid),menu=apiMenu(),map=getMapName()||"";return {protocol:API_PROTOCOL,ready:clientReady(),map:map,player:me?{gid:Number(me.GID),position:me.position?[Number(me.position[0]),Number(me.position[1])]:null,hp:me.life&&Number(me.life.hp),maxHp:me.life&&Number(me.life.hp_max)}:null,mobs:entities.filter(function(e){return e.type===5&&!e.dead;}),npcs:entities.filter(function(e){return e.type===6||e.type===12;}),target:target||null,inDojoMap:/dojo|challenge|trial|道场|道場/i.test(map),dialogOpen:apiDialogOpen(),menu:menu,battleState:npBattleState(),busy:{assistantCombat:!!zRunning,bagClean:!!(bagClean&&bagClean.busy),movement:!!moveXY.busy},arrow:{enabled:arrowRules.enabled,status:arrowStatus,blocked:arrowBlocked,ready:arrowReady,target:arrowTarget?{mid:arrowTarget.mid,gid:arrowTarget.gid}:null}};}
@@ -15651,12 +16678,13 @@
     try {
       var now = Date.now();
       if (deathGuardRun) { deathGuardStep(now); return; }
-      var ent = CLIENT.SS && CLIENT.SS.Entity, gid = ent && gidInt(ent.GID);
+      var ent = CLIENT.SS && CLIENT.SS.Entity, gid = ent && gidInt(ent.GID), cid = gidInt(CLIENT.SS && CLIENT.SS.GID);
       var dead = !!(ent && (ent.isDeath || (ent.ACTION && ent.action === ent.ACTION.DIE)));
       if (!dead) { deathGuardDead = false; return; }
       if (deathGuardDead) return;
       deathGuardDead = true;
-      if (deathGuardDone || !deathGuardOn() || !clientReady() || !(gid > 0) || gid !== lastCharGid || charNameOf(ent) !== lastCharName) return;
+      // V2.38.4-身份修复：身份判定改按角色 ID（无则回落实体 GID）；名字恒空，绝不再参与判定（其余逻辑逐字不动）。
+      if (deathGuardDone || !deathGuardOn() || !clientReady() || !(gid > 0) || (cid > 0 ? cid !== lastCharId : gid !== lastCharGid)) return;
       if (!(zRunning === true || npBattleState() === true)) return;
       var n = deathGuardCount(now), mins = Math.round(DEATH_GUARD_WINDOW / 60000);
       if (n < DEATH_GUARD_LIMIT) { deathGuardSay("最近 " + mins + " 分钟内第 " + n + " 次死亡（满 " + DEATH_GUARD_LIMIT + " 次自动下线）", "warn"); return; }
@@ -15722,10 +16750,10 @@
     if (deathGuardRun || deathGuardDone) { deathReturnCancel("连续死亡自动下线"); return; } // V2.36.13：连续死亡守卫接管后不再布防
     var opt = $id("dsh-z-deathreturn"), target = deathReturnKey("dsh-z-returnmap"), now = Date.now();
     if (!opt || !opt.checked || !profUIApplied || !target) { deathReturnCancel("设置不完整"); return; }
-    var ent = CLIENT.SS && CLIENT.SS.Entity, life = ent && ent.life, gid = ent && gidInt(ent.GID), map = normMapKey(getMapName());
+    var ent = CLIENT.SS && CLIENT.SS.Entity, life = ent && ent.life, gid = ent && gidInt(ent.GID), cid = gidInt(CLIENT.SS && CLIENT.SS.GID), map = normMapKey(getMapName());
     var hp = life && Number(life.hp), max = life && Number(life.hp_max);
     var dead = !!(ent && (ent.isDeath || (ent.ACTION && ent.action === ent.ACTION.DIE)));
-    if (!clientReady() || !(gid > 0) || gid !== lastCharGid || charNameOf(ent) !== lastCharName || activeProfileKey() === "default" || !map || !life || life.hp == null || life.hp_max == null || !Number.isFinite(hp) || !Number.isFinite(max) || max <= 0 || hp < 0 || hp > max || apiLease || scrRun.running || dojoRun.on || bagClean.busy || moveXY.busy || escapePending()) { deathReturnCancel("角色、生命或操作权不确定"); return; }
+    if (!clientReady() || !(gid > 0) || (cid > 0 ? cid !== lastCharId : gid !== lastCharGid) || activeProfileKey() === "default" || !map || !life || life.hp == null || life.hp_max == null || !Number.isFinite(hp) || !Number.isFinite(max) || max <= 0 || hp < 0 || hp > max || apiLease || scrRun.running || dojoRun.on || bagClean.busy || moveXY.busy || escapePending()) { deathReturnCancel("角色、生命或操作权不确定"); return; }
     // V2.36.13：助手模式只认「助手在跑」，不再要求内挂状态可读（用户在线挂机只用助手模式）；
     // 非助手模式才需要内挂状态：读不到就先做一次「快速校对」拿状态（校对结束一定是关闭），仍未知就明确说一句，不静默。
     var npNow = npBattleState();
@@ -16822,21 +17850,30 @@
   function gearPreset(id) { var d = gearData(); for (var i = 0; i < d.list.length; i++) if (d.list[i].id === id) return d.list[i]; return null; }
   function gearSaveSets() { try { var p = gearP(); if (p) { p.lastAt = Date.now(); saveProfiles(); } } catch (e) {} }
   function gearItid(it) { try { return it ? (it.ITID != null ? it.ITID : it.itemid) : null; } catch (e) { return null; } }
-  function gearRefine(it) { try { var r = it ? (it.RefiningLevel != null ? it.RefiningLevel : it.refine) : 0; return Number(r) || 0; } catch (e) { return 0; } }
+  function gearRefine(it) { try { if (!it) return 0; var r = it.RefiningLevel; if (r == null) r = it.refiningLevel; if (r == null) r = it.Refine; if (r == null) r = it.refine; return Number(r) || 0; } catch (e) { return 0; } }
+  // V2.38.4：客户端物品是 1 起始 Options（{index,value,param}），回放快照另有 0 起始 options（{id,value,param}）；
+  //   旧的「Index0/Value0/Param0 对象分支」是凭空虚构的字段，已删除。空位（全 0）跳过。
   function gearOptions(it) {
     var out = [];
     try {
       if (!it) return out;
-      var src = it.options != null ? it.options : it.Options;
-      if (Array.isArray(src)) {
-        for (var a = 1; a <= 5; a++) { var r = src[a]; if (!r) continue; var ix = r.index != null ? r.index : r.Index, vl = r.value != null ? r.value : r.Value, pm = r.param != null ? r.param : r.Param; if (Number(ix) || Number(vl) || Number(pm)) out.push({ index: Number(ix) || 0, value: Number(vl) || 0, param: Number(pm) || 0 }); }
-      } else if (src && typeof src === "object") {
-        for (var o = 0; o < 5; o++) { var ix0 = src["Index" + o], vl0 = src["Value" + o], pm0 = src["Param" + o]; if (Number(ix0) || Number(vl0) || Number(pm0)) out.push({ index: Number(ix0) || 0, value: Number(vl0) || 0, param: Number(pm0) || 0 }); }
+      var arr = null, base = 1;
+      if (Array.isArray(it.Options)) { arr = it.Options; base = 1; }
+      else if (Array.isArray(it.options)) { arr = it.options; base = 0; }
+      if (!arr) return out;
+      for (var n = base; n <= base + 4; n++) {
+        var r = arr[n];
+        if (!r) continue;
+        var ix = r.index != null ? r.index : r.Index; if (ix == null) ix = r.id;
+        var vl = r.value != null ? r.value : r.Value;
+        var pm = r.param != null ? r.param : r.Param;
+        if (!(Number(ix) || Number(vl) || Number(pm))) continue;
+        out.push({ index: Number(ix) || 0, value: Number(vl) || 0, param: Number(pm) || 0 });
       }
     } catch (e) {}
     return out;
   }
-  function gearEnchantGrade(it) { try { if (!it) return 0; var v = it.enchantgrade; if (v == null) v = it.Enchantgrade; if (v == null) v = it.enchantGrade; if (v == null) v = it.EnchantGrade; return Number(v) || 0; } catch (e) { return 0; } }
+  function gearEnchantGrade(it) { try { if (!it) return 0; var v = it.enchantgrade; if (v == null) v = it.Enchantgrade; if (v == null) v = it.enchantGrade; if (v == null) v = it.EnchantGrade; if (v == null) v = it.grade; if (v == null) v = it.Grade; return Number(v) || 0; } catch (e) { return 0; } }
   function gearCards(it) {
     var out = [];
     try {
@@ -16854,31 +17891,218 @@
       return (it && (it.identifiedDisplayName || it.identifiedDiSPlayName || it.name)) || ("ID " + itid);
     } catch (e) { return "ID " + itid; }
   }
-  function gearWearState(it) { try { var w = it ? (it.WearState != null ? it.WearState : (it.wearState != null ? it.wearState : 0)) : 0; return Number(w) || 0; } catch (e) { return 0; } }
+  function gearWearState(it) { try { if (!it) return 0; var w = it.WearState; if (w == null) w = it.wearState; if (w == null) w = it.location; return Number(w) || 0; } catch (e) { return 0; } }
   function gearInGame() { try { return !!clientReady(); } catch (e) { return false; } }
-  function gearEquipmentComp() { try { return requireDB("UI/Components/Equipment/Equipment"); } catch (e) { return null; } }
-  function gearReadEquipped() {
-    var out = { slots: {}, n: 0, ok: false, why: "装备组件不可用" }, EQ = gearEquipmentComp();
+  function gearEquipmentComp() {
+    try { var c = uiComp("Equipment"); if (c) return c; } catch (e0) {}
+    try { return requireDB("UI/Components/Equipment/Equipment"); } catch (e) { return null; }
+  }
+  function gearInventoryComp() {
+    try { var c = uiComp("Inventory"); if (c) return c; } catch (e0) {}
+    try { var a = requireDB("UI/Components/Inventory/Inventory"); if (a) return a; } catch (e1) {}
+    try { var b = requireDB("UI/Components/BasicInventory/BasicInventory"); if (b) return b; } catch (e2) {}
+    try { var UM = clientUIManager(); if (UM && UM.components) return UM.components.Inventory || UM.components.BasicInventory || null; } catch (e3) {}
+    return null;
+  }
+  function gearSwitchComp() {
+    try { var c = uiComp("SwitchEquip"); if (c) return c; } catch (e0) {}
+    try { return requireDB("UI/Components/SwitchEquip/SwitchEquip"); } catch (e) { return null; }
+  }
+  // isInEquipList 命中时直接是 Item；兼容外面包一层/数组的情况；取不到就 null。
+  function gearPickItem(v) {
     try {
-      if (!EQ || !EQ.ui || typeof EQ.getItemByIndex !== "function") return out;
-      var found = {};
-      for (var s = 0; s < GEAR_SLOTS.length; s++) {
-        var slot = GEAR_SLOTS[s], el = EQ.ui.find(slot.cls.split(",").map(function (c) { return "." + c + " .item[data-index]"; }).join(","));
-        if (!el || !el.length) continue;
-        var idx = Number(el.eq ? el.eq(0).attr("data-index") : el.attr("data-index")); if (!isFinite(idx)) continue;
-        var it = EQ.getItemByIndex(idx); if (!it) continue;
-        if (!found[idx]) found[idx] = { it: it, mask: 0 }; found[idx].mask |= slot.m;
+      if (!v) return null;
+      if (Array.isArray(v)) { for (var a = 0; a < v.length; a++) { var x = v[a]; if (x && (x.ITID != null || x.itemid != null)) return x; } return null; }
+      if (typeof v === "object") {
+        var it = v.item || v.Item || null;
+        if (it && (it.ITID != null || it.itemid != null)) return it;
+        if (v.ITID != null || v.itemid != null) return v;
       }
+    } catch (e) {}
+    return null;
+  }
+  function gearEqRoot(EQ) { try { if (!EQ || typeof EQ.getRoot !== "function") return null; var r = EQ.getRoot(); return r || null; } catch (e) { return null; } }
+  // V2.38.4 硬约束：槽位 DOM 索引一律走 EQ.getRoot().querySelector(".槽位 .item[data-index]")，
+  //   不再使用模块代理里根本不存在的 .ui.find(...).eq(0).attr(...) 写法。
+  function gearDomIdx(root, cls) {
+    try {
+      if (!root || typeof root.querySelector !== "function") return null;
+      var el = root.querySelector("." + cls + " .item[data-index]");
+      if (!el) return null;
+      var v = (el.getAttribute && el.getAttribute("data-index") != null) ? el.getAttribute("data-index") : (el.dataset ? el.dataset.index : null);
+      if (v == null || v === "") return null;
+      var n = Number(v);
+      return isFinite(n) ? n : null;
+    } catch (e) { return null; }
+  }
+  var gearSwFillAt = 0;
+  // SwitchEquip._list 是公开属性（227478/227595，key=背包 index）；为空时用组件自己的 equipItemsToSwitch() 灌满。
+  //   onRemove 会清空它、且内部 SwitchEquip.equip 在 location 缺失时会 querySelector("") 抛错 → 全部包住并限流。
+  function gearSwitchList() {
+    try {
+      var SW = gearSwitchComp();
+      if (!SW) return null;
+      var L = SW._list;
+      var empty = true;
+      try { empty = !(L && typeof L === "object" && Object.keys(L).length); } catch (e0) { empty = true; }
+      if (empty && typeof SW.equipItemsToSwitch === "function") {
+        var now = Date.now();
+        if (now - gearSwFillAt > 3000) {
+          gearSwFillAt = now;
+          try { SW.equipItemsToSwitch(); } catch (e1) {}
+        }
+        L = SW._list;
+      }
+      return (L && typeof L === "object") ? L : null;
+    } catch (e) { return null; }
+  }
+  function gearSwitchItem(idx) {
+    try { if (idx == null) return null; var L = gearSwitchList(); return L ? (L[idx] || null) : null; } catch (e) { return null; }
+  }
+  function gearSwitchByMask(mask) {
+    try {
+      var L = gearSwitchList();
+      if (!L) return null;
+      for (var k in L) { var it = L[k]; if (it && (Number(it.location) & mask)) return it; }
+    } catch (e) {}
+    return null;
+  }
+  // 最后的只读兜底：window.__lastroDiagnostics.inventoryEvents[*].items[]（只有 index/ITID/location/WearState）。
+  function gearDiagItems() {
+    try {
+      var d = window.__lastroDiagnostics;
+      var ev = d && d.inventoryEvents;
+      if (!Array.isArray(ev) || !ev.length) return [];
+      for (var i = ev.length - 1; i >= 0; i--) { var its = ev[i] && ev[i].items; if (Array.isArray(its) && its.length) return its; }
+    } catch (e) {}
+    return [];
+  }
+  function gearDiagFind(items, mask) {
+    try {
+      for (var i = 0; i < items.length; i++) {
+        var it = items[i] || {};
+        var loc = Number(it.location != null ? it.location : it.WearState);
+        if (isFinite(loc) && loc > 0 && (loc & mask)) return it;
+      }
+    } catch (e) {}
+    return null;
+  }
+  // V2.38.4-装备读取修复（只读内存/DOM，不发包）：
+  //   Equipment 组件没有 getItemByIndex，也没有 .ui.find(...).eq(0).attr(...) 这套代理写法 → 旧路径必然失败。
+  //   按诊断定案的真实优先级读每个槽：
+  //     ① EQ.isInEquipList(mask)（V3/V4 才有；V0~V2 不存在或恒返回 0）
+  //     ② 槽位 DOM 索引 → bagItemByIndex(idx)（Inventory 只留箭矢/卡片）
+  //     ③ SW._list[idx]（SwitchEquip 公开属性）
+  //     ④ window.__lastroDiagnostics.inventoryEvents[*].items[]
+  //   每槽记录来源路线（isInEquipList / inventory / switchEquip / inventoryEvents / domOnly / missing）与失败原因；
+  //   ok 只在「至少读到 1 个槽」时为 true —— 一个槽都没读到绝不是「已穿 0 件」的成功。
+  function gearReadEquipped() {
+    var out = { slots: {}, n: 0, ok: false, why: "", routes: {}, missWhy: {}, missing: [] };
+    var bad = [];
+    try {
+      var EQ = gearEquipmentComp(), root = gearEqRoot(EQ), INV = null;
+      try { INV = uiComp("Inventory"); } catch (eA) { INV = null; }
+      var SW = gearSwitchComp();
+      var canIso = !!(EQ && typeof EQ.isInEquipList === "function");
+      if (!EQ) bad.push("Equipment 组件不可用（uiComp / requireDB 都拿不到）");
+      if (!canIso) bad.push("该客户端没有 EQ.isInEquipList");
+      if (!root) bad.push("装备窗口 DOM 不可用（组件未渲染或没有 getRoot）");
+      if (!INV) bad.push("Inventory 组件不可用");
+      if (!SW) bad.push("SwitchEquip 组件不可用");
+      var diag = null, diagDone = false;
       for (var s2 = 0; s2 < GEAR_SLOTS.length; s2++) {
-        var slot2 = GEAR_SLOTS[s2], el2 = EQ.ui.find(slot2.cls.split(",").map(function (c) { return "." + c + " .item[data-index]"; }).join(","));
-        if (!el2 || !el2.length) continue;
-        var idx2 = Number(el2.eq ? el2.eq(0).attr("data-index") : el2.attr("data-index")), hit = found[idx2]; if (!hit) continue;
-        var realMask = gearWearState(hit.it) || hit.mask;
-        out.slots[slot2.m] = { itid: gearItid(hit.it), refine: gearRefine(hit.it), cards: gearCards(hit.it), options: gearOptions(hit.it), enchantgrade: gearEnchantGrade(hit.it), idx: idx2, name: gearName(gearItid(hit.it)), wearLocation: realMask, instanceKey: "idx:" + idx2 }; out.n++;
+        var slot = GEAR_SLOTS[s2], mask = slot.m, cls = slot.cls;
+        var it = null, idx = null, route = "", why = "";
+        if (canIso) {
+          try {
+            it = gearPickItem(EQ.isInEquipList(mask));
+            if (it) route = "isInEquipList";
+          } catch (e1) { why = "isInEquipList 异常：" + (e1 && e1.message ? e1.message : e1); }
+        }
+        var domIdx = gearDomIdx(root, cls);
+        if (!it) {
+          if (domIdx == null) why = why || (root ? "槽内没有 .item[data-index]（空槽）" : "装备窗口 DOM 不可用");
+          else {
+            var invIt = bagItemByIndex(domIdx);
+            if (invIt) { it = invIt; route = "inventory"; }
+            if (!it) { var swIt = gearSwitchItem(domIdx); if (swIt) { it = swIt; route = "switchEquip"; } }
+            if (!it) {
+              if (!diagDone) { diagDone = true; diag = gearDiagItems(); }
+              var dIt = gearDiagFind(diag, mask);
+              if (dIt) { it = { ITID: (dIt.ITID != null ? dIt.ITID : dIt.itemid), index: (dIt.index != null ? dIt.index : domIdx), location: dIt.location, WearState: dIt.WearState }; route = "inventoryEvents"; }
+            }
+            if (!it) { route = "domOnly"; why = why || "槽内有装备 DOM，但 index→item 的几条路线都拿不到对象"; }
+          }
+        }
+        if (it && gearItid(it) == null) { it = null; route = "domOnly"; why = "取到的对象没有 ITID"; }
+        if (!it) {
+          out.routes[mask] = route || "missing";
+          out.missWhy[mask] = why || "未读到";
+          out.missing.push(gearSlotName(mask));
+          continue;
+        }
+        idx = it.index == null ? domIdx : Number(it.index);
+        if (idx == null || !isFinite(idx)) idx = (domIdx == null ? null : domIdx);
+        var sid = gearItid(it);
+        out.slots[mask] = {
+          itid: sid, refine: gearRefine(it), cards: gearCards(it), options: gearOptions(it), enchantgrade: gearEnchantGrade(it),
+          idx: idx, name: gearName(sid), wearLocation: (gearWearState(it) || mask),
+          instanceKey: (idx == null ? ("sig:" + sid + "/" + gearRefine(it) + "/" + gearCards(it).join(",")) : ("idx:" + idx))
+        };
+        out.routes[mask] = route || "inventoryEvents";
+        out.n++;
       }
-      out.ok = true; out.why = "";
-    } catch (e) { out.why = "装备槽读取失败：" + (e && e.message ? e.message : e); }
+      out.ok = (out.n > 0);
+      if (out.ok) out.why = "";
+      else out.why = "装备读取失败：一个槽都没读到（0 槽不是成功）；" + bad.join("；");
+    } catch (e) { out.ok = false; out.n = 0; out.why = "装备槽读取失败：" + (e && e.message ? e.message : e); }
     return out;
+  }
+  // V2.38.4-读取诊断：把「每槽路线与值 / missing / ok 与 why / 档键+charId+角色名 / bagList 命中的路线与件数 /
+  //   本服 Equipment 组件名」拼成一段可复制的文本（用户回传排查用；纯只读，不发包）。
+  function gearDiagText() {
+    var L = [];
+    try {
+      var eq = gearReadEquipped(), EQ = gearEquipmentComp(), UM = clientUIManager();
+      L.push("RO助手 v" + VER + " 换装读取诊断 · " + new Date().toLocaleString());
+      L.push("档键=" + (activeProfileKey() || "") + " · charId=" + selfCharId() + " · 角色名=" + (gearCharLabel() || ""));
+      L.push("装备读取 ok=" + (eq.ok ? "true" : "false") + " · 读到 " + eq.n + " 槽 · why=" + (eq.why || "无"));
+      for (var s3 = 0; s3 < GEAR_SLOTS.length; s3++) {
+        var m3 = GEAR_SLOTS[s3].m, sl = eq.slots[m3] || null;
+        var val = sl ? ("itid=" + sl.itid + " 精炼=" + sl.refine + " 卡=" + (sl.cards || []).join("/") + " 词条=" + (sl.options || []).length + " 附魔=" + sl.enchantgrade + " idx=" + sl.idx + " 名=" + sl.name) : ("值=未读到：" + ((eq.missWhy || {})[m3] || ""));
+        L.push("槽 " + GEAR_SLOTS[s3].name + "(" + m3 + "/." + GEAR_SLOTS[s3].cls + ") 路线=" + ((eq.routes || {})[m3] || "missing") + " · " + val);
+      }
+      L.push("missing=" + ((eq.missing && eq.missing.length) ? eq.missing.join("、") : "无"));
+      var bagOk = null; try { bagOk = bagList(); } catch (e2) { bagOk = null; }
+      L.push("背包数据源=" + (bagRead.source || "未读取") + " · " + bagRead.count + " 件 · 箭矢 " + bagRead.arrows + " 种 · list=" + (bagOk ? "可读" : "读不到"));
+      var eqName = "";
+      try { eqName = EQ ? String(EQ.name || "无名") : "不可用（uiComp(Equipment) 与 requireDB 都拿不到）"; } catch (e3) { eqName = "异常"; }
+      L.push("Equipment 组件名=" + eqName);
+      L.push("UIManager=" + (UM ? "可达（StatusIcons.manager）" : "不可达") + " · Inventory=" + (gearInventoryComp() ? "可达" : "不可达") + " · SwitchEquip=" + (gearSwitchComp() ? "可达" : "不可达") + " · 槽位DOM=" + (gearEqRoot(EQ) ? "有" : "无") + " · isInEquipList=" + ((EQ && typeof EQ.isInEquipList === "function") ? "有" : "无"));
+      // V2.38.4-审计修正（F6）：只读诊断 —— charId 是否可用 + 未认领的老档清单（便于用户/支持定位「为什么没认领」）
+      var cidD = selfCharId();
+      L.push("识别状态：" + (cidD > 0 ? ("charId 可用（" + cidD + "），档键=ch" + cidD) : "charId 未就绪 → 未识别：不新建档、不切档、不认领，换装已暂停"));
+      var oldD = [], curD = activeProfileKey();
+      try {
+        for (var kD in profiles) {
+          if (kD === curD) continue;
+          var pD = profiles[kD];
+          if (!pD || typeof pD !== "object") continue;
+          if (gidInt(pD.charId) > 0) continue; // 已带 charId 的档不是老档
+          if (!(pD.gearSets && typeof pD.gearSets === "object")) continue; // 只列带换装预设的老档
+          oldD.push(kD);
+        }
+      } catch (eOld) {}
+      L.push("未认领旧档：" + (oldD.length ? (oldD.slice(0, 8).join("、") + (oldD.length > 8 ? " 等 " + oldD.length + " 个" : "")) : "无"));
+    } catch (e) { L.push("诊断异常：" + (e && e.message ? e.message : e)); }
+    return L.join("\n");
+  }
+  function gearReadDiag() {
+    var txt = "";
+    try { txt = gearDiagText(); } catch (e) { txt = "读取诊断生成失败：" + (e && e.message ? e.message : e); }
+    try { var box = $id("dsh-gear-diagbox"); if (box) { box.style.display = "block"; box.value = txt; box.focus(); box.select(); } } catch (e0) {}
+    try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt); } catch (e1) {}
+    gearLog("已生成读取诊断（已尝试复制到剪贴板；下方文本框可手动全选复制）");
   }
   function gearSigEqual(a, b) {
     if (!(a && b && Number(a.itid) === Number(b.itid) && (Number(a.refine) || 0) === (Number(b.refine) || 0) && (a.cards || []).join(",") === (b.cards || []).join(","))) return false;
@@ -16890,7 +18114,7 @@
     var inv = findInventory(); if (!inv) return null; var want = { itid: itid, refine: refine, cards: cards || [] }, worn = gearReadEquipped();
     if (options !== undefined) want.options = options || [];
     if (enchantgrade !== undefined) want.enchantgrade = Number(enchantgrade) || 0;
-    reserved = reserved || {}; for (var wm in worn.slots) reserved[worn.slots[wm].idx] = true;
+    reserved = reserved || {}; for (var wm in worn.slots) if (worn.slots[wm].idx != null) reserved[worn.slots[wm].idx] = true; // V2.38.4：worn 占位只在本次会话内、且有真实 idx 时生效
     for (var i = 0; i < inv.length; i++) {
       var it = inv[i] || {}, idx = Number(it.index != null ? it.index : i);
       if (reserved && reserved[idx]) continue;
@@ -16987,8 +18211,19 @@
       renderGearAll();
     });
   }
+  // V2.38.4-身份修复：当前角色已识别、且当前档已绑定到它，才允许换装（charId 无效 / 档键不是 ch<charId> / 档不存在 → 拒绝）。
+  function gearIdentified() {
+    try {
+      var cid = selfCharId();
+      if (!(cid > 0)) return false;
+      if (activeProfileKey() !== ("ch" + cid)) return false;
+      return !!profiles[activeProfileKey()];
+    } catch (e) { return false; }
+  }
   function gearApply(id, viaKey) {
     if (gearBusy) { setStatus("换装/换卡册进行中，请稍候", "warn"); return false; }
+    // V2.38.4-身份修复：未识别当前角色时停下，绝不按空档的空预设发包（「应用」与「快捷键换装」都走这里）。
+    if (typeof gearIdentified === "function" && !gearIdentified()) { setStatus("未识别当前角色，已暂停换装", "warn"); gearLog("未识别当前角色，已暂停换装"); return false; }
     var ps = gearPreset(id);
     if (!ps) { setStatus("换装：找不到预设", "err"); return false; }
     if (!gearInGame()) { setStatus("换装「" + ps.name + "」：还没进入游戏", "err"); return false; }
@@ -17011,7 +18246,7 @@
         if (!group) { group = byInstance[key] = { key: key, want: want, mask: 0 }; targets.push(group); }
         group.mask |= m;
       }
-      if (have && !offSeen[have.instanceKey || ("idx:" + have.idx)]) { offSeen[have.instanceKey || ("idx:" + have.idx)] = true; offs.push({ idx: have.idx, name: have.name }); }
+      if (have && have.idx != null && !offSeen[have.instanceKey || ("idx:" + have.idx)]) { offSeen[have.instanceKey || ("idx:" + have.idx)] = true; offs.push({ idx: have.idx, name: have.name }); }
     }
     for (var t0 = 0; t0 < targets.length; t0++) {
       var target = targets[t0], cand = gearFindInvItem(target.want.itid, target.want.refine, target.want.cards, reserved, target.want.options, target.want.enchantgrade);
@@ -17124,11 +18359,28 @@
       b.style.color = hk ? "#111" : "#8a8a8a";
     }
   }
+  function gearCharLabel() {
+    try {
+      if (!(selfCharId() > 0)) return "识别中"; // V2.38.4-身份修复：角色 ID 未就绪 = 未识别
+      var nm = selfName();
+      if (nm) return nm;
+      var p = gearP(); // 迁移过来的旧档里通常还留着真名
+      var pn = (p && p.name) ? String(p.name) : "";
+      if (pn && pn !== "角色" && pn.indexOf("角色_") !== 0 && !/^ch\d+$/.test(pn)) return pn;
+      return "识别中";
+    } catch (e) { return "识别中"; }
+  }
   function renderGearStatus() {
     var el = $id("dsh-gear-cur"); if (!el) return;
-    var p = gearP(), eq = gearReadEquipped(), parts = [];
+    var eq = gearReadEquipped(), parts = [];
     for (var s = 0; s < GEAR_SLOTS.length; s++) { var m = GEAR_SLOTS[s].m; if (eq.slots[m]) parts.push(gearSlotName(m) + ":" + eq.slots[m].name + (eq.slots[m].refine ? "+" + eq.slots[m].refine : "") + (eq.slots[m].options && eq.slots[m].options.length ? "/词条" + eq.slots[m].options.length : "") + (eq.slots[m].enchantgrade ? "/附魔+" + eq.slots[m].enchantgrade : "")); }
-    el.textContent = "角色 " + ((p && p.name) || "未识别") + " · 已穿 " + eq.n + " 件" + (parts.length ? "（" + parts.join(" · ") + "）" : "") + " · 预设 " + gearData().list.length + " 套" + (gearBusy ? " · 执行中…" : "");
+    var errTail = "";
+    if (!eq.ok) { // V2.38.4：读取失败必须显示原因；一个槽都没读到还要把 missing 逐槽列出来，绝不显示成「已穿 0 件」的正常态
+      errTail = " · 读取失败：" + (eq.why || "未知");
+      var missTxt = (eq.missing && eq.missing.length) ? eq.missing.join("、") : "";
+      if (missTxt) errTail += " · 未读到：" + missTxt;
+    }
+    el.textContent = "角色 " + gearCharLabel() + " · 已穿 " + eq.n + " 件" + (parts.length ? "（" + parts.join(" · ") + "）" : "") + " · 预设 " + gearData().list.length + " 套" + (gearBusy ? " · 执行中…" : "") + errTail;
   }
   function renderGearList() {
     var el = $id("dsh-gear-list"); if (!el) return;
@@ -17183,18 +18435,18 @@
     if (h) { renderGearAll(); return h; }
     h = document.createElement("div"); h.id = "dsh-fw-gear";
     h.innerHTML = '<div class="sec">一键换装 · 卡册</div>'
-      + '<div class="row" style="gap:4px;flex-wrap:wrap"><button id="dsh-gear-read" class="green" style="flex:0 0 auto">读取当前配置</button><button id="dsh-gear-refresh" class="ghost" style="flex:0 0 auto">刷新</button></div>'
+      + '<div class="row" style="gap:4px;flex-wrap:wrap"><button id="dsh-gear-read" class="green" style="flex:0 0 auto">读取当前配置</button><button id="dsh-gear-refresh" class="ghost" style="flex:0 0 auto">刷新</button><button id="dsh-gear-diag" class="ghost" style="flex:0 0 auto">读取诊断</button></div>'
       + '<div id="dsh-gear-cur" class="st" style="font-size:11px"></div>'
+      + '<textarea id="dsh-gear-diagbox" readonly style="display:none;width:100%;height:110px;font-size:11px;font-family:monospace;margin-top:4px"></textarea>'
       + '<div id="dsh-gear-list"></div>'
       + '<div id="dsh-gear-log" class="st" style="font-size:11px;color:#444"></div>'
-      + '<div class="log">用法：在游戏里穿好一套装备、并在「卡片典藏 → 我的卡组」激活好要用的卡，点「读取当前配置」记成一套预设（名字可改）；之后点「应用」或按该预设自己的快捷键即可一键切回。每套预设都能单独设快捷键（点键位按钮 → 按组合键；右键清除）。</div>'
-      + '<div class="log">存储：预设按角色档案（角色名_GID）保存，换角色自动读该角色的预设；同一账号换浏览器 / 换入口时，档案经本机 8899 中继（dsh_ro_profiles_v2，5 秒一轮 last-write-wins）自动读回，不需要重新配置。快捷键也存在 dsh_ro_hotkeys_v2 里，同样随中继同步。</div>'
-      + '<div class="log">执行细节：装备只发客户端的穿/脱包（等于你手动点装备，同精炼/同插卡优先匹配）；卡册只做「加入卡组 / 从卡组移除」（可逆）。永不发「充能」包——充能会吃掉卡片，不可逆。读卡册时会短暂打开「卡片典藏」窗口，读完自动收回（原本开着的保持开着）。</div>'
-      + '<div class="log">限制：背包里没有预设要求的那件装备时该槽会跳过并在状态里列出；执行期间约每 0.38 秒发一个包，遇到战斗请自行判断时机。</div>';
+      + '<div class="log">用法：游戏里穿好一套装备、在「卡片典藏 → 我的卡组」激活好卡组，点「读取当前配置」存成预设（可改名、可配快捷键），之后点「应用」或按快捷键切回。预设按角色分开保存。</div>'
+      + '<div class="log">限制：只调整身上的装备和卡组；不使用背包卡片充能（不会消耗卡片）；读卡组时会短暂打开「卡片典藏」；背包里缺的那件会跳过并列出；切换有间隔，战斗中自行看时机。</div>'
     var dock = $id("dsh-gear-dock");
     if (!dock) { dock = document.createElement("div"); dock.id = "dsh-gear-dock"; dock.style.display = "none"; document.documentElement.appendChild(dock); }
     dock.appendChild(h);
     onId("dsh-gear-read", "click", function () { gearReadCurrent(); });
+    onId("dsh-gear-diag", "click", function () { gearReadDiag(); });
     onId("dsh-gear-refresh", "click", function () { renderGearAll(); gearLog("已刷新（角色：" + ((gearP() || {}).name || "未识别") + "）"); });
     renderGearAll();
     return h;
@@ -17236,12 +18488,31 @@
   function kvMarkLocal(key, value) { try { if (arguments.length < 2) value = localStorage.getItem(key); if (KV_PREV && typeof KV_PREV === "object") KV_PREV[key] = value; var ts = Date.now(), pre = (typeof KV_TS_PRE === "string" && KV_TS_PRE) ? KV_TS_PRE : "dsh_kv_ts_"; localStorage.setItem(pre + key, String(ts)); return ts; } catch (e) { return 0; } }
   function kvTs(key) { try { var t = parseInt(localStorage.getItem(KV_TS_PRE + key), 10); return (isFinite(t) && t > 0) ? t : 0; } catch (e) { return 0; } }
   function kvSetTs(key, t) { try { localStorage.setItem(KV_TS_PRE + key, String(t)); } catch (e) {} }
+  // V2.38.4-身份修复：中继来的 dsh_ro_last_active 必须先验证是不是「当前这个角色」的档，
+  //   否则多开/跨入口会被别的窗口把本窗口切成对方角色（浮窗显示对方名字、按对方预设换装）。
+  function kvRelayKeyAllowedForSelf(ak) {
+    try {
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      var gid = gidInt(ent && ent.GID);
+      var cid = selfCharId();
+      if (!ent || !(gid > 0) || !(cid > 0)) return true; // 还没进游戏 / 未识别：可采纳
+      var p = profiles[ak];
+      if (!p || typeof p !== "object") return false;
+      var pcid = gidInt(p.charId);
+      if (pcid > 0) return pcid === cid; // 新档：charId 必须与当前角色一致
+      return gidInt(p.gid) === gid; // 老档无 charId：比实体 GID
+    } catch (e) { return true; }
+  }
   function kvRefreshProfile() {
     try {
       profiles = loadProfiles();
       var ak = localStorage.getItem("dsh_ro_last_active");
-      if (ak && profiles[ak]) activeCharKey = ak;
-      else if (!profiles[activeCharKey]) activeCharKey = "default";
+      if (ak && profiles[ak] && kvRelayKeyAllowedForSelf(ak)) activeCharKey = ak;
+      else {
+        // 别人的键：忽略，并立即把本地正确值写回 localStorage（下一轮同步推回去）
+        if (ak && !kvRelayKeyAllowedForSelf(ak)) { try { localStorage.setItem("dsh_ro_last_active", activeCharKey); } catch (e0) {} }
+        if (!profiles[activeCharKey]) activeCharKey = "default";
+      }
       ensureProfile(activeCharKey); saved = loadSaved(); lockList = profiles[activeCharKey].lockList || {}; askList = profiles[activeCharKey].askList = profiles[activeCharKey].askList || []; profMemKey = activeCharKey;
       if (panel && panel.style.display !== "none") applyProfileUI();
       try { renderLockList(); renderAskList(); renderGearAll(); } catch (e1) {}
@@ -17284,10 +18555,10 @@
   function readQuestSnapshot() {
     try {
       var Quest = null;
-      try { Quest = window.requirejs && window.requirejs("UI/Components/Quest/Quest"); } catch (e1) {}
-      if (!Quest || !Array.isArray(Quest.list)) { try { Quest = window.require && window.require("UI/Components/Quest/Quest"); } catch (e2) {} }
+      try { Quest = requireDB("UI/Components/Quest/Quest"); } catch (e1) {}
+      if (!Quest || !Array.isArray(Quest.list)) { try { Quest = requireDB("UI/Components/Quest/Quest"); } catch (e2) {} }
       if (!Quest || !Array.isArray(Quest.list)) return null;
-      var DB = CLIENT.DB || (window.require && window.require("DB/DBManager")) || (window.requirejs && window.requirejs("DB/DBManager"));
+      var DB = CLIENT.DB || (requireDB("DB/DBManager")) || (requireDB("DB/DBManager"));
       var account = getInventoryAccount();
       var charName = getCurrentCharName();
       var tasks = [];
@@ -17456,4 +18727,5 @@
   });
   setTimeout(function () { try { goldenAutoRecover(); } catch (e) {} }, 6000);
   init();
+  } // roAssistMain 结束：启动引导整体在 try/catch 内，助手异常绝不冒泡到宿主页面
 })();

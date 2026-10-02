@@ -479,9 +479,10 @@ test('V2.38.7 9a 启动期（未进游戏）不刷「角色未识别」，已进
 test('V2.38.8 结构断言：版本与 EOL 不变量（两文件）', () => {
   const stable = readSrc('ro-assist.user.js'), exp = readSrc('ro-assist-exp.user.js');
   for (const [name, src] of [['stable', stable], ['exp', exp]]) {
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.8', name + ' @version 必须是 2.38.8');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.8', name + ' VER 必须是 2.38.8');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.9', name + ' @version 必须是 2.38.9');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.9', name + ' VER 必须是 2.38.9');
     assert.ok(src.includes('// ---------------- V2.38.8 变更摘要 ----------------'), name + ' 必须有 V2.38.8 变更摘要');
+    assert.ok(src.includes('// ---------------- V2.38.9 变更摘要 ----------------'), name + ' 必须有 V2.38.9 变更摘要（视角控制 + 审计收尾）');
     assert.ok(src.includes('// ---------------- V2.38.7 变更摘要 ----------------'), name + ' V2.38.7 摘要必须保留（历史批次不删）');
     assert.ok(src.includes('170: 9, 2256: 9, 2457: 11, 172: 7, 2257: 7, 2458: 9'), name + ' 必须有补充长度表（穿脱确认）');
     assert.ok(src.includes('2824: -1, 2825: -1, 2826: -1, 2827: 4, 2873: -1'), name + ' 必须有补充长度表（分流式 itemlist 家族）');
@@ -603,8 +604,8 @@ test('V2.38.7 G13 分流整表 0x0b39：真字节 481B / 7 条逐字段（无类
   }
 });
 
-// ================= F4 加固：同族 EQUIP 67B 版（0x0b36/2826）真字节构造 =================
-//   逐字对齐客户端 src/UI/Components/WorldMap（_dist/new-engine-local/www/Online.js 173672-173710，EQUIP，item_size=67）：
+// ================= F4 加固：同族 EQUIP 67B 版（0x0b0a/2826）真字节构造 =================
+//   逐字对齐客户端 src/Network/PacketStructure.js（SPLIT_SEND_ITEMLIST_EQUIP 类定义处；_dist/new-engine-local/www/Online.js 173672-173710 为打包同源）：
 //   op@0 total@2 invType@4 记录自 @5；记录内：index i16@0 · ITID u32@2 · type u8@6 · location u32@7 · WearState u32@11 ·
 //   RefiningLevel u8@15（紧跟 WearState）· card1..4 u32@16/20/24/28 · HireExpireDate i32@32 · bind u16@36 · sprite u16@38 ·
 //   nRandomOptionCnt i8@40 · Options[1..5] @41..65 · flag u8@66（无 enchantgrade）。
@@ -631,7 +632,7 @@ function equip67Frame(recs, invType) {
   recs.forEach((r, i) => writeSplitEquipRec(dv, 5 + i * 67, r));
   return buf;
 }
-test('V2.38.8 G20 分流装备整表 67B 版（0x0b36/2826，F4 加固）：偏移与「无 enchantgrade → 未知」口径（两文件）', () => {
+test('V2.38.8 G20 分流装备整表 67B 版（0x0b0a/2826，F4 加固）：偏移与「无 enchantgrade → 未知」口径（两文件）', () => {
   const REC1 = { index: 1, itid: 1101, type: 4, wearMask: 2, refine: 7, cards: [4001], expire: 111, bind: 1, sprite: 90, options: [{ index: 1, value: 5, param: 2 }], identified: true };
   for (const [name, src] of splitSources) {
     const B = world(src, { ps: null }); // 审计 #5：不依赖客户端类名索引，只走数字兜底表
@@ -663,13 +664,27 @@ test('V2.38.8 G20 分流装备整表 67B 版（0x0b36/2826，F4 加固）：偏�
     assert.equal(w.ver, 6, name + ' 家族标号 v6');
     assert.equal(w.src, 'packet', name + ' 来源');
     assert.equal(B.packets.length, 0, name + ' 解析全程零发包');
+    // V2.38.9 审计 F2：日志快照必须在 2873 覆盖之前定死（原来 p/w 是活引用，覆盖后「67B 一行」会印出 rec=68，日志撒谎）
+    const snap67 = { rec: p.rec, n: p.n, refine: w.refine, enchantKnown: w.enchantKnown, listOp: p.listOp, cards: B.blob(w.cards) };
+    // F3（第三轮）：守护不许自证 —— 断言**产品日志原文**。产品那一行是
+    //   identityLogLine("gear-pkt-split op=" + op + " invType=0 rec=" + f.rec + " n=" + cnt + " slots=… complete=…")
+    // 把产品里的 rec= 去掉，本用例必须变红（本轮已实测：去 rec= → gear 用例红）。
+    assert.ok(B.log.some(m => m.indexOf("gear-pkt-split op=2826") >= 0 && m.indexOf("rec=67") >= 0),
+      name + ' F3：产品日志必须写下 67B 那一版（op=2826 + rec=67），实际尾部：' + B.log.slice(-3).join(' | '));
     // 真机口径（本服走 2873 68B）：随后到达的 2873 必须覆盖为 68B 版，且 68B 版附魔已知
     B.W.dispatchInbound(split2Frame(SPLIT2_SEVEN(), 0));
     assert.equal(B.W.gearPkt.rec, 68, name + ' 随后 2873 必须覆盖为 68B 版');
     assert.equal(B.W.gearPkt.n, 7, name + ' 2873 条数 7');
     assert.equal(B.W.gearPkt.slots[2].enchantKnown, true, name + ' 68B 版附魔已知');
     assert.equal(B.W.gearPkt.slots[2].enchantgrade, 3, name + ' 68B 版附魔等级');
-    console.log('[分流 67B][' + name + '] 0x0b36 72B → rec=' + p.rec + ' n=' + p.n + ' 精炼@15=' + w.refine + ' enchantKnown=' + w.enchantKnown);
+    // F2 可失败性（回应审计）：同一行若按「活引用」拼，现在必须以 68/已知 现身——两条路必须可区分，
+    //   于是「日志读的是快照」这句话第一次真的能被断言证伪（照着 copy 断言 copy 永远不可能失败）。
+    // 覆盖之后：产品那条 67B 日志行必须仍是 rec=67（活对象已经变成 68/已知，所以这条断言是可失败的）
+    assert.ok(B.log.some(m => m.indexOf("gear-pkt-split op=2826") >= 0 && m.indexOf("rec=67") >= 0),
+      name + ' F3：2873 覆盖之后，产品那条 67B 日志行必须仍是 rec=67（拒绝被覆盖成 68）');
+    assert.ok(p.rec === 68 && B.W.gearPkt.slots[2].enchantKnown === true,
+      name + ' F3 对照：活对象此刻必须已经变成 68B/附魔已知（否则上面那条断言没有意义）');
+    console.log('[分流 67B][' + name + '] 产品日志：' + B.log.filter(m => m.indexOf('gear-pkt-split op=2826') >= 0).join(' | '));
   }
   mutantKill('M21 EQUIP 67B 版偏移当 68B 用（卡片/到期/词条整体错位）',
     '    equip:  { card: 16, expire: 32, bind: 36, sprite: 38, cnt: 40, opt: 41, refine: 15, ench: -1, flag: 66 }',

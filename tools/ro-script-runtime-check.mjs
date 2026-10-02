@@ -212,10 +212,11 @@ function tpWorld(src,over,opt){
     getMapName:()=>o.map||'prontera',normMapKey:m=>String(m||'').replace(/\.(gat|rsw)$/i,'').toLowerCase(),
     setInterval:fn=>{ivFn=fn;return 1;},clearInterval:()=>{ivFn=null;}};
   if(o.now!==undefined)ctx.Date={now:()=>clock};
+  if(o.mn)ctx.IS_MN=true;   // F4：手机页分支（脚本里 IS_MN = /[?&]r=mn/.test(location.search) 的等价注入）
   vm.createContext(ctx);
   vm.runInContext(code+';this.send=tpSend;this.frame=tpFrame;this.diag=tpDiagText;this.ack=tpOnAck;this.last=function(){return tpLast};this.wait=waitTeleportMap;this.teleport=teleport;this.tpTeleport=tpTeleport;',ctx);
   assert.equal(typeof ctx.send,'function','直发传送入口必须就位');
-  const out={sent,setClock:v=>{clock=v},logs:()=>logs,fire:()=>{if(ivFn)ivFn();},hasIv:()=>!!ivFn};
+  const out={sent,setClock:v=>{clock=v},logs:()=>logs,fire:()=>{if(ivFn)ivFn();},hasIv:()=>!!ivFn,call:(expr)=>vm.runInContext(expr,ctx),ctx};
   for(const k of ['send','frame','diag','ack','last','wait','teleport','tpTeleport'])out[k]=ctx[k];
   return out;
 }
@@ -252,7 +253,9 @@ function tpAckCheck(w){
   const ack=code=>w.ack(new Uint8Array([0x4a,0x0a,code,0,0,0]).buffer);
   ack(0);assert.equal(w.last().ok,true,'code=0 必须记成功');assert.equal(w.last().code,0);
   ack(2);assert.equal(w.last().ok,false,'code=2 绝不允许当成功');assert.ok(w.last().why.includes('2'),'失败原因必须带原始码');
-  assert.ok(w.logs().some(l=>l.includes('券耗尽')),'code=2 必须点名「券耗尽」');
+  assert.ok(w.logs().some(l=>l.includes('背包中找不到传送卷轴或会员卡')),'code=2 必须用客户端原文「背包中找不到传送卷轴或会员卡」（F4）');
+  ack(3);assert.equal(w.last().ok,false,'code=3 必须判失败');assert.ok(w.logs().some(l=>l.includes('该地图不支持传送功能')),'code=3 必须用客户端原文「该地图不支持传送功能」（F4）');
+  ack(4);assert.equal(w.last().ok,false,'code=4 必须判失败');assert.ok(w.logs().some(l=>l.includes('未知地图')),'code=4 必须用客户端原文「未知地图」（F4）');
   ack(7);assert.equal(w.last().ok,false,'未知码必须判失败');assert.ok(w.last().why.includes('未知代码'),'未知码按原值上报');
   assert.ok(w.logs().some(l=>l.includes('服务器拒绝 code=7')),'未知码必须留原始码');
 }
@@ -911,8 +914,8 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
   // 1) 版本号：稳定版与实验版都必须是 2.36.1（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.8', name + ' @version 必须是 2.38.8（锚定行首元数据行）');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.8', name + ' 运行时常量 VER 必须是 2.38.8');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.9', name + ' @version 必须是 2.38.9（锚定行首元数据行）');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.9', name + ' 运行时常量 VER 必须是 2.38.9');
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
   const stripHead = (s) => s.replace(/\r\n/g,'\n').split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
@@ -1284,8 +1287,8 @@ test('V2.34.5 战斗诊断快照 prof 字段已就位（不改既有字段）', 
 // ================= V2.34.5：配置自动备份（两代）/ 黄金副本找回（纯函数真值表 / 按钮 / 键隔离）=================
 test('V2.34.5 版本号升到 2.34.5（@version 与运行时常量一致，两文件同步）', () => {
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.8', name + ' @version 必须是 2.38.8（锚定行首元数据行）');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.8', name + ' 运行时常量 VER 必须是 2.38.8');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.9', name + ' @version 必须是 2.38.9（锚定行首元数据行）');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.9', name + ' 运行时常量 VER 必须是 2.38.9');
   }
 });
 
@@ -1574,7 +1577,7 @@ test('V2.38.2 定点修复：随时丢弃开启时零候选不抛错（阈值模
 
 // ================= V2.35.1 assistant API + standalone dojo =================
 const splitSources=[['stable',source],['exp',expSource]];
-test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(s)?.[1],'2.38.8',name+' @version 必须锚定行首元数据行（旧的非锚定正则可能命中变更日志/正文里的 @version 字样）');assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
+test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(s)?.[1],'2.38.9',name+' @version 必须锚定行首元数据行（旧的非锚定正则可能命中变更日志/正文里的 @version 字样）');assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
 test('V2.35.1 public API uses owner-only external signatures and validates the current lease owner',()=>{for(const[,s]of splitSources){assert.ok(s.includes('/^[A-Za-z0-9_.:-]{8,128}$/'));assert.ok(s.includes('dojo:1,battle:1,movement:1,dialog:1,arrow:1,fly:1'));assert.ok(s.includes('if(apiLease&&apiLease.owner!==owner)'));for(const sig of ['apiHas(owner,scope)','apiSnapshot(owner)','apiRelease(owner)','apiContact(owner,gid)','apiWalk(owner,payload)','apiChoose(owner,payload)','apiBattle(owner,on)','apiSetArrow(owner,target)','apiClearArrow(owner)','apiFly(owner,payload)'])assert.ok(s.includes('function '+sig),sig);assert.ok(s.includes('apiLease.generation===generation'));assert.ok(!s.includes('apiHas(owner,generation'));}});
 test('V2.35.1 snapshot and battle/menu ownership contracts are explicit',()=>{for(const[,s]of splitSources){for(const key of ['ready:','map:','player:','mobs:','npcs:','target:','inDojoMap:','dialogOpen:','menu:','battleState:','busy:','arrow:'])assert.ok(s.includes(key),key);assert.ok(s.includes('if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"}'));assert.ok(s.includes('b.state="pending-on"'));assert.ok(s.includes('if(b.state!=="owned")return {ok:true,result:"not-owned"}'));assert.ok(s.includes('l.battle.state==="owned"||l.battle.state==="pending-off"'));assert.ok(s.includes('if(s!==false)return {ok:true,result:s===true?"preexisting":"unknown"}'));}});
 test('V2.36.11 arrow rules use a per-monster table plus a default arrow',()=>{for(const[name,s]of splitSources){
@@ -4150,8 +4153,8 @@ test('V2.38.4 静态断言：新函数就位、判定链未改、零发包零 ho
     const sum = src.slice(src.indexOf('// ---------------- V2.38.4 变更摘要'), src.indexOf('// ---------------- V2.38.3 变更摘要'));
     assert.ok(sum.includes('入站分帧') && sum.includes('气弹') && sum.includes('按帧') && sum.includes('2.38.4'), name + ' V2.38.4 摘要必须覆盖：分帧 / 气弹 / 抓包按帧 / 版本');
     assert.ok(!EMOJI.test(sum) && !EMOJI.test(code), name + ' 新增内容不得含 emoji');
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.8', name + ' @version 必须是 2.38.8');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.8', name + ' VER 必须是 2.38.8');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.9', name + ' @version 必须是 2.38.9');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.9', name + ' VER 必须是 2.38.9');
   }
   assert.equal((source.match(/(?<!\r)\n/g) || []).length, 0, '稳定版必须纯 CRLF');
   assert.equal((expSource.match(/\r\n/g) || []).length, 0, '实验版必须纯 LF');
@@ -5102,7 +5105,8 @@ test('V2.38.4 静态断言：三处新口径就位、分帧分派链与已完成
     assert.ok(src.includes('if (!clientScriptPresent()) injectClient(cfg, false);'), name + ' 本机私有入口保持现状（DOM 去重 + 立即注入）');
     assert.ok(src.includes('if (state.ready || state.bootedByWrapper || state.bootedByPlugin) return;'), name + ' 启动去重必须保留');
     assert.ok(src.includes('officialBooted: false,'), name + ' state 必须有 officialBooted 标记');
-    assert.ok(src.includes('// @version      2.38.8') && src.includes('var VER = "2.38.8";'), name + ' 版本必须仍是 2.38.8（V2.38.8 批次：直发传送 + 审计 F1/F2/F4）');
+    assert.ok(src.includes('// @version      2.38.9') && src.includes('var VER = "2.38.9";'), name + ' 版本必须仍是 2.38.9（V2.38.9 批次：直发传送 + 审计 F1/F2/F4）');
+    assert.ok(src.includes('// ---------------- V2.38.9 变更摘要 ----------------'), name + ' 必须有 V2.38.9 变更摘要（视角控制 + 审计收尾）');
     // 已完成批次与分帧分派链不得回改
     assert.equal((src.match(/op === 307/g) || []).length, 1, name + ' 摆摊识别集合仍只出现一处（拉黑/闸门批次未回改）');
     assert.ok(src.includes('var walk = walkInboundFrames(bytes, dispatchInboundFrame);'), name + ' 入站分帧分派链不得改动');
@@ -6029,8 +6033,8 @@ test('V2.38.4 审计修正 静态：F1–F6 锚点就位，旧的跨角色认领
     assert.ok(t.includes('L.push("识别状态："'), name + ' 诊断必须有「识别状态：」');
     assert.ok(t.includes('L.push("未认领旧档："'), name + ' 诊断必须有「未认领旧档：」');
     // 版本不变
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.8', name + ' @version 必须仍是 2.38.8');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.8', name + ' VER 必须仍是 2.38.8');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.9', name + ' @version 必须仍是 2.38.9');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.9', name + ' VER 必须仍是 2.38.9');
   }
   assert.equal((source.match(/(?<!\r)\n/g) || []).length, 0, '稳定版必须纯 CRLF');
   assert.equal((expSource.match(/\r\n/g) || []).length, 0, '实验版必须纯 LF');
@@ -7456,4 +7460,493 @@ test('V2.38.5+ F1 收紧 b（真实时序 append→setItem）：关窗后同一�
 });
 test('V2.38.5+ F1 收紧 b2（防御路径）：只 display:none 不发 x_remove 时，setItem 处理点必须即时作废会话（VM · 两文件）', () => {
   for (const [name, src] of BAGACT_SOURCES) bagActCheck(name, () => bagActAssertEntryObserve(bagActWorld(src)));
+});
+
+
+// ================= V2.38.9：手机页（r=mn）视角控制（电脑鼠标拖动 / 滚轮 / 按钮）=================
+const VC_FILES_SRC=[['stable','ro-assist.user.js'],['exp','ro-assist-exp.user.js']].map(([n,f])=>[n,fs.readFileSync(new URL('../'+f,import.meta.url),'utf8')]);
+function vcBody(src){
+  const a=src.indexOf('      // === VC_BEGIN ==='),b=src.indexOf('      // === VC_END ===',a);
+  assert.ok(a>=0&&b>a,'视角控制块必须就位（VC_BEGIN/VC_END）');
+  const head=src.slice(Math.max(0,a-60),a).replace(/\r/g,'');
+  assert.ok(/if \(IS_MN\) \{\n\s*$/.test(head),'视角控制块必须挂在 if (IS_MN) 之内（非手机页不得强加控件）:'+JSON.stringify(head.slice(-24)));
+  return src.slice(a,b+'      // === VC_END ==='.length).split('\r\n').join('\n');   // 归一化成 LF：变异锚点与文件 EOL 无关
+}
+function vcEl(tag,sink){
+  const e={tagName:String(tag||'div').toUpperCase(),children:[],style:{},handlers:{},attrs:{},id:'',className:'',title:'',textContent:'',parentNode:null};
+  e.appendChild=c=>{e.children.push(c);c.parentNode=e;return c;};
+  e.setAttribute=(k,v)=>{e.attrs[k]=String(v);};
+  e.addEventListener=(t,f)=>{(e.handlers[t]=e.handlers[t]||[]).push(f);};
+  e.fire=(t,ev)=>{(e.handlers[t]||[]).slice().forEach(f=>f(ev||{}));};
+  e.dispatchEvent=ev=>{if(sink)sink.push(ev);(e.handlers[ev.type]||[]).slice().forEach(f=>f(ev));return true;};
+  e.closest=()=>null;e.contains=()=>false;
+  return e;
+}
+// 与真客户端 Core/Mobile 同形的两指手势引擎桩：收到的合成触摸真的会改相机（行为断言，不是形状断言）
+function vcMobile(cam,rec){
+  const M={f:false,A:false,SHIFT:false,action:{active:false,x:0,y:0},l:0,r:0,w:0,x:null,log:{onTouchStart:0,onTouchMove:0,onTouchEnd:0,zoom:0,yaw:0,zoomVals:[]}};
+  M.b=t=>-Math.sqrt(Math.pow(t[0].pageX-t[1].pageX,2)+Math.pow(t[0].pageY-t[1].pageY,2));
+  M.c=t=>Math.round(360*Math.atan((t[0].pageY-t[1].pageY)/(t[0].pageX-t[1].pageX))/Math.PI%360);
+  M.d=(a,b)=>{const c=b[0].pageX-a[0].pageX,d=b[1].pageX-a[1].pageX;return (c&&d&&(c<0)===(d<0)&&0.25>Math.abs(1-c/d))?(c+d)>>1:0;};
+  M.e=(a,b)=>{const c=b[0].pageY-a[0].pageY,d=b[1].pageY-a[1].pageY;return (c&&d&&(c<0)===(d<0)&&0.25>Math.abs(1-c/d))?(c+d)>>1:0;};
+  M.screen={x:0,y:0,width:1000,height:500};
+  M.start=ev=>{
+    M.x=ev.touches;rec.events.push({type:'touchstart',n:ev.touches.length});
+    if(M.x.length>1){M.l=M.b(M.x);M.r=M.c(M.x);M.w=cam.angle[1];M.f=true;return;}
+    M.screen.x=M.x[0].pageX;M.screen.y=M.x[0].pageY;M.A=true;M.intersect=true;
+  };
+  M.move=ev=>{
+    const g=ev.touches;rec.events.push({type:'touchmove',n:g.length});
+    M.screen.x=g[0].pageX;M.screen.y=g[0].pageY;
+    if(M.f){
+      const a=M.b(g)-M.l,u=M.c(g)-M.r+M.w,n=Math.abs(M.d(M.x,g)),e=Math.abs(M.e(M.x,g));
+      if(!M.action.active&&(n>10||e>10)){M.SHIFT=e>n;M.action.active=true;M.action.x=M.screen.x;M.action.y=M.screen.y;}
+      else if(Math.abs(a)>10){cam.zoomFinal+=0.1*a;cam.zoomFinal=Math.min(cam.zoomFinal,Math.abs(cam.altitudeTo-cam.altitudeFrom)*cam.MAX_ZOOM);cam.zoomFinal=Math.max(cam.zoomFinal,2);M.log.zoom++;M.log.zoomVals.push(cam.zoomFinal);}
+      if(u){cam.angleFinal[1]=u;M.log.yaw++;}
+    } else if(M.intersect){M.log.onTouchMove++;}
+  };
+  M.end=ev=>{
+    rec.events.push({type:'touchend',n:ev.touches?ev.touches.length:0});
+    if(M.f){M.f=false;M.SHIFT=false;M.action.active=false;return;}
+    if(M.A){M.A=false;return;}
+    M.log.onTouchEnd++;M.intersect=false;
+  };
+  M.frame=()=>{ // 模拟 Camera.update：触摸手势期间只有 SHIFT（俯仰）这一段由每帧应用
+    if(!M.action.active)return;
+    if(M.SHIFT){let v=cam.angleFinal[0]+(M.screen.y-M.action.y)/M.screen.height*300;cam.angleFinal[0]=Math.max(Math.min(v,cam.zoomTo),cam.zoomFrom);}
+    M.action.x=M.screen.x;M.action.y=M.screen.y;
+  };
+  return M;
+}
+function vcModeCheck(w,name){
+  assert.equal(w.call('vcS.mode'),'',name+' 初始不得有模式缓存');
+  const ui=vcEl('div');ui.attrs['data-dsh-ui']='1';
+  w.press('pointerdown',10,10,{target:ui});w.press('pointerup',10,10,{target:ui});
+  assert.equal(w.call('vcS.mode'),'',name+' 点助手自己的界面不得把模式锁成 touch');
+  // 引擎没就绪时拖拽：本次只能尽力而为，但结论不许被定死
+  w.press('pointerdown',300,300);w.press('pointermove',420,300);w.pump(3);w.press('pointerup',420,300);w.pump(2);
+  assert.equal(w.call('vcS.mode'),'',name+' 引擎就绪前的拖拽不得把模式锁成 touch');
+  assert.equal(w.vcModeEnsure(),'touch',name+' 引擎就绪前只能按备路尽力跑');
+  assert.equal(w.call('vcS.mode'),'',name+' 备路结论在引擎就绪前不得落缓存');
+  w.loadEngine();w.cam.angleFinal[1]=0;w.settle();
+  assert.equal(w.vcModeEnsure(),'camera',name+' 引擎就绪且相机模块可用后必须判为主路 camera');
+  assert.equal(w.call('vcS.mode'),'camera',name+' 主路结论必须落缓存（升级后不再回退）');
+  w.press('pointerdown',300,300);w.press('pointermove',420,300);w.pump(3);w.press('pointerup',420,300);w.pump(2);
+  assert.ok(w.cam.angleFinal[1] < -80, name+' 升级后拖拽必须真的转偏航（实际 '+w.cam.angleFinal[1]+'）');
+}
+function vcZoomResetCheck(w,name){
+  assert.equal(w.vcModeEnsure(),'touch',name+' 前置：必须处于备路 touch');
+  w.pump(4);
+  w.cam.zoomFinal=80;w.cam.angleFinal[0]=220;w.cam.angle[0]=220;w.cam.angleFinal[1]=0;w.settle();
+  for(let i=0;i<3;i++){w.call("vcStep('zoom',-1)");w.pump(10);}
+  assert.equal(w.cam.zoomFinal,35,name+' 前置：三档 -1 必须到 35（80-45，实际 '+w.cam.zoomFinal+'）');
+  w.vcReset();w.pump(90);
+  assert.ok(Math.abs(w.cam.zoomFinal-80)<=2,name+' F1 多档缩放后重置必须回到起点 80（实际 '+w.cam.zoomFinal+'）');
+  // 量程上限那侧同样要回得去（一段一段搬，每段受两指间距限制）
+  w.cam.zoomFinal=150;w.cam.angleFinal[0]=220;w.cam.angle[0]=220;w.cam.angleFinal[1]=0;w.settle();
+  w.vcReset();w.pump(90);
+  assert.ok(Math.abs(w.cam.zoomFinal-80)<=2,name+' F1 从量程上限 150 重置也必须回到起点 80（实际 '+w.cam.zoomFinal+'）');
+}
+function vcPendingDragCheck(w,name){
+  assert.equal(w.vcModeEnsure(),'touch',name+' 前置：必须处于备路 touch');
+  w.pump(4);
+  w.cam.angleFinal[0]=220;w.cam.angle[0]=220;w.cam.angleFinal[1]=0;w.cam.angle[1]=0;w.settle();
+  w.call("vcStep('pitch',1)");                                     // 上一段手势（按钮）已经受理、还没发完
+  w.press('pointerdown',300,300);w.press('pointermove',400,300);   // 紧接着就开始拖拽
+  w.pump(3);w.press('pointerup',400,300);w.pump(30);
+  assert.ok(w.cam.angleFinal[1] < -60, name+' F2 上一段手势没收完时的拖拽不许被吃掉（期望≈-72，实际 '+w.cam.angleFinal[1]+'）');
+  assert.ok(Math.abs(w.cam.angleFinal[0]-228)<=2, name+' F2 旧队列的俯仰只算按钮那一次、不许泄漏进拖拽（期望 228，实际 '+w.cam.angleFinal[0]+'）');
+}
+function vcPitchCheck(w,name){
+  assert.equal(w.vcModeEnsure(),'touch',name+' 前置：必须处于备路 touch');
+  w.pump(3);
+  w.cam.angleFinal[0]=220;w.cam.angle[0]=220;                                 // 已知俯仰起点
+  assert.equal(w.call("vcStep('pitch',1)"),true,name+' 前置：俯仰按钮必须成功');
+  w.pump(6);
+  assert.ok(Math.abs(w.cam.angleFinal[0]-228)<=1.5, name+' F-B 俯仰按钮必须真的改变俯仰（期望 228，实际 '+w.cam.angleFinal[0]+'）');
+}
+function vcFixCheck(w,name){
+  assert.equal(w.vcModeEnsure(),'touch',name+' 前置：必须处于备路 touch');
+  // 非收敛场景：拖拽后**不给引擎帧**就把目标拉走（引擎当前角度 angle[1] 还停在起点）
+  w.press('pointerdown',300,300);w.press('pointermove',420,300);w.pump(2,true);   // 只发事件、不跑引擎帧 → 未收敛
+  assert.ok(Math.abs(w.cam.angleFinal[1])>80,name+' 前置：拖拽必须已经把目标偏航拉走（实际 '+w.cam.angleFinal[1]+'）');
+  assert.ok(Math.abs(w.cam.angle[1])<1,name+' 前置：此时引擎的当前角度还没收敛（实际 '+w.cam.angle[1]+'）');
+  w.vcReset();w.pump(24);
+  assert.ok(Math.abs(w.cam.angleFinal[1])<=1.5,name+' F-C 未收敛时重置也必须收敛到起点（实际 '+w.cam.angleFinal[1]+'）');
+  assert.ok(Math.abs(w.cam.angle[1])<=1.5,name+' F-C 重置后引擎当前角度也必须回到起点（实际 '+w.cam.angle[1]+'）');
+}
+function vcWorld(src,over,opt){
+  const o=opt||{};let code=vcBody(src);
+  if(over){assert.equal(code.split(over[0]).length-1,1,'变异锚点必须唯一：'+String(over[0]).slice(0,56));const mut=code.split(over[0]).join(over[1]);assert.notEqual(mut,code,'变异必须真的改到代码');code=mut;}
+  const rec={events:[],dispatched:[],logs:[],pd:0,single:{move:0,end:0}};
+  const canvas=vcEl('canvas',rec.dispatched),body=vcEl('body',rec.dispatched),doc=vcEl('document',rec.dispatched);
+  doc.body=body;doc.documentElement=body;doc.readyState='complete';
+  doc.createElement=tag=>vcEl(tag);
+  const docH={};
+  doc.addEventListener=(t,f)=>{(docH[t]=docH[t]||[]).push(f);};
+  const cam={angle:[220,0],angleFinal:[220,0],zoomFinal:80,currentMap:o.map||'prontera',
+    rotationFrom:-360,rotationTo:360,inRotationFrom:-60,inRotationTo:-25,zoomFrom:190,zoomTo:270,inZoomFrom:220,inZoomTo:240,
+    MAX_ZOOM:15,altitudeFrom:-70,altitudeTo:-80,saves:0,zoomCalls:[],setZoom:function(a){this.zoomCalls.push(a);this.zoomFinal=Math.trunc(Math.max(Math.min(this.zoomFinal+15*a,150),10));this.save();},
+    save:function(){this.saves++;}};
+  const meh={screen:{x:0,y:0,width:1000,height:500},intersect:o.intersect===undefined?true:o.intersect};
+  const comp=vcEl('div');comp.contains=t=>t===comp||t===compInner;const compInner=vcEl('div');
+  const std={'Renderer/Camera':o.noCam?null:cam,'DB/DBManager':{isIndoor:()=>o.indoor===true},'Controls/MouseEventHandler':meh,
+    'Renderer/Renderer':{canvas:canvas,camera:cam},'UI/UIManager':{components:o.activeUi===false?{}:{Equipment:{ui:comp,__active:true}}}};
+  const modules=o.dead?{}:Object.assign({},std);
+  const engine=vcMobile(cam,rec);
+  const wireEngine=()=>{body.addEventListener('touchstart',ev=>engine.start(ev));body.addEventListener('touchmove',ev=>engine.move(ev));body.addEventListener('touchend',ev=>engine.end(ev));};
+  if(!o.dead)wireEngine();   // o.dead：模拟「引擎还没加载完」——模块取不到、触摸监听也还没接
+  const rafQ=[];let rafId=0;
+  const win={innerWidth:1000,innerHeight:500,PointerEvent:function(){},addEventListener:function(){},
+    requestAnimationFrame:fn=>{rafQ.push(fn);return ++rafId;}};
+  const ctx={IS_MN:true,document:doc,window:win,
+    Touch:function Touch(p){Object.assign(this,p);},
+    TouchEvent:function TouchEvent(t,p){this.type=t;Object.assign(this,p);},
+    requireDB:n=>modules[n]||null,inAssistantUI:t=>!!(t&&t.attrs&&t.attrs['data-dsh-ui']==='1'),isolateEl:()=>{},
+    mvLog:m=>rec.logs.push(m),tlog:m=>rec.logs.push(m),
+    setInterval:()=>1,clearInterval:()=>{},setTimeout:()=>1,clearTimeout:()=>{},Date:Date,Math:Math,console:console};
+  vm.createContext(ctx);
+  vm.runInContext(code,ctx);
+  const call=(expr)=>vm.runInContext(expr,ctx);
+  // 帧泵：每帧先跑排队的合成触摸回调，再跑一次「引擎主循环」（Camera.update 的俯仰段 + 角度收敛）
+  const pump=(n,noFrame)=>{for(let i=0;i<(n||1);i++){const due=rafQ.splice(0,rafQ.length);due.forEach(f=>{try{f();}catch(e){}});if(noFrame)continue;engine.frame();cam.angle[1]+=(cam.angleFinal[1]-cam.angle[1])*0.3;cam.angle[0]+=(cam.angleFinal[0]-cam.angle[0])*0.3;}};   // 一帧一次 lerp（k=0.3，接近真实插值）；noFrame=true 只发事件不跑引擎帧
+  const loadEngine=()=>{Object.assign(modules,std);wireEngine();};
+  const press=(type,x,y,extra)=>{
+    const ev={type:type,button:0,clientX:x,clientY:y,pointerId:1,pointerType:'mouse',altKey:false,target:canvas,cancelable:true,deltaY:0,
+      preventDefault:()=>{rec.pd++;}};
+    Object.assign(ev,extra||{});
+    (docH[type]||[]).slice().forEach(f=>f(ev));
+    return ev;
+  };
+  const out={cam,meh,rec,engine,body,doc,canvas,comp,compInner,press,call,ctx,pump,loadEngine,
+    settle:()=>{cam.angle[0]=cam.angleFinal[0];cam.angle[1]=cam.angleFinal[1];},
+    events:()=>rec.events,dispatched:()=>rec.dispatched,logs:()=>rec.logs,
+    box:()=>call('vcS.box')};
+  for(const k of ['vcModeEnsure','vcStep','vcReset','vcBounds','vcCamDrag','vcSnapshot','vcEnsureOrigin'])out[k]=()=>call(k+'()');
+  return out;
+}
+function vcCamCheck(w,name){
+  assert.equal(w.vcModeEnsure(),'camera',name+' 有相机模块时必须走主路 camera');
+  // 1) 拖拽角度累积（公式与 Camera.processMouseAction 同形：dx→偏航 -dx/宽*720、dy→俯仰 +dy/高*300）
+  w.press('pointerdown',100,100);w.press('pointermove',140,110);w.press('pointermove',200,140);
+  assert.equal(w.cam.angleFinal[0],244,name+' 俯仰必须累积（220+40/500*300）');
+  assert.equal(w.cam.angleFinal[1],-72,name+' 偏航必须累积（0-100/1000*720）');
+  assert.equal(w.rec.dispatched.length,0,name+' 拖拽期间不许向游戏派发任何合成触摸（否则单指摇杆会带着角色乱跑）');
+  w.press('pointerup',200,140);
+  assert.equal(w.rec.dispatched.length,0,name+' 拖拽抬起也不许派发（否则会触发那一次点击走路）');
+  // 2) 重置回首次控制前快照
+  w.vcReset();
+  assert.equal(w.cam.angleFinal[0],220,name+' 重置必须回俯仰快照');
+  assert.equal(w.cam.angleFinal[1],0,name+' 重置必须回偏航快照');
+  assert.equal(w.cam.zoomFinal,80,name+' 重置必须回缩放快照');
+  // 3) 缩放上下限与方向（绝不拉穿/反转）
+  w.cam.zoomCalls.length=0;
+  w.vcStep();w.call("vcStep('zoom',-1)");w.call("vcStep('zoom',-1)");
+  assert.deepEqual(w.cam.zoomCalls.slice(-2),[-1,-1],name+' 放大必须是 setZoom(-1)（拉近）');
+  assert.equal(w.cam.zoomFinal,50,name+' 两档放大 80→50');
+  let last=w.cam.zoomFinal,mono=true;
+  for(let i=0;i<40;i++){w.call("vcStep('zoom',1)");if(w.cam.zoomFinal<last)mono=false;last=w.cam.zoomFinal;}
+  assert.equal(w.cam.zoomFinal,150,name+' 连续缩小必须停在引擎上限 150（不得越界）');
+  assert.ok(mono,name+' 缩小方向必须单调不反转');
+  for(let i=0;i<40;i++){w.call("vcStep('zoom',-1)");}
+  assert.equal(w.cam.zoomFinal,10,name+' 连续放大必须停在引擎下限 10（不得越界/反转）');
+  // 4) 阈值：≤5px 是一次点击（照旧走路），>5px 才算拖拽
+  w.cam.angleFinal[0]=220;w.cam.angleFinal[1]=0;w.settle();
+  w.rec.dispatched.length=0;
+  w.press('pointerdown',50,50);w.press('pointermove',52,51);w.press('pointerup',52,51);
+  assert.deepEqual(w.rec.dispatched.map(e=>e.type),['touchstart','touchend'],name+' 阈值内必须仍是一次点击（touchstart+touchend，走路路径保留）');
+  assert.equal(w.cam.angleFinal[0],220,name+' 点击不得改相机');
+  w.rec.dispatched.length=0;
+  w.press('pointerdown',50,50);w.press('pointermove',60,50);w.press('pointerup',60,50);
+  assert.equal(w.rec.dispatched.length,0,name+' 超过阈值必须不派发任何触摸（抑制这次点击走路）');
+  assert.equal(w.cam.angleFinal[1],-7.2,name+' 超过阈值必须真的转视角');
+  // 5) 按钮组 7 键
+  const box=w.box();
+  assert.ok(box&&box.children.length===7,name+' 左下角必须有 7 个视角按钮');
+  assert.deepEqual(box.children.map(b=>b.title),['左转视角','右转视角','上仰视角','下俯视角','放大（拉近）','缩小（拉远）','重置视角'],name+' 按钮标题必须齐全');
+  w.cam.angleFinal[0]=220;w.cam.angleFinal[1]=0;w.cam.zoomFinal=80;w.settle();
+  box.children[0].fire('click'); // 左转 = 偏航 +15
+  box.children[3].fire('click'); // 下俯 = 俯仰 +8
+  box.children[4].fire('click'); // 放大 = setZoom(-1)
+  assert.equal(w.cam.angleFinal[1],15,name+' 左转按钮必须 +15°');
+  assert.equal(w.cam.angleFinal[0],228,name+' 下俯按钮必须 +8°');
+  assert.equal(w.cam.zoomFinal,65,name+' 放大按钮必须拉近 15');
+  box.children[6].fire('click'); // 重置
+  assert.deepEqual([w.cam.angleFinal[0],w.cam.angleFinal[1],w.cam.zoomFinal],[220,0,80],name+' 重置按钮必须回快照');
+  assert.ok(w.logs().some(l=>l.includes('视角控制')),name+' 装配必须留可排查日志');
+}
+function vcGuardCheck(w,name){
+  const base=[w.cam.angleFinal[0],w.cam.angleFinal[1]];
+  // 1) 右键：不拦、不合成、不转视角、不 preventDefault
+  w.rec.dispatched.length=0;w.rec.pd=0;
+  w.press('pointerdown',10,10,{button:2});w.press('pointerup',10,10,{button:2});
+  assert.equal(w.rec.dispatched.length,0,name+' 右键不得合成任何触摸');
+  assert.equal(w.rec.pd,0,name+' 右键不得被 preventDefault');
+  assert.deepEqual([w.cam.angleFinal[0],w.cam.angleFinal[1]],base,name+' 右键不得改视角');
+  // 2) ALT+左键：照旧旧行为（立刻合成），不接管视角
+  w.rec.dispatched.length=0;
+  w.press('pointerdown',10,10,{altKey:true});w.press('pointermove',90,10,{altKey:true});w.press('pointerup',90,10,{altKey:true});
+  assert.deepEqual(w.rec.dispatched.map(e=>e.type),['touchstart','touchmove','touchend'],name+' ALT+左键必须保持旧行为（不接管）');
+  assert.deepEqual([w.cam.angleFinal[0],w.cam.angleFinal[1]],base,name+' ALT+左键不得改视角');
+  // 3) 真实触摸指针：整条路径不得被改动
+  w.rec.dispatched.length=0;
+  w.press('pointerdown',10,10,{pointerType:'touch'});w.press('pointermove',90,10,{pointerType:'touch'});w.press('pointerup',90,10,{pointerType:'touch'});
+  assert.equal(w.rec.dispatched.length,0,name+' 真实触摸指针不得被鼠标层合成/接管');
+  assert.deepEqual([w.cam.angleFinal[0],w.cam.angleFinal[1]],base,name+' 真实触摸指针不得改视角（触摸设备原有手势一行不动）');
+  assert.equal(w.call('vcS.pend'),null,name+' 触摸指针不得进鼠标待定态');
+  // 4a) 引擎活动 UI 组件的 DOM 上（intersect 仍为 true，例如非 STOP 组件）一律不接管
+  const uiTarget=w.compInner;
+  w.rec.dispatched.length=0;w.rec.pd=0;w.cam.zoomCalls.length=0;
+  w.press('wheel',10,10,{target:uiTarget,deltaY:-120});
+  assert.equal(w.cam.zoomCalls.length,0,name+' 引擎 UI 组件上的滚轮不得缩放');
+  assert.equal(w.rec.pd,0,name+' 引擎 UI 组件上的滚轮不得 preventDefault');
+  w.press('pointerdown',10,10,{target:uiTarget});w.press('pointermove',120,10,{target:uiTarget});w.press('pointerup',120,10,{target:uiTarget});
+  assert.equal(w.cam.angleFinal[1],base[1],name+' 引擎 UI 组件上的拖拽不得转视角');
+  assert.equal(w.rec.dispatched.length,0,name+' 引擎 UI 组件上不得合成触摸（该窗口自己处理鼠标点击，V2.8.1 定下的行为）');
+  // 4b) 指针停在引擎窗口上（MouseEventHandler.intersect=false）且不在画布：同样不接管
+  w.meh.intersect=false;
+  w.rec.dispatched.length=0;w.rec.pd=0;w.cam.zoomCalls.length=0;
+  const uiFar=vcEl('div');
+  w.press('wheel',10,10,{target:uiFar,deltaY:-120});
+  assert.equal(w.cam.zoomCalls.length,0,name+' intersect=false（指针在引擎窗口上）的滚轮不得缩放');
+  w.press('pointerdown',10,10,{target:uiFar});w.press('pointermove',120,10,{target:uiFar});w.press('pointerup',120,10,{target:uiFar});
+  assert.equal(w.cam.angleFinal[1],base[1],name+' intersect=false 时的拖拽不得转视角');
+  assert.equal(w.rec.dispatched.length,0,name+' intersect=false 时不得合成触摸');
+  w.meh.intersect=true;
+  // 5) 滚轮方向与吞掉行为
+  w.cam.zoomCalls.length=0;w.rec.pd=0;
+  w.press('wheel',500,300,{deltaY:-120});w.press('wheel',500,300,{deltaY:120});
+  assert.deepEqual(w.cam.zoomCalls,[-1,1],name+' 滚轮上=放大(-1)、下=缩小(1)');
+  assert.equal(w.rec.pd,2,name+' 生效的滚轮必须 preventDefault（防页面滚动）');
+  // 6) 助手 UI 内一律不接管
+  const aui=vcEl('div');aui.attrs['data-dsh-ui']='1';
+  w.cam.zoomCalls.length=0;w.rec.dispatched.length=0;
+  w.press('wheel',10,10,{target:aui,deltaY:-120});
+  w.press('pointerdown',10,10,{target:aui});w.press('pointermove',120,10,{target:aui});w.press('pointerup',120,10,{target:aui});
+  assert.equal(w.cam.zoomCalls.length,0,name+' 助手 UI 内的滚轮不得缩放');
+  assert.equal(w.rec.dispatched.length,0,name+' 助手 UI 内不得合成触摸');
+}
+function vcBoundsCheck(w,name){
+  const b=w.vcBounds();
+  assert.deepEqual([b.a0.lo,b.a0.hi],[190,270],name+' 室外俯仰界必须从相机对象读（190..270）');
+  assert.deepEqual([b.a1.lo,b.a1.hi],[-360,360],name+' 室外偏航界必须从相机对象读（±360）');
+  const wi=vcWorld(w.src||'',null,{indoor:true});
+  const bi=wi.vcBounds();
+  assert.deepEqual([bi.a0.lo,bi.a0.hi],[220,240],name+' 室内俯仰界必须用 inZoomFrom/To');
+  assert.deepEqual([bi.a1.lo,bi.a1.hi],[-60,-25],name+' 室内偏航界必须用 inRotationFrom/To');
+}
+function vcTouchCheck(w,name){
+  assert.equal(w.vcModeEnsure(),'touch',name+' 相机模块不可达时必须退到备路 touch');
+  // 1) 水平拖拽 = 合成两指旋转 → 偏航（dx 120 → -120/1000*720 = -86.4；引擎 c() 会量化到整度）
+  w.press('pointerdown',300,300);w.press('pointermove',340,300);w.pump(2);w.press('pointermove',420,300);w.pump(2);w.press('pointerup',420,300);w.pump(3);
+  assert.deepEqual(w.rec.events.map(e=>e.type),['touchstart','touchmove','touchmove','touchend'],name+' 备路拖拽必须是两指手势序列');
+  assert.ok(w.rec.events[0].n===2&&w.rec.events[1].n===2,name+' 备路必须是 2 指（单指会走摇杆走路）');
+  assert.equal(w.engine.log.onTouchMove,0,name+' 备路绝不能触发 Core/Mobile 的单指 onTouchMove（会带着角色走）');
+  assert.equal(w.engine.log.onTouchEnd,0,name+' 备路绝不能触发单指 onTouchEnd（会触发点地走路/攻击）');
+  assert.ok(Math.abs(w.cam.angleFinal[1] + 86.4) <= 2, name+' 备路水平拖拽必须真的转偏航（期望≈-86.4，实际 '+w.cam.angleFinal[1]+'）');
+  assert.ok(w.cam.angleFinal[1] < -80, name+' 备路偏航量级必须与主路一致（不得只动一点点）');
+  // 2) F-C 重置：按「当前真实角度」算剩余差值 + 复核，偏航/俯仰都要回起点（俯仰会被两指手势的 SHIFT 带偏，也要一并纠回）
+  w.vcReset();w.pump(24);
+  assert.ok(Math.abs(w.cam.angleFinal[1]) <= 1.5, name+' 备路重置必须把偏航转回来（实际 '+w.cam.angleFinal[1]+'）');
+  assert.ok(Math.abs(w.cam.angleFinal[0]-220) <= 2, name+' 备路重置必须把俯仰也带回起点（实际 '+w.cam.angleFinal[0]+'）');
+  assert.equal(w.engine.log.onTouchMove + w.engine.log.onTouchEnd,0,name+' 重置手势也不得触发单指路径');
+  // 3) 竖直拖拽 = 俯仰（走引擎 SHIFT 分支，每帧由 Camera.update 应用）
+  w.press('pointerdown',300,300);w.press('pointermove',302,320);w.pump(4);w.press('pointermove',302,400);w.pump(4);
+  w.press('pointerup',302,400);w.pump(6);
+  assert.ok(Math.abs(w.cam.angleFinal[0]-268)<=1.5, name+' 备路俯仰增量必须等于 dy/高*300（期望 268，实际 '+w.cam.angleFinal[0]+'）');
+  assert.equal(w.engine.SHIFT,false,name+' 手势结束后 SHIFT 必须复位');
+  // 4) 重置 → 俯仰回起点
+  w.vcReset();w.pump(24);
+  assert.ok(Math.abs(w.cam.angleFinal[0]-220)<=2, name+' 备路重置必须把俯仰转回来（实际 '+w.cam.angleFinal[0]+'）');
+  // 5) F-B 俯仰按钮：必须真的改变俯仰（原来一帧内全发完 → 引擎 Camera.update 吃不到那一帧 → Δ=0）
+  w.cam.angleFinal[0]=220;w.cam.angle[0]=220;
+  assert.equal(w.call("vcStep('pitch',1)"),true,name+' 备路俯仰按钮必须成功');
+  w.pump(10);
+  assert.ok(Math.abs(w.cam.angleFinal[0]-228)<=1.5, name+' F-B 俯仰按钮必须真的改变俯仰（期望 228，实际 '+w.cam.angleFinal[0]+'）');
+  w.vcReset();w.pump(24);
+  assert.ok(Math.abs(w.cam.angleFinal[0]-220)<=2, name+' 俯仰按钮后重置必须回到起点（实际 '+w.cam.angleFinal[0]+'）');
+  // 6) 滚轮 = 指距变化 → zoomFinal ±15（上下限用引擎触摸路径自带的那套）
+  w.cam.zoomFinal=80;w.settle();
+  assert.equal(w.call("vcStep('zoom',-1)"),true,name+' 备路缩放必须成功');
+  w.pump(10);
+  assert.equal(w.cam.zoomFinal,65,name+' 备路一档缩放必须 = 15（与 setZoom(1) 等价）');
+  for(let i=0;i<40;i++){w.call("vcStep('zoom',1)");w.pump(10);}   // 一档一次点击（真实点击每帧最多一次；同帧连发会撞上上一段手势还没发完）
+  w.pump(20);
+  assert.equal(w.cam.zoomFinal,150,name+' 备路缩放上限必须被引擎钳住（|altTo-altFrom|*MAX_ZOOM=150）');
+  for(let i=0;i<40;i++){w.call("vcStep('zoom',-1)");w.pump(10);}
+  w.pump(20);
+  assert.equal(w.cam.zoomFinal,2,name+' 备路缩放下限必须被引擎钳住（2）');
+  // 7) yaw/zoom 步进 + 重置
+  w.cam.zoomFinal=80;w.cam.angleFinal[0]=220;w.cam.angle[0]=220;w.cam.angleFinal[1]=0;w.settle();
+  w.call("vcStep('yaw',1)");w.pump(10);w.call("vcStep('zoom',-1)");w.pump(10);   // 两次点击必须隔开：一段手势发完（≈4 帧）才发下一段
+  assert.ok(w.cam.angleFinal[1]<-5&&w.cam.zoomFinal<80,name+' 备路 yaw/zoom 步进必须先动起来（yaw='+w.cam.angleFinal[1]+' zoom='+w.cam.zoomFinal+'）');
+  w.vcReset();w.pump(24);
+  assert.ok(Math.abs(w.cam.angleFinal[1])<=1.5,name+' 备路 step 重置必须把偏航转回来（实际 '+w.cam.angleFinal[1]+'）');
+  assert.ok(Math.abs(w.cam.zoomFinal-80)<=1,name+' 备路 step 重置必须把缩放退回来（实际 '+w.cam.zoomFinal+'）');
+}
+test('V2.38.9 视角控制（主路 camera）：拖拽累积/重置、缩放上下限不反转、阈值与点击抑制、右键/ALT/触摸不碰（两文件）',()=>{
+  for(const [name,src] of VC_FILES_SRC){
+    const w=vcWorld(src);
+    try{vcCamCheck(w,name);vcGuardCheck(w,name);}catch(e){console.log('[VC 主路 失败]['+name+'] '+e.message);throw e;}
+    console.log('[VC 主路]['+name+'] 通过：拖拽 angleFinal='+JSON.stringify([w.cam.angleFinal[0],w.cam.angleFinal[1]])+' 合成事件='+w.rec.events.length);
+  }
+});
+test('V2.38.9 视角控制（备路 touch）：相机模块不可达时合成两指手势，仍能旋转/俯仰/缩放/重置且绝不触发单指走路（两文件）',()=>{
+  for(const [name,src] of VC_FILES_SRC){
+    const w=vcWorld(src,null,{noCam:true});w.src=src;
+    try{vcTouchCheck(w,name);}catch(e){console.log('[VC 备路 失败]['+name+'] '+e.message);throw e;}
+    console.log('[VC 备路]['+name+'] 通过：偏航='+Math.round(w.cam.angleFinal[1])+' 俯仰='+Math.round(w.cam.angleFinal[0])+' 缩放='+w.cam.zoomFinal+' 单指回调=0');
+  }
+});
+test('V2.38.9 视角控制：边界一律从 Renderer/Camera 读（室内外两套），不抄常量（两文件）',()=>{
+  for(const [name,src] of VC_FILES_SRC){const w=vcWorld(src);w.src=src;vcBoundsCheck(w,name);}
+  console.log('[VC 边界] 室外/室内两套边界均由相机对象读得');
+});
+test('V2.38.9 F-A：引擎就绪前不锁死模式（点助手自己的界面不算数），引擎就绪后必须判为主路（两文件）',()=>{
+  for(const [name,src] of VC_FILES_SRC){
+    const w=vcWorld(src,null,{dead:true});
+    try{vcModeCheck(w,name);}catch(e){console.log('[VC F-A 失败]['+name+'] '+e.message);throw e;}
+    console.log('[VC F-A]['+name+'] 通过：未就绪时不锁模式 → 就绪后自动升级 camera');
+  }
+});
+test('V2.38.9 F-C：备路重置按「当前真实角度」算剩余差值——未收敛时也必须收敛（两文件）',()=>{
+  for(const [name,src] of VC_FILES_SRC){
+    const w=vcWorld(src,null,{noCam:true});
+    try{vcFixCheck(w,name);}catch(e){console.log('[VC F-C 失败]['+name+'] '+e.message);throw e;}
+    console.log('[VC F-C]['+name+'] 通过：未收敛场景重置后 偏航='+w.cam.angleFinal[1]+' 俯仰='+w.cam.angleFinal[0]+'（引擎当前角 '+w.cam.angle[1]+'）');
+  }
+});
+test('V2.38.9 F1：备路多档缩放后重置必须回到起点（单段手势不得越过两指间距 0 把缩放反向拉走）',()=>{
+  for(const [name,src] of VC_FILES_SRC){
+    const w=vcWorld(src,null,{noCam:true});
+    try{vcZoomResetCheck(w,name);}catch(e){console.log('[VC F1 失败]['+name+'] '+e.message);throw e;}
+    console.log('[VC F1]['+name+'] 通过：80→35→重置回到 '+w.cam.zoomFinal+'；150→重置回到 80 档');
+  }
+});
+test('V2.38.9 F2：上一段合成手势还没发完时的拖拽不许被吃掉、旧手势俯仰不许泄漏',()=>{
+  for(const [name,src] of VC_FILES_SRC){
+    const w=vcWorld(src,null,{noCam:true});
+    try{vcPendingDragCheck(w,name);}catch(e){console.log('[VC F2 失败]['+name+'] '+e.message);throw e;}
+    console.log('[VC F2]['+name+'] 通过：按钮手势未完时拖拽 偏航='+w.cam.angleFinal[1]+' 俯仰='+w.cam.angleFinal[0]+'（旧版会被吃到 0）');
+  }
+});
+test('V2.38.9 F4：结果码 4 的文案分平台——手机页用手机版原文，桌面页用旧引擎原文（两文件）',()=>{
+  for(const [name,src] of TP_FILES_SRC){
+    const wm=tpWorld(src,null,{mn:true});
+    assert.equal(wm.call('TP_ACK_WHY[4]'),'当前地图无法使用该功能',name+' 手机页（IS_MN）结果码 4 必须是手机版原文');
+    wm.ack(new Uint8Array([0x4a,0x0a,4,0,0,0]).buffer);
+    assert.ok(wm.diag().indexOf('当前地图无法使用该功能')>=0,name+' 手机页回包诊断文本必须写手机版原文：'+wm.diag());
+    const wd=tpWorld(src);
+    assert.equal(wd.call('TP_ACK_WHY[4]'),'未知地图',name+' 桌面页结果码 4 必须仍是旧引擎原文「未知地图」');
+    wd.ack(new Uint8Array([0x4a,0x0a,4,0,0,0]).buffer);
+    assert.ok(wd.diag().indexOf('未知地图')>=0,name+' 桌面页回包诊断文本必须写旧引擎原文：'+wd.diag());
+    console.log('[F4 文案]['+name+'] 手机「当前地图无法使用该功能」/ 桌面「未知地图」双向核对通过');
+  }
+});
+test('V2.38.9 F5：teleport(map,opt) 挂在公开门面 window.__ROPlugin 上且真的可达（两文件）',()=>{
+  for(const [name,src] of TP_FILES_SRC){
+    const m=/teleport: function \(map, opt\) \{ return teleport\(map, opt\); \}/.exec(src);
+    assert.ok(m,name+' 门面必须把 teleport 挂到公开接口对象上（window.__ROPlugin）');
+    const at=src.indexOf('window.__ROPlugin = {');
+    assert.ok(at>=0&&src.indexOf(m[0])>at&&src.indexOf(m[0])-at<900,name+' 门面条目必须写在 window.__ROPlugin 对象里（不是随手写在别处）');
+    const w=tpWorld(src);
+    assert.equal(w.call('(function(){ var f = { '+m[0]+' }; return typeof f.teleport; })()'),'function',name+' 门面条目必须是可调用函数');
+    const r=w.call('(function(){ var f = { '+m[0]+' }; return f.teleport("iz_dun02",{x:11,y:22}); })()');
+    assert.equal(r&&r.ok,true,name+' 门面调用必须真的发包（不是死代码）');
+    assert.equal(w.sent.length,1,name+' 门面一次调用只发一个包');
+    const v=w.sent[0].build().view;
+    assert.equal(v.getUint16(0,true),2633,name+' 门面发出的必须是 0x0a49/2633');
+    assert.equal(v.getUint32(18,true),11,name+' 门面必须把 x 带进包');
+    assert.equal(v.getUint32(22,true),22,name+' 门面必须把 y 带进包');
+    console.log('[F5 门面]['+name+'] window.__ROPlugin.teleport 可达且发出 0x0a49');
+  }
+});
+test('V2.38.9 视角控制变异体：阈值/上下限/右键/触摸/派发/快照/引擎UI/模式锁定/一帧全发/重置算死/缩放反拉/同步start 十二处改动必须被真实行为断言杀死（两文件）',()=>{
+  const MUT=[
+    ['M-VC1 拖拽阈值判定去掉（1px 抖动也算拖拽）',
+      '            if ((dx * dx + dy * dy) <= VC_TH * VC_TH) return;   // 还在阈值内：不接管、也不派发给游戏',
+      '            if (false) return;   // 变异：阈值判定去掉'],
+    ['M-VC2 缩放改直写 zoomFinal（绕过引擎 setZoom 的上下限）',
+      '        cam.setZoom(dir * VC_ZOOM_STEP);',
+      '        cam.zoomFinal = cam.zoomFinal + 15 * dir;   // 变异：绕过上限/下限'],
+    ['M-VC3 右键也被接管（不再要求 button===0）',
+      "          if (e.button !== 0 || !simFromRealMouse(e) || vcInUi(e.target)) return;",
+      "          if (!simFromRealMouse(e) || vcInUi(e.target)) return;   // 变异：右键也接管"],
+    ['M-VC4 触摸路径被覆盖（任何指针都当成真实鼠标）',
+      '          if (e.pointerType !== undefined) return e.pointerType === "mouse";',
+      '          return true;   // 变异：触摸指针也合成'],
+    ['M-VC5 拖拽期间仍向游戏派发 touchmove（摇杆会带着角色乱跑）',
+      '          if (p.mode === "camera") { vcCamDrag(ddx, ddy); return; }',
+      '          if (p.mode === "camera") { vcCamDrag(ddx, ddy); var tm = simMkTouch(e.clientX, e.clientY, p.target); if (tm) simFire("touchmove", [tm], [tm], p.target); return; }'],
+    ['M-VC6 重置快照在改动之后才拍（每次都用当前状态当起点 → 重置回不到原始视角）',
+      '      function vcEnsureOrigin() { return vcS.origin || vcSnapshot(); }',
+      '      function vcEnsureOrigin() { return vcSnapshot(); }   // 变异：起点每次都重拍（快照落在改动之后）'],
+    ['M-VC7 引擎活动 UI 窗口上也接管（拖窗口会变成转视角）',
+      '          if (vcEngineUiDom(t)) return true;',
+      '          if (false) return true;   // 变异：不再排除引擎 UI 窗口'],
+    ['M-VC8 引擎就绪前就把备路结论锁死（引擎加载前点过屏幕/助手界面就整局走备路）',
+      '          return "touch";',
+      '          vcS.mode = "touch"; return vcS.mode;   // 变异：未就绪也把结论定死'],
+    ['M-VC9 合成手势退回一帧内全发完（俯仰按钮 Δ=0）',
+      '        vcSynEmit(items);',
+      '        items.forEach(function (it) { if (it.t === "end") vcSynEnd(); else vcSynMove(it.mid, it.sub, it.ang, it.dist, it.dy); });   // 变异：一帧内全发完'],
+    ['M-VC10 备路重置改回按累计量一次算死（不回读当前真实角度）',
+      '        var o = vcS.origin, cur = vcAngle(), live = !!(cur && o);',
+      '        var o = vcS.origin, cur = null, live = false;   // 变异：不看当前真实角度'],
+    ['M-VC11 备路缩放纠偏不再钳单段手势（两指间距越过 0 → 缩放被反向拉到底）',
+      'var zm = Math.abs(dz) / (VC_ZOOM_STEP * 15), zmax = (VC_D0 - 12) / VC_DZ;',
+      'var zm = Math.abs(dz) / (VC_ZOOM_STEP * 15), zmax = 99;   // 变异：不钳'],
+    ['M-VC12 合成手势 touchstart 退回同步发（上一段迟到的 touchend 把新手势一起关掉 → 拖拽被吃）',
+      '        vcQPush({ t: "start", mid: { x: mid.x, y: mid.y }, sub: sub });\n        return true;',
+      '        vcSynStartNow({ x: mid.x, y: mid.y }, sub); return true;   // 变异：同步发 touchstart'],
+  ];
+  for(const [name,src] of VC_FILES_SRC){
+    for(const [label,from,to] of MUT){
+      let killed=false,msg='';
+      assert.equal(vcBody(src).split(from).length-1,1,name+' 变异锚点必须唯一（锚点自身有问题不算杀死）：'+label);
+      try{
+        const opt=label.indexOf('M-VC8')===0?{dead:true}:((label.indexOf('M-VC9')===0||label.indexOf('M-VC10')===0||label.indexOf('M-VC11')===0||label.indexOf('M-VC12')===0)?{noCam:true}:{noCam:label.indexOf('备路')===0});
+        const w=vcWorld(src,[from,to],opt);
+        if(label.indexOf('M-VC8')===0)vcModeCheck(w,name);
+        else if(label.indexOf('M-VC9')===0)vcPitchCheck(w,name);
+        else if(label.indexOf('M-VC10')===0)vcFixCheck(w,name);
+        else if(label.indexOf('M-VC11')===0)vcZoomResetCheck(w,name);
+        else if(label.indexOf('M-VC12')===0)vcPendingDragCheck(w,name);
+        else if(label.indexOf('M-VC7')===0)vcGuardCheck(w,name);else if(label.indexOf('M-VC6')===0)vcCamCheck(w,name);
+        else if(label.indexOf('M-VC4')===0)vcGuardCheck(w,name);
+        else if(label.indexOf('M-VC3')===0)vcGuardCheck(w,name);
+        else vcCamCheck(w,name);
+      }catch(e){killed=true;msg=e&&e.message||String(e);}
+      assert.ok(killed,name+' 变异体必须被真实行为断言杀死：'+label);
+      console.log('[V2.38.9 变异]['+name+'] '+label+' 被杀死：'+String(msg).split(String.fromCharCode(10))[0].slice(0,110));
+    }
+  }
+});
+test('V2.38.9 F6：公开入口 teleport(map,{x,y}) 真行为调用（帧、券、type、拒绝路径）（两文件）',()=>{
+  for(const [name,src] of TP_FILES_SRC){
+    const w=tpWorld(src);
+    const r=w.teleport('iz_dun02',{x:120,y:30});
+    assert.equal(r&&r.ok,true,name+' teleport(map,{x,y}) 必须真的发出（不是死代码）');
+    assert.equal(w.sent.length,1,name+' 一次调用只发一个包');
+    const v=w.sent[0].build().view;
+    assert.equal(v.getUint16(0,true),2633,name+' opcode 2633');
+    assert.equal(v.getUint32(18,true),120,name+' x 必须进包');
+    assert.equal(v.getUint32(22,true),30,name+' y 必须进包');
+    assert.equal(v.getUint32(26,true),1,name+' 默认 type=1');
+    assert.equal(v.getUint32(30,true),14527,name+' 券 14527 必须进包');
+    assert.equal(w.teleport('prontera',{x:5,y:6,type:0}).ok,true,name+' type=0 也必须能发');
+    assert.equal(w.sent[1].build().view.getUint32(26,true),0,name+' type=0 必须原样进包');
+    assert.equal(w.teleport('Bad Map!',{x:1,y:2}).ok,false,name+' 非法地图必须拒绝');
+    assert.equal(w.sent.length,2,name+' 拒绝时绝不发包（零假成功）');
+    console.log('[F6 teleport]['+name+'] 72B 帧 opcode/坐标/type/券 全部行为核对通过');
+  }
+});
+test('V2.38.9 F7：守卫加回——PRIVATE_AIRSHIP_REQUEST 只允许出现在注释里（两文件）',()=>{
+  for(const [name,src] of TP_FILES_SRC){
+    const lines=src.split(/\r?\n/).filter(l=>l.indexOf('PRIVATE_AIRSHIP_REQUEST')>=0);
+    assert.ok(lines.length>0,name+' 白名单断言必须能命中（否则守卫形同虚设）');
+    for(const l of lines)assert.ok(/^\s*\/\//.test(l),name+' 裸引用（非注释）必须为 0：'+l.trim().slice(0,120));
+    assert.ok(!src.includes('new CLIENT.PS.CZ.PRIVATE_AIRSHIP_REQUEST'),name+' 不许 new 客户端类');
+    console.log('[F7 守卫]['+name+'] '+lines.length+' 处引用全部在注释里');
+  }
 });

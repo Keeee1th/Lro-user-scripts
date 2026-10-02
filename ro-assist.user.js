@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.38.8
+// @version      2.38.9
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -120,6 +120,45 @@
 // 4. 临时战斗目标 API 在任何发包前严格验证 GID/MID、活体怪物和 MvpDropsNum；失效时自动清理。保留 v2.38.0 opcode 能力探测与启动自检修复。
 // 5. 版本：@version 2.38.0 → 2.38.1（VER 同步）；实验版同步。离线 runtime 151/151、opcode 9/9，独立定点复核 8/8 通过。
 
+// ---------------- V2.38.9 变更摘要 ----------------
+// 1. 手机页（/?r=mn）新增「电脑鼠标也能转视角/缩放」：左键在画面上拖拽 = 偏航+俯仰（位移超过 5px 才算拖拽，
+//    拖拽期间与抬起都不再向游戏派发合成触摸，所以拖视角时角色不会乱跑、也不会触发拖拽结束时那一次点击走路），
+//    滚轮 = 缩放（有上下限、到边界不再动、不会反转），左下角新增 7 键按钮组（左转/右转/上仰/下俯/放大/缩小/重置视角）。
+// 2. 入口事实（Online_mn.js 逐模块核对，非猜测）：真相机是 Renderer/Camera（angleFinal[0]=俯仰、angleFinal[1]=偏航、
+//    zoomFinal=距离（小=近）；update() 每帧做 angle += (angleFinal-angle)*k，所以只改 *Final，由引擎自己插值；
+//    边界都长在该模块上：室外 rotationFrom/To=±360、俯仰 zoomFrom/To=190/270、缩放上限 |altitudeTo-altitudeFrom|*MAX_ZOOM；
+//    室内 inRotationFrom/To=-60/-25、inZoomFrom/To=220/240，室内外由 DBManager.isIndoor(currentMap) 判定）。
+//    手机页的手指入口是 Core/Mobile（jQuery 挂 window 的 touchstart/touchmove/touchend：两指距离→zoomFinal、
+//    两指夹角→angleFinal[1]、竖直张开 >10px 时 SHIFT + Camera.rotate(true) 转俯仰）；而手机页构建的
+//    Controls/MouseEventHandler 只挂了 mousemove，没有任何鼠标拖拽/滚轮进相机的接线 —— 这就是「用电脑打开手机页没法转视角」的根因。
+// 3. 两条路都只在手机页装配：主路直接调 Renderer/Camera（拖拽/滚轮/按钮/重置，上下限与 ±360 回绕逐字对齐
+//    Camera.processMouseAction 与 setZoom）；备路在相机模块不可达时合成两指触摸（距离=缩放、夹角=偏航、竖直移动=俯仰、
+//    重置按「当前真实角度」算剩余差值再发反向手势并复核，走与手机完全相同的 Core/Mobile 入口。两条路都不可用时如实报「不可用」，不做假成功。
+// 4. 红线：只接管「左键 + 非 ALT + 真实鼠标 + 非助手 UI + 非引擎活动 UI 窗口」的拖拽；右键/ALT 事件一概不碰
+//    （不拦、不 preventDefault、不合成）；不新增端点；非手机页零改动；触摸设备原有手势（单指摇杆 / 两指缩放旋转）一行不改。
+// 5. 审计小修：F1 分帧补充表 2826 的十六进制标签 0x0b36 → 0x0b0a（0x0b36 是 2870）；F2 装备用例第 645 行日志
+//    改为读快照常量（原来 p 是活引用，2873 的 68B 帧覆盖后印出 rec=68，日志会撒谎）；F3 分流装备整表注释的模块引用
+//    改为 src/Network/PacketStructure.js（SPLIT_SEND_ITEMLIST_* 类定义处，不是 WorldMap）；F4 传送结果码按客户端原文补齐
+//    3=「该地图不支持传送功能」、4=「未知地图」，并把 2 改成原句「背包中找不到传送卷轴或会员卡」、0 标注为「推断」；
+//    F6 公开入口 teleport(map,{x,y}) 补真实行为调用用例（不再只有静态断言）；F7 守卫加回「PRIVATE_AIRSHIP_REQUEST 只允许出现在注释里」。
+//    口径提示（回应审计 D）：备路 touch 的实现手段**就是**向游戏派发合成触摸（这正是手机原生路径），所以「拖拽后一次合成触摸都不许派发」
+//    这条字面规则只适用于鼠标→触摸模拟层（simDown/simMove/simUp 的鼠标接管）——两层不同，别混。被保护的行为是：鼠标拖拽期间/抬起时
+//    不得触发单指摇杆走路或点地走路（有行为断言）；触摸设备自身发出的触摸事件一行不改。
+// 7. 审计修补②（F-A/F-B/F-C）＋其余：F-A 引擎就绪前不再把备路结论锁死（去掉「随便点一下就定模式」的全局探测，点助手自己的界面不参与判定）；
+//    F-B 合成手势改按帧排队发（touchstart → 每帧一个 move → 再等一帧才 touchend）：原来一帧内全发完时，引擎只在 Camera.update 里应用俯仰，
+//    touchend 已把 action.active 清掉，导致俯仰按钮/俯仰拖拽 Δ=0；F-C 备路重置不再按快照一次算死，改为按「当前真实角度」算剩余差值 + 钳制 +
+//    最多 2 轮复核（读不到真实角度时退回累计量估算，注释写明是尽力而为）；F-2 67B 日志快照化补「日志文本断言 + 可失败性」；
+//    F-4 手机页结果码 4 用手机版原文「当前地图无法使用该功能」，桌面页仍用旧引擎「未知地图」；F-6 明确 teleport(map,opt) 是公开薄封装。
+// 8. 待真机确认（不改代码）：F-D 手机版 MouseEventHandler.intersect 默认 false，若页面上存在非 canvas 祖先层级的遮罩（#body-cover 之类），
+//    会同时废掉滚轮/拖拽与点击合成；仓内没有页面 CSS，需在真机上确认后再定。
+// 9. 第三轮复核（F1/F2/F3/F4/F5）：F1 备路缩放纠偏加了「单段手势两指间距不得越过 0」的钳制（越过 0 后引擎把距离算成负的，
+//    缩放会被反向拉走：实测 35→30→20→2 被钳到下限），复核轮数放宽到 8 轮；F2 合成手势的 touchstart 也进同一条 FIFO 队列
+//    （旧版同步发 touchstart，上一段的 touchend 迟到时会把新手势一起关掉：50ms 内的拖拽被整段吃掉、旧俯仰还会泄漏）；
+//    F3 装备分流日志守卫改为断言**产品日志原文**（去掉产品里的 rec= 必须让用例变红），不再只比测试本地字符串；
+//    F4 补手机分支用例（注入 IS_MN 后结果码 4 必须是手机版原文）；F5 teleport(map,opt) 挂到 window.__ROPlugin 门面上并有可达性用例。
+//    口径（必须写明）：备路缩放重置是「一段一段搬」的 —— 单段受引擎两指间距限制最多搬 ~19 距离，最多复核 8 轮（合计 ~150），
+//    本服量程 2..150 能回得去；但若引擎侧上下限比本服更宽、且跨度超过约 150 距离，一次重置可能回不到起点，需要再按一次「重置视角」。
+// 6. 版本：@version 2.38.8 → 2.38.9（VER 同步）；实验版同步。
 // ---------------- V2.38.8 变更摘要 ----------------
 // 1. 传送改为助手自己直发发包（用户原始要求：直接发送这个包，不打开对话框、也不显示助手自己的对话框）：
 //    新增直达发包入口 teleport(map,{x,y,type}) / tpSend() / tpTeleport()，自己构造 CZ.PRIVATE_AIRSHIP_REQUEST
@@ -134,7 +173,7 @@
 //    落地沿用既有 20s/800ms 判定，失配时按要求暴露 requested/actual；耗券规则仍由服务器判定（城镇及周边不耗、野外/地牢耗 1 张 14527）。
 // 4. 安全口径：只在用户/脚本显式触发时发包（唯一新增发包点），无自发传送、无新端点、无新定时器、不引入等待/确认对话框。
 // 5. 审计小修：F1 分帧补充表 2825 的理由改成事实（真机 burst 首包是 op 471 ZC.SPRITE_CHANGE2，主表缺失时在 471 就断，2825 救不了；条目保留为防御性）；
-//    F2 客户端行号引用改为 new-engine-local/www/Online.js 实际位置；F4 分流装备整表补 0x0b36(2826) 67B 记录（同族加固，本服真机走 2873）。
+//    F2 客户端行号引用改为 new-engine-local/www/Online.js 实际位置；F4 分流装备整表补 0x0b0a(2826) 67B 记录（同族加固，本服真机走 2873）。
 // 6. 版本：@version 2.38.7 → 2.38.8（VER 同步）；实验版同步。
 
 // ---------------- V2.38.7 变更摘要 ----------------
@@ -401,7 +440,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.38.8"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.38.9"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -3154,22 +3193,430 @@
     body.appendChild(vline);
   }
 
-  // 鼠标→触摸模拟层：手机版（r=mn）游戏用 jquery.mobile-events 触摸事件驱动，只认触摸不认鼠标；
-  // 外接/蓝牙鼠标的 mousedown 不会变成触摸 → 游戏点不动。此处把「真实鼠标」事件合成为触摸派发到游戏。
-  // V2.8.1 严格化（修复：手指点开内挂设置页约 1s 后自动关闭）：
-  //   兼容 mouse 事件可能由手指触摸派生（iOS Safari / 部分国产内核的 mousedown 不带 sourceCapabilities），
-  //   旧逻辑把这类事件误判为外接鼠标，在刚展开页面的遮罩/空白处二次合成触摸 → 引擎按「点外部关窗」默认逻辑关掉窗口。
-  //   现在：优先 PointerEvent，仅 pointerType==="mouse" 才合成；无 PointerEvent 回退 mouse 事件仅 firesTouchEvents===false 合成；
-  //   属性缺失一律不合成。touchend 始终派发到「按下时」的原目标并保证无悬空触摸。
+  // 鼠标→触摸模拟层 + 视角控制（手机页 r=mn，V2.38.9）
+  // 事实依据（Online_mn.js 逐模块核对，非猜测）与两条路的取舍见上方 V2.38.9 变更摘要第 2/3 条。
+  // 关键点复述：真相机 = Renderer/Camera（只改 angleFinal/zoomFinal，引擎自己插值；边界从相机对象读）；
+  //   手机页的手指入口 = Core/Mobile 的两指手势；手机页的 MouseEventHandler 没有鼠标拖拽/滚轮接线（根因）。
+  // 只接管真实鼠标左键拖拽；触摸设备走的是真实触摸事件，本层一行不改。
   try {
     if (IS_MN) {
+
+      // === VC_BEGIN === 视角控制（V2.38.9）测试切片锚点：本区间自包含（只依赖 IS_MN/inAssistantUI/isolateEl/requireDB/mvLog/tlog/window/document/Touch/TouchEvent）
+      var VC_TH = 5;                 // 拖拽判定阈值（px）：位移 ≤ 它算一次点击，照旧走路
+      var VC_YAW_STEP = 15;          // 按钮偏航步长（度）
+      var VC_PITCH_STEP = 8;         // 按钮俯仰步长（度）
+      var VC_ZOOM_STEP = 1;          // 缩放步长：1 = Camera.setZoom(1) = 15 距离单位
+      var VC_D0 = 200, VC_DZ = 150;  // 备路两指的初始指距 / 一档缩放对应的指距变化（0.1*150 = 15 = setZoom(1)）
+      var vcS = { mode: "", cam: null, db: null, meh: null, rnd: null, origin: null, drag: null, pend: null,
+        warned: false, acc: { yaw: 0, pitch: 0, zoom: 0 }, syn: null, tmid: null, box: null, boxTried: false, q: null, qRun: false, fix: 0 };
+      function vcLog(m) { try { mvLog("[视角控制] " + m); tlog("view-ctl " + m); } catch (e) {} }
+      function vcNum(v) { return (typeof v === "number" && isFinite(v)) ? v : null; }
+      function vcMod(n) { try { return requireDB(n) || null; } catch (e) { return null; } }
+      function vcCam() { if (!vcS.cam) vcS.cam = vcMod("Renderer/Camera"); return vcS.cam; }
+      function vcDB() { if (!vcS.db) vcS.db = vcMod("DB/DBManager"); return vcS.db; }
+      function vcMeh() { if (!vcS.meh) vcS.meh = vcMod("Controls/MouseEventHandler"); return vcS.meh; }
+      function vcRnd() { if (!vcS.rnd) vcS.rnd = vcMod("Renderer/Renderer"); return vcS.rnd; }
+      function vcIndoor() {
+        try { var db = vcDB(), cam = vcCam(); if (db && cam && typeof db.isIndoor === "function" && cam.currentMap) return !!db.isIndoor(cam.currentMap); } catch (e) {}
+        return null;   // 判定不出就取两套边界的并集：宽一点但绝不反转
+      }
+      function vcMinMax(list) {
+        var vals = [], i, v;
+        for (i = 0; i < list.length; i++) { v = vcNum(list[i]); if (v != null) vals.push(v); }
+        return vals.length ? { lo: Math.min.apply(null, vals), hi: Math.max.apply(null, vals) } : null;
+      }
+      function vcPair(ind, inLo, inHi, outLo, outHi) {
+        var r;
+        if (ind === true) { r = vcMinMax([inLo, inHi]); if (r) return r; }
+        if (ind === false) { r = vcMinMax([outLo, outHi]); if (r) return r; }
+        return vcMinMax([inLo, inHi, outLo, outHi]);
+      }
+      // 边界一律从相机对象读（室内外分别对应 inZoomFrom/To、rotationFrom/To、inRotationFrom/To 等），不抄常量
+      function vcBounds() {
+        var cam = vcCam(); if (!cam) return null;
+        var ind = vcIndoor();
+        return { a0: vcPair(ind, cam.inZoomFrom, cam.inZoomTo, cam.zoomFrom, cam.zoomTo),
+                 a1: vcPair(ind, cam.inRotationFrom, cam.inRotationTo, cam.rotationFrom, cam.rotationTo), indoor: ind };
+      }
+      function vcClamp(v, span) { return (span && vcNum(span.lo) != null && vcNum(span.hi) != null) ? (v < span.lo ? span.lo : (v > span.hi ? span.hi : v)) : v; }
+      function vcScreenW() { var m = vcMeh(), w = m && m.screen ? vcNum(m.screen.width) : null; return (w && w > 0) ? w : (vcNum(window.innerWidth) || 1); }
+      function vcScreenH() { var m = vcMeh(), h = m && m.screen ? vcNum(m.screen.height) : null; return (h && h > 0) ? h : (vcNum(window.innerHeight) || 1); }
+      function vcSnapshot() {
+        var cam = vcCam(); if (!cam || !cam.angleFinal) return null;
+        var a0 = vcNum(cam.angleFinal[0]), a1 = vcNum(cam.angleFinal[1]), z = vcNum(cam.zoomFinal);
+        if (a0 == null || a1 == null || z == null) return null;
+        vcS.origin = { a0: a0, a1: a1, z: z };
+        return vcS.origin;
+      }
+      function vcEnsureOrigin() { return vcS.origin || vcSnapshot(); }
+      function vcSave() { try { var cam = vcCam(); if (cam && typeof cam.save === "function") cam.save(); } catch (e) {} }
+      // 偏航 ±360 回绕：与 Camera.processMouseAction 完全同口径（同侧越界才整体平移，并同步 angle[1]）
+      function vcWrap(cam, a1) {
+        var cur = vcNum(cam.angle && cam.angle[1]);
+        if (cur == null) return a1;
+        if (cur > 180 && a1 > 180) { try { cam.angle[1] = cur - 360; } catch (e1) {} return a1 - 360; }
+        if (cur < -180 && a1 < -180) { try { cam.angle[1] = cur + 360; } catch (e1) {} return a1 + 360; }
+        return a1;
+      }
+      function vcWrite(a0, a1, z) {
+        var cam = vcCam(); if (!cam || !cam.angleFinal) return false;
+        var b = vcBounds();
+        a1 = vcWrap(cam, a1);
+        if (b && b.a1) a1 = vcClamp(a1, b.a1);
+        if (b && b.a0) a0 = vcClamp(a0, b.a0);
+        cam.angleFinal[0] = a0;
+        cam.angleFinal[1] = a1;
+        if (z != null) { try { cam.zoomFinal = z; } catch (e2) {} }
+        vcSave();
+        return true;
+      }
+      // 主路（camera）：拖拽 dx→偏航、dy→俯仰；公式与 Camera.processMouseAction 的两条分支逐字同形
+      function vcCamDrag(dx, dy) {
+        var cam = vcCam(); if (!cam || !cam.angleFinal) return false;
+        var a0o = vcNum(cam.angleFinal[0]), a1o = vcNum(cam.angleFinal[1]);
+        if (a0o == null || a1o == null) return false;
+        vcEnsureOrigin();
+        return vcWrite(a0o + dy / vcScreenH() * 300, a1o - dx / vcScreenW() * 720, null);
+      }
+      function vcCamZoom(dir) {
+        var cam = vcCam(); if (!cam || typeof cam.setZoom !== "function") return false;
+        vcEnsureOrigin();
+        cam.setZoom(dir * VC_ZOOM_STEP);   // 上下限（下限 10 / 上限 |altitudeTo-altitudeFrom|*MAX_ZOOM）由引擎 setZoom 保证
+        vcS.acc.zoom += dir * VC_ZOOM_STEP;
+        return true;
+      }
+      function vcCamStep(kind, dir) {
+        var cam = vcCam(); if (!cam || !cam.angleFinal) return false;
+        var a0 = vcNum(cam.angleFinal[0]), a1 = vcNum(cam.angleFinal[1]);
+        if (a0 == null || a1 == null) return false;
+        vcEnsureOrigin();
+        if (!vcWrite(kind === "pitch" ? a0 + dir * VC_PITCH_STEP : a0, kind === "yaw" ? a1 - dir * VC_YAW_STEP : a1, null)) return false;
+        vcS.acc[kind] += dir * (kind === "pitch" ? VC_PITCH_STEP : VC_YAW_STEP);
+        return true;
+      }
+      function vcCamReset() {
+        var cam = vcCam(), o = vcS.origin;
+        if (!cam || !cam.angleFinal || !o) return false;
+        if (!vcWrite(o.a0, o.a1, o.z)) return false;
+        vcS.acc = { yaw: 0, pitch: 0, zoom: 0 };
+        return true;
+      }
+      // 备路（touch）：合成两指触摸，走与手机完全相同的 Core/Mobile 入口
+      function vcMkT(id, x, y) {
+        try {
+          var tg = document.body || document.documentElement;
+          return new Touch({ identifier: id, target: tg, clientX: x, clientY: y, pageX: x, pageY: y, screenX: x, screenY: y });
+        } catch (e) { return null; }
+      }
+      function vcSynFire(type, touches, changed) {
+        try {
+          var tg = document.body || document.documentElement;
+          tg.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: touches, targetTouches: touches, changedTouches: changed }));
+          return true;
+        } catch (e) { return false; }
+      }
+      function vcTouchOk() {
+        try {
+          if (typeof Touch !== "function" || typeof TouchEvent !== "function") return false;
+          if (!(document.body || document.documentElement)) return false;
+          var t1 = vcMkT(1, 4, 4), t2 = vcMkT(2, 8, 4);
+          if (!t1 || !t2) return false;
+          var ev = new TouchEvent("touchstart", { bubbles: true, cancelable: true, touches: [t1, t2], targetTouches: [t1, t2], changedTouches: [t1] });
+          return !!(ev && ev.touches && ev.touches.length === 2);
+        } catch (e) { return false; }
+      }
+      function vcPairT(mid, ang, dist) {   // 两指连线：中点 mid、角度 ang（度）、指距 dist
+        var r = dist / 2, a = ang / 180 * Math.PI;
+        var dx = Math.cos(a) * r, dy = Math.sin(a) * r;
+        var t1 = vcMkT(vcS.synSeq || (vcS.synSeq = 9001), Math.round(mid.x - dx), Math.round(mid.y - dy));
+        var t2 = vcMkT((vcS.synSeq || 9001) + 1, Math.round(mid.x + dx), Math.round(mid.y + dy));
+        return (t1 && t2) ? [t1, t2] : null;
+      }
+      function vcTmid() {
+        if (!vcS.tmid) vcS.tmid = { x: Math.round((vcNum(window.innerWidth) || 800) / 2), y: Math.round((vcNum(window.innerHeight) || 600) / 2) };
+        return vcS.tmid;
+      }
+      // F-B 分帧发送：引擎只在每帧的 Camera.update 里应用俯仰，而 touchend 会立刻清掉 action.active，
+      //   所以「一帧内把 touchstart+2×touchmove+touchend 全发完」时俯仰永远吃不到那一帧 → 必须按帧排队发。
+      function vcRaf(fn) {
+        try { if (window.requestAnimationFrame) return window.requestAnimationFrame(fn); } catch (e) {}
+        try { return window.setTimeout(fn, 16); } catch (e2) { try { fn(); } catch (e3) {} return 0; }
+      }
+      function vcQNext() {
+        if (vcS.qRun) return;
+        vcS.qRun = true;
+        vcRaf(function () { vcS.qRun = false; vcQRun(); });
+      }
+      function vcQRun() {
+        var q = vcS.q; if (!q || !q.length) { vcS.q = null; return; }
+        var head = q[0];
+        if (head.wait > 0) { head.wait--; vcQNext(); return; }   // 再等一帧：把这一帧留给引擎的 Camera.update
+        q.shift();
+        try {
+          if (head.t === "start") vcSynStartNow(head.mid, head.sub);
+          else if (head.t === "move") vcSynMove(head.mid, head.sub, head.ang, head.dist, head.dy);
+          else if (head.t === "end") vcSynEnd();
+          else if (head.t === "fix") vcSynFix(head.acc, head.round);
+        } catch (e) {}
+        if (q.length) vcQNext(); else vcS.q = null;
+      }
+      function vcQPush(it) { if (!vcS.q) vcS.q = []; vcS.q.push(it); vcQNext(); }
+      function vcQPushMove(it) {   // 拖拽：同一手势只留最后一次位置（引擎的两指偏航/俯仰都是「相对 touchstart」的绝对量，可合并）
+        var last = vcS.q && vcS.q[vcS.q.length - 1];
+        if (last && last.t === "move" && last.sub === it.sub) { last.ang = it.ang; last.dist = it.dist; last.dy = it.dy; return; }
+        vcQPush(it);
+      }
+      function vcSynEmit(items) { for (var i = 0; i < items.length; i++) vcQPush(items[i]); }
+      // F2 排队受理：整段手势（含 touchstart）都进同一条 FIFO 队列。旧版 touchstart 是同步发的，
+      //   于是「上一段手势的 touchend 还在队列里」时开始的新手势会被那条迟到的 touchend 一起关掉（拖拽被整段吃掉、旧手势的俯仰还会泄漏进来）。
+      function vcSynStart(mid, sub) {
+        vcQPush({ t: "start", mid: { x: mid.x, y: mid.y }, sub: sub });
+        return true;
+      }
+      function vcSynStartNow(mid, sub) {
+        vcEnsureOriginAny();   // 备路也要有「起点」：第一次真实操作时拍一次快照，重置才有目标（与主路同一套语义）
+        var ts = vcPairT(mid, 0, VC_D0);
+        if (!ts) return false;
+        vcS.syn = { mid: { x: mid.x, y: mid.y }, sub: sub, dist: VC_D0, ang: 0, last: ts[1] };
+        return vcSynFire("touchstart", ts, [ts[0], ts[1]]);
+      }
+      function vcSynMove(mid, sub, ang, dist, dy) {
+        var s = vcS.syn; if (!s) return false;
+        var ts;
+        if (sub === "zoom") ts = vcPairT(s.mid, 0, dist);
+        else if (sub === "pitch") ts = vcPairT({ x: s.mid.x, y: s.mid.y + dy }, 0, VC_D0);
+        else ts = vcPairT(s.mid, ang, VC_D0);
+        if (!ts) return false;
+        s.last = ts[1];
+        return vcSynFire("touchmove", ts, [ts[0], ts[1]]);
+      }
+      function vcSynEnd() {
+        var s = vcS.syn; vcS.syn = null;
+        if (!s) return false;
+        return vcSynFire("touchend", [], [s.last]);
+      }
+      function vcSynStep(kind, dir, mag) {
+        var mid = vcTmid(), s = kind === "zoom" ? "zoom" : (kind === "pitch" ? "pitch" : "yaw");
+        mag = mag || 1;
+        if (!vcSynStart(mid, s)) return false;
+        var items = [], n0, d1;
+        if (kind === "zoom") {
+          items = [{ t: "move", mid: mid, sub: "zoom", ang: 0, dist: VC_D0, dy: 0 },
+                   { t: "move", mid: mid, sub: "zoom", ang: 0, dist: VC_D0 - VC_DZ * dir * mag, dy: 0 }];
+        } else if (kind === "pitch") {
+          n0 = dir < 0 ? -12 : 12;
+          d1 = n0 + dir * Math.round(VC_PITCH_STEP * mag * vcScreenH() / 300);
+          items = [{ t: "move", mid: mid, sub: "pitch", ang: 0, dist: VC_D0, dy: n0 },   // 激活帧会被引擎吃掉做基线
+                   { t: "move", mid: mid, sub: "pitch", ang: 0, dist: VC_D0, dy: d1 }];
+        } else {
+          d1 = -dir * VC_YAW_STEP * mag / 2;   // 与主路同向；引擎 c() 把两指线角算成 2 倍（360*atan/PI），所以这里减半
+          items = [{ t: "move", mid: mid, sub: "yaw", ang: d1, dist: VC_D0, dy: 0 }];
+        }
+        items.push({ t: "end", wait: 1 });   // 末帧之后再等一帧才 touchend：那一帧的 Camera.update 才是俯仰生效的地方
+        vcSynEmit(items);
+        if (kind === "zoom") vcS.acc.zoom += dir * mag;
+        else if (kind === "pitch") vcS.acc.pitch += dir * VC_PITCH_STEP * mag;
+        else vcS.acc.yaw -= dir * VC_YAW_STEP * mag;   // 与相机侧同号：正 dir = 右转 = angleFinal[1] 减小
+        return true;
+      }
+      // F-C 只读「当前真实角度」：偏航取 angle[1]（引擎两指偏航是相对当前 angle 的绝对赋值），俯仰/缩放取 *Final（相对累加）
+      // 备路起点：写模块（Renderer/Camera）不可达时，起点也从只读观察通道（Renderer/Renderer.camera）读，
+      //   读不到才退回 vcSnapshot()（= null，此时重置只能按累计量估算）
+      function vcEnsureOriginAny() {
+        if (vcS.origin) return vcS.origin;
+        var a = vcAngle();
+        if (a && a.a0 != null && a.a1 != null && a.z != null) { vcS.origin = { a0: a.a0, a1: a.a1, z: a.z }; return vcS.origin; }
+        return vcSnapshot();
+      }
+      function vcAngle() {
+        try {
+          var cam = vcCam();
+          if (!cam || !cam.angle) { var R = vcRnd(); cam = (R && R.camera) ? R.camera : null; }
+          if (!cam || !cam.angle || !cam.angleFinal) return null;
+          var a0 = vcNum(cam.angleFinal[0]), a1 = vcNum(cam.angle[1]), t1 = vcNum(cam.angleFinal[1]), z = vcNum(cam.zoomFinal);
+          if (a0 == null || a1 == null || t1 == null) return null;
+          return { a0: a0, a1: t1, live1: a1, z: z };
+        } catch (e) { return null; }
+      }
+      // F-C 备路重置：不按快照/累计量一次算死，而是按「当前真实角度」算剩余差值，钳制后发反向手势，
+      //   发完排一轮复核（最多 2 轮）；读得到真实角度时能收敛到 1° 以内。读不到时退回累计量估算（尽力而为，注释写明）。
+      function vcSynReset() {
+        var a = vcS.acc;
+        vcS.acc = { yaw: 0, pitch: 0, zoom: 0 };
+        var o = vcS.origin, cur = vcAngle();
+        var need = !!(a.yaw || a.pitch || a.zoom);
+        if (!need && o) {   // 缩放也要参与「需不需要纠偏」（dz 不在 acc 里时同样要能回起点）
+          need = !cur ? true
+            : (Math.abs(o.a1 - cur.live1) > 0.25 || Math.abs(o.a0 - cur.a0) > 0.25 || (o.z != null && cur.z != null && Math.abs(o.z - cur.z) > 0.5));
+        }
+        if (vcS.syn) vcQPush({ t: "end", wait: 1 });   // 先把还在进行的手势正常收尾：否则纠偏手势会与它撞车，引擎直接忽略
+        if (need) vcQPush({ t: "fix", acc: a, round: 0, wait: 1 });   // 排进队列：保证在未发完的手势之后、且有引擎帧
+        return true;
+      }
+      function vcSynFix(acc, round) {
+        var o = vcS.origin, cur = vcAngle(), live = !!(cur && o);
+        var dy = null, dp = null, dz = null;
+        if (live) {
+          dy = o.a1 - cur.live1;                                     // 偏航：必须按引擎真正读的 angle[1] 算，不能按快照算死
+          if (Math.abs(o.a1 - cur.live1) <= 0.75 && Math.abs(o.a1 - cur.a1) <= 0.75) dy = 0;   // 已收敛（读数本身有 1° 量化），别再抖
+          else if (Math.abs(o.a1) < 0.6) dy += (o.a1 >= 0 ? 0.6 : -0.6);   // 引擎的 (u &&) 拒写 0：落点让开 0.6°，否则「正好回到 0」会整条写不进去
+          dp = o.a0 - cur.a0;                                        // 俯仰/缩放是相对累加，用目标差值即可精确落回
+          if (Math.abs(dp) <= 0.25) dp = 0;
+          if (cur.z != null) { dz = o.z - cur.z; if (Math.abs(dz) <= 0.25) dz = 0; }
+        } else if (acc) {
+          dy = -acc.yaw; dp = -acc.pitch; dz = -acc.zoom * VC_ZOOM_STEP * 15;
+        }
+        if (dy != null) dy = dy < -360 ? -360 : (dy > 360 ? 360 : dy);   // 钳制：一次手势最多一整圈 / 俯仰 ±300° / 缩放 ±150 距离
+        if (dp != null) dp = dp < -300 ? -300 : (dp > 300 ? 300 : dp);
+        if (dz != null) dz = dz < -150 ? -150 : (dz > 150 ? 150 : dz);
+        var sent = false, keep = vcS.acc;   // 纠偏手势是「绝对差值」，不能进累计量（否则下次重置被自己的纠偏量污染）
+        vcS.acc = { yaw: 0, pitch: 0, zoom: 0 };
+        if (dy && Math.abs(dy) >= 0.25) { vcSynStep("yaw", dy > 0 ? -1 : 1, Math.abs(dy) / VC_YAW_STEP); sent = true; }
+        if (dp && Math.abs(dp) >= 0.25) { vcSynStep("pitch", dp > 0 ? 1 : -1, Math.abs(dp) / VC_PITCH_STEP); sent = true; }
+        if (dz && Math.abs(dz) >= 0.5) {
+          var zm = Math.abs(dz) / (VC_ZOOM_STEP * 15), zmax = (VC_D0 - 12) / VC_DZ;   // F1：单段手势的两指间距必须 >0，越过 0 后引擎把距离算成负的 → 缩放被反向拉走（实测 35→30→20→2）
+          if (zm > zmax) zm = zmax;
+          vcSynStep("zoom", dz > 0 ? 1 : -1, zm); sent = true;   // dz 是距离单位，一档 = 15 距离；单段最多搬 ~19 距离，所以要多轮复核
+        }
+        vcS.acc = keep;
+        if (sent && round < 8) vcQPush({ t: "fix", acc: null, round: round + 1, wait: 1 });   // 复核：落地后再读一次（缩放到量程极限要 8 段左右），已收敛时差值 <阈值自然停
+        return true;
+      }
+      // 装配：相机模块可达走 camera，否则合成触摸走 touch，两者都不可用则如实报 off（按钮/拖拽不假装成功）
+      function vcEngineReady() {
+        try { return !!(vcMod("Renderer/Renderer") || vcMod("Controls/MouseEventHandler")); } catch (e) { return false; }
+      }
+      function vcModeEnsure() {
+        if (vcS.mode === "camera") return vcS.mode;   // 只有「确实是主路」才终局缓存（F-A）
+        var cam = vcCam();
+        if (cam && cam.angleFinal && vcNum(cam.zoomFinal) != null) {
+          vcS.mode = "camera";
+          vcLog("装配 mode=camera（直接调 Renderer/Camera）");
+          return vcS.mode;
+        }
+        if (!vcTouchOk()) {
+          if (!vcS.warned) { vcS.warned = true; vcLog("装配失败：Renderer/Camera 与合成触摸都不可用（引擎可能还没加载完，下次操作会重试）"); }
+          return "off";
+        }
+        // F-A：引擎还没加载完时不把备路结论定死 —— 否则加载前随便点一下屏幕（含点助手自己的界面）会整局锁成 touch。
+        if (!vcEngineReady()) {
+          if (!vcS.warned) { vcS.warned = true; vcLog("引擎未就绪：本次按备路 touch 跑，不锁定；下次操作会重新判定"); }
+          return "touch";
+        }
+        vcS.mode = "touch";
+        vcLog("装配 mode=touch（合成两指触摸，与手机同一条 Core/Mobile 路径）");
+        return vcS.mode;
+      }
+      function vcStep(kind, dir) {
+        var mode = vcModeEnsure();
+        if (mode === "camera") return kind === "zoom" ? vcCamZoom(dir) : vcCamStep(kind, dir);
+        if (mode === "touch") return vcSynStep(kind, dir, 1);
+        return false;
+      }
+      function vcReset() {
+        var mode = vcModeEnsure();
+        if (mode === "camera") return vcCamReset();
+        if (mode === "touch") return vcSynReset();
+        return false;
+      }
+      // 只在「画面区域」生效：助手 UI、表单控件、引擎活动 UI 窗口、模态遮罩一律不接管
+      function vcEngineUiDom(t) {
+        try {
+          var UM = vcMod("UI/UIManager");
+          if (!UM || !UM.components || !t) return false;
+          for (var k in UM.components) {
+            var c = UM.components[k];
+            if (!c || c.__active === false || !c.ui) continue;
+            var el = c.ui[0] || c.ui;
+            if (el && el.contains && el.contains(t)) return true;
+          }
+        } catch (e) {}
+        return false;
+      }
+      function vcOnCanvas(t) {
+        try {
+          var R = vcRnd(), cv = R && R.canvas;
+          if (!cv || !t) return false;
+          if (t === cv || (cv.contains && cv.contains(t))) return true;
+          if (t.contains && t.contains(cv)) return true;   // 覆盖在画布上的透明层（body/#body-cover）也算画面区域
+        } catch (e) {}
+        return false;
+      }
+      function vcInUi(t) {
+        try {
+          if (inAssistantUI(t)) return true;
+          if (t && t.closest && t.closest("input,textarea,select,button,a,[contenteditable]")) return true;
+          if (vcEngineUiDom(t)) return true;
+          var m = vcMeh();
+          // 引擎 UI 组件在 mouseenter 时把 intersect 置 false（模态/FREEZE 也一直是 false）：指针在窗口上就不接管
+          if (m && m.intersect === false && !vcOnCanvas(t)) return true;
+        } catch (e) {}
+        return false;
+      }
+      function vcOnWheel(e) {
+        try {
+          if (!e || vcInUi(e.target)) return;
+          var dy = vcNum(e.deltaY);
+          if (!dy) return;
+          var ok = vcStep("zoom", dy > 0 ? 1 : -1);
+          if (ok) { try { if (e.cancelable !== false && e.preventDefault) e.preventDefault(); } catch (e1) {} }
+          else vcLog("滚轮缩放未生效（mode=" + (vcS.mode || "未装配") + "）");
+        } catch (e2) {}
+      }
+      // 按钮组：鼠标点得动，触摸设备上同样可用；点它不会穿透到游戏（data-dsh-ui + isolateEl）
+      function vcBox() {
+        if (vcS.box || vcS.boxTried) return vcS.box;
+        vcS.boxTried = true;
+        try {
+          if (!document.body) return null;
+          var defs = [["↺", "左转视角", "yaw", -1], ["↻", "右转视角", "yaw", 1],
+            ["↑", "上仰视角", "pitch", -1], ["↓", "下俯视角", "pitch", 1],
+            ["＋", "放大（拉近）", "zoom", -1], ["－", "缩小（拉远）", "zoom", 1],
+            ["⌂", "重置视角", "reset", 0]];
+          var box = document.createElement("div");
+          box.id = "dsh-view-ctl";
+          box.setAttribute("data-dsh-ui", "1");
+          box.style.cssText = "position:fixed;left:6px;bottom:8px;z-index:31;line-height:0;user-select:none;-webkit-user-select:none;touch-action:manipulation;";
+          for (var i = 0; i < defs.length; i++) {
+            (function (d) {
+              var b = document.createElement("button");
+              b.type = "button";
+              b.title = d[1];
+              b.textContent = d[0];
+              b.style.cssText = "width:26px;height:26px;margin:1px;padding:0;font-size:13px;line-height:24px;color:#eaeaea;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.35);border-radius:4px;cursor:pointer;vertical-align:top;";
+              b.addEventListener("click", function (ev) {
+                try { if (ev && ev.preventDefault) ev.preventDefault(); if (ev && ev.stopPropagation) ev.stopPropagation(); } catch (e1) {}
+                var ok = (d[2] === "reset") ? vcReset() : vcStep(d[2], d[3]);
+                if (!ok) vcLog("按钮「" + d[1] + "」未生效（mode=" + (vcS.mode || "未装配") + "）");
+              }, false);
+              box.appendChild(b);
+            })(defs[i]);
+          }
+          document.body.appendChild(box);
+          try { isolateEl(box); } catch (e2) {}
+          vcS.box = box;
+          vcLog("按钮组已装配（左下角 7 键：左转/右转/上仰/下俯/放大/缩小/重置视角）");
+        } catch (e3) {}
+        return vcS.box;
+      }
+      // 鼠标→触摸模拟层：手机版（r=mn）游戏用 jquery.mobile-events 触摸事件驱动，只认触摸不认鼠标；
+      // 外接/蓝牙鼠标的 mousedown 不会变成触摸 → 游戏点不动。此处把「真实鼠标」事件合成为触摸派发到游戏。
+      // V2.8.1 严格化（修复：手指点开内挂设置页约 1s 后自动关闭）：优先 PointerEvent，仅 pointerType==="mouse" 才合成；
+      //   无 PointerEvent 回退 mouse 事件仅 firesTouchEvents===false 合成；属性缺失一律不合成。
+      // V2.38.9 改派发时机：按下时不再立刻合成 touchstart，而是先记成「待定」，等指针抬起时再决定：
+      //   ① 位移 ≤ VC_TH（5px）→ 一次点击：抬起时一次性合成 touchstart+touchend（与旧行为等价：Core/Mobile 的
+      //      100ms 定时器在 touchend 之后触发 onTouchEnd，MapControl 照旧点地走路/攻击）；
+      //   ② 位移 > VC_TH → 视角拖拽：整段手势不向游戏派发任何合成触摸（所以单指摇杆走路与随后的点击走路都不会被误触发），
+      //      只把位移交给视角控制层（camera 直接改相机 / touch 合成两指手势）。
+      //   ALT+左键：保持旧行为（立刻合成），不接管；右键（button!==0）本就不合成，也不拦。
       var simTouchId = 1;
-      var simActive = null;
+      var simPending = null;   // {x,y,target,pid}
+      var simActive = null;    // 仅 ALT 兜底路径：已派发 touchstart 的手势
       function simFromRealMouse(e) {
         try {
           if (e.pointerType !== undefined) return e.pointerType === "mouse";
           if (e.sourceCapabilities) return e.sourceCapabilities.firesTouchEvents === false;
-          return false; // 无 PointerEvent 且无 sourceCapabilities → 无法证明是外接鼠标，一律不合成
+          return false;   // 无 PointerEvent 且无 sourceCapabilities → 无法证明是外接鼠标，一律不合成
         } catch (err) { return false; }
       }
       function simMkTouch(x, y, target) {
@@ -3178,55 +3625,108 @@
       }
       function simFire(type, touches, changed, target) {
         try {
-          var ev = new TouchEvent(type, { bubbles: true, cancelable: true, touches: touches, targetTouches: touches, changedTouches: changed });
-          target.dispatchEvent(ev);
+          target.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: touches, targetTouches: touches, changedTouches: changed }));
         } catch (e) {}
-      }
-      function simInUi(t) {
-        return inAssistantUI(t);
       }
       function simDown(e) {
         try {
-          if (e.button !== 0 || !simFromRealMouse(e) || simInUi(e.target)) return;
-          var t = simMkTouch(e.clientX, e.clientY, e.target);
-          if (!t) return;
-          simActive = { t: t, target: e.target, pid: e.pointerId || 0 };
-          simFire("touchstart", [t], [t], e.target);
+          if (e.button !== 0 || !simFromRealMouse(e) || vcInUi(e.target)) return;
+          var pid = e.pointerId || 0;
+          if (e.altKey) {   // ALT 手势照旧：立刻合成，不接管
+            var ta = simMkTouch(e.clientX, e.clientY, e.target);
+            if (!ta) return;
+            simActive = { t: ta, target: e.target, pid: pid };
+            simFire("touchstart", [ta], [ta], e.target);
+            return;
+          }
+          simPending = { x: e.clientX, y: e.clientY, target: e.target, pid: pid, claimed: false, mode: "" };
         } catch (e2) {}
       }
       function simMove(e) {
         try {
-          if (!simActive) return;
-          if (e.pointerId !== undefined && e.pointerId !== simActive.pid) return;
+          if (simActive) {   // ALT 兜底路径：原样转发
+            if (e.pointerId !== undefined && e.pointerId !== simActive.pid) return;
+            if (!simFromRealMouse(e)) return;
+            var t0 = simMkTouch(e.clientX, e.clientY, simActive.target);
+            if (!t0) return;
+            simActive.t = t0;
+            simFire("touchmove", [t0], [t0], simActive.target);
+            return;
+          }
+          var p = simPending; if (!p) return;
+          if (e.pointerId !== undefined && e.pointerId !== p.pid) return;
           if (!simFromRealMouse(e)) return;
-          var t = simMkTouch(e.clientX, e.clientY, simActive.target);
-          if (!t) return;
-          simActive.t = t;
-          simFire("touchmove", [t], [t], simActive.target);
-        } catch (e2) {}
+          var dx = e.clientX - p.x, dy = e.clientY - p.y;
+          if (!p.claimed) {
+            if ((dx * dx + dy * dy) <= VC_TH * VC_TH) return;   // 还在阈值内：不接管、也不派发给游戏
+            p.mode = vcModeEnsure();
+            if (p.mode === "off") return;
+            vcEnsureOrigin();
+            p.claimed = true;
+            p.lx = p.x; p.ly = p.y;
+            p.yawBase = vcS.acc.yaw;      // 备路：acc 记的是「相对重置目标的偏移」，重置才能用反向手势精确回到起点
+            p.pitchBase = vcS.acc.pitch;
+            if (p.mode === "touch") { p.sub = ""; p.pitch0 = null; }
+            vcLog("拖拽接管 dx=" + dx + " dy=" + dy + " mode=" + p.mode);
+          }
+          var ddx = e.clientX - p.lx, ddy = e.clientY - p.ly;
+          p.lx = e.clientX; p.ly = e.clientY;
+          if (p.mode === "camera") { vcCamDrag(ddx, ddy); return; }
+          if (p.mode === "touch") {
+            if (!p.sub) {
+              p.sub = Math.abs(e.clientX - p.x) >= Math.abs(e.clientY - p.y) ? "yaw" : "pitch";
+              vcSynStart({ x: p.x, y: p.y }, p.sub);
+            }
+            var rel = e.clientX - p.x, rely = e.clientY - p.y;
+            if (p.sub === "yaw") {
+              var ang = -rel / vcScreenW() * 360;   // 引擎 c() = 2×两指线角 → 这里减半，观感与主路 -dx/宽*720 一致
+              ang = ang < -360 ? -360 : (ang > 360 ? 360 : ang);
+              vcQPushMove({ t: "move", mid: null, sub: "yaw", ang: ang, dist: VC_D0, dy: 0 });
+              vcS.acc.yaw = p.yawBase + ang * 2;   // 相机侧真实偏航增量（=2×线角）叠加拖拽前偏移
+            } else {
+              vcQPushMove({ t: "move", mid: null, sub: "pitch", ang: 0, dist: VC_D0, dy: rely });
+              if (Math.abs(rely) > 10 && p.pitch0 == null) p.pitch0 = rely;   // 引擎激活俯仰的那一帧被吃掉做基线
+              if (p.pitch0 != null) vcS.acc.pitch = p.pitchBase + (rely - p.pitch0) / vcScreenH() * 300;   // 角（度），与 vcSynStep('pitch') 同单位
+            }
+          }
+        } catch (e3) {}
       }
       function simUp(e) {
         try {
-          if (!simActive) return;
-          if (e.pointerId !== undefined && e.pointerId !== simActive.pid) return;
-          var t = simActive.t;
-          var origin = simActive.target;
-          simActive = null;
-          // 始终派发到按下时的原目标：即使窗口/页面在光标下刚展开，完成点击也不会投到新窗口遮罩上；
-          // 落在助手 UI 上同样补发（保证游戏侧不残留按下的合成触摸）
-          try { if (origin && t) simFire("touchend", [], [t], origin); } catch (e3) {}
-        } catch (e2) {}
+          if (simActive) {
+            if (e.pointerId !== undefined && e.pointerId !== simActive.pid) return;
+            var tA = simActive.t, oA = simActive.target;
+            simActive = null;
+            try { if (oA && tA) simFire("touchend", [], [tA], oA); } catch (e4) {}
+            return;
+          }
+          var p = simPending; if (!p) return;
+          if (e.pointerId !== undefined && e.pointerId !== p.pid) return;
+          simPending = null;
+          if (p.claimed) { if (p.mode === "touch" && p.sub) vcQPush({ t: "end", wait: 1 }); return; }   // F-B：末帧之后再 touchend
+          var t = simMkTouch(p.x, p.y, p.target);   // 一次点击：此刻才合成（按下→抬起一次完成，游戏侧无悬空触摸）
+          if (!t) return;
+          simFire("touchstart", [t], [t], p.target);
+          simFire("touchend", [], [t], p.target);
+        } catch (e5) {}
       }
-      if (window.PointerEvent) {
-        document.addEventListener("pointerdown", simDown, true);
-        document.addEventListener("pointermove", simMove, true);
-        document.addEventListener("pointerup", simUp, true);
-        document.addEventListener("pointercancel", simUp, true);
-      } else {
-        document.addEventListener("mousedown", simDown, true);
-        document.addEventListener("mousemove", simMove, true);
-        document.addEventListener("mouseup", simUp, true);
-      }
+      function simCancel() { try { simPending = null; if (simActive) { var o = simActive.target, t = simActive.t; simActive = null; if (o && t) simFire("touchend", [], [t], o); } } catch (e) {} }
+      try {
+        if (window.PointerEvent) {
+          document.addEventListener("pointerdown", simDown, true);
+          document.addEventListener("pointermove", simMove, true);
+          document.addEventListener("pointerup", simUp, true);
+          document.addEventListener("pointercancel", simUp, true);
+        } else {
+          document.addEventListener("mousedown", simDown, true);
+          document.addEventListener("mousemove", simMove, true);
+          document.addEventListener("mouseup", simUp, true);
+        }
+        try { window.addEventListener("blur", simCancel, true); } catch (eB) {}
+        try { document.addEventListener("wheel", vcOnWheel, { passive: false, capture: false }); } catch (eW) { try { document.addEventListener("wheel", vcOnWheel, false); } catch (eW2) {} }
+        if (document.readyState === "loading") { try { window.addEventListener("load", vcBox, false); } catch (eL) { vcBox(); } } else { vcBox(); }
+      } catch (eAll) {}
+      // === VC_END ===
     }
   } catch (e) {}
   // 字体提档兜底：内联 font-size 以 10px/11px 结尾（无分号）的静态元素，统一 +1
@@ -12441,7 +12941,13 @@
   //   只走既有发包封装 CLIENT.NM.sendPacket（与其它 CZ 包同一条路径），零对话框、零新端点、零新定时器。
   var TP_PKT_OP = 2633, TP_PKT_ACK = 2634, TP_SCROLL = 14527, TP_PKT_MODERN = 20180704;
   var TP_MAP_RE = /^[a-z0-9_]{1,15}$/;
-  var TP_ACK_WHY = { 0: "成功", 2: "传送卷轴不足（券耗尽）" };
+  // 客户端原文（_online.js 模块 Engine/MapEngine/Main 里 ZC.PRIVATE_AIRSHIP_RESPONSE 的处理器）只分 2/3/4 三档：
+  //   2=「背包中找不到传送卷轴或会员卡」3=「该地图不支持传送功能」（逐字照抄，不自创措辞）；
+  //   4 分平台：手机版客户端（/?r=mn 的 Online_mn.js）case 4 原文是「当前地图无法使用该功能」，桌面/旧引擎才是「未知地图」；
+  //     —— 按 IS_MN 分别取原文，绝不把别的引擎的话术显示在手机端（F-4）。
+  //   客户端没有 0 的分支，0 标「已受理·推断」是由「无 0 分支 + 本服受理可靠」推断出来的，不是客户端原文。
+  var TP_ACK_WHY = { 0: "已受理·推断", 2: "背包中找不到传送卷轴或会员卡", 3: "该地图不支持传送功能",
+    4: (typeof IS_MN !== "undefined" && IS_MN) ? "当前地图无法使用该功能" : "未知地图" };
   // 最近一次直发传送的 requested/actual 快照（只存内存，不写档；诊断与失配暴露用）
   var tpLast = { at: 0, sent: false, ok: null, code: null, codeAt: 0, why: "", map: "", x: null, y: null, type: 1, withXY: false,
     bytes: 0, itemid: TP_SCROLL, pv: 0, reqMap: "", reqX: null, reqY: null, actualMap: "", actualX: null, actualY: null, landedAt: 0, miss: false };
@@ -12513,8 +13019,10 @@
     return { ok: true, map: m, x: hasXY ? xn : null, y: hasXY ? yn : null, type: type, bytes: w.buffer.byteLength, frame: w };
   }
   // 对外语义（规格示例 teleport(owner,{map,x,y}) 的助手侧等价入口）：显式触发才发包，返回 {ok,why,...}
+  // F-6 口径：这是**公开薄封装**（等价 tpSend 的显式触发入口；行为用例见 tools/ro-script-runtime-check.mjs 的 F6 用例）。
+  //   生产路径不经过它 —— 命令/按钮/落点回城都直接调 tpTeleport / tpSend；保留它是为了对外接口名稳定、不破坏既有调用方。
   function teleport(map, opt) { var o = opt || {}; return tpSend(map, o.x, o.y, o); }
-  // 2634 回包：0=受理；2=传送卷轴不足/券耗尽；其它按原值报「未知代码」—— 失败绝不假装成功
+  // 2634 回包：0=受理（推断：客户端无 0 分支）；2/3/4 按客户端原文；其它按原值报「未知代码」—— 失败绝不假装成功
   function tpOnAck(bytes) {
     try {
       if (!bytes || bytes.byteLength < 6) return;
@@ -12522,7 +13030,7 @@
       tpLast.code = code; tpLast.codeAt = Date.now();
       if (code === 0) {
         tpLast.ok = true;
-        mvLog("[直发传送] 服务器受理 code=0(成功) · " + tpDiagText());
+        mvLog("[直发传送] 服务器受理 code=0(已受理·推断) · " + tpDiagText());
         tlog("tp-ack code=0 ok map=" + tpLast.reqMap);
       } else {
         tpLast.ok = false; tpLast.why = "服务器拒绝 code=" + code + "(" + cn + ")";
@@ -16693,6 +17201,9 @@
   // ---------------- 自动化 API ----------------
 
   window.__ROPlugin = {
+    // V2.38.9 F-5：直发传送的公开门面（外部/独立道场脚本调这个入口）。生产路径仍直接走 tpTeleport / tpSend，
+    //   这里只是把既有的 tpSend 语义（显式触发、返回 {ok,why,...}、绝不假成功）挂到对外接口对象上，行为一字不改。
+    teleport: function (map, opt) { return teleport(map, opt); },
     getState: function () { return JSON.parse(JSON.stringify(state)); },
     getConfig: buildConfig,
     setAutoLogin: function (acc, pwd) { saved.account = acc; saved.password = pwd; saveSaved(saved); },
@@ -18745,10 +19256,10 @@
   ];
   // V2.38.7 修复（审计阻塞项·分流式 itemlist 家族）：数字表先铺底 → 手机端 CLIENT.PS / psClassIndex 为空时也能认这两个 opcode（审计要求 #5）。
   //   0x0b39/2873 SPLIT_SEND_ITEMLIST_EQUIP2 ：装备整表，invType u8@4 + 记录 68B 自 @5（真帧 481B = 5 + 7×68）
-  //   0x0b36/2826 SPLIT_SEND_ITEMLIST_EQUIP  ：同族装备整表，记录 67B（F4 加固：客户端把 2826 也当装备整表；本服真机走 2873）
+  //   0x0b0a/2826 SPLIT_SEND_ITEMLIST_EQUIP  ：同族装备整表，记录 67B（F4 加固：客户端把 2826 也当装备整表；本服真机走 2873）
   //   0x0b08/2824 SPLIT_SEND_ITEMLIST_SET   ：会话开始（变长：op@0 + total@2 + invType@4 + 名字）
   //   0x0b0b/2827 SPLIT_SEND_ITEMLIST_RESULT：会话结束（定长 4B：op@0 + invType@2 + flag@3）
-  //   偏移逐字核对客户端 src/UI/Components/WorldMap（_dist/new-engine-local/www/Online.js）：EQUIP2 173964-174004（item_size=68）、
+  //   偏移逐字核对客户端 src/Network/PacketStructure.js（SPLIT_SEND_ITEMLIST_EQUIP / _EQUIP2 类定义处，Online.js 打包同源）：EQUIP2 173964-174004（item_size=68）、
   //     EQUIP 173672-173710（item_size=67）、SET 173639-173643、RESULT 173712-173716。
   var ZC_GEAR_SPLIT_NUM = { 2873: { rec: 68, lay: "equip2" }, 2826: { rec: 67, lay: "equip" } };
   var ZC_GEAR_SPLIT_CLS = [["SPLIT_SEND_ITEMLIST_EQUIP2", 2873, 68, "equip2"], ["SPLIT_SEND_ITEMLIST_EQUIP", 2826, 67, "equip"]];

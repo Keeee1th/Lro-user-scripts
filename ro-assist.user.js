@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.37.1
+// @version      2.38.0
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -182,6 +182,20 @@
 // 死亡后返回目标地图：去掉「回城地图」设置项——回城点就是角色寄存点，点「重新开始」自然到达，既不记录也不参与判定；只需填目标地图。
 // ---------------- V2.36.8 变更摘要 ----------------
 // 辅助→战斗辅助新增默认关闭的「死亡后返回目标地图」：只需设置一个目标地图（带「取当前」按钮）。在目标图开着自动战斗时若角色死亡，助手立即停手等你点「重新开始」回城复活，自动坐下回满血，再传回目标地图继续开打。回城点即角色寄存点，不需设置也不参与判定。角色、生命、地图、租约或传送状态不确定时停止。
+// ---------------- V2.38.0 变更摘要 ----------------
+// 1. 根治「助手模式自控发包用了旧类名 → 服务器全部丢弃」（实机证实：点开始后 4 分钟 449 个包全是 op2167，
+//    坐标不动、脚本自刷 walk-stuck）。同名旧 CZ 类走 getPacketVersion() 版本表，而该表最后一项停在 20180307，
+//    给的是当期官方客户端的随机 opcode：REQUEST_MOVE→2167 / REQUEST_ACT→2409 / USE_SKILL→2195 /
+//    ITEM_PICKUP→2388 / ITEM_THROW→1079 / MOVE_ITEM_FROM_BODY_TO_STORE→2336；本服 packetver=20211103 要的是
+//    863 / 1079 / 1080 / 866 / 867 / 868（客户端 UI 走 *2 类才是对的）。
+// 2. 新增 CZ 包体能力探测：按【期望 opcode】在 name/name2/name3 里挑真正发对 opcode 的类（① getPacketVersion()[1]
+//    ② 实例化后 build() 读首两字节小端），并就地安装回 CLIENT.PS.CZ.<旧名>；挑不到就按版本元组覆写旧类
+//    prototype.versions 兜底（只改内存，重登/刷新后需重放 → 3 秒自动重放）。两条路都失败 → 明确报警并
+//    【拒绝启动助手模式】，不再静默继续。
+// 3. 助手模式页新增「包体自检」按钮 + 常驻自检行：启动前把关键包实际 opcode 打到状态栏/日志（服务端口径比对），
+//    不匹配即拒绝启动并给人话提示。
+// 4. 全量审计脚本内 53 处发包点（22 个 CZ 类）：除上述 6 个错版类外，REQ_WEAR_EQUIP/USE_ITEM/REQ_TAKEOFF_EQUIP
+//    经核对正确；WHISPER 与官方内挂面板同款类、硬编码 150(0x96)、无版本表。
 
 
 
@@ -213,7 +227,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.37.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.38.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -626,9 +640,203 @@
       if (!CLIENT.SS) CLIENT.SS = window.require("Engine/SessionStorage");
       if (!CLIENT.NM) CLIENT.NM = window.require("Network/NetworkManager");
       if (!CLIENT.PS) CLIENT.PS = window.require("Network/PacketStructure");
-      return !!(CLIENT.SS && CLIENT.NM && CLIENT.NM.sendPacket && CLIENT.PS);
+      var _ok = !!(CLIENT.SS && CLIENT.NM && CLIENT.NM.sendPacket && CLIENT.PS);
+      // V2.38.0：客户端就绪即做一次 CZ 包体探测 + 就地安装（重登/刷新后的重放由 CZ-PROBE 定时器负责）
+      if (_ok && !CZ_PROBE.done) { try { czResolve(); czRenderLine(); } catch (e0) {} }
+      return _ok;
     } catch (e) { return false; }
   }
+
+  // ===== CZ-PROBE-BEGIN (V2.38.0) CZ 发包类能力探测 · 按期望 opcode 选类 · 失败即拒绝，不静默 =====
+  // 实机根因：本客户端（client/Online.js 与官方 Online_mn.js）里**同名旧 CZ 类**走 getPacketVersion() 版本表，
+  //   而这张表的最后一项停在 20180307——给的是"当期官方客户端"的随机 opcode：
+  //     REQUEST_MOVE 2167 / REQUEST_ACT 2409 / USE_SKILL 2195 / ITEM_PICKUP 2388 / ITEM_THROW 1079 / 存仓 2336
+  //   本服 packetver=20211103 的 CZ 表要的是 863/1079/1080/866/867/868（客户端 UI 走的是 *2 类）。
+  //   旧类名发出去 → 服务器静默丢弃 → 助手"看着在跑其实全丢包"。
+  // 对策：按【期望 opcode】在 name/name2/name3 里挑真正发对 opcode 的类（能力探测：① getPacketVersion()[1]
+  //   ② 实例化后 build() 读首两字节小端），并就地安装回 CLIENT.PS.CZ.<旧名>；挑不到就按版本元组覆写旧类
+  //   prototype.versions 兜底（只改内存 → 重登/刷新后需重放，已登记 3s 自动重放）；两条路都失败 →
+  //   明确报警并拒绝启动助手模式。
+  var CZ_WANT = {
+    REQUEST_MOVE:                 { op: 863,  ver: [[20180307, 863, 5, 2]] },
+    REQUEST_ACT:                  { op: 1079, ver: [[20180308, 1079, 7, 2, 6]] },
+    USE_SKILL:                    { op: 1080, ver: [[20180308, 1080, 10, 2, 4, 6]] },
+    ITEM_PICKUP:                  { op: 866,  ver: [[20180307, 866, 6, 2]] },
+    ITEM_THROW:                   { op: 867,  ver: [[20180307, 867, 6, 2, 4]] },
+    MOVE_ITEM_FROM_BODY_TO_STORE: { op: 868,  ver: [[20180307, 868, 8, 2, 4]] }
+  };
+  var CZ_LABEL = {
+    REQUEST_MOVE: "移动", REQUEST_ACT: "攻击", USE_SKILL: "技能",
+    ITEM_PICKUP: "拾取", ITEM_THROW: "丢弃", MOVE_ITEM_FROM_BODY_TO_STORE: "存仓"
+  };
+  var CZ_PROBE = { done: false, ok: false, at: 0, why: "", miss: [], rows: [], resolved: {}, installed: [], replay: [], replayed: 0, alerted: false };
+  // 客户端配置的 packetver（版本表口径；读不到返回 0 → 版本口径不可用，只认字节口径）
+  function czPacketVer() {
+    try {
+      var r = window.ROConfig || {};
+      var s = (r.servers && r.servers[0]) || {};
+      var v = Number(s.packetver || r.packetver || 0);
+      if (v > 0) return v;
+    } catch (e) {}
+    try {
+      var PVM = window.require && window.require("Network/PacketVerManager");
+      var v2 = PVM && (PVM.value || (PVM.default && PVM.default.value));
+      if (v2) return Number(v2);
+    } catch (e) {}
+    return 0;
+  }
+  // 与客户端 getPacketVersion() 同算法：取最后一个 date <= packetver 的条目
+  function czVersionPick(versions) {
+    if (!versions || !versions.length) return null;
+    var pv = czPacketVer(), i;
+    if (!pv) return null;
+    for (i = 0; i < versions.length - 1; ++i) if (pv < versions[i + 1][0]) return versions[i];
+    return versions[i];
+  }
+  // 读一个包类"当前配置下真正会写进字节流的 opcode"；读不到给 null（绝不猜）
+  function czOpcodeBoth(Ctor) {
+    var out = { ver: null, bytes: null };
+    if (typeof Ctor !== "function") return out;
+    var inst = null;
+    try { inst = new Ctor(); } catch (e) { return out; }
+    try {
+      if (inst && typeof inst.getPacketVersion === "function") {
+        var v = inst.getPacketVersion();
+        if (v && v[1] != null) out.ver = v[1];
+      }
+    } catch (e) {}
+    try {
+      if (inst && typeof inst.build === "function") {
+        var buf = inst.build();
+        var ab = buf ? (buf.buffer || buf) : null;
+        var off = (buf && buf.byteOffset) || 0;
+        if (ab && ab.byteLength >= off + 2) { var u8 = new Uint8Array(ab, off, 2); out.bytes = u8[0] | (u8[1] << 8); }
+      }
+    } catch (e) {}
+    return out;
+  }
+  // 探测 + 就地安装；可重复调用（重登/刷新后自动重放）
+  function czResolve() {
+    var rows = [], resolved = {}, installed = [], replay = [], miss = [], why = "";
+    try {
+      if (!clientReady() || !CLIENT.PS || !CLIENT.PS.CZ) { why = "客户端未就绪"; }
+      else {
+        var NS = CLIENT.PS.CZ;
+        Object.keys(CZ_WANT).forEach(function (name) {
+          var want = CZ_WANT[name], pick = null, names = [name, name + "2", name + "3"], cands = [], i;
+          for (i = 0; i < names.length; i++) {
+            var C = NS[names[i]];
+            if (typeof C !== "function") continue;
+            var o = czOpcodeBoth(C);
+            cands.push(names[i] + "(版本" + (o.ver == null ? "-" : o.ver) + "/字节" + (o.bytes == null ? "-" : o.bytes) + ")");
+            // 字节口径优先（那才是真正发出去的），字节读不到才退回版本口径
+            var okOp = (o.bytes != null) ? (o.bytes === want.op) : (o.ver === want.op);
+            if (!pick && okOp) pick = { cls: names[i], Ctor: C, ver: o.ver, bytes: o.bytes, way: "probe" };
+          }
+          if (!pick) {
+            // 退路：按版本元组覆写旧类 prototype.versions（只改内存 → 重登/刷新后需重放，已登记自动重放）
+            var legacy = NS[name];
+            if (typeof legacy === "function") {
+              try {
+                legacy.prototype.versions = want.ver.slice();
+                if (typeof legacy.prototype.getPacketVersion !== "function") {
+                  legacy.prototype.getPacketVersion = function () { return czVersionPick(this.versions); };
+                }
+                var o2 = czOpcodeBoth(legacy);
+                if (o2.bytes === want.op) { pick = { cls: name, Ctor: legacy, ver: o2.ver, bytes: o2.bytes, way: "override" }; replay.push(name); }
+              } catch (e) {}
+            }
+          }
+          if (pick) {
+            resolved[name] = pick.Ctor;
+            // 就地安装：CLIENT.PS.CZ.<旧名> 指向真正发对 opcode 的类 → 脚本其余所有调用点（含未枚举到的）一并根治
+            if (NS[name] !== pick.Ctor) { try { NS[name] = pick.Ctor; installed.push(name + "→" + pick.cls); } catch (e) {} }
+          } else miss.push(name);
+          rows.push({ name: name, want: want.op, cls: pick ? pick.cls : "-", way: pick ? pick.way : "fail", ver: pick ? pick.ver : null, bytes: pick ? pick.bytes : null, cands: cands });
+        });
+      }
+    } catch (e) { why = "探测异常: " + (e && e.message); }
+    CZ_PROBE.rows = rows; CZ_PROBE.resolved = resolved; CZ_PROBE.installed = installed;
+    CZ_PROBE.replay = replay; CZ_PROBE.miss = miss; CZ_PROBE.done = true; CZ_PROBE.at = Date.now();
+    CZ_PROBE.ok = (miss.length === 0) && !why;
+    CZ_PROBE.why = CZ_PROBE.ok ? "" : (why || ("以下包类探测不到本服 opcode：" + miss.join("、")));
+    return CZ_PROBE;
+  }
+  // 取已核验的包构造器；未核验则回落原类并一次性大声告警（真正拦截点是助手模式启动门禁）
+  function czp(name) {
+    try {
+      if (CZ_WANT[name]) {
+        if (!CZ_PROBE.done) czResolve();
+        if (CZ_PROBE.resolved[name]) return CZ_PROBE.resolved[name];
+        if (!CZ_PROBE.alerted) {
+          CZ_PROBE.alerted = true;
+          try { setStatus("包体自检未通过，发包可能被服务器丢弃：" + (CZ_LABEL[name] || name) + "（期望 " + CZ_WANT[name].op + "）", "err"); } catch (e) {}
+          tlog("cz-probe-unsafe " + name);
+        }
+      }
+      return (CLIENT.PS && CLIENT.PS.CZ) ? CLIENT.PS.CZ[name] : null;
+    } catch (e) { return null; }
+  }
+  function czReportText() {
+    var L = ["cz-probe v" + VER + " · packetver=" + (czPacketVer() || "?") + " · " + (CZ_PROBE.ok ? "自检通过" : "自检未通过")];
+    (CZ_PROBE.rows || []).forEach(function (r) {
+      var good = (r.bytes === r.want);
+      L.push("  " + (good ? "OK " : "BAD") + " " + (r.name + "                             ").slice(0, 29) +
+        " 期望" + r.want + "  实发" + (r.bytes == null ? "?" : r.bytes) +
+        "  用类=" + r.cls + "/" + r.way + "  候选[" + r.cands.join(" ") + "]");
+    });
+    if (CZ_PROBE.installed.length) L.push("  就地安装: " + CZ_PROBE.installed.join("  "));
+    if (CZ_PROBE.replay.length) L.push("  覆写兜底(重登/刷新后需重放，已登记 3s 自动重放): " + CZ_PROBE.replay.join("  "));
+    if (!CZ_PROBE.ok) L.push("  未通过: " + CZ_PROBE.why);
+    var w = czOpcodeBoth(CLIENT.PS && CLIENT.PS.CZ && CLIENT.PS.CZ.WHISPER);
+    L.push("  INFO WHISPER 实发=" + (w.bytes == null ? "?" : w.bytes) + "（官方内挂面板同款类·类内硬编码 150/0x96，两套客户端一致，无版本表）");
+    return L.join("\n");
+  }
+  function czBrief() {
+    return (CZ_PROBE.rows || []).map(function (r) { return (CZ_LABEL[r.name] || r.name) + "=" + (r.bytes == null ? "?" : r.bytes); }).join(" ");
+  }
+  // 自检：探测 + 实测字节逐一比对 + WHISPER 交叉一致性；返回 {ok, brief, text}
+  function czSelfCheck() {
+    czResolve();
+    var text = czReportText();
+    if (!CZ_PROBE.ok) return { ok: false, brief: CZ_PROBE.why || "包体自检未通过", text: text };
+    var bad = [];
+    CZ_PROBE.rows.forEach(function (r) { if (r.bytes !== r.want) bad.push((CZ_LABEL[r.name] || r.name) + "(发" + r.bytes + "≠期望" + r.want + ")"); });
+    if (bad.length) return { ok: false, brief: "实测字节与期望不符：" + bad.join("，"), text: text };
+    var w = czOpcodeBoth(CLIENT.PS && CLIENT.PS.CZ && CLIENT.PS.CZ.WHISPER);
+    return { ok: true, brief: czBrief() + " WHISPER=" + (w.bytes == null ? "?" : w.bytes) + (w.bytes === 150 ? "" : "⚠"), text: text };
+  }
+  // 面板常驻自检行（助手模式页 #dsh-czlog）
+  function czRenderLine() {
+    var el = null;
+    try { el = $id("dsh-czlog"); } catch (e) {}
+    if (!el) return;
+    if (!CZ_PROBE.done) { el.textContent = "包体自检：未检测（进图后点「包体自检」）"; el.style.color = ""; return; }
+    var txt = (CZ_PROBE.ok ? "包体自检 ✓ " : "包体自检 ✗ ") + czBrief();
+    if (CZ_PROBE.installed.length) txt += " · 已就地修正 " + CZ_PROBE.installed.length + " 个类";
+    if (CZ_PROBE.replayed) txt += " · 重放 " + CZ_PROBE.replayed + " 次";
+    if (!CZ_PROBE.ok) txt += " · " + CZ_PROBE.why;
+    el.textContent = txt;
+    el.style.color = CZ_PROBE.ok ? "#1f7a45" : "#c0392b";
+  }
+  // 重登/刷新：客户端会重新 require 出新的 CZ 命名空间，之前的就地安装会丢 → 自动重放
+  try {
+    setInterval(function () {
+      try {
+        if (!clientReady()) return;
+        var NS = CLIENT.PS && CLIENT.PS.CZ;
+        if (!CZ_PROBE.done) { czResolve(); czRenderLine(); return; } // 就绪前探测失败/未跑 → 继续重试
+        if (!NS) return;
+        var need = false;
+        Object.keys(CZ_WANT).forEach(function (n) { if (CZ_PROBE.resolved[n] && NS[n] !== CZ_PROBE.resolved[n]) need = true; });
+        if (!need) return;
+        CZ_PROBE.replayed++;
+        czResolve(); czRenderLine();
+        tlog("cz-probe-replay #" + CZ_PROBE.replayed + " ok=" + CZ_PROBE.ok);
+      } catch (e) {}
+    }, 3000);
+  } catch (e) {}
+  // ===== CZ-PROBE-END =====
   function getMapName() {
     try {
       if (!CLIENT.MR) CLIENT.MR = window.require && window.require("Renderer/MapRenderer");
@@ -944,6 +1152,9 @@
       // V2.34.0：页内三页签拆成三个一级窗口（战斗设置 / 技能设置 / 附近怪物实时列表），页签 UI 移除
       '<div class="row"><span class="st" id="dsh-z-state" style="font-size:10px">助手未启动</span>' +
       '<button class="ghost" id="dsh-fw-btn-zhu2" data-fw="zhu2" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
+      // V2.38.0：包体自检常驻行——助手模式的发包 opcode 与服务端口径比对，不匹配即拒绝启动
+      '<div class="row"><span class="st" id="dsh-czlog" style="font-size:10px">包体自检：未检测（进图后点「包体自检」）</span>' +
+      '<button class="ghost" id="dsh-czcheck" style="flex:0 0 auto;padding:0 8px;font-size:11px">包体自检</button></div>' +
       '<div id="dsh-fw-zhu2">' +
       '<div class="sec">助手模式（自控发包 · 无CD）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-healfirst" type="checkbox">优先使用治愈术替代药品（V2.29.0 自辅助页移入）</label><span class="st">未学会、SP不足或冷却时仍使用物品</span></div>' +
@@ -3922,7 +4133,7 @@
   function sendPing() {
     try {
       if (!clientReady()) return;
-      var p = new CLIENT.PS.CZ.PING();
+      var p = new (czp("PING"))();
       p.AID = CLIENT.SS.AID || 0;
       CLIENT.NM.sendPacket(p);
     } catch (e) {}
@@ -4663,7 +4874,7 @@
   function petCmd(cSub, logName) {
     try {
       if (!clientReady()) { petLog("客户端未就绪"); return false; }
-      var p = new CLIENT.PS.CZ.COMMAND_PET();
+      var p = new (czp("COMMAND_PET"))();
       p.cSub = cSub;
       CLIENT.NM.sendPacket(p);
       if (cSub === 1) petLastFeed = Date.now();
@@ -4731,7 +4942,7 @@
       if (!clientReady()) { setStatus("客户端未就绪", "err"); return; }
       var egg = findPetEgg();
       if (!egg) { setStatus("背包未找到宠物蛋", "err"); return; }
-      var p = new CLIENT.PS.CZ.SELECT_PETEGG();
+      var p = new (czp("SELECT_PETEGG"))();
       p.index = egg.index;
       CLIENT.NM.sendPacket(p);
       setStatus("已召唤宠物蛋 " + (egg.name || egg.itid), "ok");
@@ -4831,7 +5042,7 @@
       // 用 A* 避障走向目标
       var r = pathFindTo(tg.position[0], tg.position[1]);
       if (!r) { followLog("目标不可达（避障失败）"); return; }
-      var pm = new CLIENT.PS.CZ.REQUEST_MOVE();
+      var pm = new (czp("REQUEST_MOVE"))();
       pm.dest = [r.x, r.y];
       CLIENT.NM.sendPacket(pm);
       followLog("跟随中… 距离 " + d + " 格（目标 " + ((tg.display && tg.display.name) || tg.name || tg.GID) + "）");
@@ -5158,7 +5369,7 @@
   function equipArrow(index) {
     try {
       if (!clientReady() || index == null) return false;
-      var p = new CLIENT.PS.CZ.REQ_WEAR_EQUIP();
+      var p = new (czp("REQ_WEAR_EQUIP"))();
       p.index = index;
       p.wearLocation = 32768; // 箭矢槽（参考 ro-v4-extras MVP 换箭同款机制）
       CLIENT.NM.sendPacket(p);
@@ -5376,7 +5587,7 @@
             if (askDiagOn) console.log("[ASK-DIAG] [" + i + "] skid=" + s.skid + " NO-ST will cast, elapsed=" + elapsed);
           }
           if (askDiagOn) console.log("[ASK-DIAG] CAST skid=" + s.skid + " lv=" + s.lv + " target=0");
-          var p = new CLIENT.PS.CZ.USE_SKILL();
+          var p = new (czp("USE_SKILL"))();
           p.SKID = s.skid;
           p.selectedLevel = s.lv;
           p.targetID = 0; // 对自己/无目标
@@ -5409,7 +5620,7 @@
       if (idx >= list.length) { castComboBusy = false; setStatus("补 buff 组合完成", "ok"); return; }
       var s = list[idx++];
       try {
-        var p = new CLIENT.PS.CZ.USE_SKILL();
+        var p = new (czp("USE_SKILL"))();
         p.SKID = s.skid;
         p.selectedLevel = s.lv;
         p.targetID = 0;
@@ -6299,7 +6510,7 @@
   function npSendUpdate(id, value) {
     try {
       if (!clientReady()) { npLog("客户端未就绪"); return false; }
-      var p = new CLIENT.PS.CZ.NOTIFY_UPDATEINFO();
+      var p = new (czp("NOTIFY_UPDATEINFO"))();
       p.id = id; p.value = value;
       CLIENT.NM.sendPacket(p);
       return true;
@@ -6308,7 +6519,7 @@
   function npSendWhisper(receiver) {
     try {
       if (!clientReady()) { npLog("客户端未就绪"); return false; }
-      var p = new CLIENT.PS.CZ.WHISPER();
+      var p = new (czp("WHISPER"))();
       p.receiver = receiver; p.msg = "0";
       CLIENT.NM.sendPacket(p);
       return true;
@@ -6368,7 +6579,7 @@
       if (!clientReady() || !CLIENT.PS.CZ.NOTIFY_ONLYTARGET) return;
       var ids = Object.keys(lockList);
       for (var i = 0; i < ids.length; i++) {
-        var p = new CLIENT.PS.CZ.NOTIFY_ONLYTARGET();
+        var p = new (czp("NOTIFY_ONLYTARGET"))();
         p.id = parseInt(ids[i], 10) || 0;
         p.value = 1;
         CLIENT.NM.sendPacket(p);
@@ -6381,7 +6592,7 @@
           var cmid = cc.getAttribute("data-id");
           if (!cmid) continue;
           if (cc.checked && !lockList[String(cmid)]) {
-            var p0 = new CLIENT.PS.CZ.NOTIFY_ONLYTARGET();
+            var p0 = new (czp("NOTIFY_ONLYTARGET"))();
             p0.id = parseInt(cmid, 10) || 0;
             p0.value = 0;
             CLIENT.NM.sendPacket(p0);
@@ -6853,7 +7064,7 @@
       if (nowS - sitSendAt < 1500) return;
       sitSendAt = nowS;
       try {
-        var p = new CLIENT.PS.CZ.REQUEST_ACT();
+        var p = new (czp("REQUEST_ACT"))();
         p.action = down ? 2 : 3;
         CLIENT.NM.sendPacket(p);
         tlog("sit-" + (down ? "down" : "up") + "-pkt");
@@ -6998,7 +7209,7 @@
       var tx = entE.position[0] + (adx >= ady ? sx * 8 : 0);
       var ty = entE.position[1] + (adx >= ady ? 0 : sy * 8);
       var dest = pathFindTo(tx, ty) || [tx, ty];
-      var pmE = new CLIENT.PS.CZ.REQUEST_MOVE();
+      var pmE = new (czp("REQUEST_MOVE"))();
       pmE.dest = [dest[0], dest[1]];
       CLIENT.NM.sendPacket(pmE);
       zEscape.until = nowE + 4000;
@@ -7261,7 +7472,7 @@
         if (mm && mm.GID && mm.dist >= 0 && mm.dist < td && mm.dist <= atkG) { td = mm.dist; tg = mm; }
       }
       if (!tg) return false;
-      var p = new CLIENT.PS.CZ.USE_SKILL();
+      var p = new (czp("USE_SKILL"))();
       p.SKID = skid; p.selectedLevel = lv; p.targetID = tg.GID;
       CLIENT.NM.sendPacket(p);
       var cd = Math.max(skillCdMs({ skid: skid, cd: 0 }), 1000); // 保底 1s：扫描拍 0.3-0.5s 不可能重放同一解围技能
@@ -7433,7 +7644,7 @@
       if (!life || !life.maxhp || life.hp / life.maxhp * 100 >= potHpThr()) return false;
       var lv = learnedSkillLv(28), sp = life.sp != null ? Number(life.sp) : 0;
       if (lv <= 0 || sp < 10 + lv * 3 || (skillNextAt[28] && Date.now() < skillNextAt[28])) return false;
-      var p = new CLIENT.PS.CZ.USE_SKILL();
+      var p = new (czp("USE_SKILL"))();
       p.SKID = 28; p.selectedLevel = lv; p.targetID = ent.GID || (CLIENT.SS && CLIENT.SS.AID) || 0;
       CLIENT.NM.sendPacket(p);
       var cd = skillCdMs({ skid: 28, cd: 0 });
@@ -7611,7 +7822,7 @@
   }
   function useItemByIndex(index) {
     try {
-      var p = new CLIENT.PS.CZ.USE_ITEM();
+      var p = new (czp("USE_ITEM"))();
       p.index = index;
       CLIENT.NM.sendPacket(p);
       return true;
@@ -7639,7 +7850,7 @@
       var ent = CLIENT.SS && CLIENT.SS.Entity;
       var sp = ent && ent.life ? ent.life.sp : null;
       if (sp != null && sp < 10) { tlog("fly-skill-losp"); return false; }
-      var p = new CLIENT.PS.CZ.USE_SKILL();
+      var p = new (czp("USE_SKILL"))();
       p.SKID = 26; // AL_TELEPORT 瞬移术
       p.selectedLevel = 1;
       p.targetID = 0;
@@ -7761,6 +7972,17 @@
   function startZhu() {
     if (zRunning) return;
     if (externalAutomationOwns("battle")) { setStatus("外部自动化持有战斗租约，助手战斗不启动", "warn"); return; }
+    // V2.38.0 启动门禁：先做 CZ 包体自检（实际 opcode 与服务端口径比对），不通过就拒绝启动——
+    //   绝不再出现「看着在跑其实服务器全丢包」。
+    var _czchk = czSelfCheck();
+    czRenderLine();
+    if (!_czchk.ok) {
+      zRunning = false;
+      try { $id("dsh-z-state").textContent = "助手未启动（包体自检未通过）"; } catch (e0) {}
+      setStatus("拒绝启动助手模式：" + _czchk.brief + "。发包 opcode 与本服 CZ 表不一致，发了也会被服务器丢弃。", "err");
+      tlog("zhu-refuse cz-selfcheck " + _czchk.brief);
+      return;
+    }
     zRunning = true;
     $id("dsh-z-state").textContent = "助手运行中…";
     startScan();
@@ -7786,7 +8008,7 @@
     }
     var sec = Math.max(0.25, parseFloat($id("dsh-z-attint").value) || 0.25);
     zAttTimer = setInterval(zAttack, sec * 1000);
-    setStatus("助手模式已启动（扫描+攻击）", "ok");
+    setStatus("助手模式已启动（扫描+攻击）· 包体自检 " + _czchk.brief, "ok");
   }
   function stopZhu() {
     if (!deathReturnStopping) deathReturnCancel("手动停止战斗");
@@ -7964,7 +8186,7 @@
       // 服务器每次只收到近距离移动请求（直发终点超远被服务器拒收 → 客户端本地预测假到达 → 角色不动却提示已到达）
       var r = pathFindTo(moveXY.tx, moveXY.ty);
       var dest = (r && isFinite(r.x) && isFinite(r.y)) ? [r.x, r.y] : mvSnapWalkable(moveXY.tx, moveXY.ty); // 寻路失败回退吸附终点
-      var pm = new CLIENT.PS.CZ.REQUEST_MOVE();
+      var pm = new (czp("REQUEST_MOVE"))();
       pm.dest = [dest[0], dest[1]];
       CLIENT.NM.sendPacket(pm);
     } catch (e) {}
@@ -8114,7 +8336,7 @@
       zAtkRelockAt = Date.now();
       // V2.16.3：弃用 onFocus 官方点击路径（自带寻路→走近→转身→再攻击，就是「模拟点选迟钝」同款慢路径），
       //   改直接重发 noctrl 锁定包（REQUEST_ACT action=7）——轻量直达服务器、无寻路无转身，1s 内恢复连击
-      var p = new CLIENT.PS.CZ.REQUEST_ACT();
+      var p = new (czp("REQUEST_ACT"))();
       p.targetGID = ent.GID;
       p.action = npNoCtrlOn() ? 7 : 0;
       CLIENT.NM.sendPacket(p);
@@ -8151,7 +8373,7 @@
         if (btDiagOn) btLog('atk-skip', '同目标noctrl连击中不重发 gid=' + gid);
         return;
       }
-      var p = new CLIENT.PS.CZ.REQUEST_ACT();
+      var p = new (czp("REQUEST_ACT"))();
       p.targetGID = gid;
       p.action = npNoCtrlOn() ? 7 : 0; // noctrl 开=7（免ctrl锁定攻击），关=0
       CLIENT.NM.sendPacket(p);
@@ -8169,7 +8391,7 @@
       // V2.15.30：纯技能流（穿插平A关）完全不发平A锁定包——sendLockInject 也是平A包，受同一开关控制
       var mixEl = $id("dsh-z-attmix");
       if (mixEl && !mixEl.checked) return;
-      var p = new CLIENT.PS.CZ.REQUEST_ACT();
+      var p = new (czp("REQUEST_ACT"))();
       p.targetGID = gid;
       p.action = npNoCtrlOn() ? 7 : 0;
       CLIENT.NM.sendPacket(p);
@@ -8230,7 +8452,7 @@
           var btx = Math.round(ent.position[0] + bd[0] * 10);
           var bty = Math.round(ent.position[1] + bd[1] * 10);
           var bDest = mvSnapWalkable(btx, bty);
-          var pB = new CLIENT.PS.CZ.REQUEST_MOVE();
+          var pB = new (czp("REQUEST_MOVE"))();
           pB.dest = [bDest[0], bDest[1]];
           CLIENT.NM.sendPacket(pB);
           zWalkState.lastMoveDir = zWalkState.backDir;
@@ -8396,7 +8618,7 @@
         var tty = Math.round(near.position[1] - (rdl7 > 0 ? (rdy7 / rdl7) * stopD : 0));
         var cDest = mvSnapWalkable(ttx, tty);
         zWalkState.noTargetSince = 0; // 有目标，重置无目标计时
-        var pm = new CLIENT.PS.CZ.REQUEST_MOVE();
+        var pm = new (czp("REQUEST_MOVE"))();
         pm.dest = [cDest[0], cDest[1]];
         CLIENT.NM.sendPacket(pm);
         tlog("walk-追怪 " + (near._job != null ? near._job : near.GID) + " 停射程边缘 -> " + cDest[0] + "," + cDest[1] + " (atkRange=" + atkR7 + ")");
@@ -8464,7 +8686,7 @@
         var bd0 = Math.abs(px0 - zWalkState.center[0]) + Math.abs(py0 - zWalkState.center[1]);
         if (bd0 > bndR) {
           var bDest = mvSnapWalkable(zWalkState.center[0], zWalkState.center[1]);
-          var pB = new CLIENT.PS.CZ.REQUEST_MOVE();
+          var pB = new (czp("REQUEST_MOVE"))();
           pB.dest = [bDest[0], bDest[1]];
           CLIENT.NM.sendPacket(pB);
           zWalkState.tried = 0;
@@ -8499,7 +8721,7 @@
             // 距地图边缘过近 → 目标钳到图中心方向（离边缘远的一侧），防走到别的图
             var cx2 = Math.round(mw / 2), cy2 = Math.round(mh / 2);
             var eDest = mvSnapWalkable(cx2, cy2);
-            var pE = new CLIENT.PS.CZ.REQUEST_MOVE();
+            var pE = new (czp("REQUEST_MOVE"))();
             pE.dest = [eDest[0], eDest[1]];
             CLIENT.NM.sendPacket(pE);
             zWalkState.tried = 0;
@@ -8551,7 +8773,7 @@
           if (zAStarState.active) {
             if (now - zAStarState.lastTry < 3500) return;
             // 超时仍在走且未卡：重发同目标（幂等续走）
-            if (!zAStarState.stuckSince) { var pmA = new CLIENT.PS.CZ.REQUEST_MOVE(); pmA.dest = [zAStarState.tx, zAStarState.ty]; CLIENT.NM.sendPacket(pmA); zAStarState.lastTry = now; tlog("walk-astar keep -> " + zAStarState.tx + "," + zAStarState.ty); return; }
+            if (!zAStarState.stuckSince) { var pmA = new (czp("REQUEST_MOVE"))(); pmA.dest = [zAStarState.tx, zAStarState.ty]; CLIENT.NM.sendPacket(pmA); zAStarState.lastTry = now; tlog("walk-astar keep -> " + zAStarState.tx + "," + zAStarState.ty); return; }
           }
         }
         // 选目标：方向记忆（10s 内）→ 朝该方向 50 格外；无记忆 → 当前方向延伸
@@ -8584,7 +8806,7 @@
           if (pathA && pathA.length) {
             var lastP = pathA[pathA.length - 1];
             var snapA = mvSnapWalkable(lastP[0], lastP[1]);
-            var pmA2 = new CLIENT.PS.CZ.REQUEST_MOVE();
+            var pmA2 = new (czp("REQUEST_MOVE"))();
             pmA2.dest = [snapA[0], snapA[1]];
             CLIENT.NM.sendPacket(pmA2);
             zWalkState.lastMoveDir = zWalkState.dir; // V2.16.8：记录末次移动方向（换图反向走用）
@@ -8643,7 +8865,7 @@
       var tx = px0 + dd[0] * WALK_RANGE;
       var ty = py0 + dd[1] * WALK_RANGE;
       var dDest = mvSnapWalkable(tx, ty);
-      var pmm = new CLIENT.PS.CZ.REQUEST_MOVE();
+      var pmm = new (czp("REQUEST_MOVE"))();
       pmm.dest = [dDest[0], dDest[1]];
       CLIENT.NM.sendPacket(pmm);
       zWalkState.tried = 0;
@@ -8671,7 +8893,7 @@
       var tx2 = px0 + dd2[0] * WALK_RANGE;
       var ty2 = py0 + dd2[1] * WALK_RANGE;
       var dDest2 = mvSnapWalkable(tx2, ty2);
-      var pm2 = new CLIENT.PS.CZ.REQUEST_MOVE();
+      var pm2 = new (czp("REQUEST_MOVE"))();
       pm2.dest = [dDest2[0], dDest2[1]];
       CLIENT.NM.sendPacket(pm2);
       tlog("walk-turn-go " + zWalkState.dir + " -> " + dDest2[0] + "," + dDest2[1]);
@@ -8930,7 +9152,7 @@
           if (bl > 0) {
             var btx = Math.round(ent.position[0] + (bdx / bl) * 3), bty = Math.round(ent.position[1] + (bdy / bl) * 3);
             var bDest = mvSnapWalkable(btx, bty);
-            var pB = new CLIENT.PS.CZ.REQUEST_MOVE();
+            var pB = new (czp("REQUEST_MOVE"))();
             pB.dest = [bDest[0], bDest[1]];
             CLIENT.NM.sendPacket(pB);
             zMon.action = "后撤拉开距离";
@@ -9471,7 +9693,7 @@
           // 蓄气需 气弹 < 技能等级（skill.cpp MO_CALLSPIRITS 判断）；吸魂无条件
           if (sid === 261 && st.spheres >= lv) continue;
           try {
-            var ps = new CLIENT.PS.CZ.USE_SKILL();
+            var ps = new (czp("USE_SKILL"))();
             ps.SKID = sid;
             ps.selectedLevel = lv;
             ps.targetID = ent.GID || 0;
@@ -9501,7 +9723,7 @@
             if (subReq && subReq[2] > 0 && st.spheres < subReq[2]) {
               return castStatusPrep("球" + subReq[2], order);
             }
-            var ps2 = new CLIENT.PS.CZ.USE_SKILL();
+            var ps2 = new (czp("USE_SKILL"))();
             ps2.SKID = sid2;
             ps2.selectedLevel = lv2;
             ps2.targetID = ent.GID || 0;
@@ -9625,7 +9847,7 @@
       var isSelf = bits != null ? ((bits & 4) === 4) : false; // SELF=4；无类型信息按非自身处理
       if (isSelf) {
         try {
-          var ps = new CLIENT.PS.CZ.USE_SKILL();
+          var ps = new (czp("USE_SKILL"))();
           ps.SKID = o.skid;
           ps.selectedLevel = realLv;
           ps.targetID = ent.GID || 0;
@@ -9651,7 +9873,7 @@
         continue;
       }
       try {
-        var p = new CLIENT.PS.CZ.USE_SKILL();
+        var p = new (czp("USE_SKILL"))();
         p.SKID = o.skid;
         p.selectedLevel = realLv;
         p.targetID = target.GID;
@@ -9679,6 +9901,16 @@
     // 全部技能被状态前置挡住且补状态节流/不可用 → 等（外层 wait 分支穿插普攻）
     return "wait";
   }
+  // V2.38.0 包体自检按钮：把关键包实际 opcode 打到状态栏/自检行/遥测日志（服务端口径比对）
+  onId("dsh-czcheck", "click", function () {
+    try {
+      var chk = czSelfCheck();
+      czRenderLine();
+      setStatus(chk.ok ? ("包体自检通过 · " + chk.brief) : ("包体自检未通过 · " + chk.brief), chk.ok ? "ok" : "err");
+      tlog("cz-selfcheck " + (chk.ok ? "ok " : "FAIL ") + chk.brief);
+      try { console.log("[ro-assist] " + chk.text); } catch (e0) {}
+    } catch (e) { setStatus("包体自检异常: " + (e && e.message), "err"); }
+  });
   onId("dsh-z-on", "click", startZhu);
   onId("dsh-z-off", "click", stopZhu);
   // 技能前置/穿插平A 开关持久化
@@ -10027,7 +10259,7 @@
     try{if(!valid())return;var attempts=0,limits=manual||null;
       while(true){if(!valid())return;if(++attempts>100)throw Error('清理次数达到上限');var controls=requireDB('Preferences/Controls');if(controls&&controls.talk)throw Error('NPC 对话尚未结束');var inv=bagCleanInventory();if(!inv)throw Error('背包数据未就绪，请先打开背包');var plan=bagCleanPlan(inv);if(limits)plan=plan.filter(function(r){return limits[r.key+'|'+r.source]>0;});else if(!bagCleanNeeded(bagCleanWeight(),bagCleanFreeSlots()))break;if(!plan.length){if(limits)break;throw Error(bagCleanShortage(inv));}
         var row=plan[0],stack=row.stacks[0],want=limits?limits[row.key+'|'+row.source]:row.drop,fresh=bagCleanRevalidate(stack,want);if(!fresh){bagCleanSay('索引/ITID/数量/type/保护或规则变化，已跳过陈旧候选');if(limits)limits[row.key+'|'+row.source]=0;continue;}if(!CLIENT.PS.CZ.ITEM_THROW)throw Error('此客户端不支持已核对的丢弃接口');
-        var before=fresh.desc.amount,packet=new CLIENT.PS.CZ.ITEM_THROW();packet.Index=fresh.desc.index;packet.count=fresh.count;bagCleanSay('清理中：#'+fresh.desc.id+' ×'+fresh.count+'（命中'+fresh.desc.source+'）');CLIENT.NM.sendPacket(packet);var ack=false;
+        var before=fresh.desc.amount,packet=new (czp("ITEM_THROW"))();packet.Index=fresh.desc.index;packet.count=fresh.count;bagCleanSay('清理中：#'+fresh.desc.id+' ×'+fresh.count+'（命中'+fresh.desc.source+'）');CLIENT.NM.sendPacket(packet);var ack=false;
         for(var retry=0;retry<8;retry++){await wait();if(!valid())return;var cur=bagCleanFindCurrent(fresh.desc.index);if(!cur||Number(cur.ITID)!==fresh.desc.id||Number(cur.count!=null?cur.count:cur.amount)<=before-fresh.count){ack=true;break;}}
         if(!ack)throw Error('丢弃未确认或索引内容变化，已停止重发');if(limits)limits[row.key+'|'+row.source]-=fresh.count;
       }bagClean.pending=false;bagCleanSay('清理完成');if(valid()&&done)done();
@@ -10315,7 +10547,7 @@
       if (!pickSafeToWalk()) { pendingPick = null; return; } // 途中变危险 → 放弃
       var r = pathFindTo(pendingPick.x, pendingPick.y);
       if (!r) { pendingPick = null; return; } // 不可达 → 放弃
-      var pm = new CLIENT.PS.CZ.REQUEST_MOVE();
+      var pm = new (czp("REQUEST_MOVE"))();
       pm.dest = [r.x, r.y];
       CLIENT.NM.sendPacket(pm);
       try { if (zWalkState) zWalkState.lastMove = now; } catch (e) {} // 占用 zWalk 的 2s 门槛，避免移动互相打架
@@ -10339,7 +10571,7 @@
           return;
         }
       }
-      var p = new CLIENT.PS.CZ.ITEM_PICKUP();
+      var p = new (czp("ITEM_PICKUP"))();
       p.ITAID = itaid;
       CLIENT.NM.sendPacket(p);
       var lg = $id("dsh-picklog");
@@ -10433,7 +10665,7 @@
       }
       if (it.path && it.path.length && clientReady()) {
         var dest = it.path[it.path.length - 1];
-        var mv = new CLIENT.PS.CZ.REQUEST_MOVE();
+        var mv = new (czp("REQUEST_MOVE"))();
         mv.dest = [dest[1], dest[2]];
         CLIENT.NM.sendPacket(mv);
         setStatus("书本前往: " + (it.npc || "") + "（步行寻路）", "ok");
@@ -10965,7 +11197,7 @@
         name: target.displayName || target.name || (target.display && target.display.name) || "",
         pos: (target.position && target.position.length >= 2) ? [target.position[0], target.position[1]] : (selNpc && selNpc.pos ? [selNpc.pos[0], selNpc.pos[1]] : null)
       };
-      var p = new CLIENT.PS.CZ.CONTACTNPC();
+      var p = new (czp("CONTACTNPC"))();
       p.NAID = target.GID; p.type = 1;
       CLIENT.NM.sendPacket(p);
       $id("dsh-cleanlog").textContent = "已点击 NPC「" + (target.displayName || target.name || target.GID) + "」";
@@ -10989,7 +11221,7 @@
         }
       }
       if (!sellList.length) { $id("dsh-cleanlog").textContent = locked ? ("有 " + locked + " 件装备不可丢或状态未知，仅允许邮件/背包出口，已拒绝出售。") : "背包里没有可卖的装备类物品"; return; }
-      var sp = new CLIENT.PS.CZ.PC_SELL_ITEMLIST();
+      var sp = new (czp("PC_SELL_ITEMLIST"))();
       sp.itemList = sellList;
       CLIENT.NM.sendPacket(sp);
       $id("dsh-cleanlog").textContent = "已发送卖单 " + sellList.length + " 件装备" + (locked ? "（按不可丢策略拒绝 " + locked + " 件）" : "");
@@ -11558,7 +11790,7 @@
       if (!menuRecon.NAID) { $id("dsh-cleanlog").textContent = "先捕获菜单（点NPC对话）"; return; }
       var n = parseInt($id("dsh-menu-num").value, 10);
       if (isNaN(n) || n < 0) { $id("dsh-cleanlog").textContent = "菜单序号无效"; return; }
-      var c = new CLIENT.PS.CZ.CHOOSE_MENU();
+      var c = new (czp("CHOOSE_MENU"))();
       c.NAID = menuRecon.NAID; c.num = n + 1; // 协议 1 起(官方 _index+1),界面序号 0 起
       CLIENT.NM.sendPacket(c);
       $id("dsh-cleanlog").textContent = "已发 CHOOSE_MENU：第 " + (n + 1) + " 项" + (menuRecon.items[n] ? "（" + menuRecon.items[n] + "）" : "");
@@ -11568,7 +11800,7 @@
     try {
       if (!clientReady()) throw new Error("客户端未就绪");
       if (!menuRecon.NAID) { $id("dsh-cleanlog").textContent = "先捕获菜单（点NPC对话）"; return; }
-      var p = new CLIENT.PS.CZ.REQ_NEXT_SCRIPT();
+      var p = new (czp("REQ_NEXT_SCRIPT"))();
       p.NAID = menuRecon.NAID;
       CLIENT.NM.sendPacket(p);
       $id("dsh-cleanlog").textContent = "已发 REQ_NEXT_SCRIPT（下一段对话）";
@@ -12243,7 +12475,7 @@
       zLock.dist = null;
       zLock.reactive = false;
       zLock.done = false;
-      var p = new CLIENT.PS.CZ.REQUEST_ACT();
+      var p = new (czp("REQUEST_ACT"))();
       p.targetGID = gid;
       p.action = 7;
       CLIENT.NM.sendPacket(p);
@@ -14010,7 +14242,7 @@
       (function sendNext(n) {
         if (n >= queue.length) { scrLogLine("store: 已发送存仓 " + queue.length + " 项"); return; }
         if (!scrStorageReady()) { scrLogLine("store: 仓库已关闭，停止余下 " + (queue.length - n) + " 项"); return; }
-        var q = queue[n], pkt = new CLIENT.PS.CZ.MOVE_ITEM_FROM_BODY_TO_STORE(); pkt.index = q.index; pkt.count = q.count; CLIENT.NM.sendPacket(pkt);
+        var q = queue[n], pkt = new (czp("MOVE_ITEM_FROM_BODY_TO_STORE"))(); pkt.index = q.index; pkt.count = q.count; CLIENT.NM.sendPacket(pkt);
         setTimeout(function () { sendNext(n + 1); }, 250);
       })(0);
     } catch (e) { scrLogLine("store 异常: " + e.message); }
@@ -14082,7 +14314,7 @@
         } catch (e2) {}
       });
       if (!target) { scrLogLine("talk: 附近无目标NPC" + (name ? "（" + name + "）" : "")); return; }
-      var pkt = new CLIENT.PS.CZ.CONTACTNPC();
+      var pkt = new (czp("CONTACTNPC"))();
       pkt.NAID = target.GID; pkt.type = 1;
       CLIENT.NM.sendPacket(pkt);
       scrLogLine("talk: 已对话 " + (target.name || target.displayName || target.GID));
@@ -14548,9 +14780,9 @@
   function apiGuard(owner,scope){if(!clientReady())return {ok:false,error:"client-not-ready"};if(!apiHas(owner,scope))return {ok:false,error:"lease-required"};return null;}
   function apiBattleTick(){if(!apiLease)return;var b=apiLease.battle,s=npBattleState();if(b.state==="pending-on"&&s===true)b.state="owned";else if(b.state==="pending-off"&&s===false)b.state="none";if(apiLease.released&&b.state==="none"){apiLease=null;apiEmit("state",{});}}
   function apiRelease(owner){if(!apiLease||apiLease.owner!==owner)return {ok:false,error:"not-owner"};apiBattleTick();if(!apiLease)return {ok:true};var l=apiLease;if(l.scopes.indexOf("movement")>=0){moveXY.busy=false;moveXY.onArrive=null;}if(l.scopes.indexOf("arrow")>=0&&arrowTarget&&arrowTarget.owner===owner){arrowTarget=null;arrowPending=null;arrowReady=false;arrowBlocked=false;}if(l.scopes.indexOf("battle")>=0&&(l.battle.state==="owned"||l.battle.state==="pending-off")){l.released=true;if(l.battle.state!=="pending-off"){var generation=l.generation,r=npRequestBattle(false,"external-release:"+owner,true,function(){return !!(apiLease&&apiLease.owner===owner&&apiLease.generation===generation);});if(r==="sent"||r==="queued")l.battle.state="pending-off";else l.released=false;}return {ok:l.released,result:l.battle.state};}if(l.battle.state==="pending-on")npClearBattleIntent();apiLease=null;apiEmit("state",{});return {ok:true};}
-  function apiContact(owner,gid){var bad=apiGuard(owner,"dialog");gid=arrowPos(gid);if(bad)return bad;if(!gid)return {ok:false,error:"invalid-gid"};var found=apiEntities().filter(function(e){return e.gid===gid&&(e.type===6||e.type===12);})[0];if(!found)return {ok:false,error:"npc-not-found"};try{var p=new CLIENT.PS.CZ.CONTACTNPC();p.NAID=gid;p.type=1;CLIENT.NM.sendPacket(p);apiLease.selectedNpc=gid;lastTalkNpc={GID:gid,name:found.name,pos:found.position};return {ok:true};}catch(e){return {ok:false,error:"contact-failed"};}}
+  function apiContact(owner,gid){var bad=apiGuard(owner,"dialog");gid=arrowPos(gid);if(bad)return bad;if(!gid)return {ok:false,error:"invalid-gid"};var found=apiEntities().filter(function(e){return e.gid===gid&&(e.type===6||e.type===12);})[0];if(!found)return {ok:false,error:"npc-not-found"};try{var p=new (czp("CONTACTNPC"))();p.NAID=gid;p.type=1;CLIENT.NM.sendPacket(p);apiLease.selectedNpc=gid;lastTalkNpc={GID:gid,name:found.name,pos:found.position};return {ok:true};}catch(e){return {ok:false,error:"contact-failed"};}}
   function apiWalk(owner,payload){var bad=apiGuard(owner,"movement"),x=payload&&Number(payload.x),y=payload&&Number(payload.y);if(bad)return bad;if(!payload||!Number.isInteger(x)||!Number.isInteger(y))return {ok:false,error:"invalid-position"};return {ok:!!walkToXY(x,y,null,"dsh-arrow-rules-status")};}
-  function apiChoose(owner,payload){var bad=apiGuard(owner,"dialog"),menu=apiMenu(),naid=payload&&arrowPos(payload.naid),index=payload&&Number(payload.index),fp=payload&&payload.fingerprint;if(bad)return bad;if(!payload||!naid||!Number.isInteger(index)||index<0||index>=menu.items.length||naid!==menu.naid||naid!==apiLease.selectedNpc||typeof fp!=="string"||fp!==menu.fingerprint)return {ok:false,error:"invalid-menu"};if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"};apiMenuUsed=fp;try{var p=new CLIENT.PS.CZ.CHOOSE_MENU();p.NAID=naid;p.num=index+1;CLIENT.NM.sendPacket(p);return {ok:true};}catch(e){return {ok:false,error:"choose-failed"};}}
+  function apiChoose(owner,payload){var bad=apiGuard(owner,"dialog"),menu=apiMenu(),naid=payload&&arrowPos(payload.naid),index=payload&&Number(payload.index),fp=payload&&payload.fingerprint;if(bad)return bad;if(!payload||!naid||!Number.isInteger(index)||index<0||index>=menu.items.length||naid!==menu.naid||naid!==apiLease.selectedNpc||typeof fp!=="string"||fp!==menu.fingerprint)return {ok:false,error:"invalid-menu"};if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"};apiMenuUsed=fp;try{var p=new (czp("CHOOSE_MENU"))();p.NAID=naid;p.num=index+1;CLIENT.NM.sendPacket(p);return {ok:true};}catch(e){return {ok:false,error:"choose-failed"};}}
   function apiBattle(owner,on){var bad=apiGuard(owner,"battle");if(bad)return bad;if(typeof on!=="boolean")return {ok:false,error:"invalid-payload"};apiBattleTick();var b=apiLease.battle,s=npBattleState(),generation=apiLease.generation,current=function(){return apiCurrent(owner,generation);};if(on){if(s!==false)return {ok:true,result:s===true?"preexisting":"unknown"};if(b.state==="pending-on"||b.state==="owned")return {ok:true,result:b.state};var r=npRequestBattle(true,"external:"+owner,true,current);if(r==="sent"||r==="queued")b.state="pending-on";return {ok:r!=="failed",result:r};}if(b.state!=="owned")return {ok:true,result:"not-owned"};var r2=npRequestBattle(false,"external:"+owner,true,current);if(r2==="sent"||r2==="queued")b.state="pending-off";return {ok:r2!=="failed",result:r2};}
   function apiSetArrow(owner,target){var bad=apiGuard(owner,"arrow"),mid=target&&arrowPos(target.mid),gid=target&&arrowPos(target.gid);if(bad)return bad;if(!target||!mid||!gid)return {ok:false,error:"invalid-target"};if(!arrowTarget||arrowTarget.mid!==mid||arrowTarget.gid!==gid)arrowPending=null;arrowTarget={owner:owner,mid:mid,gid:gid};arrowTargetTick(Date.now());return {ok:true,enabled:arrowRules.enabled,blocked:arrowBlocked,ready:arrowReady,status:arrowStatus};}
   function apiClearArrow(owner){var bad=apiGuard(owner,"arrow");if(bad)return bad;if(arrowTarget&&arrowTarget.owner===owner)arrowTarget=null;arrowPending=null;arrowReady=false;arrowBlocked=false;return {ok:true};}
@@ -14752,7 +14984,7 @@
       var btn = host && host.shadowRoot && host.shadowRoot.querySelector(".charselect");
       if (btn) { btn.click(); return true; }
     } catch (e) {}
-    try { var pkt = new CLIENT.PS.CZ.RESTART(); pkt.type = 1; CLIENT.NM.sendPacket(pkt); return true; } catch (e2) {}
+    try { var pkt = new (czp("RESTART"))(); pkt.type = 1; CLIENT.NM.sendPacket(pkt); return true; } catch (e2) {}
     return false;
   }
   function deathGuardCharSelectHost() {
@@ -14870,7 +15102,7 @@
       if (btn && btn.getClientRects && btn.getClientRects().length) { btn.click(); return true; }
     } catch (e) {}
     try {
-      var pkt = new CLIENT.PS.CZ.RESTART();
+      var pkt = new (czp("RESTART"))();
       pkt.type = 0;
       CLIENT.NM.sendPacket(pkt);
       return true;
@@ -16140,8 +16372,8 @@
       if (step >= q.length) { gearAfterDeck(ps, missing, sent); return; }
       var t = q[step++];
       try {
-        if (t.op === "off") { var p1 = new CLIENT.PS.CZ.REQ_TAKEOFF_EQUIP(); p1.index = t.idx; CLIENT.NM.sendPacket(p1); sent.off++; }
-        else { var p2 = new CLIENT.PS.CZ.REQ_WEAR_EQUIP(); p2.index = t.idx; p2.wearLocation = t.mask; CLIENT.NM.sendPacket(p2); sent.on++; }
+        if (t.op === "off") { var p1 = new (czp("REQ_TAKEOFF_EQUIP"))(); p1.index = t.idx; CLIENT.NM.sendPacket(p1); sent.off++; }
+        else { var p2 = new (czp("REQ_WEAR_EQUIP"))(); p2.index = t.idx; p2.wearLocation = t.mask; CLIENT.NM.sendPacket(p2); sent.on++; }
       } catch (e) { sent.fail++; gearLog("装备发包失败：" + (e && e.message)); }
       setTimeout(nextGear, 380);
     }
@@ -16181,8 +16413,8 @@
         if (k2 >= q.length) { sent.cardFail = res.fail; gearVerify(ps, missing, sent, false, snap.wasOpen); return; }
         var t = q[k2++];
         try {
-          if (t.op === "del") { var p1 = new CLIENT.PS.CZ.REQUEST_CARDCONNECTION_CANCEL(); p1.tab = 0; p1.level = 1; p1.cardid = t.id; CLIENT.NM.sendPacket(p1); res.del++; }
-          else { var p2 = new CLIENT.PS.CZ.REQUEST_CARDCONNECTION_ADDMYDECK(); p2.tab = t.tab; p2.level = t.level; p2.cardid = t.id; CLIENT.NM.sendPacket(p2); res.add++; }
+          if (t.op === "del") { var p1 = new (czp("REQUEST_CARDCONNECTION_CANCEL"))(); p1.tab = 0; p1.level = 1; p1.cardid = t.id; CLIENT.NM.sendPacket(p1); res.del++; }
+          else { var p2 = new (czp("REQUEST_CARDCONNECTION_ADDMYDECK"))(); p2.tab = t.tab; p2.level = t.level; p2.cardid = t.id; CLIENT.NM.sendPacket(p2); res.add++; }
         } catch (e) { res.fail++; gearLog("卡册发包失败：" + (e && e.message)); }
         setTimeout(nextCard, 380);
       }

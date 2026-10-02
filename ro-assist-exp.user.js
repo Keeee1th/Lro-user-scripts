@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手 · 实验版）
 // @namespace    dsh.ro-plugin
-// @version      2.38.0
+// @version      2.38.1
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -113,6 +113,12 @@
 // 3) 自启配置不完整：用脚本 DEFAULTS 自启缺少新引擎必需的 lastroProtocol / lastroCustomPackets / 各 charset / packetKeys / servers(数组) 等字段，
 //    引擎在模块初始化 hook NOTIFY_LOADINFO 抛 Packet not yet register "LoadInfo" 后中断启动，依旧黑屏。改为以宿主页 window.ROConfigBase 为基底自启。
 // 原站 post.lastro.cn / game.lastro.cn 的启动判据、注入方式与配置来源全部保持不变。
+// ---------------- V2.38.1 变更摘要 ----------------
+// 1. 一键换装新增完整装备指纹：在物品ID/精炼/插卡之外，记录并严格匹配随机词条 index/value/param 与附魔强化等级 enchantgrade；旧预设兼容，重新覆盖后升级。
+// 2. BOSS 设置新增「优先攻击忽略攻击名单」逐角色开关；只放宽最终的优先攻击模式，瞬移和等待残血补尾刀仍遵守原名单门禁。
+// 3. 无限道场优先选择活体 MVP/BOSS，使用租约内临时 GID 目标驱动原有 zAttack 攻击链；临时压制内挂其他 MID，死亡、换波或停止后按当前永久名单恢复，不写入 lockList。
+// 4. 临时战斗目标 API 在任何发包前严格验证 GID/MID、活体怪物和 MvpDropsNum；失效时自动清理。保留 v2.38.0 opcode 能力探测与启动自检修复。
+// 5. 版本：@version 2.38.0 → 2.38.1（VER 同步）；实验版同步。离线 runtime 151/151、opcode 9/9，独立定点复核 8/8 通过。
 // ---------------- V2.37.1 变更摘要 ----------------
 // 1. 修复 buff 技能设置刷新后丢失：KV 拉回角色档后立即重绑 saved/lockList/askList/profMemKey 并刷新列表；本地保存即标记 KV dirty，避免旧远端值覆盖刚写配置。
 // 2. buff 旧配置找回改为按角色执行，在真实角色识别后才恢复；只补空档，不覆盖已有 askList。黄金恢复副本可为已有角色补缺失 gearSets。
@@ -227,7 +233,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.38.0"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.38.1"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -1178,7 +1184,7 @@
       '<div class="row"><label class="switch"><input id="dsh-z-idlefly" type="checkbox">无目标持续自动瞬移</label>' +
       '<span class="lb" style="min-width:34px">超过</span><input id="dsh-z-idleflysec" type="number" value="10" style="flex:0 0 40px"><span style="color:#5a6b7f">s无锁定怪→瞬移</span></div>' +
       // V2.34.0 A3：BOSS 三模式（默认不处理）+ 尾刀线；瞬移间隔 dsh-z-flyint 保留
-      '<div class="row"><span class="lb">BOSS 出现</span><select id="dsh-z-bossact" style="flex:0 0 130px"><option>瞬移</option><option>优先攻击</option><option>等待残血补尾刀</option><option selected>不处理</option></select><span class="st">锁定则优先攻击</span><span class="st" style="font-size:10px">名单非空时，BOSS 优先攻击/补尾刀只对名单内 BOSS 生效</span></div>' +
+      '<div class="row"><span class="lb">BOSS 出现</span><select id="dsh-z-bossact" style="flex:0 0 130px"><option>瞬移</option><option>优先攻击</option><option>等待残血补尾刀</option><option selected>不处理</option></select><label class="switch"><input id="dsh-z-bossignorelock" type="checkbox">优先攻击忽略攻击名单</label><span class="st">瞬移且已锁定则优先攻击；瞬移/尾刀仍受名单限制</span></div>' +
       '<div class="row"><span class="lb">尾刀线</span><input id="dsh-z-bosshp" type="number" value="30" min="1" max="99" style="flex:0 0 40px"><span style="color:#5a6b7f">%（各职业自填）</span>' +
       '<span class="lb" style="min-width:52px">瞬移间隔</span><input id="dsh-z-flyint" type="number" value="4" style="flex:0 0 40px"><span style="color:#5a6b7f">s</span></div>' +
       '<div class="row"><span class="lb">HP低于</span><input id="dsh-z-hpfly" type="number" value="20" style="flex:0 0 40px"><span style="color:#5a6b7f">%瞬移</span>' +
@@ -3955,7 +3961,7 @@
     ["dsh-scanen", "c"], ["dsh-scanint", "v"],
     ["dsh-z-ona", "v"], ["dsh-z-grpn", "v"], ["dsh-z-qoaen", "c"], ["dsh-z-qoan", "v"], ["dsh-z-qoaskill", "v"], ["dsh-z-qoaskilllv", "v"],
     ["dsh-z-flymode", "v"], ["dsh-z-flyauto", "c"], ["dsh-z-flystuck", "c"],
-    ["dsh-z-idlefly", "c"], ["dsh-z-idleflysec", "v"], ["dsh-z-bossact", "v"], ["dsh-z-bosshp", "v"], ["dsh-z-flyint", "v"],
+    ["dsh-z-idlefly", "c"], ["dsh-z-idleflysec", "v"], ["dsh-z-bossact", "v"], ["dsh-z-bossignorelock", "c"], ["dsh-z-bosshp", "v"], ["dsh-z-flyint", "v"],
     ["dsh-z-flygrp", "c"], ["dsh-z-flyrange", "c"], ["dsh-z-flykill", "c"], ["dsh-z-diag", "c"],
     ["dsh-z-hpfly", "v"], ["dsh-z-spfly", "v"], ["dsh-z-hpout", "v"], ["dsh-z-keep", "v"],
     ["dsh-z-sit", "c"], ["dsh-z-sithplo", "v"], ["dsh-z-sithphi", "v"], ["dsh-z-sitsplo", "v"], ["dsh-z-sitsphi", "v"],
@@ -6573,16 +6579,25 @@
       return Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]));
     } catch (e) { return 1e9; }
   }
+  function npOnlyTarget(mid, value) {
+    try { if (!clientReady() || !CLIENT.PS.CZ.NOTIFY_ONLYTARGET) return false; var p = new (czp("NOTIFY_ONLYTARGET"))(); p.id = parseInt(mid, 10) || 0; p.value = value ? 1 : 0; CLIENT.NM.sendPacket(p); return true; } catch (e) { return false; }
+  }
   function npSyncTargets() {
     // 把锁定目录同步给内挂：NOTIFY_ONLYTARGET{id=mobid(4字节), value=1} 只打勾选怪
     try {
       if (!clientReady() || !CLIENT.PS.CZ.NOTIFY_ONLYTARGET) return;
       var ids = Object.keys(lockList);
-      for (var i = 0; i < ids.length; i++) {
-        var p = new (czp("NOTIFY_ONLYTARGET"))();
-        p.id = parseInt(ids[i], 10) || 0;
-        p.value = 1;
-        CLIENT.NM.sendPacket(p);
+      var dojoTempMid = apiBattleTarget && apiBattleTarget.owner === DOJO_OWNER ? String(apiBattleTarget.mid) : "";
+      if (dojoTempMid) {
+        apiBattleSuppressed = {};
+        for (var i = 0; i < ids.length; i++) {
+          var id = String(ids[i]), keep = id === dojoTempMid;
+          npOnlyTarget(id, keep ? 1 : 0);
+          if (!keep) apiBattleSuppressed[id] = 1;
+        }
+        npOnlyTarget(apiBattleTarget.mid, 1);
+      } else {
+        for (var i = 0; i < ids.length; i++) npOnlyTarget(ids[i], 1);
       }
       // V2.16.8：清空内挂历史非锁定怪——读内挂 DOM 当前勾选，勾了但不在锁定目录 → 发 value=0 取消（value=0 语义待实测）
       try {
@@ -6591,11 +6606,8 @@
           var cc = checks2[j];
           var cmid = cc.getAttribute("data-id");
           if (!cmid) continue;
-          if (cc.checked && !lockList[String(cmid)]) {
-            var p0 = new (czp("NOTIFY_ONLYTARGET"))();
-            p0.id = parseInt(cmid, 10) || 0;
-            p0.value = 0;
-            CLIENT.NM.sendPacket(p0);
+          if (cc.checked && !lockList[String(cmid)] && String(cmid) !== dojoTempMid) {
+            npOnlyTarget(cmid, 0);
           }
         }
       } catch (e) {}
@@ -6613,7 +6625,7 @@
         var c = checks[i];
         var mid = c.getAttribute("data-id");
         if (!mid) continue;
-        var want = !!lockList[String(mid)];
+        var want = !!lockList[String(mid)] || !!(typeof apiBattleTarget !== "undefined" && apiBattleTarget && apiBattleTarget.owner === DOJO_OWNER && String(mid) === String(apiBattleTarget.mid));
         if (c.checked !== want) c.checked = want;
       }
     } catch (e) {}
@@ -6625,6 +6637,7 @@
       if (!t || !t.getAttribute || !t.getAttribute("data-id")) return;
       if (!t.closest || !t.closest(".onlyattack_block")) return;
       var mid = t.getAttribute("data-id");
+      if (typeof apiBattleTarget !== "undefined" && apiBattleTarget && apiBattleTarget.owner === DOJO_OWNER && String(mid) === String(apiBattleTarget.mid)) { t.checked = true; return; }
       var nm = t.getAttribute("data-name") || ("ID" + mid);
       if (t.checked) addLock(mid, nm);
       else removeLock(mid);
@@ -7500,12 +7513,13 @@
       var out = { rec: rec, act: "不处理", fly: false, reason: "", want: 0, hp: -1, skip: 0 };
       zBossSkipGid = 0;
       if (!rec) return out;
-      // V2.34.4 守名单门：名单非空时名单外 BOSS 不做任何特殊处理（不优先/不补尾刀/不跳过/不瞬移）；名单为空恒放行（行为与改动前一致）
       var bossMidRec = rec.mid != null ? rec.mid : (rec._job != null ? rec._job : (rec.job != null ? rec.job : rec.mobId));
-      if (!zBossAllowedByLock(bossMidRec)) return out;
       var act = ($id("dsh-z-bossact") && $id("dsh-z-bossact").value) || "不处理";
-      // 瞬移模式：BOSS 在锁定名单（lockList[mid] 命中，mid=怪物 job id）→ 自动按「优先攻击」处理（不飞）
+      // 既有语义：瞬移模式遇到已锁定 BOSS 时改为优先攻击。
       if (act === "瞬移" && rec.mid != null && lockList[String(rec.mid)]) act = "优先攻击";
+      // 只有最终动作确为优先攻击且角色勾选时，普通地图才允许名单外 BOSS；瞬移与等待尾刀始终先受名单限制。
+      var ignoreLock = act === "优先攻击" && !!($id("dsh-z-bossignorelock") && $id("dsh-z-bossignorelock").checked);
+      if (!ignoreLock && !zBossAllowedByLock(bossMidRec)) return out;
       out.act = act;
       if (act === "瞬移") { out.fly = true; out.reason = "BOSS(" + (rec.name || rec.mid) + ")"; }
       else if (act === "优先攻击") { out.want = gidInt(rec.GID); }
@@ -8956,7 +8970,19 @@
       var zFollow = !$id("dsh-z-follow") || $id("dsh-z-follow").checked; // 锁定目标跟随追击
       var zNext = !$id("dsh-z-next") || $id("dsh-z-next").checked;       // 打死换下一个
       var zAllMobs = !$id("dsh-z-allmobs") || $id("dsh-z-allmobs").checked; // V2.34.4：仅在未设锁定名单时生效（名单非空时只打名单）
-      var target = null, best = 1e9, bestHp = 1e18, bestTier = -1; // V2.15.25：bestHp=当前选中怪的绝对剩余HP（血少优先抢尾刀）；V2.36.3：bestTier=索敌优先级（已攻击>身侧>血少>距离）
+      var target = null, best = 1e9, bestHp = 1e18, bestTier = -1, tempTargetHeld = false;
+      // 租约临时目标优先于普通候选；有效但射程外时保留临时锁，只让内挂靠近。
+      if (apiBattleTarget) {
+        var tempMeta = apiBattleTargetEntity(apiBattleTarget), tempEnt = tempMeta && zEntOf(tempMeta.gid);
+        if (!tempMeta || !tempEnt) apiClearBattleTarget(apiBattleTarget.owner);
+        else if (tempEnt.position && ent.position) {
+          var tempD = zRangeDist(tempEnt.position, ent.position);
+          tempTargetHeld = true;
+          if (gidInt(zLock.gid) !== gidInt(tempEnt.GID)) { zLockCounts = {}; zCastIdx = 0; }
+          zLock.gid = tempEnt.GID; zLock.name = tempMeta.name || String(tempMeta.mid); zLock.dist = tempD; zLock.reactive = false; zLock.done = false;
+          if (tempD <= (npMode ? npThD : atkRange)) { target = tempEnt; best = tempD; bestHp = tempEnt.life && tempEnt.life.hp != null ? tempEnt.life.hp : 1e18; bestTier = 99; }
+        }
+      } // V2.15.25：bestHp=当前选中怪的绝对剩余HP（血少优先抢尾刀）；V2.36.3：bestTier=索敌优先级（已攻击>身侧>血少>距离）
       var hitTarget = null, hitBest = 1e9;
       // 锁定模式：已锁定目标 → 只认锁定目标（固定 GID 持续攻击，防目标漂移），不重新扫描选最近
       var lockAliveOutside = false; // V2.7.2：锁定怪仍在但超攻击距离（np 模式下不解锁）
@@ -8966,7 +8992,7 @@
         var bossRecD = bossWantD && bossWantD.rec;
         var bossMidD = bossRecD ? (bossRecD.mid != null ? bossRecD.mid : (bossRecD._job != null ? bossRecD._job : (bossRecD.job != null ? bossRecD.job : bossRecD.mobId))) : null;
         // V2.34.4 守名单门（双保险）：名单非空且 BOSS mid 不在名单 → 不写 zLock.gid、不 sendLockInject
-        if (bossWantD && bossRecD && zBossAllowedByLock(bossMidD) && bossWantD.want) {
+        if (!tempTargetHeld && bossWantD && bossRecD && bossWantD.want) {
           var bEnt = zEntOf(bossWantD.rec.GID);
           if (bEnt && bEnt.position && ent.position) {
             var bd = zRangeDist(bEnt.position, ent.position); // V2.34.3：格子距离口径
@@ -8987,7 +9013,7 @@
       //   且绝不清除 zLock.gid：锁留着，HP% 掉进 dsh-z-bosshp 尾刀线后同一把锁自动恢复生效，用户无需重新锁定
       var zLockBossSkip = !!(zBossSkipGid && zLock.gid && gidInt(zLock.gid) === zBossSkipGid);
       if (zLockBossSkip) zMon.action = "锁定BOSS未到尾刀线（等待残血，保留锁）";
-      if (zLock.gid && !zLockBossSkip) {
+      if (!target && zLock.gid && !zLockBossSkip) {
         EM.forEach(function (e) {
           try {
             if (e.GID !== zLock.gid || e.objecttype !== 5) return;
@@ -9016,6 +9042,9 @@
           zLockCounts = {}; // V1.7.5 解锁 → 锁定次数清零（重新锁定重计）
           tlog("lock-release done=" + zLock.done);
         }
+      }
+      if (tempTargetHeld && !target) {
+        zAtkWhy = "临时目标在射程外"; zMon.action = "临时BOSS超出射程（内挂靠近）"; return;
       }
       // 无锁定目标 → 扫描选目标：锁定怪里最近的（攻击距离内）；非锁定怪仅作「还击」候选
       if (!target) {
@@ -14765,21 +14794,25 @@
   function arrowTargetTick(now){arrowReady=false;arrowBlocked=!!arrowTarget;if(!arrowTarget||!arrowRules.enabled){arrowBlocked=!!arrowTarget&&arrowRules.enabled;return arrowBlocked;}var eff=arrowEffectiveMid(arrowTarget.mid,arrowTarget.gid,now),midUse=eff.mid||arrowTarget.mid;if(!arrowStableGate("t"+midUse+"@"+arrowTarget.gid,now)){arrowBlocked=true;return true;}var list=arrowCandidates(midUse,arrowRules),ammo=readEquippedAmmo(),bag=readBagArrows(),pick=null,i=0,j=0;for(i=0;i<list.length;i++){if(ammo&&Number(ammo.itid)===list[i].itid&&Number(ammo.count)>0){pick=list[i];break;}for(j=0;j<bag.length;j++){if(Number(bag[j].itid)===list[i].itid){pick={kind:list[i].kind,itid:list[i].itid,index:bag[j].index};break;}}if(pick)break;}if(!list.length){arrowPending=null;arrowBlocked=false;arrowReady=true;arrowSay("未配置箭矢，保持当前箭");return false;}if(ammo&&pick&&Number(ammo.itid)===pick.itid&&Number(ammo.count)>0){arrowPending=null;arrowBlocked=false;arrowReady=true;arrowSay("已装备"+arrowKindName(pick.kind)+" #"+pick.itid);return false;}if(!pick){var q=arrowUseQuiver(list[0].itid);arrowSay(q&&q.q?("背包缺少"+arrowItemName(list[0].itid)+"，已尝试"+q.q.name):("阻塞：背包缺少 #"+list[0].itid));return true;}var p=arrowPending;if(p&&p.itid===pick.itid){if(now<p.confirmUntil)return true;if(!p.retryAt){p.retryAt=now+3000;arrowSay("确认超时，3秒后重试");return true;}if(now<p.retryAt)return true;}if(equipArrow(pick.index)){arrowPending={itid:pick.itid,confirmUntil:now+5000,retryAt:0};arrowSay("换箭中"+arrowKindName(pick.kind)+" #"+pick.itid);return true;}arrowSay("阻塞：装备请求失败");return true;}
   setInterval(function(){var t=Date.now();try{arrowTargetTick(t);}catch(e){}try{arrowSelfTick(t);}catch(e){}},250);
 
-  var API_PROTOCOL=1,apiGeneration=0,apiLease=null,apiMenuUsed="",apiNoticeObserver=null;
+  var API_PROTOCOL=1,apiGeneration=0,apiLease=null,apiMenuUsed="",apiNoticeObserver=null,apiBattleTarget=null,apiBattleSuppressed={},apiBattleAttackAt=0;
   function apiEmit(kind,detail){try{window.dispatchEvent(new CustomEvent("dsh-ro-assist-"+kind,{detail:detail||{}}));}catch(e){}}
   function apiOwner(owner){return typeof owner==="string"&&/^[A-Za-z0-9_.:-]{8,128}$/.test(owner);}
   function apiScopes(scopes){var allowed={dojo:1,battle:1,movement:1,dialog:1,arrow:1,fly:1};return Array.isArray(scopes)&&scopes.length>0&&scopes.every(function(s){return typeof s==="string"&&allowed[s]&&scopes.indexOf(s)===scopes.lastIndexOf(s);});}
   function apiHas(owner,scope){return !!(apiLease&&apiLease.owner===owner&&apiLease.scopes.indexOf(scope)>=0);}
   function apiCurrent(owner,generation){return !!(apiLease&&apiLease.owner===owner&&apiLease.generation===generation);}
   function externalAutomationOwns(scope){return !!(apiLease&&(!scope||apiLease.scopes.indexOf(scope)>=0));}
-  function apiEntities(){var out=[];try{var em=CLIENT.EM||(window.require&&window.require("Renderer/EntityManager"));if(em&&em.forEach)em.forEach(function(e){if(!e||!e.position)return;var type=Number(e.objecttype),mid=type===5?Number(e._job!=null?e._job:(e.job!=null?e.job:e.mobId)):null;out.push({gid:Number(e.GID),type:type,mid:Number.isFinite(mid)?mid:null,name:String(e.displayName||e.name||(e.display&&e.display.name)||""),position:[Number(e.position[0]),Number(e.position[1])],dead:!!(e.isDeath||e.remove_tick||(e.ACTION&&e.action===e.ACTION.DIE))});});}catch(e){}return out;}
+  function apiEntities(){var out=[];try{var em=CLIENT.EM||(window.require&&window.require("Renderer/EntityManager"));if(em&&em.forEach)em.forEach(function(e){if(!e||!e.position)return;var type=Number(e.objecttype),mid=type===5?Number(e._job!=null?e._job:(e.job!=null?e.job:e.mobId)):null;var boss=false;try{var db=getMobDb(),mb=db&&db[mid];boss=!!(mb&&mb.MvpDropsNum>0);}catch(x){}out.push({gid:Number(e.GID),type:type,mid:Number.isFinite(mid)?mid:null,name:String(e.displayName||e.name||(e.display&&e.display.name)||""),position:[Number(e.position[0]),Number(e.position[1])],dead:!!(e.isDeath||e.remove_tick||(e.ACTION&&e.action===e.ACTION.DIE)),isBoss:boss});});}catch(e){}return out;}
   function apiDialogOpen(){try{var b=requireDB("UI/Components/NpcBox/NpcBox"),m=requireDB("UI/Components/NpcMenu/NpcMenu");return !!((b&&b.ui&&b.ui.is(":visible"))||(m&&m.ui&&m.ui.is(":visible")));}catch(e){return false;}}
   function apiMenu(){var items=(menuRecon.items||[]).slice(),naid=Number(menuRecon.NAID)||0,time=Number(menuRecon.time)||0,generation=Number(menuRecon.generation)||0;return {naid:naid,items:items,time:time,generation:generation,fingerprint:generation+"@"+time+"|"+naid+"|"+items.map(function(x){return String(x).replace(/\s+/g," ").trim();}).join("|")};}
   function apiSnapshot(owner){if(!apiLease||apiLease.owner!==owner)return null;var me=CLIENT.SS&&CLIENT.SS.Entity,entities=apiEntities(),target=zLock&&gidInt(zLock.gid),menu=apiMenu(),map=getMapName()||"";return {protocol:API_PROTOCOL,ready:clientReady(),map:map,player:me?{gid:Number(me.GID),position:me.position?[Number(me.position[0]),Number(me.position[1])]:null,hp:me.life&&Number(me.life.hp),maxHp:me.life&&Number(me.life.hp_max)}:null,mobs:entities.filter(function(e){return e.type===5&&!e.dead;}),npcs:entities.filter(function(e){return e.type===6||e.type===12;}),target:target||null,inDojoMap:/dojo|challenge|trial|道场|道場/i.test(map),dialogOpen:apiDialogOpen(),menu:menu,battleState:npBattleState(),busy:{assistantCombat:!!zRunning,bagClean:!!(bagClean&&bagClean.busy),movement:!!moveXY.busy},arrow:{enabled:arrowRules.enabled,status:arrowStatus,blocked:arrowBlocked,ready:arrowReady,target:arrowTarget?{mid:arrowTarget.mid,gid:arrowTarget.gid}:null}};}
   function apiAcquire(owner,scopes){if(!apiOwner(owner)||!apiScopes(scopes))return {ok:false,error:"invalid-owner-or-scopes"};if(!clientReady())return {ok:false,error:"client-not-ready"};if(apiLease&&apiLease.owner!==owner)return {ok:false,error:"owned"};if(apiLease)return {ok:true,generation:apiLease.generation};if(zRunning||bagClean&&bagClean.busy)return {ok:false,error:"assistant-busy"};apiLease={owner:owner,scopes:scopes.slice(),generation:++apiGeneration,selectedNpc:0,released:false,battle:{state:"none",initial:npBattleState()}};apiEmit("state",{owner:owner});return {ok:true,generation:apiLease.generation};}
   function apiGuard(owner,scope){if(!clientReady())return {ok:false,error:"client-not-ready"};if(!apiHas(owner,scope))return {ok:false,error:"lease-required"};return null;}
-  function apiBattleTick(){if(!apiLease)return;var b=apiLease.battle,s=npBattleState();if(b.state==="pending-on"&&s===true)b.state="owned";else if(b.state==="pending-off"&&s===false)b.state="none";if(apiLease.released&&b.state==="none"){apiLease=null;apiEmit("state",{});}}
-  function apiRelease(owner){if(!apiLease||apiLease.owner!==owner)return {ok:false,error:"not-owner"};apiBattleTick();if(!apiLease)return {ok:true};var l=apiLease;if(l.scopes.indexOf("movement")>=0){moveXY.busy=false;moveXY.onArrive=null;}if(l.scopes.indexOf("arrow")>=0&&arrowTarget&&arrowTarget.owner===owner){arrowTarget=null;arrowPending=null;arrowReady=false;arrowBlocked=false;}if(l.scopes.indexOf("battle")>=0&&(l.battle.state==="owned"||l.battle.state==="pending-off")){l.released=true;if(l.battle.state!=="pending-off"){var generation=l.generation,r=npRequestBattle(false,"external-release:"+owner,true,function(){return !!(apiLease&&apiLease.owner===owner&&apiLease.generation===generation);});if(r==="sent"||r==="queued")l.battle.state="pending-off";else l.released=false;}return {ok:l.released,result:l.battle.state};}if(l.battle.state==="pending-on")npClearBattleIntent();apiLease=null;apiEmit("state",{});return {ok:true};}
+  function apiBattleTargetEntity(target){var mid=target&&arrowPos(target.mid),gid=target&&arrowPos(target.gid);if(!mid||!gid)return null;var rows=apiEntities();for(var i=0;i<rows.length;i++){var e=rows[i];if(e.gid===gid&&e.type===5&&!e.dead&&e.mid===mid&&e.isBoss===true)return e;}return null;}
+  function apiClearBattleTarget(owner){var bad=apiGuard(owner,"battle");if(bad)return bad;if(apiBattleTarget&&apiBattleTarget.owner===owner){var old=apiBattleTarget,suppressed=apiBattleSuppressed;apiBattleTarget=null;apiBattleSuppressed={};if(old.owner===DOJO_OWNER){for(var id in suppressed)npOnlyTarget(id,lockList[String(id)]?1:0);npOnlyTarget(old.mid,lockList[String(old.mid)]?1:0);npSyncTargets();}else if(old.npAdded&&!lockList[String(old.mid)])npOnlyTarget(old.mid,0);}return {ok:true};}
+  function apiSetBattleTarget(owner,target){var bad=apiGuard(owner,"battle"),mid=target&&arrowPos(target.mid),gid=target&&arrowPos(target.gid);if(bad)return bad;if(!target||!mid||!gid)return {ok:false,error:"invalid-target"};var entity=apiBattleTargetEntity({mid:mid,gid:gid});if(!entity)return {ok:false,error:"battle-target-not-live-boss"};if(apiBattleTarget&&apiBattleTarget.owner===owner&&apiBattleTarget.mid===mid&&apiBattleTarget.gid===gid)return {ok:true};apiClearBattleTarget(owner);var added=!lockList[String(mid)];apiBattleTarget={owner:owner,mid:mid,gid:gid,npAdded:added};if(owner===DOJO_OWNER)npSyncTargets();else if(added)npOnlyTarget(mid,1);return {ok:true};}
+  function apiBattleTick(){if(!apiLease)return;if(typeof apiBattleTarget!=="undefined"&&apiBattleTarget&&!apiBattleTargetEntity(apiBattleTarget))apiClearBattleTarget(apiBattleTarget.owner);var b=apiLease.battle,s=npBattleState();if(b.state==="pending-on"&&s===true)b.state="owned";else if(b.state==="pending-off"&&s===false)b.state="none";if(apiLease.released&&b.state==="none"){apiLease=null;apiEmit("state",{});}}
+  function apiBattleDrive(){var now=Date.now();if(now-apiBattleAttackAt<250||zRunning||!apiLease||!apiBattleTarget||apiBattleTarget.owner!==apiLease.owner||apiLease.scopes.indexOf("battle")<0)return;var state=apiLease.battle&&apiLease.battle.state;if(state!=="owned"&&state!=="pending-on")return;if(!apiBattleTargetEntity(apiBattleTarget))return;apiBattleAttackAt=now;zAttack();}
+  function apiRelease(owner){if(!apiLease||apiLease.owner!==owner)return {ok:false,error:"not-owner"};if(typeof apiClearBattleTarget==="function")apiClearBattleTarget(owner);apiBattleTick();if(!apiLease)return {ok:true};var l=apiLease;if(l.scopes.indexOf("movement")>=0){moveXY.busy=false;moveXY.onArrive=null;}if(l.scopes.indexOf("arrow")>=0&&arrowTarget&&arrowTarget.owner===owner){arrowTarget=null;arrowPending=null;arrowReady=false;arrowBlocked=false;}if(l.scopes.indexOf("battle")>=0&&(l.battle.state==="owned"||l.battle.state==="pending-off")){l.released=true;if(l.battle.state!=="pending-off"){var generation=l.generation,r=npRequestBattle(false,"external-release:"+owner,true,function(){return !!(apiLease&&apiLease.owner===owner&&apiLease.generation===generation);});if(r==="sent"||r==="queued")l.battle.state="pending-off";else l.released=false;}return {ok:l.released,result:l.battle.state};}if(l.battle.state==="pending-on")npClearBattleIntent();apiLease=null;apiEmit("state",{});return {ok:true};}
   function apiContact(owner,gid){var bad=apiGuard(owner,"dialog");gid=arrowPos(gid);if(bad)return bad;if(!gid)return {ok:false,error:"invalid-gid"};var found=apiEntities().filter(function(e){return e.gid===gid&&(e.type===6||e.type===12);})[0];if(!found)return {ok:false,error:"npc-not-found"};try{var p=new (czp("CONTACTNPC"))();p.NAID=gid;p.type=1;CLIENT.NM.sendPacket(p);apiLease.selectedNpc=gid;lastTalkNpc={GID:gid,name:found.name,pos:found.position};return {ok:true};}catch(e){return {ok:false,error:"contact-failed"};}}
   function apiWalk(owner,payload){var bad=apiGuard(owner,"movement"),x=payload&&Number(payload.x),y=payload&&Number(payload.y);if(bad)return bad;if(!payload||!Number.isInteger(x)||!Number.isInteger(y))return {ok:false,error:"invalid-position"};return {ok:!!walkToXY(x,y,null,"dsh-arrow-rules-status")};}
   function apiChoose(owner,payload){var bad=apiGuard(owner,"dialog"),menu=apiMenu(),naid=payload&&arrowPos(payload.naid),index=payload&&Number(payload.index),fp=payload&&payload.fingerprint;if(bad)return bad;if(!payload||!naid||!Number.isInteger(index)||index<0||index>=menu.items.length||naid!==menu.naid||naid!==apiLease.selectedNpc||typeof fp!=="string"||fp!==menu.fingerprint)return {ok:false,error:"invalid-menu"};if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"};apiMenuUsed=fp;try{var p=new (czp("CHOOSE_MENU"))();p.NAID=naid;p.num=index+1;CLIENT.NM.sendPacket(p);return {ok:true};}catch(e){return {ok:false,error:"choose-failed"};}}
@@ -14946,10 +14979,11 @@
     }catch(e){return {ok:false,error:"mail-send-failed"};}
   }
 
-  var apiFacade={protocol:API_PROTOCOL,assistantVersion:VER,handshake:function(request){return request&&request.protocol===API_PROTOCOL&&request.client==="ro-infinite-dojo"?apiFacade:null;},capabilities:function(){return {protocol:API_PROTOCOL,scopes:["dojo","battle","movement","dialog","arrow","fly"],modules:["dojo"],arrowRules:true};},ready:function(){return !!clientReady();},snapshot:apiSnapshot,acquire:apiAcquire,release:apiRelease,contactNpc:apiContact,walkTo:apiWalk,chooseMenu:apiChoose,requestBattle:apiBattle,setArrowTarget:apiSetArrow,clearArrowTarget:apiClearArrow,requestFly:apiFly,registerWindow:apiRegisterWindow,openWindow:apiOpenWindow,closeWindow:apiCloseWindow,bag:{plan:apiBagPlan,drop:apiBagDrop,busy:function(){return !!(bagClean&&bagClean.busy);}},mail:{send:apiMailSend},notify:{push:notifyPush,token:notifyLoadToken,setToken:notifySaveToken,configured:function(){return !!notifyLoadToken();}},items:{noDrop:itemNoDropState,outlet:itemOutletAllowed,note:ITEM_OUTLET_NOTE}};
+  var apiFacade={protocol:API_PROTOCOL,assistantVersion:VER,handshake:function(request){return request&&request.protocol===API_PROTOCOL&&request.client==="ro-infinite-dojo"?apiFacade:null;},capabilities:function(){return {protocol:API_PROTOCOL,scopes:["dojo","battle","movement","dialog","arrow","fly"],modules:["dojo"],arrowRules:true,battleTarget:true};},ready:function(){return !!clientReady();},snapshot:apiSnapshot,acquire:apiAcquire,release:apiRelease,contactNpc:apiContact,walkTo:apiWalk,chooseMenu:apiChoose,requestBattle:apiBattle,setBattleTarget:apiSetBattleTarget,clearBattleTarget:apiClearBattleTarget,setArrowTarget:apiSetArrow,clearArrowTarget:apiClearArrow,requestFly:apiFly,registerWindow:apiRegisterWindow,openWindow:apiOpenWindow,closeWindow:apiCloseWindow,bag:{plan:apiBagPlan,drop:apiBagDrop,busy:function(){return !!(bagClean&&bagClean.busy);}},mail:{send:apiMailSend},notify:{push:notifyPush,token:notifyLoadToken,setToken:notifySaveToken,configured:function(){return !!notifyLoadToken();}},items:{noDrop:itemNoDropState,outlet:itemOutletAllowed,note:ITEM_OUTLET_NOTE}};
   try{window.__DSH_RO_ASSIST_API__=Object.freeze(apiFacade);}catch(e){window.__DSH_RO_ASSIST_API__=apiFacade;}
   apiNoticeWatch();setTimeout(function(){apiEmit("ready",{protocol:API_PROTOCOL,assistantVersion:VER});},0);
   setInterval(function(){apiBattleTick();if(apiLease)apiEmit("state",{owner:apiLease.owner});},250);
+  masterTickReg(function(){try{apiBattleDrive();}catch(e){}});
 
   // ================= V2.36.13 连续死亡自动下线（默认开：5 分钟内死 3 次） =================
   // 用户口径（2026-10-02）：连续死亡就自动下线，且必须走「正确下线方式」；阈值 5 分钟内 3 次。
@@ -15198,10 +15232,10 @@
   function dojoApi(){
     try{
       var a=window.__DSH_RO_ASSIST_API__,c=a&&a.capabilities();
-      if(!a||a.protocol!==API_PROTOCOL||!c||c.protocol!==API_PROTOCOL||c.arrowRules!==true)return null;
+      if(!a||a.protocol!==API_PROTOCOL||!c||c.protocol!==API_PROTOCOL||c.arrowRules!==true||c.battleTarget!==true)return null;
       if(!Array.isArray(c.scopes)||!Array.isArray(c.modules)||c.modules.indexOf("dojo")<0)return null;
       if(["dojo","battle","movement","dialog","arrow","fly"].some(function(k){return c.scopes.indexOf(k)<0;}))return null;
-      if(["snapshot","acquire","release","contactNpc","walkTo","chooseMenu","requestBattle","setArrowTarget","clearArrowTarget","requestFly"].some(function(k){return typeof a[k]!=="function";}))return null;
+      if(["snapshot","acquire","release","contactNpc","walkTo","chooseMenu","requestBattle","setBattleTarget","clearBattleTarget","setArrowTarget","clearArrowTarget","requestFly"].some(function(k){return typeof a[k]!=="function";}))return null;
       return a;
     }catch(e){return null;}
   }
@@ -15230,15 +15264,16 @@
     var a=dojoApi(),s=a&&a.snapshot(DOJO_OWNER),now=Date.now();
     if(!a||!s||!s.ready)return dojoStop("助手 API 缺失或未就绪");
     if(dojoChoose(a,s)||s.dialogOpen)return dojoRender();
-    var t=(s.mobs||[]).filter(function(m){return !m.dead&&m.mid;})[0];
+    var live=(s.mobs||[]).filter(function(m){return !m.dead&&m.mid&&m.gid;}),t=live.filter(function(m){return m.isBoss;})[0]||live[0];
     if(t){
       dojoRun.npc=null;
+      if(t.isBoss)a.setBattleTarget(DOJO_OWNER,{mid:t.mid,gid:t.gid});else a.clearBattleTarget(DOJO_OWNER);
       var ar=a.setArrowTarget(DOJO_OWNER,{mid:t.mid,gid:t.gid}),fresh=a.snapshot(DOJO_OWNER),match=fresh&&fresh.arrow&&fresh.arrow.target&&fresh.arrow.target.mid===t.mid&&fresh.arrow.target.gid===t.gid,allowed=(dojoRun.cfg||dojoCfg).difficulty==="basic"&&fresh&&fresh.arrow&&fresh.arrow.enabled===false||fresh&&fresh.arrow&&fresh.arrow.enabled===true&&fresh.arrow.ready===true&&fresh.arrow.blocked===false&&match;
       dojoRun.phase=allowed?"战斗中":"等待换箭就绪"; // 换箭未就绪不开战；basic 且未启用换箭时放行
       a.requestBattle(DOJO_OWNER,!!allowed);
       if((dojoRun.cfg||dojoCfg).emergency&&(dojoRun.cfg||dojoCfg).difficulty!=="basic"&&s.player&&s.player.maxHp>0&&s.player.hp/s.player.maxHp<.7&&now-dojoRun.lastFly>3000){dojoRun.lastFly=now;a.requestFly(DOJO_OWNER,{reason:"道场低血量"});}
     }else{
-      a.clearArrowTarget(DOJO_OWNER);
+      a.clearBattleTarget(DOJO_OWNER);a.clearArrowTarget(DOJO_OWNER);
       if((dojoRun.cfg||dojoCfg).fly&&s.inDojoMap&&dojoRun.remaining>0&&now-dojoRun.lastFly>3000){dojoRun.lastFly=now;a.requestFly(DOJO_OWNER,{reason:"道场无怪且仍有剩余"});}
       dojoContact(a,s,now);
     }
@@ -15259,7 +15294,7 @@
     dojoRun.on=false;dojoRun.generation++;
     if(dojoRun.timer)clearInterval(dojoRun.timer); // 100 轮暂停/停止必须清掉定时器
     dojoRun.timer=null;
-    if(a){try{a.clearArrowTarget(DOJO_OWNER);a.release(DOJO_OWNER);}catch(e){}}
+    if(a){try{a.clearBattleTarget(DOJO_OWNER);a.clearArrowTarget(DOJO_OWNER);a.release(DOJO_OWNER);}catch(e){}}
     dojoRun.npc=null;dojoRun.phase=reason||"已停止";dojoRender();
   }
   function dojoRender(){
@@ -16186,6 +16221,20 @@
   function gearSaveSets() { try { var p = gearP(); if (p) { p.lastAt = Date.now(); saveProfiles(); } } catch (e) {} }
   function gearItid(it) { try { return it ? (it.ITID != null ? it.ITID : it.itemid) : null; } catch (e) { return null; } }
   function gearRefine(it) { try { var r = it ? (it.RefiningLevel != null ? it.RefiningLevel : it.refine) : 0; return Number(r) || 0; } catch (e) { return 0; } }
+  function gearOptions(it) {
+    var out = [];
+    try {
+      if (!it) return out;
+      var src = it.options != null ? it.options : it.Options;
+      if (Array.isArray(src)) {
+        for (var a = 1; a <= 5; a++) { var r = src[a]; if (!r) continue; var ix = r.index != null ? r.index : r.Index, vl = r.value != null ? r.value : r.Value, pm = r.param != null ? r.param : r.Param; if (Number(ix) || Number(vl) || Number(pm)) out.push({ index: Number(ix) || 0, value: Number(vl) || 0, param: Number(pm) || 0 }); }
+      } else if (src && typeof src === "object") {
+        for (var o = 0; o < 5; o++) { var ix0 = src["Index" + o], vl0 = src["Value" + o], pm0 = src["Param" + o]; if (Number(ix0) || Number(vl0) || Number(pm0)) out.push({ index: Number(ix0) || 0, value: Number(vl0) || 0, param: Number(pm0) || 0 }); }
+      }
+    } catch (e) {}
+    return out;
+  }
+  function gearEnchantGrade(it) { try { if (!it) return 0; var v = it.enchantgrade; if (v == null) v = it.Enchantgrade; if (v == null) v = it.enchantGrade; if (v == null) v = it.EnchantGrade; return Number(v) || 0; } catch (e) { return 0; } }
   function gearCards(it) {
     var out = [];
     try {
@@ -16223,22 +16272,27 @@
         if (!el2 || !el2.length) continue;
         var idx2 = Number(el2.eq ? el2.eq(0).attr("data-index") : el2.attr("data-index")), hit = found[idx2]; if (!hit) continue;
         var realMask = gearWearState(hit.it) || hit.mask;
-        out.slots[slot2.m] = { itid: gearItid(hit.it), refine: gearRefine(hit.it), cards: gearCards(hit.it), idx: idx2, name: gearName(gearItid(hit.it)), wearLocation: realMask, instanceKey: "idx:" + idx2 }; out.n++;
+        out.slots[slot2.m] = { itid: gearItid(hit.it), refine: gearRefine(hit.it), cards: gearCards(hit.it), options: gearOptions(hit.it), enchantgrade: gearEnchantGrade(hit.it), idx: idx2, name: gearName(gearItid(hit.it)), wearLocation: realMask, instanceKey: "idx:" + idx2 }; out.n++;
       }
       out.ok = true; out.why = "";
     } catch (e) { out.why = "装备槽读取失败：" + (e && e.message ? e.message : e); }
     return out;
   }
   function gearSigEqual(a, b) {
-    return !!(a && b && Number(a.itid) === Number(b.itid) && (Number(a.refine) || 0) === (Number(b.refine) || 0) && (a.cards || []).join(",") === (b.cards || []).join(","));
+    if (!(a && b && Number(a.itid) === Number(b.itid) && (Number(a.refine) || 0) === (Number(b.refine) || 0) && (a.cards || []).join(",") === (b.cards || []).join(","))) return false;
+    if (Object.prototype.hasOwnProperty.call(a, "options") && JSON.stringify(a.options || []) !== JSON.stringify(b.options || [])) return false;
+    if (Object.prototype.hasOwnProperty.call(a, "enchantgrade") && (Number(a.enchantgrade) || 0) !== (Number(b.enchantgrade) || 0)) return false;
+    return true;
   }
-  function gearFindInvItem(itid, refine, cards, reserved) {
+  function gearFindInvItem(itid, refine, cards, reserved, options, enchantgrade) {
     var inv = findInventory(); if (!inv) return null; var want = { itid: itid, refine: refine, cards: cards || [] }, worn = gearReadEquipped();
+    if (options !== undefined) want.options = options || [];
+    if (enchantgrade !== undefined) want.enchantgrade = Number(enchantgrade) || 0;
     reserved = reserved || {}; for (var wm in worn.slots) reserved[worn.slots[wm].idx] = true;
     for (var i = 0; i < inv.length; i++) {
       var it = inv[i] || {}, idx = Number(it.index != null ? it.index : i);
       if (reserved && reserved[idx]) continue;
-      if (gearSigEqual(want, { itid: gearItid(it), refine: gearRefine(it), cards: gearCards(it) })) return it;
+      if (gearSigEqual(want, { itid: gearItid(it), refine: gearRefine(it), cards: gearCards(it), options: gearOptions(it), enchantgrade: gearEnchantGrade(it) })) return it;
     }
     return null;
   }
@@ -16287,7 +16341,7 @@
   }
   function gearCapture(cb) {
     var eq = gearReadEquipped(), eqOut = {};
-    for (var s = 0; s < GEAR_SLOTS.length; s++) { var m = GEAR_SLOTS[s].m; if (eq.slots[m]) eqOut[m] = { itid: eq.slots[m].itid, refine: eq.slots[m].refine, cards: eq.slots[m].cards, name: eq.slots[m].name, wearLocation: eq.slots[m].wearLocation, instanceKey: eq.slots[m].instanceKey }; }
+    for (var s = 0; s < GEAR_SLOTS.length; s++) { var m = GEAR_SLOTS[s].m; if (eq.slots[m]) eqOut[m] = { itid: eq.slots[m].itid, refine: eq.slots[m].refine, cards: eq.slots[m].cards, options: eq.slots[m].options, enchantgrade: eq.slots[m].enchantgrade, name: eq.slots[m].name, wearLocation: eq.slots[m].wearLocation, instanceKey: eq.slots[m].instanceKey }; }
     gearDeckSnapshot(function (snap) {
       var deck = [];
       var CC = gearCardComp();
@@ -16358,7 +16412,7 @@
       if (have && !offSeen[have.instanceKey || ("idx:" + have.idx)]) { offSeen[have.instanceKey || ("idx:" + have.idx)] = true; offs.push({ idx: have.idx, name: have.name }); }
     }
     for (var t0 = 0; t0 < targets.length; t0++) {
-      var target = targets[t0], cand = gearFindInvItem(target.want.itid, target.want.refine, target.want.cards, reserved);
+      var target = targets[t0], cand = gearFindInvItem(target.want.itid, target.want.refine, target.want.cards, reserved, target.want.options, target.want.enchantgrade);
       if (!cand) { missing.push(gearSlotName(target.mask) + ":" + (target.want.name || ("ID " + target.want.itid))); continue; }
       var ci = Number(cand.index); reserved[ci] = true; planned[target.key] = true; wears.push({ idx: ci, mask: Number(target.want.wearLocation) || target.mask, name: target.want.name });
     }
@@ -16471,7 +16525,7 @@
   function renderGearStatus() {
     var el = $id("dsh-gear-cur"); if (!el) return;
     var p = gearP(), eq = gearReadEquipped(), parts = [];
-    for (var s = 0; s < GEAR_SLOTS.length; s++) { var m = GEAR_SLOTS[s].m; if (eq.slots[m]) parts.push(gearSlotName(m) + ":" + eq.slots[m].name + (eq.slots[m].refine ? "+" + eq.slots[m].refine : "")); }
+    for (var s = 0; s < GEAR_SLOTS.length; s++) { var m = GEAR_SLOTS[s].m; if (eq.slots[m]) parts.push(gearSlotName(m) + ":" + eq.slots[m].name + (eq.slots[m].refine ? "+" + eq.slots[m].refine : "") + (eq.slots[m].options && eq.slots[m].options.length ? "/词条" + eq.slots[m].options.length : "") + (eq.slots[m].enchantgrade ? "/附魔+" + eq.slots[m].enchantgrade : "")); }
     el.textContent = "角色 " + ((p && p.name) || "未识别") + " · 已穿 " + eq.n + " 件" + (parts.length ? "（" + parts.join(" · ") + "）" : "") + " · 预设 " + gearData().list.length + " 套" + (gearBusy ? " · 执行中…" : "");
   }
   function renderGearList() {

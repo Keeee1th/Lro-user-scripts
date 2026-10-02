@@ -9,7 +9,7 @@ test('death return clicks restart, retries while HP is zero, and auto-hangs only
     assert.doesNotMatch(src,/dsh-z-returncity/,'回城点即寄存点，不得再有回城地图设置项');
     assert.ok(src.includes('id="dsh-z-returnauto"'),'必须有「回到目标图自动开启助手挂机」开关');
     assert.ok(src.includes('["dsh-z-returnauto", "c"]'),'开关必须进角色档案存档表');
-    assert.ok(src.includes('new CLIENT.PS.CZ.RESTART()'),'助手必须能自己点「重新开始」回寄存点');
+    assert.ok(src.includes('new (czp("RESTART"))()'),'助手必须经能力探测后的构造器点「重新开始」回寄存点');
     const start=src.indexOf('  // Session-only intent: no stale recovery');
     const end=src.indexOf('  // ================= 无限道场',start);
     assert.ok(start>0&&end>start);
@@ -25,7 +25,7 @@ test('death return clicks restart, retries while HP is zero, and auto-hangs only
       $id:id=>controls[id],normMapKey:m=>String(m||'').replace(/\.(gat|rsw)$/,'').toLowerCase(),getMapName:()=>map,
       gidInt:Number,clientReady:()=>true,apiLease:null,scrRun:{running:false},dojoRun:{on:false},bagClean:{busy:false},moveXY:{busy:false},escapePending:()=>false,
       zRunning:true,npBattleState:()=>mode,npRequestBattle:(want)=>{mode=want;return 'sent';},stopZhu(){stops++;context.zRunning=false;mode=false},startZhu(){starts++;context.zRunning=true},
-      sendSit:x=>{sits.push(x);ent.action=x?2:0;},isSitting:()=>ent.action===2,isWinOpen:()=>false,gptTeleport:x=>{teleports.push(x);return true},setStatus(){},deathGuardRun:null,deathGuardDone:false,masterTickReg(fn){context.tick=fn}};
+      sendSit:x=>{sits.push(x);ent.action=x?2:0;},isSitting:()=>ent.action===2,isWinOpen:()=>false,gptTeleport:x=>{teleports.push(x);return true},setStatus(){},czp:name=>context.CLIENT.PS.CZ[name],deathGuardRun:null,deathGuardDone:false,masterTickReg(fn){context.tick=fn}};
     vm.createContext(context);vm.runInContext(src.slice(start,end),context);
     context.tick();assert.equal(stops,0);assert.equal(teleports.length,0);
     map='prontera';context.tick();assert.equal(stops,0); // 不在目标图不布防
@@ -238,9 +238,9 @@ test('same-map coordinate routing normalizes map prefixes and extensions',()=>{
 });
 
 test('skill scheduler reports cooldown and 300ms margin yields to imminent skill',()=>{
-  const castCode=extract('  function castOrderSkill(order, target) {','  onId("dsh-z-on",');
+  const castCode=extract('  function castOrderSkill(order, target) {','  // V2.38.0 包体自检按钮');
   const now=Date.now(),sent=[];const ctx={Date,Math,CLIENT:{SS:{Entity:{GID:1,position:[0,0]}},PS:{CZ:{USE_SKILL:function(){}}},NM:{sendPacket:p=>sent.push(p)}},zCastIdx:0,zUseCounts:{},zLockCounts:{},skillNextAt:{10:now+250},zSkillSentAt:{},zLastCastAt:0,zLastCastSkid:0,btDiagOn:false,
-    ordinaryCastBlocked:()=>false,clampSkillLv:()=>1,dshCastSkip(){},tlog(){},$id:()=>({checked:false}),skillReq:()=>null,skillTypeBits:()=>0,getSkillRange:()=>9,dshCastMark(){},skillCdMs:()=>250,dshDiag(){},checkSkillCond:()=>({ok:true}),castStatusPrep:()=>false};
+    ordinaryCastBlocked:()=>false,clampSkillLv:()=>1,dshCastSkip(){},tlog(){},$id:()=>({checked:false}),skillReq:()=>null,skillTypeBits:()=>0,getSkillRange:()=>9,dshCastMark(){},skillCdMs:()=>250,dshDiag(){},checkSkillCond:()=>({ok:true}),castStatusPrep:()=>false,czp:name=>ctx.CLIENT.PS.CZ[name]};
   vm.createContext(ctx);vm.runInContext(castCode+';this.cast=castOrderSkill',ctx);const order=[{skid:10,lv:1,uses:0,lock:0,prob:100,cond:'',cd:0}];
   assert.equal(ctx.cast(order,{GID:2,position:[1,0]}),'wait-cd');
   const gapCode=extract('  function skillNextGap(order) {','  function castOrderSkill(order, target) {');vm.runInContext(gapCode+';this.gap=skillNextGap',ctx);
@@ -368,7 +368,7 @@ function selfHealHarness({sitting=false,healFirst=true,healLv=7,sp=100,castOk=tr
   };
   const ctx={Number,Math,parseInt,Date:{now:()=>now},CLIENT:{SS:{AID:7,Entity:{GID:7,position:pos,life:{hp:30,maxhp:100,sp}}},PS:{CZ:{USE_SKILL:function(){}}},NM:{sendPacket:p=>sent.push(p)}},saved:{healFirst},
     ESCAPE_TIMEOUT_MS:2500,ESCAPE_MAX_ATTEMPTS:3,escapeSeq:0,escapeBackoffUntil:0,escapeState:{pending:false,id:0,map:'',x:null,y:null,lastCast:0,ackAt:0,deadline:0,attempts:0,nextRetry:0,reason:''},selfHealHoldUntil:0,actLock:{act:null,until:0},lastMobs:[],zHpWatch:{lastHitAt:0},skillNextAt:{},
-    normMapKey:x=>x,getMapName:()=> 'field',isSitting:()=>sitting,sendSit:down=>sent.push({action:down?'sit':'stand'}),setStatus(){},tlog(){},lockAct(act,ms){ctx.actLock={act,until:now+ms};return true},
+    normMapKey:x=>x,getMapName:()=> 'field',isSitting:()=>sitting,sendSit:down=>sent.push({action:down?'sit':'stand'}),setStatus(){},tlog(){},lockAct(act,ms){ctx.actLock={act,until:now+ms};return true},czp:name=>ctx.CLIENT.PS.CZ[name],
     castTeleport(){if(castOk)sent.push({SKID:26});return castOk},clientReady:()=>true,isActFreeOnline:()=>true,potHpThr:()=>50,learnedSkillLv:id=>id===28?healLv:0,skillCdMs:()=>250,dshCastMark(){},$id:id=>ids[id]||null};
   vm.createContext(ctx);vm.runInContext(code+';this.escape=requestEmergencyEscape;this.pending=escapePending;this.heal=tickSelfHeal;this.blocked=ordinaryCastBlocked;this.state=()=>escapeState;this.reset=resetEmergencyEscape',ctx);
   return {ctx,sent,pos,setSitting:v=>{sitting=v},setNow:v=>{now=v},ack(){ctx.state().ackAt=now}};
@@ -577,7 +577,7 @@ test('exp BOSS 三模式与解围技能按确认顺序排列（BOSS→血量→�
   const sel = expExtract('id="dsh-z-bossact"', '</select>');
   for (const opt of ['瞬移', '优先攻击', '等待残血补尾刀']) assert.ok(sel.includes('<option>' + opt + '</option>'), 'BOSS 选项缺 ' + opt);
   assert.ok(sel.includes('<option selected>不处理</option>'), 'BOSS 默认必须是不处理');
-  assert.ok(expSource.includes('<span class="st">锁定则优先攻击</span>'));
+  assert.ok(expSource.includes('id="dsh-z-bossignorelock" type="checkbox">优先攻击忽略攻击名单'));
   assert.ok(expSource.includes('var isBoss = !!(mb && mb.MvpDropsNum > 0);'), 'BOSS 识别必须沿用 MvpDropsNum');
   const start = expSource.indexOf('function checkDefense(mobs, ent)');
   const boss = expSource.indexOf('var bossD = zBossDecide(mobs);', start);
@@ -768,7 +768,7 @@ test('exp 尾刀模式锁定跳过：守卫同时引用 zBossSkipGid 与 zLock.g
   const guard = expExtract('      // V2.34.0 追改：尾刀模式下锁定的 BOSS', '        EM.forEach(function (e) {');
   assert.ok(guard.includes('zBossSkipGid'), '跳过守卫必须引用 zBossSkipGid');
   assert.ok(guard.includes('zLock.gid'), '跳过守卫必须引用 zLock.gid');
-  assert.ok(expSource.includes('if (zLock.gid && !zLockBossSkip) {'), '锁定目标校验块必须由 !zLockBossSkip 守卫（未命中时整块行为不变）');
+  assert.ok(expSource.includes('if (!target && zLock.gid && !zLockBossSkip) {'), '临时目标未命中时才校验原锁定目标，且尾刀跳过仍生效');
   assert.ok(expSource.includes('var zLockBossSkip = !!(zBossSkipGid && zLock.gid && gidInt(zLock.gid) === zBossSkipGid);'), '守卫判定必须同时要求 skip 命中且锁指向它');
   // 该跳过路径不得清锁：整份脚本里 zLock.gid = null 只允许改动前既有的 3 处
   assert.doesNotMatch(guard, /zLock\.gid\s*=\s*(null|undefined|""|'')/, '跳过分支内不得出现清除 zLock.gid 的赋值');
@@ -793,8 +793,8 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
   // 1) 版本号：稳定版与实验版都必须是 2.36.1（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.37.1', name + ' @version 必须是 2.37.1');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.37.1', name + ' 运行时常量 VER 必须是 2.37.1');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.38.1', name + ' @version 必须是 2.38.1');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.1', name + ' 运行时常量 VER 必须是 2.38.1');
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
   const stripHead = (s) => s.replace(/\r\n/g,'\n').split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
@@ -1007,14 +1007,13 @@ test('V2.34.4 守名单门：zBossAllowedByLock 单点定义且 zBossDecide/zAtt
     const decideSeg = src.slice(decideAt, src.indexOf('  // A6：早退点不冻结整拍', decideAt));
     const attackSeg = src.slice(attackAt, src.indexOf('  // 技能行统一序列化', attackAt));
     assert.equal((decideSeg.match(/zBossAllowedByLock\(/g) || []).length, 1, name + ' zBossDecide 必须恰好调用一次（防漏改）');
-    assert.equal((attackSeg.match(/zBossAllowedByLock\(/g) || []).length, 1, name + ' zAttack 必须恰好调用一次（防漏改）');
+    assert.equal((attackSeg.match(/zBossAllowedByLock\(/g) || []).length, 0, name + ' zAttack 不得再次拦截 zBossDecide 已批准的忽略名单目标');
     // zBossDecide 段内无 zLock.gid/sendLockInject：门必须早于产出 want/skip（本函数内「产出」点）
     const decideGate = decideSeg.indexOf('zBossAllowedByLock(');
     assert.ok(decideGate >= 0 && decideGate < decideSeg.indexOf('out.want') && decideGate < decideSeg.indexOf('out.skip'), name + ' zBossDecide 名单门必须在产出 want/skip 之前');
-    // zAttack：门必须在写 zLock.gid / sendLockInject 之前
-    const attackGate = attackSeg.indexOf('zBossAllowedByLock(');
+    // zAttack 直接消费 zBossDecide 的 want；否则会把复选框已批准的名单外 BOSS 再次拦掉。
     const gidAt = attackSeg.indexOf('zLock.gid = bgid;'), injectAt = attackSeg.indexOf('sendLockInject(bgid);');
-    assert.ok(attackGate >= 0 && gidAt > attackGate && injectAt > attackGate, name + ' zAttack 名单门必须在写 zLock.gid / sendLockInject 之前');
+    assert.ok(gidAt >= 0 && injectAt > gidAt, name + ' zAttack 必须写锁并注入已批准的 BOSS');
     // BOSS mid 推导与 zAttack/zWalk 同口径（优先 rec.mid，其后 _job → job → mobId）
     assert.ok(decideSeg.includes('rec.mid != null ? rec.mid : (rec._job != null ? rec._job : (rec.job != null ? rec.job : rec.mobId))'), name + ' zBossDecide mid 推导口径');
     assert.ok(attackSeg.includes('bossRecD.mid != null ? bossRecD.mid : (bossRecD._job != null ? bossRecD._job : (bossRecD.job != null ? bossRecD.job : bossRecD.mobId))'), name + ' zAttack mid 推导口径');
@@ -1049,7 +1048,8 @@ test('V2.34.4 守名单门：打全部怪与 BOSS 模式文案已更新（防回
     assert.ok(src.includes('内挂/混合模式下内挂自身仍会攻击全部'), name + ' 说明必须点明内挂自身仍会打全部怪');
     assert.ok(src.includes('BOSS 优先攻击/补尾刀同样只认名单'), name + ' 说明必须点明 BOSS 两模式也守名单');
     assert.ok(src.includes('取消=助手不主动选目标'), name + ' 说明必须写明取消=助手不主动选目标');
-    assert.ok(src.includes('名单非空时，BOSS 优先攻击/补尾刀只对名单内 BOSS 生效'), name + ' BOSS 模式说明行必须补名单口径');
+    assert.ok(src.includes('优先攻击忽略攻击名单'), name + ' BOSS 模式必须提供逐角色忽略名单开关');
+    assert.ok(src.includes('瞬移/尾刀仍受名单限制'), name + ' 文案必须明确只有优先攻击可放宽');
   }
 });
 
@@ -1166,8 +1166,8 @@ test('V2.34.5 战斗诊断快照 prof 字段已就位（不改既有字段）', 
 // ================= V2.34.5：配置自动备份（两代）/ 黄金副本找回（纯函数真值表 / 按钮 / 键隔离）=================
 test('V2.34.5 版本号升到 2.34.5（@version 与运行时常量一致，两文件同步）', () => {
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.37.1', name + ' @version 必须是 2.37.1');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.37.1', name + ' 运行时常量 VER 必须是 2.37.1');
+    assert.equal(/@version\s+(\S+)/.exec(src)?.[1], '2.38.1', name + ' @version 必须是 2.38.1');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.1', name + ' 运行时常量 VER 必须是 2.38.1');
   }
 });
 
@@ -1392,7 +1392,7 @@ test('bagClean equipment protection fields fail closed and complete zero gear re
 
 test('bagClean preview and ITEM_THROW paths contain fresh index identity type quantity and rule checks',()=>{
   for(const [name,src] of [['stable',source],['exp',expSource]]){const preview=src.slice(src.indexOf('  function bagCleanPreview()'),src.indexOf('  function bagCleanInit()'));const execute=src.slice(src.indexOf('  function bagCleanRevalidate('),src.indexOf('  function bagCleanPreview()'));
-    assert.ok(preview.includes('bagCleanRevalidate(s,s.amount)'),name+' preview must reread each index');assert.ok(execute.includes('d.amount!==stack.amount'),name+' quantity must match when captured');assert.ok(execute.includes('d.id!==stack.id'));assert.ok(execute.includes('d.type!==stack.type'));assert.ok(execute.includes('d.source!==stack.source'));assert.ok(execute.indexOf('bagCleanRevalidate(stack,want)')<execute.indexOf('new CLIENT.PS.CZ.ITEM_THROW()'));
+    assert.ok(preview.includes('bagCleanRevalidate(s,s.amount)'),name+' preview must reread each index');assert.ok(execute.includes('d.amount!==stack.amount'),name+' quantity must match when captured');assert.ok(execute.includes('d.id!==stack.id'));assert.ok(execute.includes('d.type!==stack.type'));assert.ok(execute.includes('d.source!==stack.source'));assert.ok(execute.indexOf('bagCleanRevalidate(stack,want)')<execute.indexOf('new (czp("ITEM_THROW"))()'));
   }
 });
 
@@ -1411,7 +1411,7 @@ test('bagClean v2 UI and storage contract is lockstep and documents unsupported 
 
 // ================= V2.35.1 assistant API + standalone dojo =================
 const splitSources=[['stable',source],['exp',expSource]];
-test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.37\.1/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
+test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.match(s,/@version\s+2\.38\.1/);assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
 test('V2.35.1 public API uses owner-only external signatures and validates the current lease owner',()=>{for(const[,s]of splitSources){assert.ok(s.includes('/^[A-Za-z0-9_.:-]{8,128}$/'));assert.ok(s.includes('dojo:1,battle:1,movement:1,dialog:1,arrow:1,fly:1'));assert.ok(s.includes('if(apiLease&&apiLease.owner!==owner)'));for(const sig of ['apiHas(owner,scope)','apiSnapshot(owner)','apiRelease(owner)','apiContact(owner,gid)','apiWalk(owner,payload)','apiChoose(owner,payload)','apiBattle(owner,on)','apiSetArrow(owner,target)','apiClearArrow(owner)','apiFly(owner,payload)'])assert.ok(s.includes('function '+sig),sig);assert.ok(s.includes('apiLease.generation===generation'));assert.ok(!s.includes('apiHas(owner,generation'));}});
 test('V2.35.1 snapshot and battle/menu ownership contracts are explicit',()=>{for(const[,s]of splitSources){for(const key of ['ready:','map:','player:','mobs:','npcs:','target:','inDojoMap:','dialogOpen:','menu:','battleState:','busy:','arrow:'])assert.ok(s.includes(key),key);assert.ok(s.includes('if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"}'));assert.ok(s.includes('b.state="pending-on"'));assert.ok(s.includes('if(b.state!=="owned")return {ok:true,result:"not-owned"}'));assert.ok(s.includes('l.battle.state==="owned"||l.battle.state==="pending-off"'));assert.ok(s.includes('if(s!==false)return {ok:true,result:s===true?"preexisting":"unknown"}'));}});
 test('V2.36.11 arrow rules use a per-monster table plus a default arrow',()=>{for(const[name,s]of splitSources){
@@ -1564,7 +1564,7 @@ test('V2.36.0 builtin dojo joins the shared lease and refuses when the lease is 
     const calls=[];let timerSet=null;
     const ctx={DOJO_OWNER:'builtin-dojo',dojoCfg:{difficulty:'basic',stop100:true,fly:false,emergency:false},dojoRun:{on:false,generation:0,timer:null,phase:''},dojoRender(){},
       dojoTick:g=>calls.push(['tick',g]),dojoStop:r=>{calls.push(['stop',r]);return r;},
-      dojoApi:()=>apiMissing?null:{ready:()=>true,acquire:(o,sc)=>{calls.push(['acquire',o,sc.join('+')]);return startOk?{ok:true}:{ok:false,error:'owned'};},clearArrowTarget:o=>calls.push(['clear',o]),release:o=>calls.push(['release',o])},
+      dojoApi:()=>apiMissing?null:{ready:()=>true,acquire:(o,sc)=>{calls.push(['acquire',o,sc.join('+')]);return startOk?{ok:true}:{ok:false,error:'owned'};},clearBattleTarget:o=>calls.push(['clearBattle',o]),clearArrowTarget:o=>calls.push(['clear',o]),release:o=>calls.push(['release',o])},
       setInterval:(fn,ms)=>{timerSet=ms;return 7;},clearInterval:id=>{calls.push(['clearInterval',id]);},Date,Math};
     vm.createContext(ctx);vm.runInContext(code+';this.start=dojoStart;this.stop=dojoStop',ctx);
     return {ctx,timerSet:()=>timerSet,calls};
@@ -1750,7 +1750,7 @@ test('V2.36.1 内置道馆换箭 gate：未就绪 / 被阻塞 / 目标不匹配�
     const m=mob||{mid:1002,gid:42,dead:false};
     const e=extra||{};
     const snap=Object.assign({},base,{mobs:[m],arrow:arrow},e.arrow!==undefined?{arrow:e.arrow}:{});
-    const a={snapshot:()=>snap,setArrowTarget:()=>{calls.push(['setArrow']);return{ok:true};},requestBattle:(o,on)=>{calls.push(['battle',on]);},clearArrowTarget:()=>calls.push(['clearArrow']),contactNpc:()=>calls.push(['contact']),walkTo:()=>calls.push(['walk']),requestFly:()=>calls.push(['fly']),chooseMenu:()=>calls.push(['choose'])};
+    const a={snapshot:()=>snap,setBattleTarget:(o,t)=>calls.push(['setBattleTarget',t.mid,t.gid]),clearBattleTarget:()=>calls.push(['clearBattleTarget']),setArrowTarget:()=>{calls.push(['setArrow']);return{ok:true};},requestBattle:(o,on)=>{calls.push(['battle',on]);},clearArrowTarget:()=>calls.push(['clearArrow']),contactNpc:()=>calls.push(['contact']),walkTo:()=>calls.push(['walk']),requestFly:()=>calls.push(['fly']),chooseMenu:()=>calls.push(['choose'])};
     const ctx={dojoRun:run,dojoCfg:Object.assign({difficulty:'advanced',stop100:false,fly:false,emergency:false},e.cfg||{}),
       arrowRules:e.arrowRules||arrowRules,DOJO_OWNER:'builtin-dojo',dojoApi:()=>a,dojoRender:()=>{},dojoStop:r=>{calls.push(['stop',r]);return r;},
       dojoChoose:()=>false,dojoContact:()=>{},dojoNorm:s=>String(s||''),Math,Number,String,Array,Object,Infinity,Date};
@@ -2358,10 +2358,10 @@ test('V2.37.1 「一键换装 · 卡册」挂在菜单首页第一行且只发�
   assert.ok(source.includes('id.indexOf(GEAR_HK_PRE) === 0'), 'hkAction 要能派发预设快捷键');
   assert.ok(source.includes('renderGearAll(); gearAskRecover(); } catch (e6) {}'), '换角色后要刷新该角色的换装预设');
   // 执行：只发客户端自己的穿/脱包与卡册加/减包
-  assert.ok(source.includes('CLIENT.PS.CZ.REQ_TAKEOFF_EQUIP()'), '装备脱包');
-  assert.ok(source.includes('CLIENT.PS.CZ.REQ_WEAR_EQUIP()'), '装备穿包');
-  assert.ok(source.includes('CLIENT.PS.CZ.REQUEST_CARDCONNECTION_ADDMYDECK()'), '卡册加入卡组');
-  assert.ok(source.includes('CLIENT.PS.CZ.REQUEST_CARDCONNECTION_CANCEL()'), '卡册移出卡组');
+  assert.ok(source.includes('czp("REQ_TAKEOFF_EQUIP")'), '装备脱包必须走已探测构造器');
+  assert.ok(source.includes('czp("REQ_WEAR_EQUIP")'), '装备穿包必须走已探测构造器');
+  assert.ok(source.includes('czp("REQUEST_CARDCONNECTION_ADDMYDECK")'), '卡册加入卡组必须走构造器门面');
+  assert.ok(source.includes('czp("REQUEST_CARDCONNECTION_CANCEL")'), '卡册移出卡组必须走构造器门面');
   assert.ok(!source.includes('CLIENT.PS.CZ.REQUEST_CARDCONNECTION_RECHARGE'), '红线：永不发卡册充能包（吃卡不可逆）');
   // buff 预设同层找回
   assert.ok(source.includes('dsh_ro_askrecover_v1'), 'buff 预设要有一次旧存档找回');
@@ -2388,7 +2388,7 @@ test('V2.37.1 换装读取/匹配（VM）',()=>{
     CLIENT: {},
   };
   vm.createContext(ctx);
-  vm.runInContext(code + ';this.G={gearData,gearPreset,gearSaveSets,gearReadEquipped,gearFindInvItem,gearSlotName,gearItid,gearRefine,gearCards};', ctx);
+  vm.runInContext(code + ';this.G={gearData,gearPreset,gearSaveSets,gearReadEquipped,gearFindInvItem,gearSlotName,gearItid,gearRefine,gearOptions,gearEnchantGrade,gearCards,gearSigEqual};', ctx);
   const G = ctx.G;
   // 空档案 → 建结构；再取是同一个对象
   const d1 = G.gearData();
@@ -2407,8 +2407,8 @@ test('V2.37.1 换装读取/匹配（VM）',()=>{
   // 读当前装备：按 WearState 位归类，精炼/插卡一并带上
   const cur = G.gearReadEquipped();
   assert.equal(cur.n, 2);
-  assert.equal(JSON.stringify(cur.slots[2]), JSON.stringify({ itid: 1101, refine: 7, cards: [4001], idx: 5, name: 'ID 1101', wearLocation: 2, instanceKey: 'idx:5' }));
-  assert.equal(JSON.stringify(cur.slots[16]), JSON.stringify({ itid: 2301, refine: 0, cards: [], idx: 9, name: 'ID 2301', wearLocation: 16, instanceKey: 'idx:9' }));
+  assert.equal(JSON.stringify(cur.slots[2]), JSON.stringify({ itid: 1101, refine: 7, cards: [4001], options: [], enchantgrade: 0, idx: 5, name: 'ID 1101', wearLocation: 2, instanceKey: 'idx:5' }));
+  assert.equal(JSON.stringify(cur.slots[16]), JSON.stringify({ itid: 2301, refine: 0, cards: [], options: [], enchantgrade: 0, idx: 9, name: 'ID 2301', wearLocation: 16, instanceKey: 'idx:9' }));
   assert.equal(cur.slots[64], undefined);
   // 背包匹配：必须在未穿的同 ID 里挑，优先精炼+插卡全同
   const cand = G.gearFindInvItem(1101, 7, [4001], {});
@@ -2422,6 +2422,73 @@ test('V2.37.1 换装读取/匹配（VM）',()=>{
   assert.equal(G.gearItid({ itemid: 501 }), 501);
   assert.equal(G.gearRefine({ refine: 4 }), 4);
   assert.equal(JSON.stringify(G.gearCards({ cards: [4001, 4002] })), '[4001,4002]');
+  const opts=[null,{Index:11,Value:22,Param:33},null,{index:44,value:55,param:66}];
+  assert.equal(JSON.stringify(G.gearOptions({Options:opts})), '[{"index":11,"value":22,"param":33},{"index":44,"value":55,"param":66}]');
+  assert.equal(JSON.stringify(G.gearOptions({options:{Index0:7,Value0:8,Param0:9,Index2:10,Value2:0,Param2:1}})), '[{"index":7,"value":8,"param":9},{"index":10,"value":0,"param":1}]');
+  for (const k of ['enchantgrade','Enchantgrade','enchantGrade','EnchantGrade']) assert.equal(G.gearEnchantGrade({[k]:4}),4);
+  const legacy={itid:1101,refine:7,cards:[4001]}, exact={...legacy,options:[{index:1,value:2,param:3}],enchantgrade:4};
+  assert.equal(G.gearSigEqual(legacy,{...legacy,options:[{index:9,value:9,param:9}],enchantgrade:9}),true,'旧预设不要求新字段');
+  assert.equal(G.gearSigEqual(exact,{...exact}),true);
+  assert.equal(G.gearSigEqual(exact,{...exact,options:[{index:1,value:99,param:3}]}),false,'词条不同必须校验失败');
+  assert.equal(G.gearSigEqual(exact,{...exact,enchantgrade:3}),false,'附魔等级不同必须校验失败');
+});
+
+test('V2.38.1 BOSS 忽略名单只放宽最终优先攻击（VM）',()=>{
+  const code=extract('  function zBossAllowedByLock(mid)', '  // A6：早退点不冻结整拍');
+  function run(act,checked,locked){
+    const els={'dsh-z-bossact':{value:act},'dsh-z-bossignorelock':{checked},'dsh-z-bosshp':{value:'30'}};
+    const ctx={lockList:locked?{'2001':1}:{'9999':1},scanMobs:[{GID:77,mid:2001,isBoss:true,dist:1,name:'B'}],lastMobs:[],$id:id=>els[id],gidInt:Number,zEntHpPct:()=>10,Object,String,Number,parseInt,isNaN,DS_BOSS_DIST:30};
+    vm.createContext(ctx);vm.runInContext(code+';this.run=zBossDecide',ctx);return ctx.run(ctx.scanMobs);
+  }
+  assert.equal(run('优先攻击',false,false).want,0);
+  assert.equal(run('优先攻击',true,false).want,77);
+  assert.equal(run('等待残血补尾刀',true,false).want,0,'尾刀不可绕名单');
+  assert.equal(run('瞬移',true,false).fly,false,'瞬移不可绕名单');
+  assert.equal(run('瞬移',true,true).want,77,'已锁定瞬移仍转优先攻击');
+});
+
+test('V2.38.1 临时战斗目标严格验证、死亡清理与 ONLYTARGET 恢复（VM）',()=>{
+  const code=extract('  function npSyncTargets() {', '  // 玩家真实操作内挂开关才更新本地态')+extract('  var API_PROTOCOL=1,', '  function apiContact(owner,gid)');
+  const packets=[],entities=[],checks=[];let changeHandler=null;
+  const em={forEach(fn){entities.forEach(fn);}};
+  const ctx={zRunning:false,clientReady:()=>true,arrowPos:v=>{v=Number(v);return Number.isInteger(v)&&v>0?v:0;},lockList:{},npOnlyTarget:(mid,v)=>packets.push([Number(mid),v]),tlog(){},document:{querySelectorAll:()=>checks,addEventListener:(type,fn)=>{if(type==='change')changeHandler=fn;}},npBattleState:()=>false,npClearBattleIntent(){},npRequestBattle:()=> 'failed',moveXY:{},arrowTarget:null,arrowPending:null,arrowReady:false,arrowBlocked:false,apiEmit(){},bagClean:{busy:false},DOJO_OWNER:'builtin-dojo',CLIENT:{EM:em,PS:{CZ:{NOTIFY_ONLYTARGET:function(){}}}},window:{require:()=>em},getMobDb:()=>({2001:{MvpDropsNum:1},2002:{MvpDropsNum:1},3001:{MvpDropsNum:0}}),Number,String,Array,Object,Date,Math};
+  const mob=(gid,mid,boss=true)=>({GID:gid,objecttype:5,_job:mid,position:[1,1],isDeath:false,ACTION:{DIE:9},action:0,display:{name:'M'},...(boss?{}:{})});
+  vm.createContext(ctx);vm.runInContext(code+';this.A={acquire:apiAcquire,set:apiSetBattleTarget,clear:apiClearBattleTarget,tick:apiBattleTick,release:apiRelease,get:function(){return apiBattleTarget},lease:function(){return apiLease}}',ctx);
+  assert.equal(ctx.A.acquire('owner-one',['battle']).ok,true);
+  entities.push(mob(7,3001));
+  assert.equal(ctx.A.set('owner-one',{mid:3001,gid:7}).error,'battle-target-not-live-boss');assert.deepEqual(packets,[],'普通怪非法 set 必须零发包');
+  entities.length=0;entities.push(mob(77,2001));
+  assert.equal(ctx.A.set('owner-one',{mid:2001,gid:77}).ok,true);assert.deepEqual(packets,[[2001,1]],'合法 BOSS 可设置');
+  entities[0].isDeath=true;ctx.A.tick();assert.equal(ctx.A.get(),null);assert.deepEqual(packets.slice(-1),[[2001,0]],'下个 API tick 自动清死亡目标');
+  ctx.A.release('owner-one');assert.equal(ctx.A.lease(),null,'runtime fixture 必须覆盖 apiRelease 依赖');
+
+  packets.length=0;entities[0]=mob(88,2002);ctx.lockList={'1001':{name:'A'},'1002':{name:'B'}};
+  const tempCheck={checked:true,getAttribute:k=>k==='data-id'?'2002':k==='data-name'?'Boss':null,closest:()=>true};checks.push(tempCheck);ctx.A.acquire('builtin-dojo',['battle']);
+  assert.equal(ctx.A.set('builtin-dojo',{mid:2002,gid:88}).ok,true);
+  assert.deepEqual(packets.filter(x=>x[0]===2002).at(-1),[2002,1],'DOM 历史清理后临时 BOSS 最终值必须为 1');
+  assert.deepEqual(packets.filter(x=>x[0]===1001).at(-1),[1001,0]);assert.deepEqual(packets.filter(x=>x[0]===1002).at(-1),[1002,0],'其他永久 mid 必须压成 0');
+  assert.equal(tempCheck.checked,true,'临时 BOSS DOM 必须保持勾选');assert.equal(ctx.lockList['2002'],undefined,'临时 BOSS 不得写入 lockList');
+  changeHandler({target:tempCheck});assert.equal(tempCheck.checked,true);assert.equal(ctx.lockList['2002'],undefined,'临时 BOSS change 不得改 lockList');
+  ctx.lockList={'1002':{name:'B'},'1003':{name:'C'}};ctx.A.clear('builtin-dojo');
+  assert.equal(ctx.lockList['1002'].name,'B');assert.equal(ctx.lockList['1003'].name,'C','临时覆盖不得持久修改 lockList');
+  assert.deepEqual(packets.filter(x=>x[0]===1002).at(-1),[1002,1]);assert.deepEqual(packets.filter(x=>x[0]===1003).at(-1),[1003,1],'clear 后当前 lockList 最终恢复 1');
+});
+
+test('V2.38.1 master 租约驱动 zAttack 且临时射程外不选普通目标（VM）',()=>{
+  const drive=extract('  function apiBattleDrive(){','  function apiRelease(owner)');let now=1000,calls=0;
+  const dc={Date:{now:()=>now},apiBattleAttackAt:0,zRunning:false,apiLease:{owner:'builtin-dojo',scopes:['battle'],battle:{state:'pending-on'}},apiBattleTarget:{owner:'builtin-dojo',mid:2,gid:8},apiBattleTargetEntity:()=>({gid:8}),zAttack:()=>calls++};
+  vm.createContext(dc);vm.runInContext(drive+';this.run=apiBattleDrive',dc);dc.run();dc.run();assert.equal(calls,1);now=1250;dc.run();assert.equal(calls,2);dc.zRunning=true;now=1500;dc.run();assert.equal(calls,2);
+  const atk=extract('  function zAttack() {','  // 技能行统一序列化'),boss={GID:8,objecttype:5,_job:2,position:[20,20],life:{hp:10}},normal={GID:9,objecttype:5,_job:3,position:[1,1],life:{hp:10}},seen=[];
+  const ac={CLIENT:{SS:{Entity:{life:{hp:100},position:[0,0]}}},clientReady:()=>true,escapePending:()=>false,updateHpWatch(){},sitMaintain(){},isSitting:()=>false,window:{require:()=>({forEach(fn){seen.push('scan');[boss,normal].forEach(fn);}})},$id:id=>({value:id==='dsh-z-range'?'12':id==='dsh-z-pmrange'?'2':id==='dsh-z-mgrange'?'9':'0',checked:true}),calcAtkRange:()=>2,npHuntMode:()=> 'np',isHybrid:()=>false,takeoverDist:()=>12,lockList:{3:1},zHpWatch:{lastHitAt:0},zLock:{gid:null,name:'',dist:null,done:false,reactive:false},apiBattleTarget:{owner:'builtin-dojo',mid:2,gid:8},apiBattleTargetEntity:()=>({gid:8,mid:2,name:'Boss'}),zEntOf:g=>Number(g)===8?boss:Number(g)===9?normal:null,zRangeDist:(a,b)=>Math.max(Math.abs(a[0]-b[0]),Math.abs(a[1]-b[1])),gidInt:Number,zLockCounts:{},zCastIdx:0,zBossDecide:()=>null,zBossSkipGid:0,defSnap:{isCombatMap:true},zMon:{},zAtkWhy:'',Date:{now:()=>1000},Object,Math,Number,String,parseInt,parseFloat,isFinite};
+  vm.createContext(ac);vm.runInContext(atk+';this.run=zAttack',ac);ac.run();assert.equal(ac.zLock.gid,8);assert.equal(ac.zAtkWhy,'临时目标在射程外');assert.ok(seen.length<=1,'不得进入普通候选扫描接管');
+});
+
+test('V2.38.1 dojo 优先 BOSS、普通怪回原行为并在 stop 前清临时目标（VM）',()=>{
+  const tickCode=extract('  function dojoTick(g){','  function dojoStart(params){');
+  function run(mobs){const calls=[],snap={ready:true,mobs,dialogOpen:false,player:{hp:100,maxHp:100},arrow:{enabled:false,target:{mid:(mobs[0]||{}).mid,gid:(mobs[0]||{}).gid}}};const api={snapshot:()=>snap,setBattleTarget:(o,t)=>calls.push(['setBattle',t.mid,t.gid]),clearBattleTarget:()=>calls.push(['clearBattle']),setArrowTarget:(o,t)=>calls.push(['setArrow',t.mid,t.gid]),requestBattle:(o,on)=>calls.push(['battle',on]),clearArrowTarget(){},requestFly(){}};const ctx={dojoRun:{on:true,generation:1,cfg:{difficulty:'basic'},npc:null,lastFly:0},dojoCfg:{difficulty:'basic'},DOJO_OWNER:'builtin-dojo',dojoApi:()=>api,dojoChoose:()=>false,dojoRender(){},dojoStop(){},dojoContact(){},Date:{now:()=>1},Array,Object,Math};vm.createContext(ctx);vm.runInContext(tickCode+';this.tick=dojoTick',ctx);ctx.tick(1);return calls;}
+  assert.deepEqual(run([{mid:100,gid:1,dead:false,isBoss:false},{mid:200,gid:2,dead:false,isBoss:true}]).slice(0,2),[['setBattle',200,2],['setArrow',200,2]]);
+  assert.equal(run([{mid:100,gid:1,dead:false,isBoss:false}])[0][0],'clearBattle','无 BOSS 有普通怪时先 clear 并保持原箭/内挂流程');
+  const stopCode=extract('  function dojoStop(reason){','  function dojoRender(){'),stopCalls=[],stopApi={clearBattleTarget:()=>stopCalls.push('battle'),clearArrowTarget:()=>stopCalls.push('arrow'),release:()=>stopCalls.push('release')};const sc={dojoRun:{on:true,generation:1,timer:null,npc:null,phase:''},dojoApi:()=>stopApi,DOJO_OWNER:'builtin-dojo',dojoRender(){},clearInterval(){}};vm.createContext(sc);vm.runInContext(stopCode+';this.stop=dojoStop',sc);sc.stop('x');assert.deepEqual(stopCalls,['battle','arrow','release']);
 });
 
 test('V2.37.1 装备槽位与严格签名 VM 回归',()=>{
@@ -2446,7 +2513,7 @@ test('V2.37.1 双槽组合与同款双饰品行为 VM',()=>{
   const applyCode=extract('  function gearApply(', '  function gearAfterDeck(');
   function run(eq, inventory){
     const packets=[];
-    const ctx={gearBusy:false,gearWatchdog:null,gearPreset:()=>({name:'套装',eq}),gearInGame:()=>true,setStatus(){},gearLog(){},gearReadEquipped:()=>({ok:true,slots:{2:{itid:999,refine:0,cards:[],idx:5,name:'旧双手',wearLocation:34,instanceKey:'idx:5'},32:{itid:999,refine:0,cards:[],idx:5,name:'旧双手',wearLocation:34,instanceKey:'idx:5'}}}),gearSigEqual:(a,b)=>!!(a&&b&&a.itid===b.itid&&(a.cards||[]).join(',')===(b.cards||[]).join(',')),gearFindInvItem:(id,r,c,res)=>inventory.find(x=>x.ITID===id&&!res[x.index])||null,gearSlotName:m=>'槽'+m,gearAfterDeck(){},setTimeout:fn=>{fn();return 1},clearTimeout(){},GEAR_SLOTS:[{m:2},{m:32},{m:8},{m:128}],CLIENT:{PS:{CZ:{REQ_TAKEOFF_EQUIP:function(){this.op='off'},REQ_WEAR_EQUIP:function(){this.op='on'}}},NM:{sendPacket:p=>packets.push({op:p.op,index:p.index,wearLocation:p.wearLocation})}},Number,Array,Object,isFinite};
+    const ctx={gearBusy:false,gearWatchdog:null,gearPreset:()=>({name:'套装',eq}),gearInGame:()=>true,setStatus(){},gearLog(){},gearReadEquipped:()=>({ok:true,slots:{2:{itid:999,refine:0,cards:[],idx:5,name:'旧双手',wearLocation:34,instanceKey:'idx:5'},32:{itid:999,refine:0,cards:[],idx:5,name:'旧双手',wearLocation:34,instanceKey:'idx:5'}}}),gearSigEqual:(a,b)=>!!(a&&b&&a.itid===b.itid&&(a.cards||[]).join(',')===(b.cards||[]).join(',')),gearFindInvItem:(id,r,c,res)=>inventory.find(x=>x.ITID===id&&!res[x.index])||null,gearSlotName:m=>'槽'+m,gearAfterDeck(){},setTimeout:fn=>{fn();return 1},clearTimeout(){},GEAR_SLOTS:[{m:2},{m:32},{m:8},{m:128}],CLIENT:{PS:{CZ:{REQ_TAKEOFF_EQUIP:function(){this.op='off'},REQ_WEAR_EQUIP:function(){this.op='on'}}},NM:{sendPacket:p=>packets.push({op:p.op,index:p.index,wearLocation:p.wearLocation})}},czp:name=>ctx.CLIENT.PS.CZ[name],Number,Array,Object,isFinite};
     vm.createContext(ctx);vm.runInContext(applyCode+';this.run=gearApply;',ctx);ctx.run('x');return packets;
   }
   const shared={itid:1101,refine:0,cards:[],name:'双手剑',wearLocation:34,instanceKey:'idx:20'};

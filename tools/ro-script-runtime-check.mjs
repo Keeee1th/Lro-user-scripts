@@ -799,8 +799,8 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
   // 1) 版本号：稳定版与实验版都必须是 2.36.1（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.5', name + ' @version 必须是 2.38.5（锚定行首元数据行）');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.5', name + ' 运行时常量 VER 必须是 2.38.5');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.6', name + ' @version 必须是 2.38.6（锚定行首元数据行）');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.6', name + ' 运行时常量 VER 必须是 2.38.6');
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
   const stripHead = (s) => s.replace(/\r\n/g,'\n').split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
@@ -1063,7 +1063,7 @@ test('V2.34.4 守名单门：打全部怪与 BOSS 模式文案已更新（防回
 function captureAllCode() { return extract('  function captureAll() {', '  // V2.16.7：配置控件统一 change 即时保存'); }
 function makeCaptureCtx(controls, els, savedUi, applied) {
   const savedState = { ui: savedUi };
-  const ctx = { PROF_CONTROLS: controls, $id: (id) => els[id] || null, saved: savedState, saveSaved: () => {}, profUIApplied: applied };
+  const ctx = { PROF_CONTROLS: controls, $id: (id) => els[id] || null, saved: savedState, saveSaved: () => {}, profUIApplied: applied, activeProfileKey: () => 'ch1', profileTrusted: () => true, profileHarvestable: () => false, lastTrustedKey: 'ch1', profWriteGuard: () => true };
   vm.createContext(ctx);
   vm.runInContext(captureAllCode() + ';this.fn = captureAll', ctx);
   return { ctx, savedState };
@@ -1119,7 +1119,7 @@ test('V2.34.5 名单归属校验：profMemKey 与当前档不一致时不得反�
       profiles, lockList: { '9': { name: '新锁' } }, askList: [{ skid: 99 }], profMemKey,
       activeProfileKey: () => 'hero_1',
       ensureProfile: (k) => { if (!profiles[k]) profiles[k] = { name: k, gid: 0, saved: {}, lockList: {}, askList: [], lastAt: 0 }; return profiles[k]; },
-      saveProfiles: () => {}, saved: null, console: { log: () => {} }
+      saveProfiles: () => {}, saved: null, console: { log: () => {} }, profileTrusted: () => true, profWriteGuard: () => true
     };
     vm.createContext(ctx);
     vm.runInContext(code + ';this.save = saveSaved', ctx);
@@ -1172,8 +1172,8 @@ test('V2.34.5 战斗诊断快照 prof 字段已就位（不改既有字段）', 
 // ================= V2.34.5：配置自动备份（两代）/ 黄金副本找回（纯函数真值表 / 按钮 / 键隔离）=================
 test('V2.34.5 版本号升到 2.34.5（@version 与运行时常量一致，两文件同步）', () => {
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.5', name + ' @version 必须是 2.38.5（锚定行首元数据行）');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.5', name + ' 运行时常量 VER 必须是 2.38.5');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.6', name + ' @version 必须是 2.38.6（锚定行首元数据行）');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.6', name + ' 运行时常量 VER 必须是 2.38.6');
   }
 });
 
@@ -1317,7 +1317,7 @@ test('V2.34.7 数据抓包由功能菜单打开标准独立浮窗且不依赖旧
 function bagCleanVm(storeInit={},typeDb=null){
   const store=new Map(Object.entries(storeInit));
   const code=extract("  var BAG_CLEAN_KEY = 'dsh-bag-clean-v2'",'  function bagCleanUnitWeight(id)');
-  const ctx={Number,String,Object,Array,JSON,Math,isFinite,document:{querySelector:()=>null},requireDB:n=>n==='DB/Items/ItemType'?typeDb:null,require:()=>null,
+  const ctx={Number,String,Object,Array,JSON,Math,isFinite,document:{querySelector:()=>null},requireDB:n=>n==='DB/Items/ItemType'?typeDb:null,require:()=>null,activeProfileKey:()=>'',profileTrusted:()=>true,
     localStorage:{getItem:k=>store.has(k)?store.get(k):null,setItem:(k,v)=>store.set(k,String(v))},bagCleanSay(){}};
   vm.createContext(ctx);vm.runInContext(code+';this.load=bagCleanLoad;this.validate=bagCleanValidateImport;this.norm=bagCleanNormalize;this.describe=bagCleanDescribe;this.typeNames=bagCleanTypeNames;this.disarm=bagCleanDisarm',ctx);
   return {ctx,store};
@@ -1462,7 +1462,7 @@ test('V2.38.2 定点修复：随时丢弃开启时零候选不抛错（阈值模
 
 // ================= V2.35.1 assistant API + standalone dojo =================
 const splitSources=[['stable',source],['exp',expSource]];
-test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(s)?.[1],'2.38.5',name+' @version 必须锚定行首元数据行（旧的非锚定正则可能命中变更日志/正文里的 @version 字样）');assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
+test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(s)?.[1],'2.38.6',name+' @version 必须锚定行首元数据行（旧的非锚定正则可能命中变更日志/正文里的 @version 字样）');assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
 test('V2.35.1 public API uses owner-only external signatures and validates the current lease owner',()=>{for(const[,s]of splitSources){assert.ok(s.includes('/^[A-Za-z0-9_.:-]{8,128}$/'));assert.ok(s.includes('dojo:1,battle:1,movement:1,dialog:1,arrow:1,fly:1'));assert.ok(s.includes('if(apiLease&&apiLease.owner!==owner)'));for(const sig of ['apiHas(owner,scope)','apiSnapshot(owner)','apiRelease(owner)','apiContact(owner,gid)','apiWalk(owner,payload)','apiChoose(owner,payload)','apiBattle(owner,on)','apiSetArrow(owner,target)','apiClearArrow(owner)','apiFly(owner,payload)'])assert.ok(s.includes('function '+sig),sig);assert.ok(s.includes('apiLease.generation===generation'));assert.ok(!s.includes('apiHas(owner,generation'));}});
 test('V2.35.1 snapshot and battle/menu ownership contracts are explicit',()=>{for(const[,s]of splitSources){for(const key of ['ready:','map:','player:','mobs:','npcs:','target:','inDojoMap:','dialogOpen:','menu:','battleState:','busy:','arrow:'])assert.ok(s.includes(key),key);assert.ok(s.includes('if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"}'));assert.ok(s.includes('b.state="pending-on"'));assert.ok(s.includes('if(b.state!=="owned")return {ok:true,result:"not-owned"}'));assert.ok(s.includes('l.battle.state==="owned"||l.battle.state==="pending-off"'));assert.ok(s.includes('if(s!==false)return {ok:true,result:s===true?"preexisting":"unknown"}'));}});
 test('V2.36.11 arrow rules use a per-monster table plus a default arrow',()=>{for(const[name,s]of splitSources){
@@ -2437,6 +2437,7 @@ test('V2.37.1 换装读取/匹配（VM）',()=>{
   const ctx = {
     profiles, Date, Number, String, Array, Object, Math, JSON,
     activeProfileKey: () => '阿龟_12345',
+    profWriteGuard: () => true, // V2.38.6：换装预设落盘闸门（本用例只验证写回语义）
     ensureProfile: (k) => { if (!profiles[k]) profiles[k] = { name: '阿龟', gid: 12345, askList: [] }; return profiles[k]; },
     saveProfiles: () => saved.push(1),
     findInventory: () => inv,
@@ -2689,7 +2690,7 @@ test('V2.38.2 物品说明浮窗可加入/移出丢弃名单（左键，不劫�
 test('V2.38.2 bagClean 逐角色键与角色档隔离（VM）',()=>{
   const store=new Map();
   const code=extract("  var BAG_CLEAN_KEY = 'dsh-bag-clean-v2'",'  function bagCleanSay(text)'); // 末尾放宽到 bagCleanSay 之前，把 bagCleanNeeded 口径一并纳入 VM 验证
-  const ctx={Number,String,Object,Array,JSON,Math,isFinite,document:{querySelector:()=>null},requireDB:()=>null,require:()=>null,activeProfileKey:()=>'abc',
+  const ctx={Number,String,Object,Array,JSON,Math,isFinite,document:{querySelector:()=>null},requireDB:()=>null,require:()=>null,activeProfileKey:()=>'abc',profileTrusted:()=>true,
     localStorage:{getItem:k=>store.has(k)?store.get(k):null,setItem:(k,v)=>store.set(k,String(v))},bagCleanSay(){}};
   vm.createContext(ctx);vm.runInContext(code+';this.load=bagCleanLoad;this.save=bagCleanSave;this.key=bagCleanStorageKey;this.needed=bagCleanNeeded',ctx);
   assert.equal(ctx.key(),'dsh-bag-clean-v2:abc','逐角色键必须是 <全局键>:<角色档键>');
@@ -2734,7 +2735,7 @@ test('第三批 F2：bagCleanSave 一律写回加载时记住的键，旧角色�
   const store=new Map();let profile='A';
   const code=extract("  var BAG_CLEAN_KEY = 'dsh-bag-clean-v2'",'  function bagCleanSay(text)');
   const ctx={Number,String,Object,Array,JSON,Math,isFinite,document:{querySelector:()=>null},requireDB:()=>null,require:()=>null,
-    activeProfileKey:()=>profile,localStorage:{getItem:k=>store.has(k)?store.get(k):null,setItem:(k,v)=>store.set(k,String(v))}};
+    activeProfileKey:()=>profile,profileTrusted:()=>true,localStorage:{getItem:k=>store.has(k)?store.get(k):null,setItem:(k,v)=>store.set(k,String(v))}};
   vm.createContext(ctx);vm.runInContext(code+';this.load=bagCleanLoad;this.save=bagCleanSave;this.key=bagCleanStorageKey',ctx);
   assert.equal(ctx.key(),'dsh-bag-clean-v2:A','逐角色键仍是 <全局键>:<角色档键>');
   ctx.load();
@@ -4037,8 +4038,8 @@ test('V2.38.4 静态断言：新函数就位、判定链未改、零发包零 ho
     const sum = src.slice(src.indexOf('// ---------------- V2.38.4 变更摘要'), src.indexOf('// ---------------- V2.38.3 变更摘要'));
     assert.ok(sum.includes('入站分帧') && sum.includes('气弹') && sum.includes('按帧') && sum.includes('2.38.4'), name + ' V2.38.4 摘要必须覆盖：分帧 / 气弹 / 抓包按帧 / 版本');
     assert.ok(!EMOJI.test(sum) && !EMOJI.test(code), name + ' 新增内容不得含 emoji');
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.5', name + ' @version 必须是 2.38.5');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.5', name + ' VER 必须是 2.38.5');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.6', name + ' @version 必须是 2.38.6');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.6', name + ' VER 必须是 2.38.6');
   }
   assert.equal((source.match(/(?<!\r)\n/g) || []).length, 0, '稳定版必须纯 CRLF');
   assert.equal((expSource.match(/\r\n/g) || []).length, 0, '实验版必须纯 LF');
@@ -4989,7 +4990,7 @@ test('V2.38.4 静态断言：三处新口径就位、分帧分派链与已完成
     assert.ok(src.includes('if (!clientScriptPresent()) injectClient(cfg, false);'), name + ' 本机私有入口保持现状（DOM 去重 + 立即注入）');
     assert.ok(src.includes('if (state.ready || state.bootedByWrapper || state.bootedByPlugin) return;'), name + ' 启动去重必须保留');
     assert.ok(src.includes('officialBooted: false,'), name + ' state 必须有 officialBooted 标记');
-    assert.ok(src.includes('// @version      2.38.5') && src.includes('var VER = "2.38.5";'), name + ' 版本必须仍是 2.38.5（不新开版本）');
+    assert.ok(src.includes('// @version      2.38.6') && src.includes('var VER = "2.38.6";'), name + ' 版本必须仍是 2.38.6（不新开版本）');
     // 已完成批次与分帧分派链不得回改
     assert.equal((src.match(/op === 307/g) || []).length, 1, name + ' 摆摊识别集合仍只出现一处（拉黑/闸门批次未回改）');
     assert.ok(src.includes('var walk = walkInboundFrames(bytes, dispatchInboundFrame);'), name + ' 入站分帧分派链不得改动');
@@ -5148,11 +5149,16 @@ function checkKv(src, name) {
   mine.kvRefreshProfile();
   assert.equal(mine.activeCharKey, 'ch999', name + ' 自己角色的档键必须采纳');
   const pre = mk({ profiles: { ch123: { charId: 123 } }, activeCharKey: 'default', ak: 'ch123', CLIENT: {} });
-  assert.equal(pre.allowed('ch123'), true, name + ' 还没进游戏必须可采纳');
-  const oldOk = mk({ profiles: { old: { gid: 2007018 } }, activeCharKey: 'default', ak: 'old', CLIENT: { SS: { GID: 999, Entity: { GID: 2007018.939 } } } });
-  assert.equal(oldOk.allowed('old'), true, name + ' 老档无 charId 时 gid 相同必须可采纳');
-  const oldNo = mk({ profiles: { old: { gid: 7 } }, activeCharKey: 'default', ak: 'old', CLIENT: { SS: { GID: 999, Entity: { GID: 2007018.939 } } } });
-  assert.equal(oldNo.allowed('old'), false, name + ' 老档无 charId 时 gid 不同必须拒绝');
+  assert.equal(pre.allowed('ch123'), false, name + ' V2.38.6 未识别必须一律不采纳（fail-closed）');
+  pre.kvRefreshProfile();
+  assert.equal(pre.activeCharKey, 'default', name + ' V2.38.6 未识别不得被中继切档');
+  assert.equal(pre.store.get('dsh_ro_last_active'), 'ch123', name + ' V2.38.6 未识别不得回写 dsh_ro_last_active');
+  const oldOk = mk({ profiles: { old: { gid: 2007018, name: '真名' } }, activeCharKey: 'default', ak: 'old', CLIENT: { SS: { GID: 999, Entity: { GID: 2007018.939, display: { name: '真名' } } } } });
+  assert.equal(oldOk.allowed('old'), true, name + ' V2.38.6 老档无 charId 时按「角色名相同」采纳');
+  const oldNo = mk({ profiles: { old: { gid: 2007018, name: '别人' } }, activeCharKey: 'default', ak: 'old', CLIENT: { SS: { GID: 999, Entity: { GID: 2007018.939, display: { name: '真名' } } } } });
+  assert.equal(oldNo.allowed('old'), false, name + ' V2.38.6 老档名字不符必须拒绝（本服实体 GID = 账号级 AID，比 GID 恒等于同账号）');
+  const oldGidOnly = mk({ profiles: { old: { gid: 2007018 } }, activeCharKey: 'default', ak: 'old', CLIENT: { SS: { GID: 999, Entity: { GID: 2007018.939 } } } });
+  assert.equal(oldGidOnly.allowed('old'), false, name + ' V2.38.6 老档只有 gid、拿不到名字时必须拒绝（旧「gid 相同即采纳」已删）');
   const healer = identityVm(src, { profiles: { ch999: { charId: 999, gearSets: { list: [{ id: 'g' }], sel: 'g' } }, ch123: { charId: 123 } }, activeCharKey: 'ch123', CLIENT: { SS: { GID: 999, Entity: { GID: 2007018.939, display: { name: '' } } } } });
   assert.equal(healer.selfProfileInSync(), false, name + ' 档不是当前角色必须判为失配（触发点每拍据此切回）');
   healer.onCharChanged(healer.CLIENT.SS.Entity);
@@ -5898,7 +5904,8 @@ test('V2.38.4 审计修正 静态：F1–F6 锚点就位，旧的跨角色认领
     assert.equal(t.includes('} else if (gid > 0 && gidInt(p.gid) === gid) {'), false, name + ' 旧的「任何 gid 相同都当候选」分支必须删净');
     assert.ok(t.includes('var cand = claimCandidate(cid, gid, selfName());'), name + ' 认领必须把真名传给候选阶梯');
     // F2
-    assert.ok(t.includes('      return gidInt(CLIENT.SS && CLIENT.SS.GID);'), name + ' selfCharId 必须只取 SS.GID');
+    assert.ok(t.includes('      var _c = gidInt(CLIENT.SS && CLIENT.SS.GID);'), name + ' selfCharId 必须只取 SS.GID');
+    assert.ok(t.includes('      return gidInt(pktCharId); // V2.38.6'), name + ' selfCharId 的兜底只许是入站包 char_id（V2.38.6）');
     assert.equal(t.includes('return gidInt(ent && ent.GID);'), false, name + ' selfCharId 绝不许退回实体 GID');
     // F3
     assert.ok(t.includes('try { deathGuardAt = []; deathGuardDone = false; deathGuardDead = false; } catch (eDG) {}'), name + ' 切档必须重置连续死亡保护计数');
@@ -5910,8 +5917,8 @@ test('V2.38.4 审计修正 静态：F1–F6 锚点就位，旧的跨角色认领
     assert.ok(t.includes('L.push("识别状态："'), name + ' 诊断必须有「识别状态：」');
     assert.ok(t.includes('L.push("未认领旧档："'), name + ' 诊断必须有「未认领旧档：」');
     // 版本不变
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.5', name + ' @version 必须仍是 2.38.5');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.5', name + ' VER 必须仍是 2.38.5');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.6', name + ' @version 必须仍是 2.38.6');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.6', name + ' VER 必须仍是 2.38.6');
   }
   assert.equal((source.match(/(?<!\r)\n/g) || []).length, 0, '稳定版必须纯 CRLF');
   assert.equal((expSource.match(/\r\n/g) || []).length, 0, '实验版必须纯 LF');
@@ -5925,8 +5932,8 @@ function mutateClaimAnyGid(src) {
 }
 function mutateCharIdFallbackGid(src) {
   const s = lfSrc(src);
-  const out = s.replace('      return gidInt(CLIENT.SS && CLIENT.SS.GID);',
-    '      var cid = gidInt(CLIENT.SS && CLIENT.SS.GID);\n      if (cid > 0) return cid;\n      var ent = CLIENT.SS && CLIENT.SS.Entity;\n      return gidInt(ent && ent.GID); // 变异②：退回实体 GID（账号级 AID）');
+  const out = s.replace('      return gidInt(pktCharId); // V2.38.6：客户端对象拿不到时用入站包解析出的 char_id（手机端，见下方 pkt 块）',
+    '      var ent = CLIENT.SS && CLIENT.SS.Entity;\n      return gidInt(ent && ent.GID); // 变异②：退回实体 GID（账号级 AID）');
   assert.notEqual(out, s, '变异体②必须命中 selfCharId');
   return out;
 }
@@ -6204,7 +6211,7 @@ function qoaFillScenarios(src, tag) {
 }
 function qoaCaptureCtx(src, controls, els, savedUi) {
   const savedState = { ui: savedUi };
-  const ctx = { PROF_CONTROLS: controls, $id: (id) => els[id] || null, saved: savedState, saveSaved: () => {}, profUIApplied: true };
+  const ctx = { PROF_CONTROLS: controls, $id: (id) => els[id] || null, saved: savedState, saveSaved: () => {}, profUIApplied: true, activeProfileKey: () => 'ch1', profileTrusted: () => true, profileHarvestable: () => false, lastTrustedKey: 'ch1', profWriteGuard: () => true };
   vm.createContext(ctx);
   vm.runInContext(cutLf(src, '  function captureAll() {', '  // V2.16.7：配置控件统一 change 即时保存') + LF + ';this.fn = captureAll', ctx);
   return { ctx: ctx, savedState: savedState };

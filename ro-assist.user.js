@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.38.5
+// @version      2.38.6
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -119,6 +119,19 @@
 // 3. 无限道场优先选择活体 MVP/BOSS，使用租约内临时 GID 目标驱动原有 zAttack 攻击链；临时压制内挂其他 MID，死亡、换波或停止后按当前永久名单恢复，不写入 lockList。
 // 4. 临时战斗目标 API 在任何发包前严格验证 GID/MID、活体怪物和 MvpDropsNum；失效时自动清理。保留 v2.38.0 opcode 能力探测与启动自检修复。
 // 5. 版本：@version 2.38.0 → 2.38.1（VER 同步）；实验版同步。离线 runtime 151/151、opcode 9/9，独立定点复核 8/8 通过。
+
+// ---------------- V2.38.6 变更摘要 ----------------
+// 1. 手机端「身份未识别」fail-closed：拿不到 char_id 时不再沿用 localStorage 的活跃档键，所有「按档写」一律拒绝
+//    （profWriteGuard 唯一闸门：saveProfiles / saveSaved / captureAll / applyProfileUI / 锁定名单 / 技能 / 换装预设 / bagClean /
+//     dsh-clear / dsh-saveprofile / KV 中继 / 黄金副本自动找回），未识别期间界面改动只进内存缓冲（pendingEdits），
+//    身份到位后沿既有 onCharChanged() 自愈切档并回填到正确档；换图 / 重登 / socket 重建 → 缓冲整份作废（宁丢不错）。
+// 2. 手机端身份来源补全：从入站包 HC.NOTIFY_ZONESVR(113) / NOTIFY_ZONESVR2(2757) 的 GID 字段（uint32@2，与客户端写
+//    SessionStorage.GID 的同一字段）取 char_id；复用既有 WebSocket 钩子 + 分帧器 + CLIENT.PS 扫描（新增「类名→opcode」索引）。
+//    新 socket 构造 / 回角色列表(107) 清身份，同角色换图保留身份但作废缓冲，socket close 保留。
+// 3. 中继 fail-closed：未识别一律不采纳别的窗口写进 dsh_ro_last_active 的档键、也不回写它；老档（无 charId）判定
+//    从「比实体 GID」改为「比角色名」（本服实体 GID = 账号级 AID，同账号所有角色相同，原判定恒等于「同账号」）；
+//    身份到位后由 identityCommit() → kvRefreshProfile(true) 重放被拒的中继键。
+// 4. 版本：@version 2.38.5 → 2.38.6（VER 同步）；实验版同步。装备包流读取（方案 C）不在本版。
 
 // ---------------- V2.38.5 变更摘要 ----------------
 // 1. 客户端「物品说明」窗口（右键物品弹出的那个固定窗口）底部新增「加入丢弃名单 / 移出丢弃名单」按钮：
@@ -360,7 +373,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.38.5"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.38.6"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -417,7 +430,7 @@
   pruneProfiles(); // V2.8.9：启动即归并历史小数垃圾键（无损，只删重复档）
   var activeCharKey = "default";
   // V2.16.7：刷新后恢复上次活跃角色档（防 activeCharKey 重置 default → 面板用错档丢配置）
-  try { var _lastAk = localStorage.getItem("dsh_ro_last_active"); if (_lastAk && profiles[_lastAk]) activeCharKey = _lastAk; } catch (e) {}
+  try { var _lastAk = localStorage.getItem("dsh_ro_last_active"); if (_lastAk && profiles[_lastAk]) { activeCharKey = _lastAk; startupPendingKey = _lastAk; } } catch (e) {} // V2.38.6：继承的档键只作显示（未经验证），写入门由 profWriteGuard 把守
   var lastCharGid = null; // 已识别的主角色 GID（换角色自动切档）
   var lastCharId = 0; // V2.38.4-身份修复：已识别的角色 ID（CLIENT.SS.GID，跨登录恒定；0=未识别）
   var lastCharName = null; // V2.32.2 已识别角色名（V2.38.4 起只作显示/日志，身份判定改按 lastCharId；未知保持 null，绝不写占位）
@@ -426,10 +439,11 @@
   var profUIApplied = false; // V2.34.5：仅在 applyProfileUI 完成对当前档的填充后，才允许把界面值落盘
   var profMemKey = null; // V2.34.5：内存 lockList/askList 当前所属档案键
   function activeProfileKey() { return activeCharKey; }
-  function setActiveProfile(k) { activeCharKey = k || "default"; profUIApplied = false; try { localStorage.setItem("dsh_ro_last_active", activeCharKey); } catch (e) {} }
+  function setActiveProfile(k) { activeCharKey = k || "default"; profUIApplied = false; if (activeCharKey !== expectedProfileKey()) { try { identityLogLine("identity-skip-lastactive " + activeCharKey); } catch (eS) {} return; } try { localStorage.setItem("dsh_ro_last_active", activeCharKey); } catch (e) {} } // V2.38.6：只有已验证的 ch<charId> 才写进 dsh_ro_last_active
   function loadProfiles() { try { return JSON.parse(localStorage.getItem(PROF_KEY)) || {}; } catch (e) { return {}; } }
   function saveProfiles() {
     try {
+      if (!profWriteGuard("档案落盘")) return; // V2.38.6：未识别 = 只读不写（按档落盘的唯一闸门）
       profBackupRotate(); // V2.34.5：真正写 localStorage 之前先把旧值轮转备份（每次页面加载只一次）
       var value = JSON.stringify(profiles);
       if (localStorage.getItem(PROF_KEY) !== value) { localStorage.setItem(PROF_KEY, value); kvMarkLocal(PROF_KEY, value); }
@@ -460,8 +474,181 @@
   //   取不到 char_id 就返回 0 = 未识别（不新建档、不切档、不认领，gearIdentified() 为 false，每拍继续尝试）。
   function selfCharId() {
     try {
-      return gidInt(CLIENT.SS && CLIENT.SS.GID);
+      var _c = gidInt(CLIENT.SS && CLIENT.SS.GID);
+      if (_c > 0) return _c;
+      return gidInt(pktCharId); // V2.38.6：客户端对象拿不到时用入站包解析出的 char_id（手机端，见下方 pkt 块）
     } catch (e) { return 0; }
+  }
+  // ================= V2.38.6 身份门（fail-closed：未识别 = 只读不写）=================
+  // 手机版（Online_mn.js）里 CLIENT.SS.GID 拿不到 → selfCharId()===0「未识别」，旧实现会直接沿用
+  //   localStorage 的 dsh_ro_last_active（别的窗口 / 别的角色写过的键）→ 同账号所有角色共用一份档、
+  //   锁定名单与技能互相串写（用户实测的串档）。对策：
+  //   ① 未识别时所有「按档写」一律拒绝（profWriteGuard），内存里的用户改动进 pendingEdits 缓冲；
+  //   ② 身份到位后沿既有 onCharChanged() 自愈切档，并在切档过程中把缓冲回填到正确档（flushPendingEdits）；
+  //   ③ 缓冲带世代校验：期间发生换图 / 重登 / socket 重建则整份作废（宁丢不错，最坏是重设一次）；
+  //   ④ 身份来源见下方「入站包 char_id」块（手机端从 HC.NOTIFY_ZONESVR(113)/NOTIFY_ZONESVR2(2757) 取）。
+  var pktCharId = 0;          // 入站包解析出的 char_id（0 = 还没有；只认包内 GID 字段，绝不猜）
+  var pktCharIdAt = 0;        // 最近一次拿到 char_id 的时刻
+  var pktCharIdMap = "";      // 拿到该 char_id 时的地图名（诊断）
+  var pktCharIdSrc = "";      // 来源 opcode（诊断）
+  var identityEpoch = 0;      // 身份世代：换图 / 换角色 / 重登 / socket 重建递增 → 未识别期间的缓冲整份作废
+  var pendingEdits = { epoch: -1, ui: {}, baseLock: null, curLock: null, baseAsk: null, curAsk: null, n: 0 };
+  var identityLog = { blocked: {}, last: 0 };
+  var kvPendingRelayKey = null;  // 未识别期间被拒的中继键（身份到位后由 kvRefreshProfile(true) 重放）
+  var startupPendingKey = null;  // 启动时从 dsh_ro_last_active 恢复的键：只作显示，未经验证，绝不放行写入
+  var lastTrustedKey = null;     // 本会话最近一次被证明「是自己的」档键（换档前收割界面值只认它）
+  function identityLogLine(msg) { try { tlog(msg); } catch (e) {} }
+  function identityReady() { return selfCharId() > 0; }
+  function expectedProfileKey() { var c = selfCharId(); return c > 0 ? ("ch" + c) : ""; }
+  // 当前档可信：有身份 + 档键 = ch<cid> + 档内 charId 自洽（三个条件缺一不可）
+  function profileTrusted(k) {
+    try {
+      if (!identityReady()) return false;
+      if (!k || k !== expectedProfileKey()) return false;
+      var p = profiles[k];
+      var ok = !!(p && typeof p === "object" && gidInt(p.charId) === selfCharId());
+      if (ok) lastTrustedKey = k;
+      return ok;
+    } catch (e) { return false; }
+  }
+  // 「可收割」：档键与档内 charId 自洽（不要求等于当前身份）。只用于「刚刚还是可信档 → 换档前把界面值落回它自己」；
+  //   未识别期间（lastTrustedKey 为空）绝不适用：那时档键是从 localStorage 继承来的，可能属于别的角色。
+  function profileHarvestable(k) {
+    try {
+      var p = profiles[k];
+      if (!p || typeof p !== "object") return false;
+      var c = gidInt(p.charId);
+      return c > 0 && k === ("ch" + c);
+    } catch (e) { return false; }
+  }
+  function pendingEditsClear() { pendingEdits.epoch = -1; pendingEdits.ui = {}; pendingEdits.baseLock = pendingEdits.curLock = pendingEdits.baseAsk = pendingEdits.curAsk = null; pendingEdits.n = 0; }
+  function pendingEditsDrop(why) { try { if (pendingEdits.epoch >= 0) identityLogLine("identity-pending-drop " + why + " n=" + pendingEdits.n); pendingEditsClear(); } catch (e) {} }
+  function cloneList(v, isArr) { try { return JSON.parse(JSON.stringify(isArr ? (v || []) : (v || {}))); } catch (e) { return isArr ? [] : {}; } }
+  // 第一次缓冲时记基线（用户当时看到的那份清单），每次再记当前值：回填时按「当前 - 基线」还原用户意图
+  // F1：askList/lockList 是 var 声明、位置在本块之后——启动早期（3449 的 saveSaved）就可能触发缓冲，
+  //   那时 cloneList(lockList) 会 ReferenceError → 缓冲记成半截/全空。统一走 live* 取值：任何启动顺序都不抛、取值确定。
+  function liveLock() { try { return (typeof lockList === "undefined") ? {} : lockList; } catch (e) { return {}; } }
+  function liveAsk() { try { return (typeof askList === "undefined") ? [] : askList; } catch (e) { return []; } }
+  function pendingEditsTouch() {
+    try {
+      if (pendingEdits.epoch < 0) {
+        pendingEdits.epoch = identityEpoch;
+        // F1：只在「还没记过基线」时记；已有基线（IIFE 记的「用户看到的那份」）绝不能被这次的当前值覆盖，
+        //   否则回填差值恒为空 → 用户的增删白白丢失（I2 用例）。取值改走 live*：启动早期名单还没声明也不抛。
+        if (pendingEdits.baseLock === null) pendingEdits.baseLock = cloneList(liveLock(), false);
+        if (pendingEdits.baseAsk === null) pendingEdits.baseAsk = cloneList(liveAsk(), true);
+      }
+      pendingEdits.curLock = cloneList(liveLock(), false); pendingEdits.curAsk = cloneList(liveAsk(), true);
+      pendingEdits.n++;
+    } catch (e) {}
+  }
+  function pendingUIEdit(id, val) { try { if (!id) return; pendingEditsTouch(); pendingEdits.ui[String(id)] = val; } catch (e) {} }
+  // F1：基线与 cur 必须「同刻同源」。启动早期（名单变量还没声明）先记下的缓冲，在名单就绪后必须连 cur 一起用真实名单重算；
+  //   否则 flush 会按「base 有 cur 没有 → 删」把当前档的名单整份清空并存盘。
+  //   · 无缓冲（epoch<0）：只重置基线（切档后 / 中继刷新后 / 启动时）；
+  //   · 有缓冲（epoch>=0）：基线与 cur 同时对齐到同一份真实名单 → 差值归零（宁丢不错，绝不误删）。
+  function pendingBaseSync() {
+    try {
+      var bl = cloneList(liveLock(), false), ba = cloneList(liveAsk(), true);
+      pendingEdits.baseLock = bl; pendingEdits.baseAsk = ba;
+      if (pendingEdits.epoch >= 0) { pendingEdits.curLock = cloneList(bl, false); pendingEdits.curAsk = cloneList(ba, true); }
+    } catch (e) {}
+  }
+  // F2：未识别期间名单是「能看不能写」——破坏性动作（解除/清空/删除）一律拦截，界面明确标注。
+  function roListReadOnly() { try { return !profileTrusted(activeProfileKey()); } catch (e) { return true; } }
+  function roListRoBanner() { try { if (!roListReadOnly()) return ""; return '<div class="st" style="color:#e0a33a">角色未识别：下方名单来自本地缓存，暂不可编辑（识别后自动可用）</div>'; } catch (e) { return ""; } }
+  // 所有「按档写」的唯一闸门：不可信档 → 拒绝 + 计数 + 节流提示（5s 一条），绝不抛
+  function profWriteGuard(what) {
+    try {
+      if (profileTrusted(activeProfileKey())) return true;
+      var key = String(what || "设置");
+      identityLog.blocked[key] = (identityLog.blocked[key] || 0) + 1;
+      pendingEditsTouch();
+      if (Date.now() - identityLog.last > 5000) {
+        identityLog.last = Date.now();
+        try { setStatus("角色未识别，已暂停保存（" + key + "）；识别后会自动恢复", "warn"); } catch (e0) {}
+        try { identityLogLine("identity-block write=" + key + " key=" + activeProfileKey() + " cid=" + selfCharId()); } catch (e1) {}
+      }
+      return false;
+    } catch (e) { return false; } // 判不出来一律拒绝（fail-closed）
+  }
+  // 身份到位后把未识别期间的改动回填到「正确档」；世代不符（换图/重登/socket 重建）则整份作废
+  function flushPendingEdits() {
+    try {
+      if (pendingEdits.epoch < 0) return false;
+      if (pendingEdits.epoch !== identityEpoch) { pendingEditsClear(); identityLogLine("identity-flush-drop epoch"); return false; }
+      var key = activeProfileKey();
+      if (!profileTrusted(key)) { pendingEditsClear(); identityLogLine("identity-flush-drop untrusted-" + key); return false; }
+      var p = ensureProfile(key);
+      if (!p.saved || typeof p.saved !== "object") p.saved = {};
+      if (!p.saved.ui || typeof p.saved.ui !== "object") p.saved.ui = {};
+      var n = 0, k;
+      for (k in pendingEdits.ui) { p.saved.ui[k] = pendingEdits.ui[k]; n++; }
+      if (!p.lockList || typeof p.lockList !== "object") p.lockList = {};
+      var bl = pendingEdits.baseLock || {}, cl = pendingEdits.curLock || {};
+      for (k in cl) { if (!Object.prototype.hasOwnProperty.call(bl, k)) { p.lockList[k] = cl[k]; n++; } }
+      for (k in bl) { if (!Object.prototype.hasOwnProperty.call(cl, k)) { delete p.lockList[k]; n++; } }
+      if (!Array.isArray(p.askList)) p.askList = [];
+      var sig = function (e) { return (e && e.skid !== undefined && e.skid !== null) ? ("s" + e.skid) : ("j" + JSON.stringify(e)); };
+      var ba = pendingEdits.baseAsk || [], ca = pendingEdits.curAsk || [], i, cur = {}, base = {};
+      for (i = 0; i < ca.length; i++) cur[sig(ca[i])] = 1;
+      for (i = 0; i < ba.length; i++) base[sig(ba[i])] = 1;
+      for (i = 0; i < ca.length; i++) { if (!base[sig(ca[i])]) { p.askList.push(JSON.parse(JSON.stringify(ca[i]))); n++; } }
+      if (Object.keys(base).length) p.askList = p.askList.filter(function (e) { return cur[sig(e)] || !base[sig(e)]; });
+      if (n === 0) { pendingEditsClear(); pendingBaseSync(); identityLogLine("identity-flush noop key=" + key + " ui=" + Object.keys(pendingEdits.ui || {}).length); return false; } // F1：差值为空 → 不落盘
+      p.lastAt = Date.now();
+      saveProfiles();
+      saved = loadSaved();
+      lockList = p.lockList || {};
+      askList = p.askList = p.askList || [];
+      profMemKey = key;
+      pendingEditsClear();
+      pendingBaseSync(); // V2.38.6：回填完成，基线重置为新档（此后新增改动才算差异）
+      identityLogLine("identity-flush items=" + n + " key=" + key);
+      setStatus("角色已识别，已把未识别期间的改动写回当前角色档", "ok");
+      return true;
+    } catch (e) { pendingEditsClear(); return false; }
+  }
+  // 身份到位（入站包或客户端对象任一来源）→ 走既有 onCharChanged 自愈切档（内部会回填缓冲）+ 中继重放
+  function identityCommit(reason) {
+    try {
+      var cid = selfCharId();
+      if (!(cid > 0)) return false;
+      var key = expectedProfileKey();
+      var need = (activeProfileKey() !== key) || !profileTrusted(key);
+      var r = false;
+      if (need) {
+        var ent = null; try { ent = (CLIENT.SS && CLIENT.SS.Entity) || null; } catch (e0) { ent = null; }
+        if (!ent) { try { ent = { GID: 0 }; } catch (e1) { ent = null; } }
+        try { onCharChanged(ent); } catch (e2) {}
+        r = true;
+      }
+      try { kvRefreshProfile(true); } catch (e3) {} // 重放未识别期间被拒的中继键
+      if (r) { try { identityLogLine("identity-commit " + (reason || "") + " cid=" + cid + " key=" + key); } catch (e4) {} }
+      return r;
+    } catch (e) { return false; }
+  }
+  // 身份拍（挂既有 1s masterTick，不新增定时器）：PC 与 renderStatbar 同条件（必须有实体）才提交，
+  //   手机端以入站包 char_id 为准提交；未识别期间什么都提交不了（fail-closed）。
+  function identityTick() {
+    try {
+      if (!identityReady()) return false;
+      var key = expectedProfileKey();
+      if (activeProfileKey() === key && profileTrusted(key)) {
+        // F3：档已自洽，但未识别期间可能留下了缓冲（设置面板改动 / 名单改动）→ 必须补一次回填 + 界面刷新，
+        //   否则 flush 永不发生、profUIApplied 恒 false，本会话改动只进缓冲不落盘（审计实测）。
+        if (pendingEdits.epoch >= 0) {
+          try { flushPendingEdits(); } catch (eF) {}
+          try { applyProfileUI(); } catch (eP) {} // 档已可信 → profUIApplied 置位，界面按档回填
+          try { captureAll(); } catch (eC) {}      // 把用户本会话的界面改动真正写进档
+          try { saveProfiles(); } catch (eS) {}
+        }
+        return false;
+      }
+      var entOk = false; try { entOk = !!(CLIENT.SS && CLIENT.SS.Entity); } catch (e0) { entOk = false; }
+      if (!(pktCharId > 0) && !entOk) return false;
+      return identityCommit("tick");
+    } catch (e) { return false; }
   }
   // V2.38.4-身份修复：名字只用于显示。① 实体 display.name ② 本会话按 charId 的真名缓存 ③ 都没有 → ""（显示层写「识别中」）。
   function selfDisplayNameRaw() {
@@ -643,6 +830,7 @@
       try { oldG = JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch (e) {}
       for (var k2 in glob) oldG[k2] = glob[k2];
       try { localStorage.setItem(LS_KEY, JSON.stringify(oldG)); } catch (e) {}
+      if (!profWriteGuard("设置")) return; // V2.38.6：未识别 = 只读不写（全局登录键已在上面写好，照常落盘）
       var key = activeProfileKey();
       ensureProfile(key);
       var p = profiles[key];
@@ -4320,6 +4508,8 @@
   function captureAll() {
     try {
       if (!profUIApplied) return; // V2.34.5：界面尚未按当前档填充，禁止落盘（防默认值覆盖档案）
+      var _capKey = activeProfileKey(); // V2.38.6：未识别 = 只读不写；仅当「刚还是可信档」才允许换档前收割界面值
+      if (!profileTrusted(_capKey) && !(_capKey && _capKey === lastTrustedKey && profileHarvestable(_capKey))) { profWriteGuard("设置"); return; }
       // V2.34.5：以现有 saved.ui 为底合并写入（新增/改名控件不再连带丢失其它设置）
       var ui = {};
       try { if (saved && saved.ui) for (var kb in saved.ui) ui[kb] = saved.ui[kb]; } catch (e0) {}
@@ -4346,10 +4536,12 @@
   // V2.16.7：配置控件统一 change 即时保存——任何设置改动立即落盘（防「改完未到8s周期就刷新」丢配置）
   try {
     var profIds = {};
-    for (var pi = 0; pi < PROF_CONTROLS.length; pi++) profIds[PROF_CONTROLS[pi][0]] = 1;
+    for (var pi = 0; pi < PROF_CONTROLS.length; pi++) profIds[PROF_CONTROLS[pi][0]] = PROF_CONTROLS[pi][1];
     document.addEventListener("change", function (e) {
       var t = e.target;
       if (!t || !t.id || !profIds[t.id]) return;
+      // V2.38.6：未识别 = 只读不写 —— 这一下改动只记进内存缓冲（识别后回填），绝不落盘
+      try { if (!profileTrusted(activeProfileKey())) pendingUIEdit(t.id, profIds[t.id] === "c" ? (t.checked ? 1 : 0) : String(t.value == null ? "" : t.value)); } catch (e3) {}
       try { captureAll(); } catch (e2) {}
     });
   } catch (e) {}
@@ -4415,6 +4607,7 @@
       // V1.9.4：高亮规则名单（localStorage dsh_ro_hlrules）随角色档重建样式与列表
       try { rebuildBountyStyle(); renderHlList(); } catch (e) {}
       profUIApplied = true; // V2.34.5：当前档已填充完毕，此后才允许 captureAll 落盘
+      if (!profileTrusted(activeProfileKey())) profUIApplied = false; // V2.38.6：档不可信（未识别）→ 依旧不许落盘
     } catch (e) {}
   }
   // V2.38.4-身份修复：旧档认领（复制语义）
@@ -4540,6 +4733,7 @@
       if (btDiagOn) { try { btLog('hk', '切档=' + key + ' panel=' + JSON.stringify(hkOf('panel')) + ' np=' + JSON.stringify(hkOf('np')) + ' zhu=' + JSON.stringify(hkOf('zhu'))); } catch (e) {} }
       lockList = profiles[key].lockList || {};
       askList = profiles[key].askList = profiles[key].askList || [];
+      try { flushPendingEdits(); } catch (ePE) {} // V2.38.6：把未识别期间缓冲的改动回填到正确档（世代不符则整份作废）
       // 切角色复位：自动丢弃的授权/名单/配置逐角色隔离，绝不能带 A 的授权在 B 身上丢东西
       try {
         bagClean.generation++;
@@ -4554,6 +4748,7 @@
       try { if (bagClean.render) bagClean.render(); } catch (eBC2) {}
       bagCleanSay('切换角色：自动丢弃已关闭，需重新预览确认。');
       profMemKey = activeProfileKey(); // V2.34.5：内存名单归属=当前档（切档后名单已同步）
+      pendingBaseSync(); // V2.38.6：切档后重记基线（未识别期间的差异以它为基准）
       applyProfileUI();
       try { fillZhuQoaskill(); } catch (e) {} // V2.16.7：切档后重填解围下拉（新角色已学技能，清掉旧角色技能）
       try { syncApplyRuntime(); renderSyncState(); } catch (e) {} // V2.15.10：切档后同步器按新档配置启停
@@ -4570,6 +4765,7 @@
     } catch (e) { try { roFeedback("角色设置切换失败：" + (e.message || e), "err"); } catch (e2) {} }
   }
   onId("dsh-saveprofile", "click", function () {
+    if (!profWriteGuard("保存角色设置")) { renderWinInfo(); return; } // V2.38.6：未识别 = 只读不写（人工兜底也一样）
     // V2.34.5：用户显式点「保存当前角色设置」=明确意图，即使界面未按档填充也强制落盘一次
     try { profUIApplied = true; captureAll(); } catch (e) {}
     renderWinInfo();
@@ -5519,6 +5715,7 @@
   var lastCaptureAt = 0;
   function masterTickReg(fn) { masterTicks.push(fn); }
   setInterval(function () { for (var i = 0; i < masterTicks.length; i++) { try { masterTicks[i](); } catch (e) {} } }, 1000);
+  masterTickReg(function () { try { identityTick(); } catch (e) {} }); // V2.38.6：身份拍（复用 1s masterTick，不新增定时器）
   masterTickReg(function () { try { tickFollow(); } catch (e) {} });
   setTimeout(scanPlayers, 3000);
 
@@ -5982,12 +6179,22 @@
 
   // ---------------- B5：自动使用技能（点选技能栏主动辅助 · 调序）----------------
   var askList = (function () {
-    try { ensureProfilesInit(); var k = activeProfileKey(); profMemKey = k; return (profiles[k] && profiles[k].askList) || []; } catch (e) { return []; }
+    try {
+      ensureProfilesInit(); var k = activeProfileKey(); profMemKey = k;
+      var base = (profiles[k] && profiles[k].askList) || [];
+      pendingEdits.baseAsk = cloneList(base, true); // V2.38.6：记「已同步基线」——未识别期间的差异以它为准
+      // F1：本 IIFE 之前可能已记过缓冲（那时 askList 还不存在）→ 必须在这同一刻把 cur 也对齐到真实名单，
+      //   否则切档时 flush 按「base 有 cur 没有」把当前档技能表删空（审计实测：老用户 ask 全丢）。
+      if (pendingEdits.epoch >= 0) pendingEdits.curAsk = cloneList(base, true);
+      // V2.38.6：未识别时内存名单必须是脱离档对象的副本——用户改动只进缓冲，绝不就地污染继承来的档
+      return profileTrusted(k) ? base : cloneList(base, true);
+    } catch (e) { return []; }
   })();
   var askPickIdx = -1;
   function saveAskList() {
     try {
       var k = activeProfileKey();
+      if (!profWriteGuard("技能配置")) { pendingEditsTouch(); renderAskList(); return; } // V2.38.6：未识别 = 只读不写（改动只进缓冲，识别后回填）
       // V2.38.2：与 saveSaved 同口径的归属校验——内存 askList 不属于当前档时不得反写覆盖（KV 中继刷新/切档后可能错档）
       if (profMemKey && profMemKey !== k) { try { console.log("[PROFILE] 名单归属不符，跳过 askList 写回"); } catch (e0) {} }
       else { ensureProfile(k); profiles[k].askList = askList; profiles[k].lastAt = Date.now(); saveProfiles(); }
@@ -5998,8 +6205,8 @@
     var el = $id("dsh-asklist");
     if (!el) return;
     $id("dsh-askcount").textContent = askList.length + " 项";
-    if (!askList.length) { el.innerHTML = '<span class="st">空（点选技能加入，可拖拽调序）</span>'; return; }
-    var html = "";
+    if (!askList.length) { el.innerHTML = roListRoBanner() + '<span class="st">空（点选技能加入，可拖拽调序）</span>'; return; }
+    var html = roListRoBanner(); // F2：未识别 → 明确标注「暂不可用」
     for (var i = 0; i < askList.length; i++) {
       var s = askList[i];
       html += '<div class="list-item drag-item' + (i === askPickIdx ? ' active' : '') + '" data-ask-i="' + i + '" data-drag-i="' + i + '" draggable="true" style="cursor:grab" title="拖动调整顺序"><span class="dh">⠿</span><span>' + (i + 1) + '. ' + (s.name || ("技能" + s.skid)) + ' Lv' + s.lv + '</span>' + (s.st ? '<span class="tag blue" style="margin-left:4px">' + (s.stInv ? "在身补" : "消失补") + (/^\d+$/.test(String(s.st)) ? "·状态" + s.st : "") + '</span>' : '<span class="tag gray" style="margin-left:4px;color:#8a97a6">按间隔放（未识别状态）</span>') + '</div>';
@@ -6071,6 +6278,7 @@
     if (askPickIdx >= 0 && askPickIdx < askList.length - 1) { var t2 = askList[askPickIdx]; askList[askPickIdx] = askList[askPickIdx + 1]; askList[askPickIdx + 1] = t2; askPickIdx++; saveAskList(); }
   });
   onId("dsh-askdel", "click", function () {
+    if (!profileTrusted(activeProfileKey())) { setStatus("角色未识别：技能名单暂不可编辑（识别后自动可用）", "warn"); return; } // F2：破坏性动作拦截
     if (askPickIdx >= 0) { askList.splice(askPickIdx, 1); askPickIdx = -1; saveAskList(); }
   });
   // V2.38.2：数字输入统一取值——SP 下限允许 0（原来 parseInt(...) || 30 把「不低于 0」也改成 30），用 isFinite 判断
@@ -6235,7 +6443,7 @@
           } catch (e) {}
         }
       });
-      if (dropped > 0) { try { localStorage.setItem('dsh_ro_skill_status_v1', JSON.stringify(statusMap)); } catch (e) {} }
+      if (dropped > 0) { try { if (profileTrusted(activeProfileKey())) localStorage.setItem('dsh_ro_skill_status_v1', JSON.stringify(statusMap)); } catch (e) {} } // F5：未识别时不写全局学习缓存
       if (restored > 0) {
         saveAskList();
         console.log('[LEARN-DIAG] restored ' + restored + ' status IDs from cache');
@@ -6286,7 +6494,10 @@
   //   改成浏览器级 localStorage 一次性键：只执行一次、永不重来；且不再把用户的 saved.askEn 写成 false（只在这一唯一一次清空时关掉界面勾选）。
   var UI_CLEAR_170_KEY = "dsh_ro_uiclear170_v1", uiCleared170 = false;
   try { uiCleared170 = localStorage.getItem(UI_CLEAR_170_KEY) === "1"; } catch (e) {}
-  if (!uiCleared170) {
+  if (!uiCleared170 && !profileTrusted(activeProfileKey())) {
+    // F2：一次性清空是破坏性动作——未识别时不执行，也不写「已完成」标志（识别后自然会补做一次）
+    setStatus("角色未识别：本次不改动技能名单（识别后自动可用）", "warn");
+  } else if (!uiCleared170) {
     try { askList.length = 0; saveAskList(); } catch (e) {}
     saved.buffs = ""; saved.buffEnabled = false;
     try { localStorage.setItem(UI_CLEAR_170_KEY, "1"); } catch (e) {}
@@ -6381,6 +6592,7 @@
   });
   onId("dsh-clear", "click", function () {
     saved = {};
+    if (!profileTrusted(activeProfileKey())) { profWriteGuard("清空配置"); setStatus("角色未识别，暂不保存", "warn"); return; } // V2.38.6
     try {
       var k = activeProfileKey(); ensureProfile(k);
       profiles[k].saved = {}; profiles[k].lockList = {}; profiles[k].askList = [];
@@ -7410,7 +7622,15 @@
   var zLockCounts = {}; // V1.7.5 每次锁定释放次数计数（换目标/重新锁定时清零）
   var zCastIdx = 0;     // V1.7.5 技能轮换游标：下轮从该索引开始扫（拖拽顺序真正生效）
   var lockList = (function () {
-    try { ensureProfilesInit(); var k = activeProfileKey(); profMemKey = k; return (profiles[k] && profiles[k].lockList) || {}; } catch (e) { return {}; }
+    try {
+      ensureProfilesInit(); var k = activeProfileKey(); profMemKey = k;
+      var base = (profiles[k] && profiles[k].lockList) || {};
+      pendingEdits.baseLock = cloneList(base, false); // V2.38.6：记「已同步基线」——未识别期间的差异以它为准
+      // F1：同上——同刻同源，绝不留下「base 有 cur 没有」的假差值（否则锁定名单会被清空）。
+      if (pendingEdits.epoch >= 0) pendingEdits.curLock = cloneList(base, false);
+      // V2.38.6：未识别时内存名单必须是脱离档对象的副本——用户改动只进缓冲，绝不就地污染继承来的档
+      return profileTrusted(k) ? base : cloneList(base, false);
+    } catch (e) { return {}; }
   })();
   var zLastPos = null, zStuckSince = null;
 
@@ -7419,36 +7639,42 @@
     if (!el) return;
     var ids = Object.keys(lockList);
     $id("dsh-lockcount").textContent = ids.length + " 种";
-    if (!ids.length) { el.innerHTML = '<span class="st">名单为空（勾选本图怪物或侦查扫描到的怪）</span>'; return; }
-    var html = "";
+    var roRO = roListReadOnly(); // F2：未识别 → 只读展示 + 禁用「解除」
+    if (!ids.length) { el.innerHTML = roListRoBanner() + '<span class="st">名单为空（勾选本图怪物或侦查扫描到的怪）</span>'; return; }
+    var html = roListRoBanner();
     ids.forEach(function (id) {
       html += '<div class="list-item"><span>' + (lockList[id].name || ("ID" + id)) + ' · ID' + id + '</span>' +
         mobRefLinksHtml(id) + // V2.36.13：任务目标怪入口（跳转=游戏内导航魔物搜索 / 小册子=DVG 资料）
-        '<button class="ghost" data-unlock="' + id + '" style="flex:0 0 auto;padding:0 8px;font-size:11px">解除</button></div>';
+        (roRO ? '<button class="ghost" disabled style="flex:0 0 auto;padding:0 8px;font-size:11px">解除</button>' : '<button class="ghost" data-unlock="' + id + '" style="flex:0 0 auto;padding:0 8px;font-size:11px">解除</button>') + '</div>';
     });
     el.innerHTML = html;
   }
   function profileLockSave() {
-    try { var k = activeProfileKey(); ensureProfile(k); profiles[k].lockList = lockList; profiles[k].lastAt = Date.now(); saveProfiles(); } catch (e) {}
+    try { if (!profWriteGuard("锁定名单")) return; var k = activeProfileKey(); ensureProfile(k); profiles[k].lockList = lockList; profiles[k].lastAt = Date.now(); saveProfiles(); } catch (e) {}
   }
   function addLock(id, name) {
     id = String(id);
     if (!lockList[id]) lockList[id] = { name: name || ("ID" + id), ts: Date.now() };
+    if (!profileTrusted(activeProfileKey())) pendingEditsTouch(); // V2.38.6：未识别只记缓冲（识别后回填）
     profileLockSave();
     renderLockList();
-    try { npSyncTargetsDom(); npSyncTargets(); } catch (e) {} // V2.16.7 双向同步内挂名单
+    try { if (profileTrusted(activeProfileKey())) { npSyncTargetsDom(); npSyncTargets(); } } catch (e) {} // V2.38.6：未识别不按内存名单驱动内挂
   }
   function removeLock(id) {
+    // F2：未识别时名单显示的是继承档副本，在这里删会按「base→cur 差异」误删自己档里的同名键 → 破坏性动作一律拦截
+    if (!profileTrusted(activeProfileKey())) { setStatus("角色未识别：锁定名单暂不可编辑（识别后自动可用）", "warn"); renderLockList(); return; }
     delete lockList[String(id)];
+    if (!profileTrusted(activeProfileKey())) pendingEditsTouch(); // V2.38.6：同上
     profileLockSave();
     renderLockList();
-    try { npSyncTargetsDom(); npSyncTargets(); } catch (e) {} // V2.16.7 双向同步内挂名单
+    try { if (profileTrusted(activeProfileKey())) { npSyncTargetsDom(); npSyncTargets(); } } catch (e) {} // V2.38.6：同上
   }
   onId("dsh-locklist", "click", function (e) {
     var b = e.target.closest && e.target.closest("[data-unlock]");
     if (b) removeLock(b.getAttribute("data-unlock"));
   });
   onId("dsh-lockclear", "click", function () {
+    if (!profileTrusted(activeProfileKey())) { setStatus("角色未识别：锁定名单暂不可编辑（识别后自动可用）", "warn"); return; } // F2：破坏性动作拦截
     lockList = {};
     profileLockSave();
     renderLockList();
@@ -11338,14 +11564,15 @@
     return out;
   }
   function bagCleanLoad(){
-    var key=bagCleanStorageKey();bagClean.key=key;var raw=null,cfg=null,empty=function(){return bagCleanNormalize(null,false);};
+    var key=bagCleanStorageKey();bagClean.key=key;if(!profileTrusted(activeProfileKey()))return bagCleanNormalize(null,false); // V2.38.6：未识别不读入按档规则
+    var raw=null,cfg=null,empty=function(){return bagCleanNormalize(null,false);};
     try{raw=JSON.parse(localStorage.getItem(key)||'null');}catch(ignore){}
     if(raw&&raw.version===2){try{cfg=bagCleanNormalize(bagCleanValidateImport(raw,false),false);}catch(ignore2){cfg=empty();}}
     else{try{raw=JSON.parse(localStorage.getItem(BAG_CLEAN_V1_KEY)||'{}');cfg=bagCleanNormalize(bagCleanValidateImport(raw,true),true);try{localStorage.setItem(key,JSON.stringify(cfg));}catch(ignore3){}}catch(ignore4){cfg=empty();}}
     cfg.armed=false; // 安全门禁：加载/切角色后一律回到未授权，必须重新预览
     return cfg;
   }
-  function bagCleanSave(){try{localStorage.setItem(bagClean.key||bagCleanStorageKey(),JSON.stringify(bagClean.config));}catch(e){}} // 一律写到加载时记住的键，避免把旧角色规则写进新角色档
+  function bagCleanSave(){try{if(!profileTrusted(activeProfileKey()))return;localStorage.setItem(bagClean.key||bagCleanStorageKey(),JSON.stringify(bagClean.config));}catch(e){}} // V2.38.6：未识别不写按档规则；一律写到加载时记住的键，避免把旧角色规则写进新角色档
   function bagCleanDisarm(message){bagClean.config.armed=false;bagClean.enabled=false;bagClean.config.enabled=false;bagClean.generation++;bagClean.pending=false;bagCleanSave();var en=document.querySelector('#dsh-bag-clean [data-enable]');if(en)en.checked=false;if(message)bagCleanSay(message);}
   // V2.38.2：类别名一律用 BAG_SAFE_TYPES 里的中文，不再读 DB/Items/ItemType 的英文名
   //（该模块本来就不在线上桥接模块白名单里，旧实现读不到时会把整类当「名称未确认」直接保护）。
@@ -13011,6 +13238,95 @@
       }
     } catch (e) {}
   }
+  // ================= V2.38.6 手机端 char_id 的包流来源（HC.NOTIFY_ZONESVR / NOTIFY_ZONESVR2）=================
+  // 客户端自己就是在这两个包里把 GID(char_id, uint32@2) 写进 SessionStorage 的（Online.js: onReceiveMapInfo → SS.GID = pkt.GID），
+  //   手机端协议层同款；助手拿不到客户端对象时 SS.GID 恒 0，这里从入站帧读同一个字段交给 selfCharId()。
+  //   复用既有 WebSocket 钩子 + 分帧器 + CLIENT.PS 扫描（新增「类名→opcode」索引），零新增依赖、零新增 require。
+  // 失效时机（方案 B.3）：新 socket 构造 → 清；107 回角色列表 → 清；同角色换图 → 保留身份但递增世代（缓冲作废）；close → 保留。
+  var __psIdx = { byId: null, byName: null, sig: -1 };
+  function psClassIndex() {
+    try {
+      var PS = CLIENT && CLIENT.PS; if (!PS) return null;
+      var sig = psFuncSig(PS);
+      if (__psIdx.byName && __psIdx.sig === sig) return __psIdx;
+      var byId = {}, byName = {};
+      (function scan(ns, prefix, depth) {
+        if (!ns || depth > 3) return;
+        for (var k in ns) {
+          var S = null; try { S = ns[k]; } catch (eS) { continue; }
+          if (typeof S === "function") {
+            var full = prefix + k, id = Number(S.id) || 0, size = Number(S.size);
+            var rec = { id: id, size: size, name: full };
+            if (byName[full] === undefined) byName[full] = rec;
+            if (id > 0 && byId[id] === undefined) byId[id] = rec;
+            continue;
+          }
+          if (S && typeof S === "object") scan(S, prefix + k + ".", depth + 1);
+        }
+      })(PS, "", 1);
+      __psIdx.byId = byId; __psIdx.byName = byName; __psIdx.sig = sig;
+      return __psIdx;
+    } catch (e) { return null; }
+  }
+  function pktOpOf(name, fallback) {
+    try { var ix = psClassIndex(); var r = ix && ix.byName ? ix.byName["HC." + name] : null; if (r && r.id > 0) return r.id; } catch (e) {}
+    return fallback;
+  }
+  var __pktOps = { zone: null, charlist: null, sig: -1 };
+  function identityPktOps() {
+    try {
+      var ix = psClassIndex();
+      var sig = ix ? ix.sig : -1;
+      if (__pktOps.zone && __pktOps.sig === sig) return __pktOps;
+      var zone = {}, cl = {};
+      zone[113] = 1; zone[2757] = 1;
+      zone[pktOpOf("NOTIFY_ZONESVR", 113)] = 1;
+      zone[pktOpOf("NOTIFY_ZONESVR2", 2757)] = 1;
+      cl[107] = 1; cl[pktOpOf("ACCEPT_ENTER_NEO_UNION", 107)] = 1;
+      __pktOps = { zone: zone, charlist: cl, sig: sig };
+      return __pktOps;
+    } catch (e) { return { zone: { 113: 1, 2757: 1 }, charlist: { 107: 1 }, sig: -1 }; }
+  }
+  function readFixedStr(dv, off, len) {
+    var s = "";
+    try { for (var i = 0; i < len; i++) { var c = dv.getUint8(off + i); if (!c) break; s += String.fromCharCode(c); } } catch (e) {}
+    return s;
+  }
+  function clearPktIdentity(why) {
+    try {
+      identityEpoch++;
+      pendingEditsDrop(why || "identity-reset");
+      if (pktCharId > 0) identityLogLine("pkt-clear why=" + why + " was=" + pktCharId);
+      pktCharId = 0; pktCharIdAt = 0; pktCharIdMap = ""; pktCharIdSrc = "";
+    } catch (e) {}
+  }
+  // 113/2757：GID(uint32@2) 就是 char_id；mapName[16]@6（诊断）。收到即视为身份到位，提交交由 1s 身份拍（重活不进收包路径）
+  function onZoneNotifyFrame(bytes, op) {
+    try {
+      if (!bytes || bytes.byteLength < 6) return;
+      var dv = new DataView(bytes);
+      var gid = dv.getUint32(2, true);
+      // F4：0 与保留值（全 F）不是合法 char_id —— 曾把 0xFFFFFFFF 当身份，建出 ch4294967295 垃圾档
+      if (!(gid > 0) || gid === 4294967295 || !isFinite(gid)) return;
+      var mapName = readFixedStr(dv, 6, 16);
+      var src = String(op);
+      var cg = 0; try { cg = gidInt(CLIENT.SS && CLIENT.SS.GID); } catch (eC) { cg = 0; }
+      if (cg > 0 && cg !== gid) identityLogLine("pkt-conflict ss=" + cg + " pkt=" + gid + " op=" + src);
+      if (pktCharId > 0 && pktCharId === gid) { identityEpoch++; pendingEditsDrop("map-change"); }
+      else if (pktCharId > 0 && pktCharId !== gid) { identityEpoch++; pendingEditsDrop("char-change"); }
+      pktCharId = gid; pktCharIdAt = Date.now(); pktCharIdMap = mapName; pktCharIdSrc = src;
+      identityLogLine("pkt-charid " + gid + " op=" + src + " map=" + mapName + " ss=" + cg);
+    } catch (e) {}
+  }
+  function identityPktHook(bytes, op) {
+    try {
+      if (typeof op !== "number") return;
+      var ops = identityPktOps();
+      if (!ops) return;
+      if (ops.zone[op]) { onZoneNotifyFrame(bytes, op); return; }
+      if (ops.charlist[op]) { clearPktIdentity("charlist"); return; }
+    } catch (e) {} // 单帧解析异常只丢该帧，绝不影响其它包
+  }
   // ---------------- V2.38.4 入站分帧：运行时长度表 + 逐帧遍历（一条消息可能含多个包） ----------------
   var framePartial = 0; // 消息尾部切不出的残包计数（只做诊断，绝不缓冲）
   var __zcLenTbl = { tbl: null, src: null, n: 0, sig: -1 }; // V2.38.4：sig = CLIENT.PS 下可枚举函数计数，纳入缓存键（审计 D3）
@@ -13126,6 +13442,7 @@
   function dispatchInboundFrame(bytes, op, frameOff, lenTblOk) {
     try {
       if (typeof op !== "number") { try { op = new DataView(bytes).getUint16(0, true); } catch (e0) { return; } }
+      identityPktHook(bytes, op); // V2.38.6：手机端 char_id 包流来源（113/2757 记录身份、107 清身份）
       collectOpStat(bytes, op);
       itipPktProbe(bytes, op); // V2.16.21 自动探查：首次出现的 opcode 记录十六进制
       // V2.16.16：入站也进抓包环（方向 D）；V2.38.4：改为按帧记录，op/len/hex 都取该帧真实值
@@ -13219,6 +13536,7 @@
       var N = window.WebSocket;
       if (!N) return;
       function PW(url, protocols) {
+        try { clearPktIdentity("new-socket"); } catch (eWS) {} // V2.38.6：新连接 = 身份作废（旧 GID 绝不复用）
         var inst = protocols !== undefined ? new N(url, protocols) : new N(url);
         try { inst.addEventListener("message", function (ev) { onReconInbound(ev.data); }); } catch (e) {}
         return inst;
@@ -13295,7 +13613,7 @@
             for (var k in keys) { try { localStorage.setItem(k, keys[k]); n++; } catch (e) {} }
             profiles = loadProfiles(); saved = loadSaved();
             var ak = localStorage.getItem("dsh_ro_last_active");
-            if (ak && profiles[ak]) activeCharKey = ak;
+            if (ak && profiles[ak] && profileTrusted(ak)) activeCharKey = ak; // V2.38.6：导入的档键也必须先证明是自己的（未识别不动档）
             try { applyProfileUI(); } catch (e) {}
             setStatus("已导入配置（" + n + " 键），刷新页面后完整生效", "ok");
           } catch (e) { try { setStatus("导入解析失败: " + e.message, "err"); } catch (e2) {} }
@@ -18099,7 +18417,7 @@
     return p.gearSets;
   }
   function gearPreset(id) { var d = gearData(); for (var i = 0; i < d.list.length; i++) if (d.list[i].id === id) return d.list[i]; return null; }
-  function gearSaveSets() { try { var p = gearP(); if (p) { p.lastAt = Date.now(); saveProfiles(); } } catch (e) {} }
+  function gearSaveSets() { try { if (!profWriteGuard("换装预设")) return; var p = gearP(); if (p) { p.lastAt = Date.now(); saveProfiles(); } } catch (e) {} }
   function gearItid(it) { try { return it ? (it.ITID != null ? it.ITID : it.itemid) : null; } catch (e) { return null; } }
   function gearRefine(it) { try { if (!it) return 0; var r = it.RefiningLevel; if (r == null) r = it.refiningLevel; if (r == null) r = it.Refine; if (r == null) r = it.refine; return Number(r) || 0; } catch (e) { return 0; } }
   // V2.38.4：客户端物品是 1 起始 Options（{index,value,param}），回放快照另有 0 起始 options（{id,value,param}）；
@@ -18743,28 +19061,33 @@
   //   否则多开/跨入口会被别的窗口把本窗口切成对方角色（浮窗显示对方名字、按对方预设换装）。
   function kvRelayKeyAllowedForSelf(ak) {
     try {
-      var ent = CLIENT.SS && CLIENT.SS.Entity;
-      var gid = gidInt(ent && ent.GID);
       var cid = selfCharId();
-      if (!ent || !(gid > 0) || !(cid > 0)) return true; // 还没进游戏 / 未识别：可采纳
+      if (!(cid > 0)) return false; // V2.38.6：未识别一律不采纳（原 return true 会让手机端恒采纳别的窗口写过的档键 → 串档）
       var p = profiles[ak];
       if (!p || typeof p !== "object") return false;
       var pcid = gidInt(p.charId);
       if (pcid > 0) return pcid === cid; // 新档：charId 必须与当前角色一致
-      return gidInt(p.gid) === gid; // 老档无 charId：比实体 GID
-    } catch (e) { return true; }
+      // V2.38.6：老档无 charId —— 本服实体 GID 就是账号级 SS.AID（同账号所有角色相同），比 GID 恒等于「同账号」，
+      //   改为按角色名判定；拿不到真名一律不采纳（fail-closed）。
+      var nm = selfName();
+      return !!(nm && String(p.name || "").trim() === nm);
+    } catch (e) { return false; } // V2.38.6：判不出来也不采纳（fail-closed；原为 return true）
   }
-  function kvRefreshProfile() {
+  function kvRefreshProfile(force) {
     try {
       profiles = loadProfiles();
       var ak = localStorage.getItem("dsh_ro_last_active");
+      // V2.38.6：未识别 = 只读不写 —— 不采纳中继键、不写回 dsh_ro_last_active、不切档、不刷界面；只记下试探键等身份到位重放
+      if (!identityReady()) { if (ak) kvPendingRelayKey = ak; identityLogLine("identity-kv-skip ak=" + ak + " cid=" + selfCharId()); return false; }
       if (ak && profiles[ak] && kvRelayKeyAllowedForSelf(ak)) activeCharKey = ak;
       else {
         // 别人的键：忽略，并立即把本地正确值写回 localStorage（下一轮同步推回去）
         if (ak && !kvRelayKeyAllowedForSelf(ak)) { try { localStorage.setItem("dsh_ro_last_active", activeCharKey); } catch (e0) {} }
         if (!profiles[activeCharKey]) activeCharKey = "default";
       }
+      kvPendingRelayKey = null; // V2.38.6：身份已到位，试探键已处理（采纳或写回本地正确值）
       ensureProfile(activeCharKey); saved = loadSaved(); lockList = profiles[activeCharKey].lockList || {}; askList = profiles[activeCharKey].askList = profiles[activeCharKey].askList || []; profMemKey = activeCharKey;
+      pendingBaseSync(); // V2.38.6：中继切档后重记基线
       if (panel && panel.style.display !== "none") applyProfileUI();
       try { renderLockList(); renderAskList(); renderGearAll(); } catch (e1) {}
     } catch (e) { try { setStatus("远端角色档刷新失败：" + (e.message || e), "err"); } catch (e2) {} }
@@ -18902,6 +19225,7 @@
   // 启动自动找回（只跑一次；6000ms 晚于 KV 中继首轮）：只补齐缺失项，绝不覆盖本地已有值；8899 未启动则静默跳过
   function goldenAutoRecover() {
     try {
+      if (!profileTrusted(activeProfileKey())) return; // V2.38.6：未识别 = 只读不写
       if (typeof fetch !== "function") return;
       fetch(KV_BASE + "/get?key=" + encodeURIComponent(PROF_GOLDEN_KEY))
         .then(function (r) { return r.json(); })

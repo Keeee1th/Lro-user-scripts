@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const source=fs.readFileSync(new URL('../ro-assist.user.js',import.meta.url),'utf8');
+// V2.38.15：版本断言一律从产品文件 @version 派生——升版只需改产品文件，用例不会漏改
+const PRODUCT_VERSION=/^\/\/\s*@version\s+(\S+)/m.exec(source)[1];
 test('death return clicks restart, retries while HP is zero, and auto-hangs only when the switch is on',()=>{
   for(const file of ['ro-assist.user.js','ro-assist-exp.user.js']){
     const src=fs.readFileSync(new URL('../'+file,import.meta.url),'utf8');
@@ -477,7 +479,7 @@ test('spirit packets cache only the current character',()=>{
 });
 
 function selfHealHarness({sitting=false,healFirst=true,healLv=7,sp=100,castOk=true}={}){
-  const code=extract('  function escapePos() {','  function markFlyFail()');
+  const code=extract('  function escapePos() {','  function markFlyFail(');
   let now=10000;const sent=[];const pos=[10,10];
   const ids={
     'dsh-z-grp':{value:'3'},'dsh-z-grpact':{value:'瞬移'},'dsh-z-flygrp':{checked:true},'dsh-z-ona':{value:'瞬移'}
@@ -552,8 +554,8 @@ test('urgent mobbing and recent-hit checks precede sit and ordinary returns',()=
   //   坐下 → BOSS → 血量(含卡死4s) → 群殴 → 瞬移冷却/解围；并断言旧版「整拍 return」字样已消失
   const start=source.indexOf('function checkDefense(mobs, ent)'),sit=source.indexOf('doSitCycle(mobs)',start),boss=source.indexOf('var bossD = zBossDecide(mobs);',start),life=source.indexOf('var life = ent && ent.life;',start),stuck=source.indexOf('reason = "卡死4s"',start),grp=source.indexOf('var grpCnt = zGrpCount(mobs).n;',start),bossApply=source.indexOf('if (!needFly && bossFly)',start),grpApply=source.indexOf('if (!needFly && grpFly)',start),cool=source.indexOf('var flyCool',start),qoa=source.indexOf('zQoaTry(mobs, ent, now);',start);
   assert.ok(start>=0&&sit>start&&sit<boss&&boss<life&&life<stuck&&stuck<grp&&grp<bossApply&&bossApply<grpApply&&grpApply<cool&&cool<qoa,'判定顺序必须是 坐下→BOSS→血量(含卡死)→群殴→解围');
-  const flyGate=source.indexOf('if (needFly && !flyCool) {',start),qoaGate=source.indexOf('else if (!needFly) {',start);
-  assert.ok(flyGate>cool&&flyGate<qoaGate&&qoaGate<qoa,'瞬移冷却与解围必须是并列分支，冷却不得提前整拍返回');
+  const flyGate=source.indexOf('if (flyIssued) {',start),qoaGate=source.indexOf('if (!flyIssued) {',start);
+  assert.ok(flyGate>cool&&flyGate<qoaGate&&qoaGate<qoa,'V2.38.15：只要本拍没有真的发出瞬移（flyIssued=false）就必须独立判定解围，冷却不得提前整拍返回');
   assert.ok(!source.includes('var urgentReason = emergencyThreatReason(mobs)'),'旧版「紧急原因」提前 return 必须已移除');
   assert.ok(!source.includes('if (now < flyFailUntil) return')&&!source.includes('if (now - lastFly < flyInt) return'),'瞬移冷却不得写成整拍 return');
 });
@@ -689,12 +691,12 @@ test('exp 三个早退点不再冻结整拍且卡死判定断开自锁环', () =
   assert.ok(expSource.includes('&& !escapePending() && now >= flyFailUntil) { needFly = true; reason = "卡死4s"; zStuckSince = now; }'));
 });
 
-test('exp BOSS 三模式与解围技能按确认顺序排列（BOSS→血量→群殴→解围）', () => {
+test('exp BOSS 四模式与解围技能按确认顺序排列（BOSS→血量→群殴→解围）', () => {
   const sel = expExtract('id="dsh-z-bossact"', '</select>');
   for (const opt of ['瞬移', '优先攻击', '等待残血补尾刀']) assert.ok(sel.includes('<option>' + opt + '</option>'), 'BOSS 选项缺 ' + opt);
   assert.ok(sel.includes('<option selected>不处理</option>'), 'BOSS 默认必须是不处理');
-  assert.ok(expSource.includes('id="dsh-z-bossignorelock" type="checkbox">优先攻击忽略攻击名单'));
-  assert.ok(expSource.includes('var isBoss = !!(mb && mb.MvpDropsNum > 0);'), 'BOSS 识别必须沿用 MvpDropsNum');
+  assert.ok(!expSource.includes('dsh-z-bossignorelock" type="checkbox"'), 'V2.38.15：旧忽略名单勾选项必须移除');
+  assert.ok(expSource.includes('var isBoss = isBossMid(mid);'), '首领识别必须统一走 isBossMid（怪物库首领值大于 0）');
   const start = expSource.indexOf('function checkDefense(mobs, ent)');
   const boss = expSource.indexOf('var bossD = zBossDecide(mobs);', start);
   const life = expSource.indexOf('var life = ent && ent.life;', start);
@@ -708,16 +710,19 @@ test('exp BOSS 三模式与解围技能按确认顺序排列（BOSS→血量→�
   const threat = expExtract('  function emergencyThreatReason(mobs) {', '  function ordinaryCastBlocked() {');
   assert.ok(!threat.includes('qoa'), '解围技能不得进 emergencyThreatReason');
   assert.ok(threat.includes('dsh-z-grpn'), '群殴自动瞬移仍须在紧急原因里');
-  const qoaFn = expExtract('  function zQoaTry(mobs, ent, now) {', '  // A3：BOSS 三模式判定');
+  const qoaFn = expExtract('  function zQoaTry(mobs, ent, now) {', '  // A3：BOSS 四模式判定');
   assert.ok(!/ordinaryCastBlocked\s*\(/.test(qoaFn), '解围技能不得调用 ordinaryCastBlocked');
   assert.ok(qoaFn.includes('skillNextAt[skid]') && qoaFn.includes('zQoaNextAt'), '解围技能必须有 CD/公共CD 门');
   assert.ok(qoaFn.includes('Math.max(skillCdMs({ skid: skid, cd: 0 }), 1000)'), '解围技能必须有 1s 保底 CD 防每拍重放');
   assert.ok(qoaFn.includes('dsh-z-hpfly'), '解围技能只在血线之上放');
   const bossFn = expExtract('  function zBossDecide(mobs) {', '  // A6：早退点不冻结整拍');
   assert.ok(bossFn.includes('out.hp >= 0 && out.hp <= line'), '残血到位才切过去补尾刀');
-  assert.ok(bossFn.includes('else if (out.hp >= 0) out.skip = gidInt(rec.GID)'), '未到尾刀线既不打也不飞');
-  assert.ok(bossFn.includes('lockList[String(rec.mid)]'), '瞬移模式遇锁定 BOSS 必须转优先攻击');
-  assert.equal((expSource.match(/if \(zBossSkipGid && gidInt\(e\.GID\) === zBossSkipGid\) return;/g) || []).length, 2, 'zAttack/zWalk 都要剔除未到尾刀线的 BOSS');
+  assert.ok(bossFn.includes('else if (out.hp < 0) { out.skip = gidInt(rec.GID); zBossLastBlock = "血量未知"; }'), '血量未知也要进忽略集合');
+  assert.ok(bossFn.includes('else { out.skip = gidInt(rec.GID); zBossLastBlock = "尾刀未到线"; }'), '未到尾刀线既不打也不飞');
+  assert.ok(!bossFn.includes('lockList'), 'V2.38.15：首领不再受锁定名单约束');
+  assert.ok(!bossFn.includes('zBossAllowedByLock') && !bossFn.includes('dsh-z-bossignorelock'), 'V2.38.15：名单门与旧开关必须删净');
+  assert.ok(bossFn.includes('var bossDist = zBossDistNow();'), '判定距离必须走可填的判定距离');
+  assert.equal((expSource.match(/if \(zBossIgnoredGid\(e\.GID, mid\)\) return;/g) || []).length, 2, 'zAttack/zWalk 都要剔除忽略集合里的首领（且必须把该实体的 mid 传进判据）');
 });
 
 // ================= V2.34.0：功能菜单五栏 / 一级窗口 / 物品区 / 技能输入离线自检 =================
@@ -870,7 +875,7 @@ test('exp v2.34.2 救命逃生补丁：失血速率触发 / 强制解锁 / 翅�
   const def = expExtract('  var hpDrop = 0;', '      var flyInt = ');
   assert.ok(def.includes('hpDrop >= 25 && mobs.length > 0'), '失血 ≥25%/2s 必须触发瞬移');
   assert.ok(def.includes('reason = "失血"'), '必须记录原因「失血」');
-  const cool = expExtract('      var critEsc = false;', '      if (needFly && !flyCool) {');
+  const cool = expExtract('      var critEsc = false;', '      var flyBossStuck = false;');
   assert.ok(cool.includes('flyFailUntil = 0'), '救命场景必须清连败锁');
   assert.ok(cool.includes('zQoaNearCount(mobs) >= 3'), '贴身≥3只是救命条件之一');
   assert.ok(expSource.includes('|| flyResult === "backoff"'), '退避不得计入失败');
@@ -885,12 +890,14 @@ test('exp v2.34.2 救命逃生补丁：失血速率触发 / 强制解锁 / 翅�
 });
 
 // ================= V2.34.0 追改：尾刀模式「等待残血补尾刀」对用户显式锁定的 BOSS 同样生效 =================
-test('exp 尾刀模式锁定跳过：守卫同时引用 zBossSkipGid 与 zLock.gid 且绝不清锁', () => {
-  const guard = expExtract('      // V2.34.0 追改：尾刀模式下锁定的 BOSS', '        EM.forEach(function (e) {');
-  assert.ok(guard.includes('zBossSkipGid'), '跳过守卫必须引用 zBossSkipGid');
+test('exp 首领忽略集合跳过：守卫引用 zBossIgnoredGid 与 zLock.gid 且绝不清锁', () => {
+  const guard = expExtract('      // V2.38.15：锁定的首位首领落在忽略集合里', '        EM.forEach(function (e) {');
+  assert.ok(guard.includes('zBossIgnoredGid'), '跳过守卫必须引用首领忽略集合判据');
   assert.ok(guard.includes('zLock.gid'), '跳过守卫必须引用 zLock.gid');
-  assert.ok(expSource.includes('if (!target && zLock.gid && !zLockBossSkip) {'), '临时目标未命中时才校验原锁定目标，且尾刀跳过仍生效');
-  assert.ok(expSource.includes('var zLockBossSkip = !!(zBossSkipGid && zLock.gid && gidInt(zLock.gid) === zBossSkipGid);'), '守卫判定必须同时要求 skip 命中且锁指向它');
+  assert.ok(!guard.includes('zBossAllowedByLock') && !guard.includes('dsh-z-bossignorelock'), '跳过守卫不得复用已删除的名单门');
+  assert.ok(expSource.includes('if (!target && zLock.gid && !zLockBossSkip) {'), '临时目标未命中时才校验原锁定目标，且忽略集合跳过仍生效');
+  assert.ok(expSource.includes('var zLockBossSkip = !!(zLock.gid && zBossIgnoredGid(zLock.gid, zLockMidSkip));'), '守卫判定必须由忽略集合统一裁决，且必须传被锁目标的 mid');
+  assert.ok(guard.includes('zEntOf(zLock.gid)') && guard.includes('var zLockMidSkip'), '被锁目标的 mid 必须由实体推导出来（否则普通怪会被当成首领跳过）');
   // 该跳过路径不得清锁：整份脚本里 zLock.gid = null 只允许改动前既有的 3 处
   assert.doesNotMatch(guard, /zLock\.gid\s*=\s*(null|undefined|""|'')/, '跳过分支内不得出现清除 zLock.gid 的赋值');
   assert.equal((expSource.match(/zLock\.gid = null/g) || []).length, 3, '不得新增任何清除 zLock.gid 的赋值（既有 3 处不变）');
@@ -898,24 +905,25 @@ test('exp 尾刀模式锁定跳过：守卫同时引用 zBossSkipGid 与 zLock.g
 
 test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中攻击者一路均未改动', () => {
   // skip 只在「等待残血补尾刀」分支产出；瞬移/优先攻击分支不得出现 out.skip
-  const other = expExtract('if (act === "瞬移" && rec.mid != null', 'else if (act === "等待残血补尾刀") {');
-  assert.ok(!other.includes('out.skip'), '瞬移/优先攻击分支不得产出 skip（三模式行为不变）');
-  const tail = expExtract('else if (act === "等待残血补尾刀") {', '      zBossSkipGid = out.skip || 0;');
+  const other = expExtract('      if (act === "瞬移") { out.fly = true;', '      else if (act === "等待残血补尾刀") {');
+  assert.ok(!other.includes('out.skip'), '瞬移/优先攻击分支不得产出 skip（本拍必须飞）');
+  assert.ok(other.includes('out.fly = true'), '瞬移分支必须本拍就飞');
+  assert.ok(!other.includes('lockList'), 'V2.38.15：瞬移不再因为首领已在锁定名单里转优先攻击');
+  const tail = expExtract('else if (act === "等待残血补尾刀") {', '      if (out.want) { zBossAllowGid = out.want;');
   assert.ok(tail.includes('out.skip'), 'skip 只能由尾刀分支产出');
-  assert.ok(other.includes('act = "优先攻击"'), '瞬移模式下 BOSS 已在锁定名单仍转优先攻击');
-  assert.ok(other.includes('else if (act === "优先攻击") { out.want = gidInt(rec.GID); }'));
+  assert.ok(other.includes('else if (act === "优先攻击") { out.want = gidInt(rec.GID); }'), '优先攻击分支必须原样保留');
   assert.ok(tail.includes('if (out.hp >= 0 && out.hp <= line) out.want = gidInt(rec.GID);'), '尾刀线内仍切去补尾刀');
   // 候选池剔除保持 2 处（zWalk + zAttack），非选中攻击者一路仍排除锁定目标本身
-  assert.equal((expSource.match(/if \(zBossSkipGid && gidInt\(e\.GID\) === zBossSkipGid\) return;/g) || []).length, 2, '候选池剔除必须保持 zWalk/zAttack 各一处');
+  assert.equal((expSource.match(/if \(zBossIgnoredGid\(e\.GID, mid\)\) return;/g) || []).length, 2, '候选池剔除必须保持 zWalk/zAttack 各一处（且都传该实体的 mid）');
   assert.ok(expSource.includes('if (gidInt(hk) === gidInt(zLock.gid)) continue; // 排除锁定目标本身'), '非选中攻击者一路必须排除锁定目标本身');
 });
 
 // ================= V2.34.3：格子距离口径 / 内挂状态校准 / 混合接管兜底 / 坐下放宽 =================
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
-  // 1) 版本号：稳定版与实验版都必须是 2.36.1（@version 与运行时常量一致）
+  // 1) 版本号：稳定版与实验版都必须等于产品文件 @version（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.14', name + ' @version 必须是 2.38.14（锚定行首元数据行）');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.14', name + ' 运行时常量 VER 必须是 2.38.14');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], PRODUCT_VERSION, name + ' @version 必须是 ' + PRODUCT_VERSION + '（锚定行首元数据行）');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], PRODUCT_VERSION, name + ' 运行时常量 VER 必须是 ' + PRODUCT_VERSION);
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
   const stripHead = (s) => s.replace(/\r\n/g,'\n').split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
@@ -1044,7 +1052,7 @@ test('exp V2.34.4 F5：非选中攻击者还击链路行为测试（vm 实跑 zA
       zLock: lock, zMon: {}, onaMode: mode, now: 10000,
       requestEmergencyEscape: (reason) => escapes.push(reason),
       setStatus: () => {}, $id: () => null,
-      target: null, hitCandDist: 0, parseInt, isFinite, String,
+      target: null, hitCandDist: 0, parseInt, isFinite, String, isBossMid: () => false,
     };
     vm.createContext(ctx);
     vm.runInContext('this.fn = function () {\n' + seg + '\n};', ctx);
@@ -1089,7 +1097,7 @@ test('exp V2.34.4：群殴与解围链路与锁定名单／「打全部怪」完
   const segs = {
     zGrpCount: expExtract('  function zGrpCount(mobs) {', '  // A3：实体取血量百分比'),
     zQoaNearCount: expExtract('  function zQoaNearCount(mobs) {', '  function zQoaTry(mobs, ent, now) {'),
-    zQoaTry: expExtract('  function zQoaTry(mobs, ent, now) {', '  // A3：BOSS 三模式判定'),
+    zQoaTry: expExtract('  function zQoaTry(mobs, ent, now) {', '  // A3：BOSS 四模式判定'),
     emergencyThreatReason: expExtract('  function emergencyThreatReason(mobs) {', '  function ordinaryCastBlocked() {'),
   };
   for (const [name, seg] of Object.entries(segs)) {
@@ -1118,59 +1126,70 @@ test('exp V2.34.4：非选中怪分支必须排除锁定目标本身且与名单
 });
 
 // ================= V2.34.4 守名单门：名单非空时 BOSS 优先攻击/补尾刀只认名单（两文件同步） =================
-test('V2.34.4 守名单门：zBossAllowedByLock 单点定义且 zBossDecide/zAttack 各调用一次', () => {
+test('V2.38.15 首领绝对优先：名单门与旧忽略开关必须删净（防回退）', () => {
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal((src.match(/function zBossAllowedByLock\(mid\)/g) || []).length, 1, name + ' helper 必须且只能定义一次');
-    const helperAt = src.indexOf('function zBossAllowedByLock(mid)');
+    assert.equal((src.match(/zBossAllowedByLock/g) || []).length, 0, name + ' 首领名单门 helper 必须已删除');
+    assert.equal((src.match(/\$id\("dsh-z-bossignorelock"\)/g) || []).length, 0, name + ' 不得再读取旧忽略名单勾选项');
+    assert.equal((src.match(/dsh-z-bossignorelock/g) || []).length, 0, name + ' 界面已移除、设置键表死条目已清，整份脚本不得再出现该键');
+    assert.ok(!src.includes('type="checkbox">优先攻击忽略攻击名单'), name + ' 旧勾选项界面必须移除');
     const decideAt = src.indexOf('function zBossDecide(mobs) {');
     const attackAt = src.indexOf('function zAttack() {');
-    assert.ok(helperAt >= 0 && helperAt < decideAt && decideAt < attackAt, name + ' helper 必须定义在两处调用之前');
+    assert.ok(decideAt >= 0 && decideAt < attackAt, name + ' zBossDecide 必须在 zAttack 之前');
     const decideSeg = src.slice(decideAt, src.indexOf('  // A6：早退点不冻结整拍', decideAt));
     const attackSeg = src.slice(attackAt, src.indexOf('  // 技能行统一序列化', attackAt));
-    assert.equal((decideSeg.match(/zBossAllowedByLock\(/g) || []).length, 1, name + ' zBossDecide 必须恰好调用一次（防漏改）');
-    assert.equal((attackSeg.match(/zBossAllowedByLock\(/g) || []).length, 0, name + ' zAttack 不得再次拦截 zBossDecide 已批准的忽略名单目标');
-    // zBossDecide 段内无 zLock.gid/sendLockInject：门必须早于产出 want/skip（本函数内「产出」点）
-    const decideGate = decideSeg.indexOf('zBossAllowedByLock(');
-    assert.ok(decideGate >= 0 && decideGate < decideSeg.indexOf('out.want') && decideGate < decideSeg.indexOf('out.skip'), name + ' zBossDecide 名单门必须在产出 want/skip 之前');
-    // zAttack 直接消费 zBossDecide 的 want；否则会把复选框已批准的名单外 BOSS 再次拦掉。
+    assert.ok(!decideSeg.includes('lockList'), name + ' zBossDecide 不得再引用锁定名单');
+    assert.ok(!decideSeg.includes('dsh-z-bossignorelock'), name + ' zBossDecide 不得再读旧忽略名单开关');
+    assert.ok(decideSeg.includes('var bossDist = zBossDistNow();'), name + ' 判定距离必须走可填的判定距离');
+    assert.ok(decideSeg.includes('zBossIgnoreAll = (act === "不处理" || act === "等待残血补尾刀");'), name + ' 忽略集合必须在「是否侦察到首领」之前定下来');
+    assert.equal((attackSeg.match(/zBossAllowedByLock\(/g) || []).length, 0, name + ' zAttack 不得再次拦截 zBossDecide 已批准的目标');
     const gidAt = attackSeg.indexOf('zLock.gid = bgid;'), injectAt = attackSeg.indexOf('sendLockInject(bgid);');
-    assert.ok(gidAt >= 0 && injectAt > gidAt, name + ' zAttack 必须写锁并注入已批准的 BOSS');
-    // BOSS mid 推导与 zAttack/zWalk 同口径（优先 rec.mid，其后 _job → job → mobId）
-    assert.ok(decideSeg.includes('rec.mid != null ? rec.mid : (rec._job != null ? rec._job : (rec.job != null ? rec.job : rec.mobId))'), name + ' zBossDecide mid 推导口径');
+    assert.ok(gidAt >= 0 && injectAt > gidAt, name + ' zAttack 必须写锁并注入已批准的首领');
     assert.ok(attackSeg.includes('bossRecD.mid != null ? bossRecD.mid : (bossRecD._job != null ? bossRecD._job : (bossRecD.job != null ? bossRecD.job : bossRecD.mobId))'), name + ' zAttack mid 推导口径');
   }
 });
 
-test('V2.34.4 守名单门：名单有/无 × mid 形态真值表（vm 实跑 zBossAllowedByLock）', () => {
-  const a = source.indexOf('function zBossAllowedByLock(mid) {');
-  const b = source.indexOf('\n', a);
-  const code = source.slice(a, b);
-  assert.ok(code.includes('lockList[String(mid)]'), 'helper 必须用 String(mid) 归一化 lockList 键');
-  const run = (lockList, mid) => {
-    const ctx = { lockList, Object, String };
+test('V2.38.15 首领忽略集合真值表（vm 实跑 zBossIgnoredGid）', () => {
+  const code = extract('  function isBossMid(mid) {', '  // V2.38.15：首领判定距离（格）');
+  assert.ok(code.includes('zBossAllowGid') && code.includes('zBossIgnoreAll'), '判据必须读忽略集合与放行编号');
+  assert.ok(code.includes('if (!isBossMid(mid)) return false;'), '判据必须内含「必须是首领」守卫（V2.38.15 审计修复）');
+  const gi = v => { const n = Math.floor(Number(v)); return isFinite(n) && n > 0 ? n : 0; };
+  const run = (all, allow, gid, mid) => {
+    const ctx = { zBossIgnoreAll: all, zBossAllowGid: allow, gidInt: gi, String, Number, isFinite,
+      getMobDb: () => ({ '2001': { MvpDropsNum: 1 }, '2002': { MvpDropsNum: '3' }, '9999': { MvpDropsNum: 0 } }) };
     vm.createContext(ctx);
-    vm.runInContext(code + ';this.fn = zBossAllowedByLock', ctx);
-    return ctx.fn(mid);
+    vm.runInContext(code + ';this.fn = zBossIgnoredGid', ctx);
+    return ctx.fn(gid, mid);
   };
-  assert.equal(run({}, null), true, '名单为空 → 恒 true（mid=null）');
-  assert.equal(run({}, 1234), true, '名单为空 → 恒 true（mid 有值）');
-  assert.equal(run({ '1234': { name: 'x' } }, 1234), true, '名单非空且数字 mid 命中');
-  assert.equal(run({ '1234': { name: 'x' } }, '1234'), true, '名单非空且字符串 mid 命中');
-  assert.equal(run({ '1234': { name: 'x' } }, 9999), false, '名单非空且数字 mid 不在名单 → false');
-  assert.equal(run({ '1234': { name: 'x' } }, '9999'), false, '名单非空且字符串 mid 不在名单 → false');
-  assert.equal(run({ '1234': { name: 'x' } }, null), false, 'mid=null 且名单非空 → false');
-  assert.equal(run({ '1234': { name: 'x' } }, undefined), false, 'mid=undefined 且名单非空 → false');
+  assert.equal(run(false, 0, 1234, 2001), false, '忽略集合关（瞬移/优先攻击）→ 恒不忽略');
+  assert.equal(run(false, 1234, 1234, 2001), false, '忽略集合关时放行编号也无意义');
+  assert.equal(run(true, 0, 1234, 2001), true, '不处理 → 首领必须忽略');
+  assert.equal(run(true, 0, '1234', '2001'), true, '不处理 → 字符串 GID/mid 同样忽略');
+  assert.equal(run(true, 0, 1234, 9999), false, '不处理 → 普通怪（非首领）绝不能被忽略');
+  assert.equal(run(true, 0, 1234, null), false, '不处理 → mid 取不到时按普通怪处理，绝不误伤');
+  assert.equal(run(true, 0, 1234, 2002), true, '不处理 → 其它首领（首领值 3）同样忽略');
+  assert.equal(run(true, 1234, 1234, 2001), false, '尾刀已到尾刀线那一只必须放行');
+  assert.equal(run(true, 1234, '1234', 2001), false, '放行判定必须归一化数字/字符串 GID');
+  assert.equal(run(true, 1234, 9999, 2001), true, '尾刀其它首领一律忽略');
+  assert.equal(run(true, 1234, 9999, 9999), false, '尾刀其它普通怪一律不受影响');
 });
 
-test('V2.34.4 守名单门：打全部怪与 BOSS 模式文案已更新（防回退）', () => {
-  for (const [name, src] of [['stable', source], ['exp', expSource]]) {
+test('V2.38.15 文案：打全部怪自动联动 + 首领不再受名单约束 + 判定距离/诊断就位（防回退）', () => {
+  for (const [name, srcAll] of [['stable', source], ['exp', expSource]]) {
+    // 只扫界面区（PAGE_HTML → PROF_CONTROLS）：变更摘要里的历史措辞不算回退
+    const ui = srcAll.slice(srcAll.indexOf('var PAGE_HTML'), srcAll.indexOf('var PROF_CONTROLS'));
+    assert.ok(ui.length > 1000, name + ' 必须能切出界面区');
+    const src = ui;
     assert.ok(src.includes('打全部怪（仅在未设锁定名单时生效）'), name + ' 标签必须写明仅在未设名单时生效');
     assert.ok(src.includes('id="dsh-z-allmobs" type="checkbox" checked'), name + ' id 与默认勾选不得改变');
     assert.ok(src.includes('内挂/混合模式下内挂自身仍会攻击全部'), name + ' 说明必须点明内挂自身仍会打全部怪');
-    assert.ok(src.includes('BOSS 优先攻击/补尾刀同样只认名单'), name + ' 说明必须点明 BOSS 两模式也守名单');
     assert.ok(src.includes('取消=助手不主动选目标'), name + ' 说明必须写明取消=助手不主动选目标');
-    assert.ok(src.includes('优先攻击忽略攻击名单'), name + ' BOSS 模式必须提供逐角色忽略名单开关');
-    assert.ok(src.includes('瞬移/尾刀仍受名单限制'), name + ' 文案必须明确只有优先攻击可放宽');
+    assert.ok(src.includes('且会自动取消勾选；名单清空后会自动重新勾上'), name + ' 说明必须写明名单联动');
+    assert.ok(src.includes('首领不受名单约束，只按上面的「BOSS 出现」裁决'), name + ' 说明必须写明首领不再受名单约束');
+    assert.ok(!src.includes('优先攻击忽略攻击名单'), name + ' 旧忽略名单文案必须删净');
+    assert.ok(!src.includes('瞬移/尾刀仍受名单限制'), name + ' 旧名单受限文案必须删净');
+    assert.ok(src.includes('id="dsh-z-bossdist" type="number" value="14" min="5" max="40"'), name + ' 判定距离输入必须就位（默认 14，5~40）');
+    assert.ok(src.includes('>首领诊断</button>'), name + ' 首领诊断按钮必须就位');
+    assert.ok(src.includes('id="dsh-z-bossdiagbox"'), name + ' 诊断文本框必须就位');
   }
 });
 
@@ -1287,8 +1306,8 @@ test('V2.34.5 战斗诊断快照 prof 字段已就位（不改既有字段）', 
 // ================= V2.34.5：配置自动备份（两代）/ 黄金副本找回（纯函数真值表 / 按钮 / 键隔离）=================
 test('V2.34.5 版本号升到 2.34.5（@version 与运行时常量一致，两文件同步）', () => {
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.14', name + ' @version 必须是 2.38.14（锚定行首元数据行）');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.14', name + ' 运行时常量 VER 必须是 2.38.14');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], PRODUCT_VERSION, name + ' @version 必须是 ' + PRODUCT_VERSION + '（锚定行首元数据行）');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], PRODUCT_VERSION, name + ' 运行时常量 VER 必须是 ' + PRODUCT_VERSION);
   }
 });
 
@@ -1577,7 +1596,7 @@ test('V2.38.2 定点修复：随时丢弃开启时零候选不抛错（阈值模
 
 // ================= V2.35.1 assistant API + standalone dojo =================
 const splitSources=[['stable',source],['exp',expSource]];
-test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(s)?.[1],'2.38.14',name+' @version 必须锚定行首元数据行（旧的非锚定正则可能命中变更日志/正文里的 @version 字样）');assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
+test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(s)?.[1],PRODUCT_VERSION,name+' @version 必须锚定行首元数据行（旧的非锚定正则可能命中变更日志/正文里的 @version 字样）');assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
 test('V2.35.1 public API uses owner-only external signatures and validates the current lease owner',()=>{for(const[,s]of splitSources){assert.ok(s.includes('/^[A-Za-z0-9_.:-]{8,128}$/'));assert.ok(s.includes('dojo:1,battle:1,movement:1,dialog:1,arrow:1,fly:1'));assert.ok(s.includes('if(apiLease&&apiLease.owner!==owner)'));for(const sig of ['apiHas(owner,scope)','apiSnapshot(owner)','apiRelease(owner)','apiContact(owner,gid)','apiWalk(owner,payload)','apiChoose(owner,payload)','apiBattle(owner,on)','apiSetArrow(owner,target)','apiClearArrow(owner)','apiFly(owner,payload)'])assert.ok(s.includes('function '+sig),sig);assert.ok(s.includes('apiLease.generation===generation'));assert.ok(!s.includes('apiHas(owner,generation'));}});
 test('V2.35.1 snapshot and battle/menu ownership contracts are explicit',()=>{for(const[,s]of splitSources){for(const key of ['ready:','map:','player:','mobs:','npcs:','target:','inDojoMap:','dialogOpen:','menu:','battleState:','busy:','arrow:'])assert.ok(s.includes(key),key);assert.ok(s.includes('if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"}'));assert.ok(s.includes('b.state="pending-on"'));assert.ok(s.includes('if(b.state!=="owned")return {ok:true,result:"not-owned"}'));assert.ok(s.includes('if(s!==false)return {ok:true,result:s===true?"preexisting":"unknown"}'),'内挂入口 requestBattle 的既有语义必须原样保留');assert.ok(s.includes('l.battle.state==="owned"||l.battle.state==="pending-off"'));assert.ok(s.includes('var r=apiCombatStart(owner);')&&s.includes('apiCombatStop();return {ok:true,result:"stopped"}'));assert.ok(s.includes('if(typeof apiCombat!=="undefined"&&apiCombat)return {ok:false,error:"combat-owned"}'),'代打期间必须拒绝再开内挂');assert.ok(s.includes('assistCombat:apiAssistCombat,'),'门面必须暴露 assistCombat 代打入口');assert.ok(s.includes('zMon.action="外部代打启动";')&&s.includes('if(npBattleState()===true){'));}});
 test('V2.36.11 arrow rules use a per-monster table plus a default arrow',()=>{for(const[name,s]of splitSources){
@@ -2611,18 +2630,45 @@ test('V2.37.1 换装读取/匹配（VM）',()=>{
   assert.equal(G.gearSigEqual(exact,{...exact,enchantgrade:3}),false,'附魔等级不同必须校验失败');
 });
 
-test('V2.38.1 BOSS 忽略名单只放宽最终优先攻击（VM）',()=>{
-  const code=extract('  function zBossAllowedByLock(mid)', '  // A6：早退点不冻结整拍');
-  function run(act,checked,locked){
-    const els={'dsh-z-bossact':{value:act},'dsh-z-bossignorelock':{checked},'dsh-z-bosshp':{value:'30'}};
-    const ctx={lockList:locked?{'2001':1}:{'9999':1},scanMobs:[{GID:77,mid:2001,isBoss:true,dist:1,name:'B'}],lastMobs:[],$id:id=>els[id],gidInt:Number,zEntHpPct:()=>10,Object,String,Number,parseInt,isNaN,DS_BOSS_DIST:30};
-    vm.createContext(ctx);vm.runInContext(code+';this.run=zBossDecide',ctx);return ctx.run(ctx.scanMobs);
+test('V2.38.1/V2.38.15 首领绝对优先：只按 BOSS 设置裁决，名单门已撤（VM）',()=>{
+  const code=extract('  var zBossIgnoreAll = false;', '  // A6：早退点不冻结整拍');
+  function mk(act,locked,hp,opts){
+    const o=opts||{};
+    const els={'dsh-z-bossact':{value:act},'dsh-z-bosshp':{value:'30'},'dsh-z-bossdist':{value:o.dist==null?'14':String(o.dist)}};
+    const ctx={lockList:locked?{'2001':1}:{'9999':1},scanMobs:[{GID:77,mid:2001,isBoss:true,dist:o.bossDist==null?1:o.bossDist,name:'B'}],lastMobs:[],$id:id=>els[id],
+      gidInt:Number,zEntHpPct:()=>hp,getMobDb:()=>({'2001':{MvpDropsNum:1},'9999':{MvpDropsNum:0}}),Object,String,Number,parseInt,isNaN,isFinite};
+    vm.createContext(ctx);
+    vm.runInContext(code+';this.run=zBossDecide;this.ign=(g,m)=>zBossIgnoredGid(g,m===undefined?2001:m);this.st=()=>({all:zBossIgnoreAll,allow:zBossAllowGid,want:zBossWantGid,block:zBossLastBlock});',ctx);
+    return ctx;
   }
-  assert.equal(run('优先攻击',false,false).want,0);
-  assert.equal(run('优先攻击',true,false).want,77);
-  assert.equal(run('等待残血补尾刀',true,false).want,0,'尾刀不可绕名单');
-  assert.equal(run('瞬移',true,false).fly,false,'瞬移不可绕名单');
-  assert.equal(run('瞬移',true,true).want,77,'已锁定瞬移仍转优先攻击');
+  // 1) 优先攻击越过锁定名单（名单非空且不含该首领）
+  const p1=mk('优先攻击',true,10);const rp1=p1.run(p1.scanMobs);
+  assert.equal(rp1.want,77,'优先攻击必须越过锁定名单拿到首领');
+  assert.equal(p1.st().want,77);
+  const p2=mk('优先攻击',false,10);const rp2=p2.run(p2.scanMobs);
+  assert.equal(rp2.want,77,'名单不含该首领时同样必须优先攻击');
+  assert.equal(p2.st().all,false,'优先攻击不进忽略集合');
+  // 2) 瞬移：本拍必须飞，不再因为首领已在锁定名单里转优先攻击
+  const f1=mk('瞬移',true,10);const rf1=f1.run(f1.scanMobs);
+  assert.equal(rf1.fly,true,'已锁定瞬移也必须本拍就飞');assert.equal(rf1.want,0);
+  // 3) 不处理：首领进忽略集合，但裁决照常给出（不计入 want）
+  const z1=mk('不处理',true,10);const rz1=z1.run(z1.scanMobs);
+  assert.equal(rz1.fly,false);assert.equal(rz1.want,0);
+  assert.equal(z1.st().all,true);assert.equal(z1.ign(77),true,'不处理必须把首领放进忽略集合');
+  assert.equal(z1.st().block,'不处理');
+  // 4) 尾刀：到线才放行；未到线忽略；血量未知也忽略
+  const t1=mk('等待残血补尾刀',false,50);t1.run(t1.scanMobs);
+  assert.equal(t1.st().allow,0);assert.equal(t1.ign(77),true);assert.equal(t1.st().block,'尾刀未到线');
+  const t2=mk('等待残血补尾刀',false,30);const rt2=t2.run(t2.scanMobs);
+  assert.equal(rt2.want,77,'到尾刀线必须切过去补尾刀');assert.equal(t2.st().allow,77);assert.equal(t2.ign(77),false);
+  const t3=mk('等待残血补尾刀',false,-1);t3.run(t3.scanMobs);
+  assert.equal(t3.st().allow,0);assert.equal(t3.ign(77),true,'血量未知也必须忽略');assert.equal(t3.st().block,'血量未知');
+  // 5) 判定距离可填：超出判定距离的首领不参与裁决（默认 14）
+  const d1=mk('优先攻击',false,10,{dist:5,bossDist:6});assert.equal(d1.run(d1.scanMobs).want,0,'超出判定距离不得参与裁决');
+  const d2=mk('优先攻击',false,10,{dist:14,bossDist:14});assert.equal(d2.run(d2.scanMobs).want,77,'判定距离必须按可填值生效');
+  // 6) 首领识别统一判据：怪物库命中且首领值大于 0（字符串数字同样认）
+  const b1=mk('优先攻击',false,10);
+  assert.equal(b1.isBossMid(2001),true);assert.equal(b1.isBossMid('2001'),true);assert.equal(b1.isBossMid(9999),false);assert.equal(b1.isBossMid(4242),false);
 });
 
 test('V2.38.1 临时战斗目标严格验证、死亡清理与 ONLYTARGET 恢复（VM）',()=>{
@@ -2657,7 +2703,7 @@ test('V2.38.1 master 租约驱动 zAttack 且临时射程外不选普通目标�
   const dc={Date:{now:()=>now},apiBattleAttackAt:0,zRunning:false,apiCombat:null,apiLease:{owner:'builtin-dojo',scopes:['battle'],battle:{state:'pending-on'}},apiBattleTarget:{owner:'builtin-dojo',mid:2,gid:8},apiBattleTargetEntity:()=>({gid:8}),zAttack:()=>calls++};
   vm.createContext(dc);vm.runInContext(drive+';this.run=apiBattleDrive',dc);dc.run();dc.run();assert.equal(calls,1);now=1250;dc.run();assert.equal(calls,2);dc.zRunning=true;now=1500;dc.run();assert.equal(calls,2);dc.apiCombat={owner:'builtin-dojo'};dc.zRunning=false;now=1750;dc.run();assert.equal(calls,2,'A5：代打期间 apiBattleDrive 必须让位（不得双份出手）');
   const atk=extract('  function zAttack() {','  // 技能行统一序列化'),boss={GID:8,objecttype:5,_job:2,position:[20,20],life:{hp:10}},normal={GID:9,objecttype:5,_job:3,position:[1,1],life:{hp:10}},seen=[];let walks=0;
-  const ac={CLIENT:{SS:{Entity:{life:{hp:100},position:[0,0]}}},clientReady:()=>true,escapePending:()=>false,updateHpWatch(){},sitMaintain(){},isSitting:()=>false,window:{},requireDB:()=>({forEach(fn){seen.push('scan');[boss,normal].forEach(fn);}}),$id:id=>({value:id==='dsh-z-range'?'12':id==='dsh-z-pmrange'?'2':id==='dsh-z-mgrange'?'9':'0',checked:true}),calcAtkRange:()=>2,npHuntMode:()=> 'np',isHybrid:()=>false,takeoverDist:()=>12,lockList:{3:1},zHpWatch:{lastHitAt:0},zLock:{gid:null,name:'',dist:null,done:false,reactive:false},apiBattleTarget:{owner:'builtin-dojo',mid:2,gid:8},apiBattleTargetEntity:()=>({gid:8,mid:2,name:'Boss'}),zEntOf:g=>Number(g)===8?boss:Number(g)===9?normal:null,zRangeDist:(a,b)=>Math.max(Math.abs(a[0]-b[0]),Math.abs(a[1]-b[1])),gidInt:Number,zLockCounts:{},zCastIdx:0,zWalk:()=>{walks++;},zBossDecide:()=>null,zBossSkipGid:0,defSnap:{isCombatMap:true},zMon:{},zAtkWhy:'',Date:{now:()=>1000},Object,Math,Number,String,parseInt,parseFloat,isFinite};
+  const ac={CLIENT:{SS:{Entity:{life:{hp:100},position:[0,0]}}},clientReady:()=>true,escapePending:()=>false,updateHpWatch(){},sitMaintain(){},isSitting:()=>false,window:{},requireDB:()=>({forEach(fn){seen.push('scan');[boss,normal].forEach(fn);}}),$id:id=>({value:id==='dsh-z-range'?'12':id==='dsh-z-pmrange'?'2':id==='dsh-z-mgrange'?'9':'0',checked:true}),calcAtkRange:()=>2,npHuntMode:()=> 'np',isHybrid:()=>false,takeoverDist:()=>12,lockList:{3:1},zHpWatch:{lastHitAt:0},zLock:{gid:null,name:'',dist:null,done:false,reactive:false},apiBattleTarget:{owner:'builtin-dojo',mid:2,gid:8},apiBattleTargetEntity:()=>({gid:8,mid:2,name:'Boss'}),zEntOf:g=>Number(g)===8?boss:Number(g)===9?normal:null,zRangeDist:(a,b)=>Math.max(Math.abs(a[0]-b[0]),Math.abs(a[1]-b[1])),gidInt:Number,zLockCounts:{},zCastIdx:0,zWalk:()=>{walks++;},zBossDecide:()=>null,zBossIgnoredGid:()=>false,isBossMid:()=>false,zBossWantGid:0,defSnap:{isCombatMap:true,inFight:true},zMon:{},zAtkWhy:'',Date:{now:()=>1000},Object,Math,Number,String,parseInt,parseFloat,isFinite};
   vm.createContext(ac);vm.runInContext(atk+';this.run=zAttack',ac);ac.run();assert.equal(ac.zLock.gid,8);assert.equal(ac.zAtkWhy,'临时目标在射程外');assert.ok(seen.length<=1,'不得进入普通候选扫描接管');assert.equal(walks,1,'A4：临时目标在射程外必须先调用 zWalk() 由助手自己走近再 return（不再直接 return）');
 });
 
@@ -4155,8 +4201,8 @@ test('V2.38.4 静态断言：新函数就位、判定链未改、零发包零 ho
     const sum = src.slice(src.indexOf('// ---------------- V2.38.4 变更摘要'), src.indexOf('// ---------------- V2.38.3 变更摘要'));
     assert.ok(sum.includes('入站分帧') && sum.includes('气弹') && sum.includes('按帧') && sum.includes('2.38.4'), name + ' V2.38.4 摘要必须覆盖：分帧 / 气弹 / 抓包按帧 / 版本');
     assert.ok(!EMOJI.test(sum) && !EMOJI.test(code), name + ' 新增内容不得含 emoji');
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.14', name + ' @version 必须是 2.38.14');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.14', name + ' VER 必须是 2.38.14');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], PRODUCT_VERSION, name + ' @version 必须是 ' + PRODUCT_VERSION);
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], PRODUCT_VERSION, name + ' VER 必须是 ' + PRODUCT_VERSION);
   }
   assert.equal((source.match(/(?<!\r)\n/g) || []).length, 0, '稳定版必须纯 CRLF');
   assert.equal((expSource.match(/\r\n/g) || []).length, 0, '实验版必须纯 LF');
@@ -5106,7 +5152,7 @@ test('V2.38.4 静态断言：三处新口径就位、分帧分派链与已完成
     assert.ok(src.includes('if (!clientScriptPresent()) injectClient(cfg, false);'), name + ' 本机私有入口保持现状（DOM 去重 + 立即注入）');
     assert.ok(src.includes('if (state.ready || state.bootedByWrapper || state.bootedByPlugin) return;'), name + ' 启动去重必须保留');
     assert.ok(src.includes('officialBooted: false,'), name + ' state 必须有 officialBooted 标记');
-    assert.ok(src.includes('// @version      2.38.14') && src.includes('var VER = "2.38.14";'), name + ' 版本必须仍是 2.38.14（V2.38.9 批次：直发传送 + 审计 F1/F2/F4）');
+    assert.ok(src.includes('// @version      ' + PRODUCT_VERSION) && src.includes('var VER = "' + PRODUCT_VERSION + '";'), name + ' 版本必须与产品文件 @version 一致（V2.38.9 批次：直发传送 + 审计 F1/F2/F4）');
     assert.ok(src.includes('// ---------------- V2.38.9 变更摘要 ----------------'), name + ' 必须有 V2.38.9 变更摘要（视角控制 + 审计收尾）');
     // 已完成批次与分帧分派链不得回改
     assert.equal((src.match(/op === 307/g) || []).length, 1, name + ' 摆摊识别集合仍只出现一处（拉黑/闸门批次未回改）');
@@ -6028,7 +6074,7 @@ test('V2.38.14 变异矩阵：卡片守卫 / 弓乐器鞭子过滤 / 陈旧判�
       label: '变异③（撤掉陈旧判定调用点：陈旧包流快照照用）',
       from: '      if (!arrowGearPktStale() && typeof gearReadEquipped === "function") {',
       to: '      if (typeof gearReadEquipped === "function") { // 变异③：撤掉陈旧判定',
-      cases: [['(e)', (s, n) => v23814CheckStale(s, n), /陈旧包流快照绝不能再作为候选/]],
+      cases: [['(e)', (s, n) => v23814CheckStale(s, n), /陈旧包流快照绝不能再作为候选/], ['(e5 陈旧+无实时路)', (s, n) => v23815CheckStaleNoRoute(s, n), /陈旧快照且没有任何实时路时必须判成没认出武器/]],
     },
     {
       label: '变异④（陈旧判定恒不陈旧）',
@@ -6387,8 +6433,8 @@ test('V2.38.4 审计修正 静态：F1–F6 锚点就位，旧的跨角色认领
     assert.ok(t.includes('L.push("识别状态："'), name + ' 诊断必须有「识别状态：」');
     assert.ok(t.includes('L.push("未认领旧档："'), name + ' 诊断必须有「未认领旧档：」');
     // 版本不变
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.14', name + ' @version 必须仍是 2.38.9');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.14', name + ' VER 必须仍是 2.38.9');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], PRODUCT_VERSION, name + ' @version 必须与产品文件一致');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], PRODUCT_VERSION, name + ' VER 必须与产品文件一致');
   }
   assert.equal((source.match(/(?<!\r)\n/g) || []).length, 0, '稳定版必须纯 CRLF');
   assert.equal((expSource.match(/\r\n/g) || []).length, 0, '实验版必须纯 LF');
@@ -6460,7 +6506,7 @@ function walkVm(src, opt) {
     ent: ent,
     lockList: o.lockList || {},
     zLock: { gid: null, reactive: false },
-    zBossSkipGid: 0,
+    zBossIgnoredGid: o.ignored || (() => false), isBossMid: o.isBossMid || (() => false), zBossWantGid: o.bossWant || 0,
     gidInt: (v) => { const n = parseInt(v, 10); return isFinite(n) ? n : 0; },
     zRangeDist: (a, b) => Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1])),
     zHitBy: {}, zHitKeepMs: 3000,
@@ -6935,7 +6981,7 @@ function zwVm(src, opt) {
     zWalkState: zWalkState,
     zLock: o.zLock || { gid: null, reactive: false },
     zAtkLast: o.zAtkLast || null,
-    zBossSkipGid: 0,
+    zBossIgnoredGid: o.ignored || (() => false), isBossMid: o.isBossMid || (() => false), zBossWantGid: o.bossWant || 0,
     zHitBy: o.zHitBy || {}, zHitKeepMs: 3000,
     zHpWatch: { lastHitAt: o.lastHitAt == null ? -1e9 : o.lastHitAt, hp: 100, sp: 100, maxhp: 100 },
     lockList: o.lockList || {},
@@ -8976,8 +9022,8 @@ test("V2.38.13 变异 M-R5：把非 DOJO_OWNER 的 ONLYTARGET 同步加回去 �
 
 test("V2.38.13 契约锁：门面新增 prepareCombat / requestPickup / teleportResult，版本与 capabilities 就位", () => {
   for (const [name, src] of [["stable", source], ["exp", expSource]]) {
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], "2.38.14", name + " @version 必须是 2.38.14");
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], "2.38.14", name + " VER 必须是 2.38.14");
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], PRODUCT_VERSION, name + " @version 必须是 " + PRODUCT_VERSION);
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], PRODUCT_VERSION, name + " VER 必须是 " + PRODUCT_VERSION);
     const line = src.split(/\r?\n/).find((l) => l.indexOf("var apiFacade={protocol:API_PROTOCOL") >= 0);
     assert.ok(line, name + " 必须能找到 apiFacade 字面量");
     for (const k of ["teleport", "teleportResult", "prepareCombat", "requestPickup", "assistCombat", "setBattleTarget", "clearBattleTarget", "requestFly", "release", "acquire", "snapshot", "contactNpc", "walkTo", "chooseMenu"]) {
@@ -9779,4 +9825,866 @@ test("FIX23813 变异矩阵：13 条 FIX-* 用例的全部 15 个变异都在 st
   assert.deepEqual([...new Set(FIX23813_MATRIX.map((m) => m.file))].sort(), ["exp", "stable"], "矩阵必须同时覆盖 stable 与 exp");
   assert.ok(FIX23813_MATRIX.every((m) => m.fix.indexOf("M-") === 0), "矩阵键必须使用变异标签命名约定");
   assert.ok(FIX23813_MATRIX.every((m) => String(m.caught).indexOf("未被抓") < 0), "不得存在变异存活行");
+});
+
+// ================= V2.38.15：战斗 / 首领 / 防御口径整改 —— 行为用例 + 变异矩阵 =================
+const V23815_MATRIX = [];
+const v15Catch = (fn) => { try { fn(); return { ok: true }; } catch (e) { return { ok: false, e: e }; } };
+const v15Msg = (e) => String((e && e.message) || e).split(String.fromCharCode(10))[0].slice(0, 220);
+const lf15 = (x) => String(x).split(String.fromCharCode(13)).join('');
+function cut15(src, a, b) {
+  const t = lf15(src);
+  const n = t.split(a).length - 1;
+  assert.equal(n, 1, '切段锚点必须唯一(' + n + '): ' + a.slice(0, 80));
+  const i = t.indexOf(a), j = t.indexOf(b, i);
+  assert.ok(i >= 0 && j > i, '切段失败: ' + a.slice(0, 80));
+  return t.slice(i, j);
+}
+const V15_EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
+const V15_UI_BAN = /发包|客户端|字段|接口|请求/;
+
+// ---------- ① 锁定名单 ↔ 打全部怪 自动联动 ----------
+function v15AutoLinkHarness(src, trusted) {
+  const code = cut15(src, '  function profileLockSave() {', '  function addLock(id, name) {');
+  const box = { checked: true };
+  const st = { saves: 0, caps: 0, writes: 0 };
+  const ctx = { lockList: {}, $id: (id) => (id === 'dsh-z-allmobs' ? box : null), saved: { allMobs: false },
+    saveSaved: () => { st.saves++; }, captureAll: () => { st.caps++; },
+    profileTrusted: () => trusted, activeProfileKey: () => 'ch1', profWriteGuard: () => true,
+    ensureProfile: (k) => { if (!ctx.profiles[k]) ctx.profiles[k] = {}; return ctx.profiles[k]; },
+    profiles: {}, saveProfiles: () => { st.writes++; },
+    renderLockList: () => {}, npSyncTargets: () => {}, tlog: () => {},
+    Object, Number, String, Array, JSON, Date, isFinite, parseInt };
+  vm.createContext(ctx);
+  vm.runInContext(code + ';this.auto=zAllMobsAutoApply;this.save=profileLockSave;', ctx);
+  return { ctx: ctx, box: box, st: st };
+}
+function v15AutoLink(src, name) {
+  const s = lf15(src);
+  const h = v15AutoLinkHarness(s, true);
+  h.ctx.lockList = {}; h.box.checked = false; h.st.saves = 0;
+  assert.equal(h.ctx.auto('t'), true, name + '：名单为空必须自动勾上');
+  assert.equal(h.box.checked, true, name + '：名单为空必须把勾选同步到界面');
+  assert.equal(h.ctx.saved.allMobs, true, name + '：勾选必须走同一套设置保存路径');
+  assert.equal(h.st.saves, 1, name + '：勾选变化必须落盘一次');
+  h.ctx.lockList = { '1002': { name: 'A' } }; h.st.saves = 0;
+  assert.equal(h.ctx.auto('t'), false, name + '：名单非空必须自动取消勾选');
+  assert.equal(h.box.checked, false, name + '：名单非空必须把取消同步到界面');
+  assert.equal(h.ctx.saved.allMobs, false, name + '：取消同样必须落盘');
+  assert.equal(h.st.saves, 1, name + '：取消必须落盘一次');
+  h.st.saves = 0; h.ctx.auto('t');
+  assert.equal(h.st.saves, 0, name + '：状态一致时不得重复写盘');
+  h.ctx.lockList = {}; h.ctx.save();
+  assert.equal(h.box.checked, true, name + '：名单清空后必须自动重新勾上（走真实落盘链路）');
+  const hu = v15AutoLinkHarness(s, false);
+  hu.ctx.lockList = { '1': { name: 'x' } }; hu.box.checked = true; hu.st.saves = 0;
+  hu.ctx.auto('t');
+  assert.equal(hu.box.checked, false, name + '：角色档未识别也要同步界面勾选');
+  assert.equal(hu.st.saves, 0, name + '：角色档未识别绝不能落盘');
+  assert.ok(s.includes('try { zAllMobsAutoApply("锁定名单变更"); } catch (e2) {}'), name + '：名单落盘链必须接上自动联动');
+}
+test('V2.38.15 ① 锁定名单与「打全部怪」自动联动 + 随档保存 + 未识别不写盘（两文件 VM）', () => {
+  for (const [name, src] of splitSources) v15AutoLink(src, name);
+});
+
+// ---------- ① 外部代打联动 ----------
+function v15AssistHarness(src) {
+  const code = cut15(src, '  function profileLockSave() {', '  function addLock(id, name) {')
+    + String.fromCharCode(10) + cut15(src, '  var apiAllMobsSaved = null;', '  function apiPickupReset() {')
+    + String.fromCharCode(10) + cut15(src, '  function apiPrepareCombat(owner, opts) {', '  function apiRequestPickup(owner, payload) {');
+  const box = { checked: false };
+  const st = { saves: 0, writes: 0, caps: 0 };
+  const ctx = { lockList: {}, $id: (id) => (id === 'dsh-z-allmobs' ? box : null), saved: { allMobs: false },
+    saveSaved: () => { st.saves++; }, captureAll: () => { st.caps++; },
+    profileTrusted: () => true, activeProfileKey: () => 'ch1', profWriteGuard: () => true,
+    ensureProfile: (k) => { if (!ctx.profiles[k]) ctx.profiles[k] = {}; return ctx.profiles[k]; },
+    profiles: {}, saveProfiles: () => { st.writes++; },
+    renderLockList: () => {}, npSyncTargets: () => {}, tlog: () => {},
+    clientReady: () => true, apiLease: { owner: 'builtin-dojo' }, apiGuard: () => null,
+    Object, Number, String, Array, JSON, Date, isFinite, parseInt };
+  vm.createContext(ctx);
+  vm.runInContext(code + ';this.prep=apiPrepareCombat;this.restore=apiAllMobsRestore;', ctx);
+  return { ctx: ctx, box: box, st: st };
+}
+function v15AssistLink(src, name) {
+  const s = lf15(src);
+  const h = v15AssistHarness(s);
+  h.ctx.lockList = { '1002': { name: 'A' } };
+  h.box.checked = false;
+  const r = h.ctx.prep('builtin-dojo', { clearLocks: true, allMobs: true });
+  assert.equal(r.ok, true, name + '：代打战斗准备必须成立');
+  assert.equal(r.cleared, 1, name + '：必须清掉 1 条名单');
+  assert.equal(h.ctx.apiAllMobsSaved, false, name + '：原值必须在清空名单之前记下（自动勾选的值绝不能被当成原值）');
+  assert.equal(h.box.checked, true, name + '：清空名单自动勾上 + 代打要求全部怪 → 必须为勾选');
+  assert.equal(h.ctx.restore(), true, name + '：释放必须执行还原');
+  assert.equal(h.box.checked, false, name + '：释放必须还原清空前的原值 false');
+  assert.equal(h.ctx.apiAllMobsSaved, null, name + '：还原后必须清空暂存');
+  const iCap = s.indexOf('apiAllMobsSaved = !!allMobsEl0.checked;');
+  const iClear = s.indexOf('if (o.clearLocks === true) {');
+  assert.ok(iCap >= 0 && iClear > iCap, name + '：源文件里「记原值」必须排在清名单之前');
+}
+test('V2.38.15 ① 代打联动：清空名单→自动勾上，释放还原原值（两文件 VM）', () => {
+  for (const [name, src] of splitSources) v15AssistLink(src, name);
+});
+
+// ---------- ②③ 首领绝对优先 + 忽略集合 ----------
+function v15BossPriority(src, name) {
+  const s = lf15(src);
+  const code = cut15(s, '  var zBossIgnoreAll = false;', '  // A6：早退点不冻结整拍');
+  const mk = (act, locked, hp, o) => {
+    const oo = o || {};
+    const els = { 'dsh-z-bossact': { value: act }, 'dsh-z-bosshp': { value: '30' },
+      'dsh-z-bossdist': { value: oo.dist == null ? '14' : String(oo.dist) } };
+    const ctx = { lockList: locked ? { '2001': 1 } : { '9999': 1 },
+      scanMobs: [{ GID: 77, mid: 2001, isBoss: true, dist: oo.bossDist == null ? 1 : oo.bossDist, name: 'B' }],
+      lastMobs: [], $id: (id) => els[id] || null,
+      gidInt: Number, zEntHpPct: () => hp,
+      getMobDb: () => ({ '2001': { MvpDropsNum: 1 }, '9999': { MvpDropsNum: '0' } }),
+      Object, String, Number, parseInt, isNaN, isFinite };
+    vm.createContext(ctx);
+    vm.runInContext(code + ';this.run=zBossDecide;this.ign=(g,m)=>zBossIgnoredGid(g,m===undefined?2001:m);this.st=()=>({all:zBossIgnoreAll,allow:zBossAllowGid,want:zBossWantGid,block:zBossLastBlock});', ctx);
+    return ctx;
+  };
+  const z1 = mk('不处理', true, 10); const rz1 = z1.run(z1.scanMobs);
+  assert.equal(rz1.fly, false, name + '：不处理不得飞');
+  assert.equal(rz1.want, 0, name + '：不处理不得指定最高优先目标');
+  assert.equal(z1.st().all, true, name + '：不处理必须把首领放进忽略集合');
+  assert.equal(z1.ign(77), true, name + '：不处理必须把首领放进忽略集合');
+  const t1 = mk('等待残血补尾刀', false, 50); t1.run(t1.scanMobs);
+  assert.equal(t1.ign(77), true, name + '：尾刀未到线必须忽略（不主动打、不还击、不因它飞）');
+  assert.equal(t1.st().allow, 0, name + '：尾刀未到线不得放行');
+  assert.equal(t1.st().block, '尾刀未到线', name + '：诊断必须写明「尾刀未到线」');
+  const t2 = mk('等待残血补尾刀', false, 30); const rt2 = t2.run(t2.scanMobs);
+  assert.equal(rt2.want, 77, name + '：到尾刀线必须切过去补尾刀');
+  assert.equal(t2.ign(77), false, name + '：到尾刀线那一只必须放行');
+  const t3 = mk('等待残血补尾刀', false, -1); t3.run(t3.scanMobs);
+  assert.equal(t3.st().allow, 0, name + '：血量未知也必须忽略（不得当成到尾刀线）');
+  assert.equal(t3.ign(77), true, name + '：血量未知也必须进忽略集合');
+  assert.equal(t3.st().block, '血量未知', name + '：诊断必须写明「血量未知」');
+  const f1 = mk('瞬移', true, 10); const rf1 = f1.run(f1.scanMobs);
+  assert.equal(rf1.fly, true, name + '：瞬移模式必须本拍就飞（不得因为首领已在锁定名单里转优先攻击）');
+  const p1 = mk('优先攻击', false, 10); const rp1 = p1.run(p1.scanMobs);
+  assert.equal(rp1.want, 77, name + '：优先攻击必须越过锁定名单拿到首领');
+  assert.equal(p1.st().all, false, name + '：优先攻击不进忽略集合');
+  const d1 = mk('优先攻击', false, 10, { dist: 5, bossDist: 6 });
+  assert.equal(d1.run(d1.scanMobs).want, 0, name + '：超出判定距离的首领不得参与裁决');
+  const d2 = mk('优先攻击', false, 10, { dist: 14, bossDist: 14 });
+  assert.equal(d2.run(d2.scanMobs).want, 77, name + '：判定距离必须按可填值生效（默认 14）');
+  assert.equal(d2.isBossMid('2001'), true, name + '：首领识别必须认怪物库首领值大于 0');
+  assert.equal(d2.isBossMid('9999'), false, name + '：首领值 0 不算首领');
+  assert.equal(d2.isBossMid(4242), false, name + '：怪物库里没有就不算首领');
+  assert.ok(!cut15(s, '  function zBossDecide(mobs) {', '  // A6：早退点不冻结整拍').includes('lockList'), name + '：首领裁决不得引用锁定名单');
+}
+test('V2.38.15 ②③ 首领绝对优先：四种动作只按 BOSS 设置裁决（两文件 VM）', () => {
+  for (const [name, src] of splitSources) v15BossPriority(src, name);
+});
+
+// ---------- ② 还击只对非首领怪生效 ----------
+function v15Retaliate(src, name) {
+  const s = lf15(src);
+  const seg = cut15(s, '      // V2.34.0 A5：非选中怪独立一路判定', '      // 换怪延迟：目标变化时记录延迟点');
+  const bossCode = cut15(s, '  function isBossMid(mid) {', '  // V2.38.15：首领忽略集合统一判据');
+  const run = (lockGid, attackerMid) => {
+    const escapes = [];
+    const lock = { gid: lockGid, reactive: false, name: '', dist: null };
+    const ctx = { gidInt: (v) => { const n = parseInt(v, 10); return isFinite(n) ? n : 0; },
+      zHitPrune: () => {}, zHitKeepMs: 3000,
+      zEntOf: (gid) => ({ GID: gid, display: { name: 'Mob' + gid }, _job: attackerMid, position: [1, 1] }),
+      zHitBy: { 4242: { ts: 9000, dist: 3 } }, zLock: lock, zMon: {}, onaMode: '还击', now: 10000,
+      requestEmergencyEscape: (reason) => escapes.push(reason), setStatus: () => {}, $id: () => null,
+      getMobDb: () => ({ '1002': { MvpDropsNum: 1 }, '1113': { MvpDropsNum: 0 } }),
+      target: null, hitCandDist: 0, parseInt, isFinite, String, Number, Object };
+    vm.createContext(ctx);
+    vm.runInContext(bossCode + ';this.fn = function () {' + String.fromCharCode(10) + seg + String.fromCharCode(10) + '};', ctx);
+    ctx.fn();
+    return { ctx: ctx, lock: lock, escapes: escapes };
+  };
+  const rb = run(null, 1002);
+  assert.equal(rb.ctx.target, null, name + '：首领不得成为还击目标');
+  assert.equal(rb.lock.gid, null, name + '：首领不得被写进锁定目标');
+  assert.equal(rb.escapes.length, 0, name + '：首领还击不得触发脱离');
+  const rn = run(null, 1113);
+  assert.ok(rn.ctx.target, name + '：非名单非首领怪照旧必须能还击');
+  assert.equal(rn.ctx.target.GID, 4242, name + '：还击目标必须是那只攻击者');
+  assert.equal(rn.lock.reactive, true, name + '：还击必须标记为还击锁定');
+  assert.ok(s.includes('if (!isBossMid(mid) && d <= atkRange && d < hitBest)'), name + '：射程内最近怪这条还击候选也必须排除首领');
+  assert.ok(s.includes('if (isBossMid(mid)) return;'), name + '：贴身还击候选同样必须排除首领');
+  assert.ok(s.includes('if (isBossMid(hitCandMid)) hitCandEnt = null;'), name + '：「最近 3 秒打过我的怪」这条还击候选必须排除首领');
+}
+test('V2.38.15 ② 还击只对非首领怪生效，非名单非首领怪照旧还击（两文件 VM）', () => {
+  for (const [name, src] of splitSources) v15Retaliate(src, name);
+});
+
+// ---------- ③ 忽略集合覆盖索敌候选 ----------
+function v15WalkIgnore(src, name) {
+  const s = lf15(src);
+  const ent = { position: [0, 0] };
+  const base = { mobs: [vmMob(11, '1002', [1, 0])], lockList: { '1002': { name: 'B' } }, allMobs: false, ent: ent, isBossMid: (m) => String(m) === '1002' };
+  const ign = walkVm(s, Object.assign({}, base, { ignored: () => true }));
+  assert.equal(ign.near, null, name + '：被忽略的首领不得成为追怪目标');
+  const kept = walkVm(s, Object.assign({}, base, { ignored: () => false }));
+  assert.ok(kept.near && kept.near.GID === 11, name + '：不在忽略集合里的首领照旧要追（只按 BOSS 设置裁决）');
+  assert.ok(s.includes('if (zBossIgnoredGid(e.GID, mid)) return;'), name + '：索敌候选必须统一过首领忽略集合，且必须把该实体的 mid 传进判据');
+  assert.ok(s.includes('var zLockBossSkip = !!(zLock.gid && zBossIgnoredGid(zLock.gid, zLockMidSkip));'), name + '：锁定守卫必须由忽略集合统一裁决，并传被锁目标的 mid');
+}
+test('V2.38.15 ③ 被忽略的首领不进索敌候选，放行的首领照旧追（两文件 VM）', () => {
+  for (const [name, src] of splitSources) v15WalkIgnore(src, name);
+});
+
+// ---------- ④ 解围技能与非攻击瞬移相互独立 ----------
+function v15QoaHarness(src) {
+  const seg = cut15(src, '      if (critEsc) { flyFailCount = 0; flyBossFailCount = 0; flyFailUntil = 0; }', '      // V2.16.19：坐下周期已提前到本函数开头');
+  const st = { escapes: 0, qoa: 0, fails: 0, oks: 0 };
+  const ctx = { critEsc: false, flyFailCount: 0, flyBossFailCount: 0, flyFailUntil: 0, flyFromBoss: false,
+    canActNow: () => true, now: 100000, lastFly: 0, flyInt: 30000, needFly: true, reason: 'HP10%',
+    requestEmergencyEscape: () => { st.escapes++; return 'teleport'; },
+    markFlyFail: () => { st.fails++; }, markFlyOk: () => { st.oks++; },
+    setStatus: () => {}, btDiagOn: false, btLog: () => {}, zLastFlyReason: '', zLastFlyReasonAt: 0,
+    zQoaTry: () => { st.qoa++; }, mobs: [], ent: {},
+    Object, Number, String, Math, Date, isFinite, parseInt };
+  vm.createContext(ctx);
+  vm.runInContext('this.fn = function () {' + String.fromCharCode(10) + seg + String.fromCharCode(10) + '};', ctx);
+  return { ctx: ctx, st: st };
+}
+function v15QoaIndependent(src, name) {
+  const s = lf15(src);
+  // (1) 瞬移被冷却挡住的那一拍：解围必须照旧独立判定
+  let h = v15QoaHarness(s);
+  h.ctx.flyFailUntil = h.ctx.now + 5000; h.ctx.lastFly = 0;
+  h.ctx.fn();
+  assert.equal(h.st.escapes, 0, name + '：冷却未过不得发瞬移');
+  assert.equal(h.st.qoa, 1, name + '：解围必须独立（飞被冷却挡住的那一拍照旧可以放解围技能）');
+  // (2) 本拍真的发出瞬移：解围必须让位（不得同拍抢公共冷却）
+  h = v15QoaHarness(s);
+  h.ctx.flyFailUntil = 0; h.ctx.flyInt = 30000; h.ctx.lastFly = 0;
+  h.ctx.fn();
+  assert.equal(h.st.escapes, 1, name + '：冷却过了必须真的发瞬移');
+  assert.equal(h.st.qoa, 0, name + '：真的飞出去那一拍不得再放解围技能');
+  // (3) 首领脱离的 1 秒防抖同样让位（与普通间隔口径分开）
+  h = v15QoaHarness(s);
+  h.ctx.flyFromBoss = true; h.ctx.lastFly = h.ctx.now - 500;
+  h.ctx.fn();
+  assert.equal(h.st.escapes, 0, name + '：首领脱离 1 秒防抖内不得重发');
+  assert.equal(h.st.qoa, 1, name + '：首领脱离被防抖挡住时解围照旧独立判定');
+  h = v15QoaHarness(s);
+  h.ctx.flyFromBoss = true; h.ctx.lastFly = h.ctx.now - 2000;
+  h.ctx.fn();
+  assert.equal(h.st.escapes, 1, name + '：首领脱离过了 1 秒防抖必须飞（且不吃普通间隔）');
+}
+test('V2.38.15 ④ 解围技能与非攻击瞬移相互独立（两文件 VM）', () => {
+  for (const [name, src] of splitSources) v15QoaIndependent(src, name);
+});
+
+// ---------- ⑤ 战斗地图门放宽 ----------
+function v15InFight(src, name) {
+  const s = lf15(src);
+  const code = cut15(s, '  function refreshDefSnap(mobs, ent) {', '  function escapePos() {');
+  const ent = { life: { hp: 50, maxhp: 100, sp: 5, maxsp: 100 } };
+  const run = (mobIds, mobs) => {
+    const ctx = { getCurrentMapInfo: () => ({ mobIds: mobIds }), isSitting: () => false, Date,
+      Object, Number, String, Array, isFinite };
+    vm.createContext(ctx);
+    vm.runInContext(code + ';this.snap=()=>defSnap;', ctx);
+    // 直接调用：defSnap 是模块级变量，这里用函数返回值取回
+    vm.runInContext('refreshDefSnap(' + JSON.stringify(mobs) + ',' + JSON.stringify(ent) + ');', ctx);
+    return ctx.snap();
+  };
+  const noSpawn = run([], [{ dist: 3, isBoss: false }]);
+  assert.equal(noSpawn.isCombatMap, false, name + '：前置：刷怪表为空');
+  assert.equal(noSpawn.inFight, true, name + '：刷怪表为空但视野内有怪 → 必须算「战斗中」（血线等判定才生效）');
+  const idle = run([], []);
+  assert.equal(idle.inFight, false, name + '：视野内没有怪 → 不得算「战斗中」（主城无怪不飞）');
+  const spawn = run([1002], []);
+  assert.equal(spawn.inFight, true, name + '：刷怪表非空 → 仍算「战斗中」');
+  assert.ok(s.includes('if (inFight && hpPct < (parseInt($id("dsh-z-hpfly").value, 10) || 20))'), name + '：血线门必须改用 inFight');
+  assert.ok(s.includes('if (inFight && spPct < (parseInt($id("dsh-z-spfly").value, 10) || 10))'), name + '：蓝线门必须改用 inFight');
+  assert.ok(s.includes('if (inFight && hpDrop >= 25 && mobs.length > 0)'), name + '：失血门必须改用 inFight');
+  assert.ok(s.includes('if (inFight && potNoPotion && mobs.length > 0 && hpPct < potThrNow && !needFly)'), name + '：低血无药被围门必须改用 inFight');
+  assert.ok(s.includes('var grpFly = grpN > 0 && grpCnt >= grpN && inFight'), name + '：群殴瞬移门必须改用 inFight');
+  assert.ok(s.includes('&& !escapePending() && now >= flyFailUntil) { needFly = true; reason = "卡死4s"'), name + '：卡死瞬移必须仍然只认战斗地图（绑定战斗态）');
+}
+test('V2.38.15 ⑤ 战斗地图门放宽：视野内有怪即生效，无怪不飞（两文件 VM）', () => {
+  for (const [name, src] of splitSources) v15InFight(src, name);
+});
+
+// ---------- ⑥ 首领脱离不吃普通连败停 10 秒 ----------
+function v15BossFlyFail(src, name) {
+  const s = lf15(src);
+  const code = cut15(s, '  function markFlyFail(fromBoss) {', '  function markFlyOk() {');
+  let T0 = 1000000;
+  const ctx = { flyFailCount: 0, flyBossFailCount: 0, flyFailUntil: 0, Date: { now: () => T0 } };
+  vm.createContext(ctx);
+  vm.runInContext(code + ';this.fail=markFlyFail;', ctx);
+  for (let i = 0; i < 3; i++) ctx.fail(true);
+  assert.equal(ctx.flyFailUntil, 0, name + '：前 3 次首领脱离失败不得停 10 秒（普通口径不适用于首领）');
+  for (let i = 3; i < 14; i++) ctx.fail(true);
+  assert.equal(ctx.flyFailUntil, 0, name + '：第 14 次首领脱离失败仍不得停 10 秒');
+  ctx.fail(true);
+  assert.equal(ctx.flyFailUntil, T0 + 10000, name + '：第 15 次首领脱离失败才停 10 秒');
+  const ctx2 = { flyFailCount: 0, flyBossFailCount: 0, flyFailUntil: 0, Date: { now: () => T0 } };
+  vm.createContext(ctx2);
+  vm.runInContext(code + ';this.fail=markFlyFail;', ctx2);
+  for (let i = 0; i < 3; i++) ctx2.fail(false);
+  assert.equal(ctx2.flyFailUntil, T0 + 10000, name + '：非首领原因的连续 3 次失败口径必须保持 10 秒不变');
+  const canCode = cut15(s, '  var DSH_CANT_ACT_ST = [875, 876, 877, 878];', '  // V1.7.7 状态速查弹层按钮');
+  const cctx = { buffStateOn: (id) => id === 877, Array };
+  vm.createContext(cctx);
+  vm.runInContext(canCode + ';this.can=canActNow;', cctx);
+  assert.equal(cctx.can(), false, name + '：晕眩状态必须判成不能行动');
+  cctx.buffStateOn = () => false;
+  assert.equal(cctx.can(), true, name + '：无状态必须判成可以行动');
+  cctx.buffStateOn = () => { throw new Error('status-unavailable'); };
+  assert.equal(cctx.can(), true, name + '：状态读不到一律按可以行动（绝不永久跳过）');
+  const h = v15QoaHarness(s);
+  h.ctx.canActNow = () => false; h.ctx.flyFromBoss = true; h.ctx.lastFly = h.ctx.now - 5000;
+  h.ctx.fn();
+  assert.equal(h.st.escapes, 0, name + '：不能行动时必须跳过本拍尝试（不发瞬移）');
+  assert.equal(h.st.fails, 0, name + '：不能行动而跳过的这一拍不得计入失败');
+}
+test('V2.38.15 ⑥ 首领脱离只用 1 秒防抖、15 次才停 10 秒、不能行动时跳过且不计失败（两文件 VM）', () => {
+  for (const [name, src] of splitSources) v15BossFlyFail(src, name);
+});
+
+// ---------- ⑦ 首领诊断（只读） ----------
+function v15BossDiag(src, name) {
+  const s = lf15(src);
+  const code = cut15(s, '  function zBossDiagText() {', '  // 「首领诊断」按钮：');
+  const ctx = { VER: '2.38.15',
+    getMobDb: () => ({ '1002': { MvpDropsNum: 1 }, '1003': { MvpDropsNum: 0 } }),
+    zLock: { gid: 55, name: '波利', reactive: false },
+    $id: (id) => (id === 'dsh-z-bossact' ? { value: '等待残血补尾刀' } : (id === 'dsh-z-bossdist' ? { value: '14' } : null)),
+    scanMobs: [{ GID: 55, mid: 1002, name: '波利', dist: 3, isBoss: true }, { GID: 56, mid: 1003, name: '绿棉虫', dist: 5, isBoss: false }],
+    lastMobs: [], gidInt: Number, distInt: (d) => Math.round(Number(d)),
+    zBossIgnoreAll: true, zBossAllowGid: 0, zBossWantGid: 0, zBossLastBlock: '尾刀未到线', zBossDistUsed: 14,
+    zBossIgnoredGid: (g) => Number(g) === 55, zBossDistNow: () => 14,
+    Object, Number, String, Array, Math, isFinite, parseInt };
+  vm.createContext(ctx);
+  vm.runInContext(code + ';this.txt=zBossDiagText;', ctx);
+  const txt = String(ctx.txt());
+  assert.match(txt, /怪物库条目=2/, name + '：怪物库条目必须给出真实条数');
+  assert.match(txt, /编号=1002/, name + '：必须列出附近每只怪的编号');
+  assert.match(txt, /首领值=1/, name + '：必须列出首领值');
+  assert.match(txt, /首领=是/, name + '：必须标出哪只是首领');
+  assert.match(txt, /当前目标=波利/, name + '：必须给出当前目标');
+  assert.match(txt, /首领动作=等待残血补尾刀 判定距离=14格/, name + '：必须给出首领动作与判定距离');
+  assert.match(txt, /挡住这一只的是：尾刀未到线/, name + '：必须写明被哪一条挡住');
+  assert.match(txt, /忽略/, name + '：必须标出被忽略的首领');
+  assert.doesNotMatch(txt, V15_UI_BAN, name + '：诊断文本不得出现实现词');
+  assert.doesNotMatch(txt, V15_EMOJI, name + '：诊断文本不得出现 emoji');
+  assert.doesNotMatch(code, /sendPacket|czp\(|CLIENT\.PS/, name + '：首领诊断必须只读（不得发包）');
+  assert.ok(!/lockList|dsh-z-allmobs/.test(code), name + '：首领诊断不得读取锁定名单（只按 BOSS 设置裁决）');
+  assert.ok(s.includes('t.id !== "dsh-z-bossdiag"'), name + '：必须接上「首领诊断」按钮事件（委托）');
+}
+test('V2.38.15 ⑦ 首领诊断只读输出：怪物库条目 / 编号 / 首领值 / 距离 / 挡住它的那一条（两文件 VM）', () => {
+  for (const [name, src] of splitSources) v15BossDiag(src, name);
+});
+
+// ---------- ⑧ 陈旧包流快照 + 没有实时路 → 判定没认出武器 ----------
+function v23815CheckStaleNoRoute(src, name) {
+  const c = v23814ArrowVm(src, { uiComp: () => null });
+  const at = v23814PktFresh(c, { 2: { itid: 1701, name: '十字长弓' } });
+  v23814PktAck(c, 6, at + 1);
+  assert.equal(c.A.arrowGearPktStale(), true, name + '：前置：dirty 晚于整表的快照必须算陈旧');
+  const wq = c.A.readEquippedWeaponType();
+  assert.equal(wq.wt, -1, name + '：陈旧快照且没有任何实时路时必须判成没认出武器（wt=-1），实际=' + JSON.stringify(wq));
+  assert.equal(wq.itid, null, name + '：陈旧快照里的旧弓绝不能被当成手持武器，实际=' + wq.itid);
+  c.A.tickArrow();
+  assert.equal(c.packets.length, 0, name + '：没认出武器必须零动作（不换箭、不发任何请求）');
+  assert.ok(String(c.logEl.textContent).indexOf('没认出当前手持的武器') >= 0, name + '：必须给玩家能看懂的提示，实际=' + c.logEl.textContent);
+}
+test('V2.38.15 ⑧ 陈旧包流快照 + 完全没有实时路 → 必须判成没认出武器（两文件 VM）', () => {
+  for (const [name, src] of splitSources) v23815CheckStaleNoRoute(src, name);
+});
+
+// ---------- V2.38.15 变异矩阵 ----------
+const V23815_MUTS = [
+  { tag: 'M-23815-A1', desc: '①名单联动的判据写反（名单非空也当成空）',
+    from: '      var want = Object.keys(lockList).length === 0;',
+    to: '      var want = true; // 变异：判据写反',
+    verify: v15AutoLink, expect: /名单非空必须自动取消勾选/ },
+  { tag: 'M-23815-A2', desc: '①代打把自动勾上的值当成原值（不前置记原值）',
+    from: '      if (o.allMobs === true && allMobsEl0 && apiAllMobsSaved === null) apiAllMobsSaved = !!allMobsEl0.checked;',
+    to: '      if (false) apiAllMobsSaved = !!allMobsEl0.checked; // 变异：不前置记原值',
+    verify: v15AssistLink, expect: /原值必须在清空名单之前记下/ },
+  { tag: 'M-23815-B1', desc: '③瞬移模式遇锁定首领又转回优先攻击',
+    from: '      if (act === "瞬移") { out.fly = true; out.reason = "BOSS(" + (rec.name || rec.mid) + ")"; }',
+    to: '      if (act === "瞬移" && rec.mid != null && lockList[String(rec.mid)]) act = "优先攻击";' + String.fromCharCode(10) + '      if (act === "瞬移") { out.fly = true; out.reason = "BOSS(" + (rec.name || rec.mid) + ")"; }',
+    verify: v15BossPriority, expect: /瞬移模式必须本拍就飞/ },
+  { tag: 'M-23815-B2', desc: '③忽略集合全关（不处理也当成可打）',
+    from: '      zBossIgnoreAll = (act === "不处理" || act === "等待残血补尾刀");',
+    to: '      zBossIgnoreAll = false; // 变异：忽略集合全关',
+    verify: v15BossPriority, expect: /不处理必须把首领放进忽略集合/ },
+  { tag: 'M-23815-B3', desc: '③血量未知被当成已到尾刀线',
+    from: '        if (out.hp >= 0 && out.hp <= line) out.want = gidInt(rec.GID);',
+    to: '        if (out.hp <= line) out.want = gidInt(rec.GID); // 变异：血量未知也算到线',
+    verify: v15BossPriority, expect: /血量未知也必须忽略/ },
+  { tag: 'M-23815-C1', desc: '②「最近 3 秒打过我的怪」这条还击候选不排除首领',
+    from: '          if (isBossMid(hitCandMid)) hitCandEnt = null;',
+    to: '          if (false) hitCandEnt = null; // 变异：首领也能被还击',
+    verify: v15Retaliate, expect: /首领不得成为还击目标/ },
+  { tag: 'M-23815-C2', desc: '②射程内最近怪这条还击候选不排除首领',
+    from: '              if (!isBossMid(mid) && d <= atkRange && d < hitBest) { hitBest = d; hitTarget = e; }',
+    to: '              if (d <= atkRange && d < hitBest) { hitBest = d; hitTarget = e; } // 变异：首领也能被还击',
+    verify: v15Retaliate, expect: /射程内最近怪这条还击候选也必须排除首领/ },
+  { tag: 'M-23815-D1', desc: '③索敌候选不剔除忽略集合里的首领',
+    from: '            // V2.38.15：首领忽略集合统一剔除（不处理 / 尾刀未到线 / 血量未知 → 不追、不打、不因它飞）；普通怪一律不受影响' + String.fromCharCode(10) + '            if (zBossIgnoredGid(e.GID, mid)) return;',
+    to: '            // 变异：索敌候选不剔除忽略集合里的首领',
+    verify: v15WalkIgnore, expect: /被忽略的首领不得成为追怪目标/ },
+  { tag: 'M-23815-E1', desc: '④解围退回「必须本拍不打算飞」',
+    from: '      if (!flyIssued) {' + String.fromCharCode(10) + '        zQoaTry(mobs, ent, now);',
+    to: '      if (!needFly) {' + String.fromCharCode(10) + '        zQoaTry(mobs, ent, now);',
+    verify: v15QoaIndependent, expect: /解围必须独立/ },
+  { tag: 'M-23815-E2', desc: '⑤战斗地图门又收回只认刷怪表',
+    from: '        inFight: isCombatMapV || mobCount > 0,',
+    to: '        inFight: isCombatMapV, // 变异：又收回只认刷怪表',
+    verify: v15InFight, expect: /刷怪表为空但视野内有怪/ },
+  { tag: 'M-23815-F1', desc: '⑥首领脱离沿用普通「3 次停 10 秒」',
+    from: '      if (fromBoss) { flyBossFailCount++; if (flyBossFailCount >= 15) flyFailUntil = Date.now() + 10000; return; }',
+    to: '      if (fromBoss) { flyBossFailCount++; if (flyBossFailCount >= 3) flyFailUntil = Date.now() + 10000; return; }',
+    verify: v15BossFlyFail, expect: /前 3 次首领脱离失败不得停 10 秒/ },
+  { tag: 'M-23815-F2', desc: '⑥不能行动时不跳过（照样计数/发瞬移）',
+    from: '      if (flyFromBoss) { try { flyBossStuck = !canActNow(); } catch (eSA) { flyBossStuck = false; } }',
+    to: '      if (false) { try { flyBossStuck = !canActNow(); } catch (eSA) { flyBossStuck = false; } } // 变异：不跳过',
+    verify: v15BossFlyFail, expect: /不能行动时必须跳过本拍尝试/ },
+  { tag: 'M-23815-H1', desc: '⑦首领诊断写死怪物库条数',
+    from: '      L.push("怪物库条目=" + dbN);',
+    to: '      L.push("怪物库条目=0"); // 变异：写死',
+    verify: v15BossDiag, expect: /怪物库条目必须给出真实条数/ },
+];
+test('V2.38.15 变异矩阵：13 个行为变异在 stable/exp 上必须各自被「指定断言」杀死', () => {
+  for (const m of V23815_MUTS) {
+    for (const [name, src] of splitSources) {
+      const mutated = M23813(src, m.from, m.to);
+      const v = v15Catch(() => m.verify(mutated, name + '·' + m.tag));
+      const killed = v.ok === false;
+      V23815_MATRIX.push({ tag: m.tag + '@' + name, desc: m.desc, expected: '红',
+        actual: killed ? '红' : '绿', caught: killed ? v15Msg(v.e) : '未被抓（变异存活）' });
+      assert.ok(killed, m.tag + '@' + name + '：变异必须让对应用例变红（' + m.desc + '）');
+      assert.match(v15Msg(v.e), m.expect, m.tag + '@' + name + '：必须被「指定断言」抓到，实际=' + v15Msg(v.e));
+    }
+  }
+  assert.equal(V23815_MATRIX.length, V23815_MUTS.length * splitSources.length, '每个变异 × 两文件都要独立真跑一次');
+  assert.ok(V23815_MATRIX.every((r) => r.actual === '红'), '不得存在变异存活行');
+  console.log('[V2.38.15 变异矩阵] ' + V23815_MATRIX.length + ' 条全部为红：' + V23815_MATRIX.map((r) => r.tag).join(', '));
+  if (process.env.V23815_JSON) fs.writeFileSync(process.env.V23815_JSON, JSON.stringify(V23815_MATRIX, null, 2), 'utf8');
+});
+
+// ================= V2.38.15 界面：悬浮层按屏幕比例跟随 + 队伍血块整块显血 =================
+const UI815_MATRIX = [];
+const u815Catch = (fn) => { try { fn(); return { ok: true }; } catch (e) { return { ok: false, e: e }; } };
+const u815Msg = (e) => String((e && e.message) || e).split(String.fromCharCode(10))[0].slice(0, 220);
+const u815Lf = (x) => String(x).split(String.fromCharCode(13)).join('');
+function u815Cut(src, a, b) {
+  const s = u815Lf(src);
+  assert.equal(s.split(a).length - 1, 1, 'V2.38.15 界面切段锚点必须唯一: ' + a.slice(0, 60));
+  const i = s.indexOf(a), j = s.indexOf(b, i);
+  assert.ok(i >= 0 && j > i, 'V2.38.15 界面切段失败: ' + a.slice(0, 60));
+  return s.slice(i, j);
+}
+// ---- 悬浮层比例跟随 harness：把产品里的核心段原样跑在 vm 里 ----
+function u815FloatBoot(src, vw, vh) {
+  const code = u815Cut(src, '  // ================= V2.38.15 悬浮层比例跟随 =================', '  var roScaleTimer = null;');
+  const st = { vw: vw, vh: vh, timers: [], cleared: 0 };
+  const el = { parentNode: {}, style: { display: 'flex' }, offsetWidth: 200, offsetHeight: 80, __dsDragging: false };
+  const store = { rec: null };
+  const ctx = {
+    Math, Number, String, Object, JSON, isFinite, parseFloat, parseInt,
+    setTimeout: (fn, ms) => { st.timers.push({ fn: fn, ms: ms }); return st.timers.length; },
+    clearTimeout: () => { st.cleared++; }, setInterval: () => 0, clearInterval: () => {},
+    window: { addEventListener: () => {} },
+    roVw: () => st.vw, roVh: () => st.vh,
+  };
+  vm.createContext(ctx);
+  vm.runInContext(code + ';this.scaled=roFloatScaled;this.fit=roFloatFit;this.reg=roFloatReg;this.follow=roFloatFollow;this.followLayer=roFloatFollowLayer;this.onResize=roFloatOnResize;this.vpSame=roFloatVpSame;', ctx);
+  ctx.reg({
+    key: 'ui815', el: () => el,
+    drag: () => !!el.__dsDragging,
+    get: () => store.rec,
+    set: (e2, x, y, vw2, vh2) => { e2.style.left = x + 'px'; e2.style.top = y + 'px'; store.rec = { x: x, y: y, vw: vw2, vh: vh2 }; },
+  });
+  return { ctx: ctx, st: st, el: el, store: store };
+}
+function u815FloatProportional(src, fl) {
+  const h = u815FloatBoot(src, 1600, 900);
+  h.store.rec = { x: 800, y: 450, vw: 1600, vh: 900 };
+  h.ctx.follow();
+  assert.equal(h.el.style.left, '800px', fl + '：视口没变时悬浮层位置不得动');
+  assert.equal(h.el.style.top, '450px', fl + '：视口没变时悬浮层位置不得动');
+  assert.equal(h.st.timers.length, 0, fl + '：不得引入持续轮询式重算');
+  h.st.vw = 800; h.st.vh = 450; h.ctx.follow();
+  assert.equal(h.el.style.left, '400px', fl + '：1600x900 下记在 (800,450) 的悬浮层，视口减半后必须按屏幕比例落到 400px');
+  assert.equal(h.el.style.top, '225px', fl + '：1600x900 下记在 (800,450) 的悬浮层，视口减半后必须按屏幕比例落到 225px');
+  h.el.__dsDragging = true;
+  h.st.vw = 400; h.st.vh = 300; h.ctx.follow();
+  assert.equal(h.el.style.left, '400px', fl + '：用户正在拖动时不得按比例跟随（松手前不动）');
+  h.el.__dsDragging = false;
+  h.st.vw = 2000; h.st.vh = 1000; h.ctx.follow();
+  assert.equal(h.el.style.left, '1000px', fl + '：再放大到 2000x1000 必须按屏幕比例落到 1000px');
+  assert.equal(h.el.style.top, '500px', fl + '：再放大到 2000x1000 必须按屏幕比例落到 500px');
+  const before = h.st.timers.length;
+  h.ctx.onResize(); h.ctx.onResize(); h.ctx.onResize();
+  assert.equal(h.st.timers.length, before + 3, fl + '：窗口尺寸变化必须走 resize 驱动');
+  assert.equal(h.st.timers[h.st.timers.length - 1].ms, 150, fl + '：窗口尺寸变化必须走约 150ms 防抖');
+  return h;
+}
+function u815FloatClamp(src, fl) {
+  const h = u815FloatBoot(src, 400, 300);
+  h.store.rec = { x: 1500, y: 800, vw: 1600, vh: 900 };
+  h.ctx.follow();
+  const x = parseFloat(h.el.style.left), y = parseFloat(h.el.style.top);
+  assert.ok(isFinite(x) && isFinite(y), fl + '：夹回可视区后必须是有效坐标');
+  assert.ok(x >= 0 && y >= 0, fl + '：夹回可视区后左/上不得小于 0（实际 ' + x + ',' + y + '）');
+  assert.ok(x + 200 <= 400 && y + 80 <= 300, fl + '：夹回可视区后右/下不得超出视口（实际 ' + x + ',' + y + '）');
+  h.el.offsetWidth = 500; h.el.offsetHeight = 400;
+  h.store.rec = { x: 1500, y: 800, vw: 1600, vh: 900 };
+  h.ctx.follow();
+  assert.equal(h.el.style.left, '0px', fl + '：夹回可视区：元素比视口大时至少保证左上角可见');
+  assert.equal(h.el.style.top, '0px', fl + '：夹回可视区：元素比视口大时至少保证左上角可见');
+  h.el.offsetWidth = 200; h.el.offsetHeight = 80;
+  const sc = h.ctx.scaled({ x: 1500, y: 800 }, 400, 300);
+  assert.equal(sc && sc.x, 1500, fl + '：旧数据（只有 px、没有比例基准）必须按不缩放读取 x');
+  assert.equal(sc && sc.y, 800, fl + '：旧数据（只有 px、没有比例基准）必须按不缩放读取 y');
+  h.store.rec = { x: 1500, y: 800 };
+  const r = u815Catch(() => h.ctx.follow());
+  assert.ok(r.ok, fl + '：旧数据（只有 px）读取不得报错：' + u815Msg(r.e));
+  const x2 = parseFloat(h.el.style.left), y2 = parseFloat(h.el.style.top);
+  assert.ok(x2 >= 0 && y2 >= 0 && x2 + 200 <= 400 && y2 + 80 <= 300, fl + '：旧数据首次尺寸变化后仍必须落在可视区内（实际 ' + x2 + ',' + y2 + '）');
+  return h;
+}
+// ---- 队伍血块 harness ----
+function u815Css(src) { return u815Cut(src, '  function dshFloatCss() {', '  // 指针拖拽（按住任一可见元素拖动整个悬浮层'); }
+function u815PartyBoot(src) {
+  const hpCode = u815Cut(src, '  // V2.38.15：整块显血的颜色三段', '  var dshPartyFloat = null;');
+  const cellCode = u815Cut(src, '  function partyCellHtml(o, isSelf) {', '  // ================= V2.28.0 本次登录伤害统计');
+  const ctx = {
+    Math, Number, String, Object, JSON, isFinite, parseInt, parseFloat,
+    zLock: null, fmtK: (n) => String(n), roEscTxt: (s) => String(s == null ? '' : s),
+    normMapKey: (m) => String(m || '').toLowerCase(), getMapName: () => 'prontera',
+    CLIENT: {}, requireDB: () => null,
+    partyJobColor: (job) => (Number(job) === 7 ? '#C79C6E' : '#ABD473'),
+  };
+  vm.createContext(ctx);
+  vm.runInContext(hpCode + cellCode + ';this.hpColor=partyHpColor;this.cell=partyCellHtml;'
+    + 'this.C={BASE:PARTY_HP_BASE,HIGH:PARTY_HP_HIGH,MID:PARTY_HP_MID,LOW:PARTY_HP_LOW,ZERO:PARTY_HP_ZERO};', ctx);
+  return ctx;
+}
+function u815Party(src, fl) {
+  const ctx = u815PartyBoot(src);
+  assert.equal(ctx.hpColor(100), ctx.C.HIGH, fl + '：队伍血块 100% 必须落绿色');
+  assert.equal(ctx.hpColor(60), ctx.C.HIGH, fl + '：队伍血块 60% 必须落绿色');
+  assert.equal(ctx.hpColor(59), ctx.C.MID, fl + '：队伍血块 59% 必须落黄色');
+  assert.equal(ctx.hpColor(30), ctx.C.MID, fl + '：队伍血块 30% 必须落黄色');
+  assert.equal(ctx.hpColor(29), ctx.C.LOW, fl + '：队伍血块 29% 必须落红色');
+  assert.equal(ctx.hpColor(0), ctx.C.ZERO, fl + '：队伍血块 0% 必须落暗红');
+  assert.equal(new Set([ctx.C.HIGH, ctx.C.MID, ctx.C.LOW, ctx.C.ZERO]).size, 4, fl + '：绿/黄/红/暗红必须四色互不相同');
+  const mk = (hp, maxhp, extra) => Object.assign({ AID: 1, name: '甲', job: 7, hp: hp, maxhp: maxhp, online: true, map: 'prontera' }, extra || {});
+  const h100 = ctx.cell(mk(100, 100), false);
+  const h50 = ctx.cell(mk(50, 100), false);
+  const h10 = ctx.cell(mk(10, 100), false);
+  assert.doesNotMatch(h100, /dsh-hp-edge/, fl + '：队伍血块不得再有那条白色血条');
+  assert.ok(h100.indexOf('dsh-hp-edge') < 0 && h50.indexOf('dsh-hp-edge') < 0, fl + '：队伍血块不得再有那条白色血条');
+  assert.ok(h100.indexOf('<div class="dsh-pfill" style="width:100%;background:' + ctx.C.HIGH + '"></div>') >= 0, fl + '：队伍血块必须整块按血量百分比填充（宽度=该百分比）');
+  assert.ok(h50.indexOf('<div class="dsh-pfill" style="width:50%;background:' + ctx.C.MID + '"></div>') >= 0, fl + '：队伍血块必须整块按血量百分比填充（宽度=该百分比）');
+  assert.ok(h10.indexOf('<div class="dsh-pfill" style="width:10%;background:' + ctx.C.LOW + '"></div>') >= 0, fl + '：队伍血块必须整块按血量百分比填充（宽度=该百分比）');
+  assert.ok(h50.indexOf('data-pct="50"') >= 0, fl + '：队伍血块必须把百分比落在块上');
+  assert.ok(h50.indexOf('--dsh-pjob:#C79C6E') >= 0, fl + '：队伍血块外圈必须用现有职业色');
+  assert.ok(h50.indexOf('background:' + ctx.C.BASE) >= 0, fl + '：队伍血块空的那段必须有暗底衬，白字才看得清');
+  ctx.zLock = { gid: 1 };
+  assert.ok(ctx.cell(mk(50, 100), false).indexOf('class="dsh-pcell selected"') >= 0, fl + '：点击锁定队友的选中态必须保留');
+  ctx.zLock = null;
+  const dead = ctx.cell(mk(0, 100), false);
+  assert.ok(dead.indexOf('dsh-pfill') < 0 && dead.indexOf('background:#5a5a5a') >= 0, fl + '：死亡状态保持原样，不得被画成活着');
+  const off = ctx.cell(mk(100, 100, { online: false }), false);
+  assert.ok(off.indexOf('dsh-pfill') < 0 && off.indexOf('background:#6b7280') >= 0, fl + '：离线状态保持原样，不得被画成活着');
+  const diff = ctx.cell(mk(100, 100, { map: 'geffen' }), false);
+  assert.ok(diff.indexOf('dsh-pfill') < 0 && diff.indexOf('background:#2b6cb0') >= 0, fl + '：异图状态保持原样，不得被画成活着');
+  const css = u815Css(src);
+  assert.ok(css.indexOf('dsh-hp-edge') < 0, fl + '：队伍血块不得再有那条白色血条（样式里也要清掉）');
+  const ring = /\.dsh-pcell\{[^}]*box-shadow:0 4px 10px rgba\(0,0,0,\.85\),0 0 0 (\d+(?:\.\d+)?)px var\(--dsh-pjob/.exec(css);
+  assert.ok(ring, fl + '：队伍血块必须有加粗外圈职业色环与突出阴影');
+  assert.ok(Number(ring[1]) >= 3, fl + '：队伍血块外圈职业色必须明显更粗（≥3px，实际 ' + ring[1] + 'px）');
+  assert.ok(/\.dsh-pcell \.dsh-pfill\{position:absolute;left:0;top:0;bottom:0;/.test(css), fl + '：整块显血必须是覆盖整块的绝对定位填充层');
+  const gap = /#dsh-party-float\{[^}]*gap:(\d+(?:\.\d+)?)px/.exec(css);
+  assert.ok(gap && Number(gap[1]) >= 6, fl + '：队伍血块方块之间的间距必须容得下加粗外圈（≥6px，实际 ' + (gap && gap[1]) + 'px）');
+  assert.ok(/\.dsh-pcell:hover\{transform:scale\(1\.03\)\}/.test(css), fl + '：队伍血块悬停放大必须保留');
+  assert.ok(/\.dsh-pcell\.selected\{transform:scale\(1\.08\)/.test(css), fl + '：队伍血块选中放大必须保留');
+  assert.ok(/\.dsh-pcell\.selected\{[^}]*box-shadow:[^}]*0 0 14px rgba\(255,255,255,\.8\)/.test(css), fl + '：队伍血块选中光晕必须保留');
+  return ctx;
+}
+test('V2.38.15 界面① 悬浮层按屏幕比例跟随 + 夹回可视区 + 旧数据兼容（两文件）', () => {
+  for (const [fl, src] of splitSources) {
+    u815FloatProportional(src, fl);
+    u815FloatClamp(src, fl);
+    // 范围清单：所有可拖动的悬浮层与浮窗都必须登记进同一张跟随表
+    const reg = [
+      '  function roFloatScaled(rec, vw, vh) {',
+      'key: "win:" + id,', 'dshFloatRegSaved(el, "tgtBarPos");', 'dshFloatRegSaved(el, "partyPos");',
+      'dshFloatRegLs(ball, "dsh_ball_pos", ballAnchorClear);', 'dshFloatRegLs(zHudEl, "dsh_zhud_pos", function (e) { e.style.transform = "none"; });',
+      'dshFloatRegLs(zTipEl, "dsh_ztip_pos", function (e) { e.style.bottom = "auto"; });', 'key: "mvp",',
+      'try { window.addEventListener("orientationchange", roFloatOnResize); } catch (e) {}',
+    ];
+    for (const a of reg) assert.ok(u815Lf(src).split(a).length - 1 === 1, fl + '：悬浮层与浮窗范围必须覆盖「' + a.slice(0, 46) + '」');
+  }
+});
+test('V2.38.15 界面② 队伍血块整块按百分比显血 + 加粗职业色环 + 突出阴影（两文件）', () => {
+  for (const [fl, src] of splitSources) u815Party(src, fl);
+});
+const UI815_MUTS = [
+  { tag: 'M-UI815-A', desc: '位置回退成纯 px 存储（resize 不重算）',
+    from: '    if (isFinite(sw) && sw > 0 && isFinite(sh) && sh > 0) { x = x * vw / sw; y = y * vh / sh; }',
+    to: '    // 变异：不按屏幕比例换算',
+    verify: u815FloatProportional, expect: /按屏幕比例/ },
+  { tag: 'M-UI815-B', desc: '去掉夹回可视区',
+    from: '    return { x: Math.max(0, Math.min(mx, x)), y: Math.max(0, Math.min(my, y)) };',
+    to: '    return { x: x, y: y }; // 变异：不夹回可视区',
+    verify: u815FloatClamp, expect: /夹回可视区/ },
+  { tag: 'M-UI815-C', desc: '把白色血条加回去 / 去掉整块填充',
+    from: '      fill = \'<div class="dsh-pfill" style="width:\' + pct + \'%;background:\' + partyHpColor(pct) + \'"></div>\';',
+    to: '      fill = \'<div class="dsh-hp-edge" style="width:\' + pct + \'%"></div>\';',
+    verify: u815Party, expect: /队伍血块/ },
+  { tag: 'M-UI815-D', desc: '去掉加粗外圈（3px → 1px）',
+    from: 'box-shadow:0 4px 10px rgba(0,0,0,.85),0 0 0 3px var(--dsh-pjob,#7d8894)',
+    to: 'box-shadow:0 4px 10px rgba(0,0,0,.85),0 0 0 1px var(--dsh-pjob,#7d8894)',
+    verify: u815Party, expect: /外圈职业色/ },
+];
+test('V2.38.15 界面 变异矩阵：4 个界面变异在 stable/exp 上必须各自被「指定断言」杀死', () => {
+  for (const m of UI815_MUTS) {
+    for (const [fl, src] of splitSources) {
+      const mutated = M23813(src, m.from, m.to);
+      const v = u815Catch(() => m.verify(mutated, fl + '·' + m.tag));
+      const killed = v.ok === false;
+      UI815_MATRIX.push({ tag: m.tag + '@' + fl, desc: m.desc, expected: '红', actual: killed ? '红' : '绿', caught: killed ? u815Msg(v.e) : '未被抓（变异存活）' });
+      assert.ok(killed, m.tag + '@' + fl + '：变异必须让对应用例变红（' + m.desc + '）');
+      assert.match(u815Msg(v.e), m.expect, m.tag + '@' + fl + '：必须被「指定断言」抓到，实际=' + u815Msg(v.e));
+    }
+  }
+  assert.equal(UI815_MATRIX.length, UI815_MUTS.length * splitSources.length, '每个变异 × 两文件都要独立真跑一次');
+  assert.ok(UI815_MATRIX.every((r) => r.actual === '红'), '不得存在变异存活行');
+  console.log('[V2.38.15 界面变异矩阵] ' + UI815_MATRIX.length + ' 条全部为红：' + UI815_MATRIX.map((r) => r.tag).join(', '));
+  if (process.env.UI815_JSON) fs.writeFileSync(process.env.UI815_JSON, JSON.stringify(UI815_MATRIX, null, 2), 'utf8');
+});
+
+// ================= V2.38.15 审计修复（缺陷 1/2/4）：首领忽略集合只对首领生效 / 代打释放回写原值 / 锁定注入口径 =================
+const A815_MATRIX = [];
+const a815Catch = (fn) => { try { fn(); return { ok: true }; } catch (e) { return { ok: false, e: e }; } };
+const a815Msg = (e) => String((e && e.message) || e).split(String.fromCharCode(10))[0].slice(0, 220);
+const A815_BOSS = { GID: 72, mid: 2001, isBoss: true, dist: 2, name: 'B' };
+const A815_NORM = { GID: 71, mid: 9999, isBoss: false, dist: 3, name: 'N' };
+
+// 真跑产品里的 isBossMid + zBossIgnoredGid + zBossDecide（判据不 stub），视野怪物由调用方给
+function a815Judge(src, act) {
+  const s = lf15(src);
+  const code = cut15(s, '  var zBossIgnoreAll = false;', '  // A6：早退点不冻结整拍');
+  const els = { 'dsh-z-bossact': { value: act || '不处理' }, 'dsh-z-bosshp': { value: '30' }, 'dsh-z-bossdist': { value: '14' } };
+  const ctx = {
+    scanMobs: [], lastMobs: [], els: els, $id: (id) => els[id] || null,
+    gidInt: (v) => { const n = Math.floor(Number(v)); return isFinite(n) && n > 0 ? n : 0; },
+    zEntHpPct: () => -1,
+    getMobDb: () => ({ '2001': { MvpDropsNum: 1 }, '2002': { MvpDropsNum: '3' }, '9999': { MvpDropsNum: 0 } }),
+    Object, String, Number, parseInt, isNaN, isFinite,
+  };
+  vm.createContext(ctx);
+  vm.runInContext(code + ';this.run=zBossDecide;'
+    + 'this.ign=function(g,m){return zBossIgnoredGid(g,m);};'
+    + 'this.st=function(){return {all:zBossIgnoreAll,allow:zBossAllowGid,want:zBossWantGid,block:zBossLastBlock};};', ctx);
+  return ctx;
+}
+function a815Decide(src, act, mobs, hp) {
+  const j = a815Judge(src, act);
+  j.scanMobs = mobs;
+  j.zEntHpPct = () => hp;
+  j.run(mobs);
+  return j;
+}
+// 真跑产品 zWalk 候选池（判据用真实现）
+function a815Walk(src, mobs, j) {
+  return walkVm(src, { mobs: mobs, lockList: {}, allMobs: true, ent: { position: [0, 0] }, ignored: (g, m) => j.ign(g, m) });
+}
+// 真跑产品「解围技能目标选择」那一段循环
+function a815QoaTarget(src, mobs, j) {
+  const s = lf15(src);
+  const seg = cut15(s, '      var tg = null, td = 1e9;', '      if (!tg) return false;');
+  const ctx = { mobs: mobs, atkG: 9, zBossIgnoredGid: (g, m) => j.ign(g, m), Object, Number, String, isFinite, parseInt };
+  vm.createContext(ctx);
+  vm.runInContext('this.fn = function () {' + LF + seg + LF + '  return tg ? tg.GID : null;' + LF + '};', ctx);
+  return ctx.fn();
+}
+// 真跑产品 zAttack「锁定目标解析」分支
+function a815Lock(src, lockGid, lockEnt, j) {
+  const s = lf15(src);
+  const seg = cut15(s, '      // V2.38.15：锁定的首位首领落在忽略集合里', '      if (tempTargetHeld && !target) {');
+  const mobs = lockEnt ? [lockEnt] : [];
+  const ctx = {
+    zLock: { gid: lockGid, name: '?', dist: null, done: false, reactive: false },
+    zLockCounts: {}, zCastIdx: 0, zAtkLast: { gid: lockGid, outOfRange: false },
+    zMon: { action: '' }, zAtkWhy: '', tlog: () => {},
+    npMode: false, npThD: 10, zFollow: true, range: 12, atkRange: 2,
+    ent: { position: [0, 0] }, tempTargetHeld: false,
+    zEntOf: (gid) => (lockEnt && !lockEnt.isDeath && Number(gid) === Number(lockEnt.GID) ? lockEnt : null),
+    zRangeDist: (a, b) => Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1])),
+    gidInt: (v) => { const n = parseInt(v, 10); return isFinite(n) ? n : 0; },
+    EM: { forEach: (cb) => mobs.forEach(cb) },
+    zBossIgnoredGid: (g, m) => j.ign(g, m),
+    Object, Math, String, Number, parseInt, isFinite,
+  };
+  vm.createContext(ctx);
+  vm.runInContext('this.fn = function () {' + LF + '  var target = null, lockAliveOutside = false;' + LF + seg + LF + '  return { target: target, lock: zLock.gid, act: zMon.action };' + LF + '};', ctx);
+  return ctx.fn();
+}
+
+function a815NoBoss(src, name) {
+  const j = a815Decide(src, '不处理', [A815_NORM], -1);
+  assert.equal(j.st().all, true, name + '：前置——不处理必须把首领放进忽略集合');
+  assert.equal(j.ign(71, 9999), false, name + '：视野内没有首领时，普通怪绝不能被忽略（否则助手不索敌/不还击/不解围）');
+  assert.equal(j.ign(1234, 4242), false, name + '：怪物库里没有的普通怪同样不能被忽略');
+  assert.equal(j.ign(0, null), false, name + '：取不到编号/mid 时也不能误伤（不得当成首领）');
+  const w = a815Walk(src, [vmMob(71, '9999', [3, 0])], j);
+  assert.ok(w.near && w.near.GID === 71, name + '：普通怪必须照常被追击，实际=' + JSON.stringify(w.near && w.near.GID));
+  assert.equal(a815QoaTarget(src, [A815_NORM], j), 71, name + '：解围技能必须照常选中贴身普通怪');
+  const lk = a815Lock(src, 71, vmMob(71, '9999', [1, 0]), j);
+  assert.ok(lk.target && lk.target.GID === 71, name + '：用户锁定的普通怪必须照常解析成目标并攻击，实际=' + JSON.stringify(lk.target && lk.target.GID));
+  assert.equal(lk.lock, 71, name + '：普通怪的锁不得被忽略集合清掉');
+}
+function a815BossOnly(src, name) {
+  const j2 = a815Decide(src, '不处理', [A815_BOSS, A815_NORM], -1);
+  assert.equal(j2.ign(72, 2001), true, name + '：不处理必须忽略首领');
+  assert.equal(j2.ign(72, '2001'), true, name + '：字符串 mid 同样认首领');
+  assert.equal(j2.ign(2002, 2002), true, name + '：其它首领（首领值 3）同样必须忽略');
+  assert.equal(j2.ign(71, 9999), false, name + '：同一视野里的普通怪绝不能被忽略');
+  const w2 = a815Walk(src, [vmMob(72, '2001', [2, 0]), vmMob(71, '9999', [3, 0])], j2);
+  assert.ok(w2.near && w2.near.GID === 71, name + '：首领被忽略时同一视野的普通怪必须照常被追击');
+  const wb = a815Walk(src, [vmMob(72, '2001', [2, 0])], j2);
+  assert.equal(wb.near, null, name + '：只有首领时不得追它（不处理=不主动打）');
+  assert.equal(a815QoaTarget(src, [A815_BOSS, A815_NORM], j2), 71, name + '：解围技能必须跳过被忽略的首领、选中普通怪');
+  const lb = a815Lock(src, 72, vmMob(72, '2001', [1, 0]), j2);
+  assert.equal(lb.target, null, name + '：被忽略的首领不得成为本拍攻击目标');
+  assert.equal(lb.lock, 72, name + '：被忽略的首领必须保留锁（条件满足后同一把锁自动恢复）');
+  assert.match(String(lb.act), /忽略集合/, name + '：必须写明「锁定首领在忽略集合」');
+  const t1 = a815Decide(src, '等待残血补尾刀', [A815_BOSS, A815_NORM], 50);
+  assert.equal(t1.ign(72, 2001), true, name + '：尾刀未到线必须忽略首领');
+  assert.equal(t1.ign(71, 9999), false, name + '：尾刀未到线不得影响普通怪');
+  const t2 = a815Decide(src, '等待残血补尾刀', [A815_BOSS, A815_NORM], -1);
+  assert.equal(t2.st().block, '血量未知', name + '：前置——血量未知必须写明');
+  assert.equal(t2.ign(72, 2001), true, name + '：血量未知必须忽略首领');
+  assert.equal(t2.ign(71, 9999), false, name + '：血量未知不得影响普通怪');
+  const t3 = a815Decide(src, '等待残血补尾刀', [A815_BOSS, A815_NORM], 20);
+  assert.equal(t3.st().allow, 72, name + '：前置——到尾刀线必须放行那一只');
+  assert.equal(t3.ign(72, 2001), false, name + '：到尾刀线的首领必须可以打');
+  assert.equal(t3.ign(71, 9999), false, name + '：到尾刀线也不得影响普通怪');
+  const p1 = a815Decide(src, '优先攻击', [A815_BOSS, A815_NORM], 10);
+  assert.equal(p1.st().all, false, name + '：优先攻击不得进忽略集合');
+  assert.equal(p1.ign(72, 2001), false, name + '：优先攻击时首领不被忽略');
+  assert.equal(p1.ign(71, 9999), false, name + '：优先攻击时普通怪不被忽略');
+  const f1 = a815Decide(src, '瞬移', [A815_BOSS, A815_NORM], 10);
+  assert.equal(f1.st().all, false, name + '：瞬移不得进忽略集合');
+  assert.equal(f1.ign(72, 2001), false, name + '：瞬移时首领不被忽略');
+  assert.equal(f1.ign(71, 9999), false, name + '：瞬移时普通怪不被忽略');
+  assert.ok(lf15(src).includes('function zBossIgnoredGid(gid, mid) {'), name + '：忽略集合判据必须接收该实体的 mid');
+  assert.ok(lf15(src).includes('if (!isBossMid(mid)) return false;'), name + '：忽略集合判据必须内含「必须是首领」守卫');
+}
+test('V2.38.15 审计修复 ① 默认不处理且视野内没有首领：普通怪照常被索敌/追击/解围/锁定（两文件 VM）', () => {
+  for (const [name, src] of splitSources) a815NoBoss(src, name);
+});
+test('V2.38.15 审计修复 ②③ 默认与尾刀模式只忽略首领：同一视野的普通怪与放行首领照旧（两文件 VM）', () => {
+  for (const [name, src] of splitSources) a815BossOnly(src, name);
+});
+
+function a815AssistRestore(src, name) {
+  const h = v15AssistHarness(lf15(src));
+  h.ctx.lockList = { '1002': { name: 'A' } };
+  h.box.checked = false; h.ctx.saved.allMobs = false;
+  const r = h.ctx.prep('builtin-dojo', { clearLocks: true, allMobs: true });
+  assert.equal(r.ok, true, name + '：代打战斗准备必须成立');
+  assert.equal(h.ctx.apiAllMobsSaved, false, name + '：必须记下启动前的原值 false');
+  assert.equal(h.box.checked, true, name + '：清空名单自动勾上 + 代打要求全部怪 → 必须为勾选');
+  assert.equal(h.ctx.saved.allMobs, true, name + '：前置——自动勾选必须已经落盘（缺陷现场）');
+  h.st.saves = 0; h.st.caps = 0;
+  assert.equal(h.ctx.restore(), true, name + '：释放必须执行还原');
+  assert.equal(h.box.checked, false, name + '：释放后界面勾选必须回到启动前');
+  assert.equal(h.ctx.saved.allMobs, false, name + '：释放后必须把原值回写到设置（不得残留自动写入的 true）');
+  assert.equal(h.st.saves, 1, name + '：回写必须走同一套保存路径（落盘一次）');
+  assert.equal(h.st.caps, 1, name + '：角色档 ui 表必须一起收割（与自动勾选同一条链路）');
+  h.st.saves = 0;
+  assert.equal(h.ctx.restore(), false, name + '：已释放状态不得重复还原');
+  assert.equal(h.st.saves, 0, name + '：重复释放必须零落盘');
+  const h2 = v15AssistHarness(lf15(src));
+  h2.box.checked = true; h2.ctx.saved.allMobs = true;
+  h2.ctx.prep('builtin-dojo', { allMobs: true });
+  assert.equal(h2.ctx.restore(), true, name + '：第二条链路释放必须执行还原');
+  assert.equal(h2.box.checked, true, name + '：原本是开 → 还原成开');
+  assert.equal(h2.ctx.saved.allMobs, true, name + '：原本是开 → 设置原值保持 true');
+  assert.ok(lf15(src).includes('if (saved && saved.allMobs !== v) { saved.allMobs = v; saveSaved(saved); }'), name + '：释放必须把原值回写 saved 并落盘');
+}
+test('V2.38.15 审计修复 ④ 代打释放把「打全部怪」原值回写落盘，与启动前完全一致（两文件 VM）', () => {
+  for (const [name, src] of splitSources) a815AssistRestore(src, name);
+});
+
+function a815BossInject(src, name) {
+  const s = lf15(src);
+  const seg = cut15(s, '        var bossWantD = zBossDecide();', '      // V2.38.15：锁定的首位首领落在忽略集合里');
+  const run = (defSnap) => {
+    const bossEnt = { GID: 72, _job: 2001, objecttype: 5, position: [1, 0], display: { name: 'B' }, life: { hp: 100 }, isDeath: false, remove_tick: 0, ACTION: { DIE: 9 }, action: 0 };
+    const injected = [];
+    const ctx = {
+      zBossDecide: () => ({ rec: { GID: 72, mid: 2001 }, want: 72, act: '优先攻击', fly: false }),
+      tempTargetHeld: false, zLock: { gid: null, name: '', dist: null, done: false, reactive: false },
+      zEntOf: (gid) => (Number(gid) === 72 ? bossEnt : null),
+      ent: { position: [0, 0] }, npMode: false, npThD: 10, atkRange: 7,
+      zRangeDist: (a, b) => Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1])),
+      gidInt: (v) => { const n = parseInt(v, 10); return isFinite(n) ? n : 0; },
+      defSnap: defSnap, sendLockInject: (g) => injected.push(g), tlog: () => {},
+      zLockCounts: {}, zCastIdx: 0, zAtkLast: { gid: null, at: 0, outOfRange: false }, now: 1000,
+      Object, Math, String, Number, parseInt, isFinite,
+    };
+    vm.createContext(ctx);
+    vm.runInContext('this.fn = function () { try {' + LF + seg + LF + '};', ctx);
+    ctx.fn();
+    return { injected: injected, lock: ctx.zLock.gid };
+  };
+  const a = run({ isCombatMap: false, inFight: true });
+  assert.deepEqual(JSON.parse(JSON.stringify(a.injected)), [72], name + '：刷怪表为空但视野内有怪（inFight）时同样要注入首领锁定');
+  assert.equal(a.lock, 72, name + '：注入必须真的写进锁定目标');
+  const b = run({ isCombatMap: true, inFight: false });
+  assert.deepEqual(JSON.parse(JSON.stringify(b.injected)), [], name + '：没有怪时（inFight 关）不得注入，哪怕刷怪表非空');
+  const c = run({ isCombatMap: true, inFight: true });
+  assert.deepEqual(JSON.parse(JSON.stringify(c.injected)), [72], name + '：既有口径必须保持（战斗地图 + 有怪）');
+  assert.ok(s.includes('defSnap && defSnap.inFight && gidInt(zLock.gid) !== gidInt(bgid)'), name + '：注入门必须用 inFight（与其它防御判定一致）');
+}
+test('V2.38.15 审计修复 ⑤ 首领锁定注入改用 inFight 口径：刷怪表为空但视野有怪也会注入（两文件 VM）', () => {
+  for (const [name, src] of splitSources) a815BossInject(src, name);
+});
+
+const A815_MUTS = [
+  { tag: 'M-A815-1a', desc: '①忽略集合判据去掉「必须是首领」守卫（回到只判 gid）→ 用例①红',
+    from: '      if (!isBossMid(mid)) return false;',
+    to: '      // 变异：去掉首领守卫',
+    verify: a815NoBoss, expect: /视野内没有首领时，普通怪绝不能被忽略/ },
+  { tag: 'M-A815-1b', desc: '①忽略集合判据去掉「必须是首领」守卫（回到只判 gid）→ 用例②红',
+    from: '      if (!isBossMid(mid)) return false;',
+    to: '      // 变异：去掉首领守卫',
+    verify: a815BossOnly, expect: /同一视野里的普通怪绝不能被忽略/ },
+  { tag: 'M-A815-2', desc: '④代打释放不回写 saved.allMobs（原值残留自动写入的 true）',
+    from: '      try { if (saved && saved.allMobs !== v) { saved.allMobs = v; saveSaved(saved); } } catch (e1) {}',
+    to: '      // 变异：释放不回写 saved.allMobs',
+    verify: a815AssistRestore, expect: /释放后必须把原值回写到设置/ },
+  { tag: 'M-A815-3', desc: '⑤首领锁定注入退回 isCombatMap 口径',
+    from: 'defSnap && defSnap.inFight && gidInt(zLock.gid)',
+    to: 'defSnap && defSnap.isCombatMap && gidInt(zLock.gid)',
+    verify: a815BossInject, expect: /刷怪表为空但视野内有怪/ },
+];
+test('V2.38.15 审计修复 变异矩阵：4 个变异在 stable/exp 上必须各自被「指定断言」杀死（覆盖缺陷 1/2/4）', () => {
+  for (const m of A815_MUTS) {
+    for (const [name, src] of splitSources) {
+      const mutated = M23813(src, m.from, m.to);
+      const v = a815Catch(() => m.verify(mutated, name + '·' + m.tag));
+      const killed = v.ok === false;
+      A815_MATRIX.push({ tag: m.tag + '@' + name, desc: m.desc, expected: '红', actual: killed ? '红' : '绿', caught: killed ? a815Msg(v.e) : '未被抓（变异存活）' });
+      assert.ok(killed, m.tag + '@' + name + '：变异必须让对应用例变红（' + m.desc + '）');
+      assert.match(a815Msg(v.e), m.expect, m.tag + '@' + name + '：必须被「指定断言」抓到，实际=' + a815Msg(v.e));
+    }
+  }
+  assert.equal(A815_MATRIX.length, A815_MUTS.length * splitSources.length, '每个变异 × 两文件都要独立真跑一次');
+  assert.ok(A815_MATRIX.every((r) => r.actual === '红'), '不得存在变异存活行');
+  console.log('[V2.38.15 审计修复 变异矩阵] ' + A815_MATRIX.length + ' 条全部为红：' + A815_MATRIX.map((r) => r.tag).join(', '));
+  if (process.env.A815_JSON) fs.writeFileSync(process.env.A815_JSON, JSON.stringify(A815_MATRIX, null, 2), 'utf8');
 });

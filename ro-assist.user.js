@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.38.14
+// @version      2.38.15
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -113,6 +113,34 @@
 // 3) 自启配置不完整：用脚本 DEFAULTS 自启缺少新引擎必需的 lastroProtocol / lastroCustomPackets / 各 charset / packetKeys / servers(数组) 等字段，
 //    引擎在模块初始化 hook NOTIFY_LOADINFO 抛 Packet not yet register "LoadInfo" 后中断启动，依旧黑屏。改为以宿主页 window.ROConfigBase 为基底自启。
 // 原站 post.lastro.cn / game.lastro.cn 的启动判据、注入方式与配置来源全部保持不变。
+// ---------------- V2.38.15 变更摘要 ----------------
+// 1. 锁定名单与「打全部怪」自动联动：名单非空自动取消勾选；名单清空自动重新勾上；随角色档一起保存/恢复，界面勾选状态同步刷新。
+//    与外部代打联动：代打开始先记下「打全部怪」原值再清空名单（清空触发的自动勾选绝不被当成原值），停止代打时还原原值。
+// 2. 还击（反击）只对非首领怪生效：射程内最近怪与「最近 3 秒打过我的怪」两条还击候选路径都排除首领；
+//    非名单怪只要不是首领依旧可以还击（名单与还击仍然解耦）。
+// 3. 首领设置绝对优先（规则变更）：首领不再受锁定名单约束，只按「BOSS 出现」这一项裁决。
+//    · 撤掉旧「优先攻击忽略攻击名单」勾选项（界面移除；已存设置保留但不再读取、不再写入）；
+//      首领识别仍只认怪物库里的首领值大于 0；新增「判定距离」输入（默认 14 格，可填 5~40），
+//      固定 25 格口径（DS_BOSS_DIST）现在只被拾取安全保护使用（旧「首领附近不坐下」已不存在）。
+//    · 瞬移：本拍必须飞（不再因为首领已在锁定名单里改成优先攻击）；血线判定仍在前，保命优先。
+//    · 不处理：首领进入忽略集合 —— 不主动打它、不还击它、不因它飞；但它仍计入群殴与解围的数量。
+//    · 优先攻击：首领成为最高优先目标，越过锁定名单与「打全部怪」，超出攻击距离也会被追击。
+//    · 等待残血补尾刀：血量已知且已到尾刀线 → 可打；未到线 → 进忽略集合；血量未知 → 也进忽略集合。
+// 4. 解围技能与非攻击瞬移改成两条独立判定：只要本拍没有真正发出瞬移，就独立判定解围技能；
+//    解围自己的门照旧（开关、贴身数、血线之上、瞬移挂起、冷却门），不进紧急原因、不抢普通技能的公共冷却。
+// 5.「战斗地图」门放宽：新增「视野内有怪」判据——视野内确有怪物时，血线、蓝线、2 秒失血、低血无药被围都会生效；
+//    卡死瞬移仍只认战斗地图（绑定战斗态），无怪时与原来一样不飞。
+// 6. 首领触发的脱离不再吃普通「连续 3 次失败停 10 秒」：首领脱离只用 1 秒防抖；角色处于晕眩/冰冻/石化/睡眠等
+//    不能行动状态时，本拍跳过尝试且不计失败；连续 15 次失败才停 10 秒。其它原因（血线/蓝线/失血/无药被围/群殴/卡死/坐下）规则不变。
+// 7. 新增「首领诊断」按钮：只读输出怪物库条目数、附近每只怪与当前首领裁决、判定距离，以及它被哪一条挡住
+//    （不处理 / 尾刀未到线 / 血量未知）。只读，不发包、不写任何状态。
+// 8. 离线自检收尾：版本断言改为从本文件 @version 派生（升版不再漏改）；并补「陈旧包流快照且没有实时路 → 判定为没认出武器」用例。
+// 9. 版本：@version 2.38.14 → 2.38.15（VER 同步）；实验版同步。
+// 10. 界面：所有可拖动的悬浮层与浮窗位置改为按屏幕比例记录——窗口尺寸变化时按比例跟随并夹回可视区
+//     （左/上不小于 0、右/下不超出视口），元素自身大小不跟着变；旧位置照常可用（没有比例基准时只做夹回可视区），
+//     拖动结束立刻更新存值；用户正在拖动的那个元素在松手前不动。
+// 11. 界面：队伍血块改成整块按血量百分比显色（≥60% 绿 / 30~59% 黄 / <30% 红 / 0% 暗红），外圈职业色加粗到 3px 并加突出阴影，
+//     原来的顶部白色血条去掉；死亡 / 离线 / 异图 三态外观保持原样。
 // ---------------- V2.38.1 变更摘要 ----------------
 // 1. 一键换装新增完整装备指纹：在物品ID/精炼/插卡之外，记录并严格匹配随机词条 index/value/param 与附魔强化等级 enchantgrade；旧预设兼容，重新覆盖后升级。
 // 2. BOSS 设置新增「优先攻击忽略攻击名单」逐角色开关；只放宽最终的优先攻击模式，瞬移和等待残血补尾刀仍遵守原名单门禁。
@@ -496,7 +524,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.38.14"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.38.15"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -1799,7 +1827,10 @@
       '<div class="row"><label class="switch"><input id="dsh-z-idlefly" type="checkbox">无目标持续自动瞬移</label>' +
       '<span class="lb" style="min-width:34px">超过</span><input id="dsh-z-idleflysec" type="number" value="10" style="flex:0 0 40px"><span style="color:#5a6b7f">s无锁定怪→瞬移</span></div>' +
       // V2.34.0 A3：BOSS 三模式（默认不处理）+ 尾刀线；瞬移间隔 dsh-z-flyint 保留
-      '<div class="row"><span class="lb">BOSS 出现</span><select id="dsh-z-bossact" style="flex:0 0 130px"><option>瞬移</option><option>优先攻击</option><option>等待残血补尾刀</option><option selected>不处理</option></select><label class="switch"><input id="dsh-z-bossignorelock" type="checkbox">优先攻击忽略攻击名单</label><span class="st">瞬移且已锁定则优先攻击；瞬移/尾刀仍受名单限制</span></div>' +
+      '<div class="row"><span class="lb">BOSS 出现</span><select id="dsh-z-bossact" style="flex:0 0 130px"><option>瞬移</option><option>优先攻击</option><option>等待残血补尾刀</option><option selected>不处理</option></select>' +
+      '<span class="lb" style="min-width:40px">判定距离</span><input id="dsh-z-bossdist" type="number" value="14" min="5" max="40" style="flex:0 0 44px"><span style="color:#5a6b7f;font-size:11px">格</span>' +
+      '<button class="ghost" id="dsh-z-bossdiag" style="flex:0 0 auto;padding:0 8px;font-size:11px">首领诊断</button><span class="st">用法：点「首领诊断」后把下面文本框里的内容复制出来（只读）</span></div>' +
+      '<div class="row"><textarea id="dsh-z-bossdiagbox" readonly style="width:100%;height:56px;font-size:10px;font-family:monospace"></textarea></div>' +
       '<div class="row"><span class="lb">尾刀线</span><input id="dsh-z-bosshp" type="number" value="30" min="1" max="99" style="flex:0 0 40px"><span style="color:#5a6b7f">%（各职业自填）</span>' +
       '<span class="lb" style="min-width:52px">瞬移间隔</span><input id="dsh-z-flyint" type="number" value="4" style="flex:0 0 40px"><span style="color:#5a6b7f">s</span></div>' +
       '<div class="row"><span class="lb">HP低于</span><input id="dsh-z-hpfly" type="number" value="20" style="flex:0 0 40px"><span style="color:#5a6b7f">%瞬移</span>' +
@@ -1835,7 +1866,7 @@
       '<label class="switch"><input id="dsh-z-next" type="checkbox" checked>打死换下一个</label></div>' +
       '<div class="sec">目标范围</div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-allmobs" type="checkbox" checked>打全部怪（仅在未设锁定名单时生效）</label></div>' +
-      '<div class="row"><span class="st">名单为空时：勾选=助手主动攻击全部怪；取消=助手不主动选目标（自研直走即不主动攻击；内挂/混合模式下内挂自身仍会攻击全部）。名单非空时：只主动攻击名单内怪物，BOSS 优先攻击/补尾刀同样只认名单。还击、群殴瞬移、解围技能不受此设置影响。</span></div>' +
+      '<div class="row"><span class="st">名单为空时：勾选=助手主动攻击全部怪；取消=助手不主动选目标（自研直走即不主动攻击；内挂/混合模式下内挂自身仍会攻击全部）。名单非空时：只主动攻击名单内怪物，且会自动取消勾选；名单清空后会自动重新勾上。首领不受名单约束，只按上面的「BOSS 出现」裁决。还击、群殴瞬移、解围技能不受此设置影响。</span></div>' +
       '<details style="margin:6px 0"><summary>战斗诊断（默认关 · 不改行为）</summary>' +
       '<div class="row"><label class="switch"><input id="dsh-bt-diag" type="checkbox">启用诊断日志</label></div>' +
       '<div class="row" style="flex-wrap:wrap;gap:4px"><button class="ghost" id="dsh-bt-snap" style="flex:0 0 auto;padding:0 8px;font-size:11px">快照</button><button class="ghost" id="dsh-bt-mark" style="flex:0 0 auto;padding:0 8px;font-size:11px">标记测试</button></div>' +
@@ -2545,6 +2576,69 @@
       }
     } catch (e) {}
   }
+  // ================= V2.38.15 悬浮层比例跟随 =================
+  // 位置按「记下它时的视口」换算到当前视口（等于按屏幕比例记位），元素自身尺寸不变；
+  // 换算后一律夹回可视区：左/上不小于 0，右/下不超出视口，比视口还大时至少保证左上角可见。
+  // 旧数据（只有 px、没有 vw/vh 基准）一律按「不缩放 + 夹回可视区」处理：不报错、不丢位置。
+  function roFloatScaled(rec, vw, vh) {
+    if (!rec) return null;
+    var x = parseFloat(rec.x), y = parseFloat(rec.y);
+    if (!isFinite(x) || !isFinite(y)) return null;
+    var sw = parseFloat(rec.vw), sh = parseFloat(rec.vh);
+    if (isFinite(sw) && sw > 0 && isFinite(sh) && sh > 0) { x = x * vw / sw; y = y * vh / sh; }
+    return { x: x, y: y };
+  }
+  function roFloatFit(x, y, w, h, vw, vh) {
+    if (!isFinite(x)) x = 0;
+    if (!isFinite(y)) y = 0;
+    var mx = vw - (Number(w) || 0), my = vh - (Number(h) || 0);
+    if (!(mx > 0)) mx = 0;
+    if (!(my > 0)) my = 0;
+    return { x: Math.max(0, Math.min(mx, x)), y: Math.max(0, Math.min(my, y)) };
+  }
+  var roFloatLayers = [], roFloatTimer = null, roFloatVpSig = "";
+  function roFloatReg(d) { if (d && d.key) { roFloatLayers.push(d); return d; } return null; }
+  function roFloatSize(el) {
+    var w = 0, h = 0;
+    try { w = el.offsetWidth || 0; h = el.offsetHeight || 0; } catch (e) {}
+    if ((!w || !h) && el.getBoundingClientRect) { try { var r = el.getBoundingClientRect(); w = w || r.width || 0; h = h || r.height || 0; } catch (e2) {} }
+    return { w: w, h: h };
+  }
+  function roFloatBusy(d, el) {
+    try { if (d && d.drag) return !!d.drag(); } catch (e) {}
+    try { return !!el.__dsDragging; } catch (e2) { return false; }
+  }
+  function roFloatFollowLayer(d, vw, vh) {
+    var el = null;
+    try { el = d.el(); } catch (e) { return false; }
+    if (!el || !el.parentNode || !el.style || el.style.display === "none") return false; // 只跟随可见层
+    if (roFloatBusy(d, el)) return false;                                                // 用户正在拖：这期间不抢位置
+    var p = null;
+    try { p = roFloatScaled(d.get(), vw, vh); } catch (e0) { return false; }             // 旧数据无基准 → 原样返回，不缩放
+    if (!p) return false;
+    var sz = roFloatSize(el);
+    var q = roFloatFit(p.x, p.y, sz.w, sz.h, vw, vh);
+    try { d.set(el, q.x, q.y, vw, vh); } catch (e2) { return false; }
+    return true;
+  }
+  function roFloatFollow() {
+    var vw = roVw(), vh = roVh();
+    for (var i = 0; i < roFloatLayers.length; i++) { try { roFloatFollowLayer(roFloatLayers[i], vw, vh); } catch (e) {} }
+    roFloatVpSig = vw + "x" + vh;
+  }
+  // 视口是否与上一次跟随一致：用来区分「窗口尺寸变了」和「窗口自己变大变小了」
+  function roFloatVpSame() {
+    var sig = roVw() + "x" + roVh();
+    if (!roFloatVpSig) { roFloatVpSig = sig; return true; }
+    return roFloatVpSig === sig;
+  }
+  function roFloatOnResize() {
+    if (roFloatTimer) clearTimeout(roFloatTimer);
+    // 约 150ms 防抖：窗口尺寸变化期间只重算一次，不做持续轮询
+    roFloatTimer = setTimeout(function () { roFloatTimer = null; try { roFloatFollow(); } catch (e) {} }, 150);
+  }
+  try { window.addEventListener("resize", roFloatOnResize); } catch (e) {}
+  try { window.addEventListener("orientationchange", roFloatOnResize); } catch (e) {}
   var roScaleTimer = null;
   function roScaleOnResize() {
     if (roScaleTimer) clearTimeout(roScaleTimer);
@@ -2556,6 +2650,7 @@
       var cur = m[id] || {};            // 必须合并而不是整体替换，否则会抹掉同一窗口的 a（透明度）
       cur.x = parseFloat(el.style.left) || 0;
       cur.y = parseFloat(el.style.top) || 0;
+      cur.vw = roVw(); cur.vh = roVh();   // V2.38.15：记下存位置时的视口，尺寸变化时按屏幕比例跟随
       cur.w = el.offsetWidth;
       cur.h = el.offsetHeight;
       m[id] = cur;
@@ -2620,14 +2715,31 @@
     if (h) el.style.height = Math.round(Math.max(mh, Math.min(h, (roVh() - 16) / s0))) + "px";
     roApplyScale(el);
     var pw = (el.offsetWidth || 0) * s0, ph = (el.offsetHeight || 0) * s0;
-    var dx = (st && isFinite(st.x)) ? st.x : ((opt.ax !== undefined) ? opt.ax : Math.max(0, (roVw() - pw) / 2));
-    var dy = (st && isFinite(st.y)) ? st.y : ((opt.ay !== undefined) ? opt.ay : Math.max(0, (roVh() - ph) / 2));
+    // V2.38.15：记忆位置先按屏幕比例换算到当前视口（旧记忆没有基准就不换算）
+    var sp = (st && isFinite(st.x) && isFinite(st.y)) ? roFloatScaled(st, roVw(), roVh()) : null;
+    var dx = sp ? sp.x : ((opt.ax !== undefined) ? opt.ax : Math.max(0, (roVw() - pw) / 2));
+    var dy = sp ? sp.y : ((opt.ay !== undefined) ? opt.ay : Math.max(0, (roVh() - ph) / 2));
     var p = roClampXY(el, dx, dy, el.offsetWidth, el.offsetHeight);
     el.style.left = p.x + "px"; el.style.top = p.y + "px";
     el.style.right = "auto"; el.style.bottom = "auto";
     // V2.17.1 透明度：默认 100%，按窗口独立记忆
     roSetAlpha(el, id, (st && typeof st.a === "number") ? st.a : 1);
     var save = function () { roWinSave(id, el); };
+    // V2.38.15：登记进悬浮层跟随表 —— 窗口尺寸变化时按比例跟随并夹回可视区（拖动期间不抢位置）
+    roFloatReg({
+      key: "win:" + id,
+      el: function () { return el; },
+      drag: function () { return !!((opt.drag && opt.drag.__dsDragging) || el.__dsDragging); },
+      get: function () {
+        var w = roUi().win[id];
+        return (w && isFinite(parseFloat(w.x)) && isFinite(parseFloat(w.y))) ? w : null;
+      },
+      set: function (e2, x, y) {
+        e2.style.left = Math.round(x) + "px"; e2.style.top = Math.round(y) + "px";
+        e2.style.right = "auto"; e2.style.bottom = "auto";
+        roWinSave(id, e2);
+      }
+    });
     if (opt.drag) {
       dragEl(opt.drag, function (x, y) {
         var q = roClampXY(el, x, y);
@@ -3919,6 +4031,7 @@
     // move/up/cancel 挂到 window：手指移出元素范围仍持续收到事件，拖动跟手不中断
     function onUp(e) {
       moving = false;
+      try { el.__dsDragging = false; } catch (ez1) {}
       // V1.7.6：拖动位移 >8px = 拖动（松手不触发球展开），未拖动=单击（照常展开）
       el.__dsDragged = Math.abs(e.clientX - dx0) + Math.abs(e.clientY - dy0) > 8;
       try { onEnd && onEnd(); } catch (err) {}
@@ -3937,6 +4050,7 @@
       if (!moving) return;         // 正常松手:onUp 已收尾,moving=false,忽略
       if (e.buttons & 1) return;   // 仍按住但捕获被取消:保留监听继续拖
       moving = false;
+      try { el.__dsDragging = false; } catch (ez2) {}
       try { onEnd && onEnd(); } catch (err) {}
       el.removeEventListener("pointermove", onMove);
       el.removeEventListener("pointerup", onUp);
@@ -3946,6 +4060,7 @@
       // V2.17.0：按钮 / 滑块 / 输入框 / 拉伸手柄上按下不算拖动（否则拖不动滑块、点不进输入框）
       if (e.target.closest && e.target.closest("button,input,select,textarea,.dsh-grip")) return;
       moving = true;
+      try { el.__dsDragging = true; } catch (ez0) {}   // V2.38.15：拖动期间不做比例跟随
       sx = e.clientX; sy = e.clientY;
       dx0 = e.clientX; dy0 = e.clientY; // V1.7.6 拖动位移起点（>8px 判定为拖动，抑制随后 click）
       // 关键修复：面板初始定位是 left:50% + transform:translateX(-50%)（居中），
@@ -4004,13 +4119,15 @@
     });
   })();
   // 悬浮球：不参与缩放（分屏后它是唯一能找回面板的入口，必须保持可点），只做视口内夹紧
+  function ballAnchorClear(e) { e.style.right = "auto"; e.style.bottom = "auto"; }
   dragEl(ball, function (x, y) {
     var nx = Math.max(0, Math.min(roVw() - 40, x));
     var ny = Math.max(0, Math.min(roVh() - 40, y));
     ball.style.left = nx + "px"; ball.style.top = ny + "px";
     ball.style.right = "auto"; ball.style.bottom = "auto";
-    try { localStorage.setItem("dsh_ball_pos", JSON.stringify([nx, ny])); } catch (e) {}
+    try { localStorage.setItem("dsh_ball_pos", JSON.stringify([nx, ny, roVw(), roVh()])); } catch (e) {} // V2.38.15：连同当时的视口一起记下
   });
+  dshFloatRegLs(ball, "dsh_ball_pos", ballAnchorClear); // V2.38.15：尺寸变化时按屏幕比例跟随并夹回可视区
   // V2.17.0：面板拉伸改由公共层 roWinBind 统一处理（含缩放换算 / 视口夹紧 / 尺寸记忆）。
   // 旧实现见 git 历史，问题有两个：1) 拉伸手柄的位移没有除以缩放值，缩放后拉不动；
   // 2) 每次 move 都写 localStorage，拖一次写几百次。
@@ -4314,6 +4431,11 @@
       if (r.right <= 12) { ball.style.left = mar + "px"; ball.style.right = "auto"; }
       if (r.top >= vh - 12) { ball.style.top = (vh - bh - mar) + "px"; ball.style.bottom = "auto"; }
       if (r.bottom <= 12) { ball.style.top = mar + "px"; ball.style.bottom = "auto"; }
+      // V2.38.15：贴边后同步一次存值（视口没变时），保证下次按比例换算的基准就是当前位置
+      if (roFloatVpSame()) {
+        var bx = parseFloat(ball.style.left), by = parseFloat(ball.style.top);
+        if (isFinite(bx) && isFinite(by)) { try { localStorage.setItem("dsh_ball_pos", JSON.stringify([Math.round(bx), Math.round(by), roVw(), roVh()])); } catch (e1) {} }
+      }
     } catch (e) {}
   }
   try { window.addEventListener("resize", snapBallToEdge); } catch (e) {}
@@ -5091,7 +5213,7 @@
     ["dsh-scanen", "c"], ["dsh-scanint", "v"],
     ["dsh-z-ona", "v"], ["dsh-z-grpn", "v"], ["dsh-z-qoaen", "c"], ["dsh-z-qoan", "v"], ["dsh-z-qoaskill", "v"], ["dsh-z-qoaskilllv", "v"],
     ["dsh-z-flymode", "v"], ["dsh-z-flyauto", "c"], ["dsh-z-flystuck", "c"],
-    ["dsh-z-idlefly", "c"], ["dsh-z-idleflysec", "v"], ["dsh-z-bossact", "v"], ["dsh-z-bossignorelock", "c"], ["dsh-z-bosshp", "v"], ["dsh-z-flyint", "v"],
+    ["dsh-z-idlefly", "c"], ["dsh-z-idleflysec", "v"], ["dsh-z-bossact", "v"], ["dsh-z-bossdist", "v"], ["dsh-z-bosshp", "v"], ["dsh-z-flyint", "v"],
     ["dsh-z-flygrp", "c"], ["dsh-z-flyrange", "c"], ["dsh-z-flykill", "c"], ["dsh-z-diag", "c"],
     ["dsh-z-hpfly", "v"], ["dsh-z-spfly", "v"], ["dsh-z-hpout", "v"], ["dsh-z-keep", "v"],
     ["dsh-z-sit", "c"], ["dsh-z-sithplo", "v"], ["dsh-z-sithphi", "v"], ["dsh-z-sitsplo", "v"], ["dsh-z-sitsphi", "v"],
@@ -6032,6 +6154,15 @@
       if (st.endAt <= Date.now()) return false;
       return true;
     } catch (e) { return false; }
+  }
+  // V2.38.15：角色此刻能不能行动（晕眩 / 冰冻 / 石化 / 睡眠）
+  //   复用既有状态判活（实体字段优先、判活表兜底）；查不到状态一律按「可以行动」处理，绝不因为读不到就永久跳过。
+  var DSH_CANT_ACT_ST = [875, 876, 877, 878]; // 石化 / 冰冻 / 晕眩 / 睡眠
+  function canActNow() {
+    try {
+      for (var i = 0; i < DSH_CANT_ACT_ST.length; i++) { if (buffStateOn(DSH_CANT_ACT_ST[i])) return false; }
+      return true;
+    } catch (e) { return true; }
   }
   // V1.7.7 状态速查弹层按钮：多辅助区「状态速查」→ 打开全屏速查表（可选中复制）
   var stateHelpBtn = $id("dsh-statehelp");
@@ -8404,6 +8535,26 @@
   }
   function profileLockSave() {
     try { if (!profWriteGuard("锁定名单")) return; var k = activeProfileKey(); ensureProfile(k); profiles[k].lockList = lockList; profiles[k].lastAt = Date.now(); saveProfiles(); } catch (e) {}
+    // V2.38.15：名单一变就按名单形态同步「打全部怪」勾选（名单非空→取消勾选；名单清空→重新勾上）
+    try { zAllMobsAutoApply("锁定名单变更"); } catch (e2) {}
+  }
+  // V2.38.15：锁定名单与「打全部怪」自动联动——名单非空自动取消勾选；名单清空自动重新勾上。
+  //   走同一套设置保存路径（saved.allMobs + 角色档 ui 表）；角色档未识别时只改界面勾选，绝不落盘。
+  function zAllMobsAutoApply(reason) {
+    try {
+      var want = Object.keys(lockList).length === 0;
+      var el = null;
+      try { el = $id("dsh-z-allmobs"); } catch (e0) { el = null; }
+      if (el && !!el.checked !== want) el.checked = want;
+      var trusted = false;
+      try { trusted = (typeof profileTrusted === "function") && !!profileTrusted(activeProfileKey()); } catch (e1) { trusted = false; }
+      if (trusted) {
+        try { if (saved && saved.allMobs !== want) { saved.allMobs = want; saveSaved(saved); } } catch (e2) {}
+        try { if (typeof captureAll === "function") captureAll(); } catch (e3) {}
+      }
+      try { tlog("allmobs-auto " + (want ? "on" : "off") + " 名单=" + Object.keys(lockList).length + " 触发=" + (reason || "")); } catch (e4) {}
+      return want;
+    } catch (e) { return false; }
   }
   function addLock(id, name) {
     id = String(id);
@@ -8606,8 +8757,8 @@
           var mb = null;
           try { var dbx = getMobDb(); mb = dbx && dbx[mid]; } catch (e3) {}
           if (mb && mb.LV != null) lv = mb.LV;
-          // BOSS 判定：只认 mob_db.MvpDropsNum>0（126只MVP/BOSS），不做地图级 fallback（hasBoss 会把查不到的怪全标成 BOSS）
-          var isBoss = !!(mb && mb.MvpDropsNum > 0);
+          // BOSS 判定：只认怪物库首领值大于 0（126 只 MVP/BOSS），统一走 isBossMid，不做地图级 fallback
+          var isBoss = isBossMid(mid);
           mobs.push({ GID: e.GID, mid: mid, name: nm || String(mid != null ? mid : e.GID), dist: d, lv: lv, isBoss: isBoss });
         } catch (e2) {}
       });
@@ -8661,14 +8812,14 @@
   // 目标：喝水/坐下/瞬移/拾取不再各算各的危险边界——每周期由 checkDefense 刷新一份快照，
   //       所有子系统同读；动作互斥由决策层保证（同 tick 只出一个动作），无等待 → 无死锁。
   var DS_BOSS_DIST = 25;   // Boss 危险距离统一口径（原瞬移=侦测即飞、拾取=20 格，语义分裂已统一）
-  var defSnap = { hpPct: 100, spPct: 100, isCombatMap: false, mobCount: 0, bossDist: -1, sitting: false, now: 0 };
+  var defSnap = { hpPct: 100, spPct: 100, isCombatMap: false, inFight: false, mobCount: 0, bossDist: -1, sitting: false, now: 0 };
   var actLock = { act: null, until: 0 };  // 主动作锁：每 tick 决策重写，超时视为空闲
   var ESCAPE_TIMEOUT_MS = 2500, ESCAPE_MAX_ATTEMPTS = 3;
   var escapeSeq = 0, escapeBackoffUntil = 0;
   var escapeState = { pending: false, id: 0, map: "", x: null, y: null, lastCast: 0, ackAt: 0, deadline: 0, attempts: 0, nextRetry: 0, reason: "" };
   var selfHealHoldUntil = 0;
   var potNoPotion = false;                // 喝水无药标记（瀑布：低血无药被围 → 升级瞬移）
-  var flyFailCount = 0, flyFailUntil = 0; // 瞬移连续失败冷却（3 次 → 10s 不重试）
+  var flyFailCount = 0, flyBossFailCount = 0, flyFailUntil = 0; // 瞬移连续失败冷却（普通 3 次 / 首领 15 次 → 10s 不重试）
   // V2.34.2：掉血速率采样（最近 2 秒），用于「2 秒掉血 ≥25% 最大HP」紧急逃生判定
   var hpDropHist = [];
   function hpDrop2sPct(maxhp, now) {
@@ -8889,8 +9040,11 @@
         if (mb.dist >= 0) mobCount++;
         if (mb.isBoss && mb.dist >= 0 && (bossDist < 0 || mb.dist < bossDist)) bossDist = mb.dist;
       }
+      // V2.38.15：「战斗地图」门放宽——刷怪表为空但视野内确有怪物实体时，血线/蓝线/失血/被围同样生效
+      var isCombatMapV = !!(cMap && cMap.mobIds && cMap.mobIds.length);
       defSnap = { hpPct: hpPct, spPct: spPct,
-        isCombatMap: !!(cMap && cMap.mobIds && cMap.mobIds.length),
+        isCombatMap: isCombatMapV,
+        inFight: isCombatMapV || mobCount > 0,
         mobCount: mobCount, bossDist: bossDist, sitting: isSitting(), now: Date.now() };
     } catch (e) {}
   }
@@ -9105,7 +9259,8 @@
       var tg = null, td = 1e9;
       for (var i = 0; i < (mobs || []).length; i++) {
         var mm = mobs[i];
-        if (mm && mm.GID && mm.dist >= 0 && mm.dist < td && mm.dist <= atkG) { td = mm.dist; tg = mm; }
+        // V2.38.15：忽略集合里的首领不作为解围技能目标（但 zQoaNearCount 照旧把它算进贴身数）；普通怪不受忽略集合影响
+        if (mm && mm.GID && !zBossIgnoredGid(mm.GID, mm.mid) && mm.dist >= 0 && mm.dist < td && mm.dist <= atkG) { td = mm.dist; tg = mm; }
       }
       if (!tg) return false;
       var p = new (czp("USE_SKILL"))();
@@ -9120,43 +9275,73 @@
       return true;
     } catch (e) { return false; }
   }
-  // A3：BOSS 三模式判定（瞬移 / 优先攻击 / 等待残血补尾刀 / 不处理）
+  // A3：BOSS 四模式判定（瞬移 / 优先攻击 / 等待残血补尾刀 / 不处理）
   var zLastBossAct = "不处理", zLastBossHp = -1, zLastGrpCount = 0, zLastFlyReason = "", zLastFlyReasonAt = 0;
-  var zBossSkipGid = 0; // 尾刀模式「未到尾刀线」的 BOSS：既不打也不飞（从候选池剔除，不动用户显式锁定）
-  // V2.34.4 守名单门：名单为空恒放行；名单非空只认名单内 BOSS（zBossDecide / zAttack 两处共用同一口径）
-  function zBossAllowedByLock(mid) { return !(Object.keys(lockList).length > 0) || !!(mid != null && lockList[String(mid)]); }
+  // V2.38.15：首领设置绝对优先（名单门已撤，首领只按「BOSS 出现」这一项裁决）
+  var zBossIgnoreAll = false;   // 本拍所有首领都进忽略集合（不处理；尾刀模式下除「已到尾刀线」那一只外同样全部忽略）
+  var zBossAllowGid = 0;        // 忽略集合里唯一放行的首领 GID（尾刀到线；0 = 没有）
+  var zBossWantGid = 0;         // 本拍被指定为最高优先目标的首领 GID（优先攻击 / 尾刀到线；0 = 没有）
+  var zBossLastBlock = "";      // 诊断用：最近一次首领裁决被哪一条挡住（不处理 / 尾刀未到线 / 血量未知）
+  var zBossDistUsed = 14;       // 诊断用：本拍使用的首领判定距离（格）
+  // V2.38.15：首领识别统一判据——怪物库命中且首领值大于 0（字符串数字同样认）
+  function isBossMid(mid) {
+    try {
+      if (mid == null || mid === "") return false;
+      var dbx = getMobDb();
+      var m = dbx && dbx[String(mid)];
+      if (!m) return false;
+      var n = Number(m.MvpDropsNum);
+      return isFinite(n) && n > 0;
+    } catch (e) { return false; }
+  }
+  // V2.38.15：首领忽略集合统一判据——索敌 / 还击 / 解围的候选一律先过这一道（与 zBossWantGid 同源，不留两套并行逻辑）
+  // V2.38.15 审计修复：判据只对首领成立 —— 调用点必须传该实体的 mid；普通怪（含 mid 取不到）一律不受忽略集合影响
+  function zBossIgnoredGid(gid, mid) {
+    try {
+      if (!zBossIgnoreAll) return false;
+      if (!isBossMid(mid)) return false;
+      var g = gidInt(gid);
+      return !(zBossAllowGid && g && g === zBossAllowGid);
+    } catch (e) { return false; }
+  }
+  // V2.38.15：首领判定距离（格）——可填，默认 14，夹在 5~40
+  function zBossDistNow() {
+    var d = 14;
+    try { var el = $id("dsh-z-bossdist"); if (el) { var v = parseInt(el.value, 10); if (!isNaN(v)) d = v; } } catch (e0) {}
+    if (!(d >= 5)) d = 5;
+    if (d > 40) d = 40;
+    return d;
+  }
   function zBossDecide(mobs) {
     try {
       mobs = mobs || scanMobs || lastMobs || [];
+      var out = { rec: null, act: "不处理", fly: false, reason: "", want: 0, hp: -1, skip: 0 };
+      var act = ($id("dsh-z-bossact") && $id("dsh-z-bossact").value) || "不处理";
+      out.act = act;
+      // V2.38.15：忽略集合先于「本拍是否侦察到首领」定下来——「不处理」全忽略，「等待残血补尾刀」只放行达标那一只
+      zBossIgnoreAll = (act === "不处理" || act === "等待残血补尾刀");
+      zBossAllowGid = 0; zBossWantGid = 0; zBossLastBlock = "";
+      var bossDist = zBossDistNow(); zBossDistUsed = bossDist;
       var rec = null;
       for (var i = 0; i < mobs.length; i++) {
         var m = mobs[i];
-        // BOSS 识别沿用 mob_db.MvpDropsNum > 0（scan 已标 isBoss），距离口径沿用 DS_BOSS_DIST
-        if (m && m.isBoss && m.dist >= 0 && m.dist <= DS_BOSS_DIST && (!rec || m.dist < rec.dist)) rec = m;
+        // 首领识别沿用怪物库首领值大于 0（scan 已标 isBoss），距离口径用可填的判定距离
+        if (m && m.isBoss && m.dist >= 0 && m.dist <= bossDist && (!rec || m.dist < rec.dist)) rec = m;
       }
-      var out = { rec: rec, act: "不处理", fly: false, reason: "", want: 0, hp: -1, skip: 0 };
-      zBossSkipGid = 0;
+      out.rec = rec;
       if (!rec) return out;
-      var bossMidRec = rec.mid != null ? rec.mid : (rec._job != null ? rec._job : (rec.job != null ? rec.job : rec.mobId));
-      var act = ($id("dsh-z-bossact") && $id("dsh-z-bossact").value) || "不处理";
-      // 既有语义：瞬移模式遇到已锁定 BOSS 时改为优先攻击。
-      if (act === "瞬移" && rec.mid != null && lockList[String(rec.mid)]) act = "优先攻击";
-      // 只有最终动作确为优先攻击且角色勾选时，普通地图才允许名单外 BOSS；瞬移与等待尾刀始终先受名单限制。
-      var ignoreLock = act === "优先攻击" && !!($id("dsh-z-bossignorelock") && $id("dsh-z-bossignorelock").checked);
-      if (!ignoreLock && !zBossAllowedByLock(bossMidRec)) return out;
-      out.act = act;
       if (act === "瞬移") { out.fly = true; out.reason = "BOSS(" + (rec.name || rec.mid) + ")"; }
       else if (act === "优先攻击") { out.want = gidInt(rec.GID); }
       else if (act === "等待残血补尾刀") {
         out.hp = zEntHpPct(rec.GID);
         var line = parseInt($id("dsh-z-bosshp") ? $id("dsh-z-bosshp").value : 30, 10); if (isNaN(line)) line = 30;
-        if (out.hp >= 0 && out.hp <= line) out.want = gidInt(rec.GID); // 残血到位 → 切过去补尾刀
-        else if (out.hp >= 0) out.skip = gidInt(rec.GID);              // 未到尾刀线 → 既不打也不飞
-        // out.hp < 0（血量取不到＝未知）→ 既不进尾刀模式也不跳过，按普通怪处理
-      }
-      zBossSkipGid = out.skip || 0;
+        if (out.hp >= 0 && out.hp <= line) out.want = gidInt(rec.GID);                       // 残血到位 → 切过去补尾刀
+        else if (out.hp < 0) { out.skip = gidInt(rec.GID); zBossLastBlock = "血量未知"; }      // 血量未知 → 首领设置优先，等不到线就不动手
+        else { out.skip = gidInt(rec.GID); zBossLastBlock = "尾刀未到线"; }                    // 未到尾刀线 → 既不打也不飞
+      } else { zBossLastBlock = "不处理"; }
+      if (out.want) { zBossAllowGid = out.want; zBossWantGid = out.want; }
       return out;
-    } catch (e) { zBossSkipGid = 0; return { rec: null, act: "不处理", fly: false, reason: "", want: 0, hp: -1, skip: 0 }; }
+    } catch (e) { zBossIgnoreAll = false; zBossAllowGid = 0; zBossWantGid = 0; return { rec: null, act: "不处理", fly: false, reason: "", want: 0, hp: -1, skip: 0 }; }
   }
   // A6：早退点不冻结整拍——只跳过攻击包发送，防御判定与走路继续（与侦查扫描同源去重，避免同拍重复判定）
   var zDefTickAt = 0;
@@ -9275,6 +9460,54 @@
       } catch (e2) {}
     }, true);
   } catch (e) {}
+  // V2.38.15：首领诊断（只读）——把首领裁决链摊开成一段可复制的文字；只看不发、不写任何状态。
+  function zBossDiagText() {
+    var L = [], br = String.fromCharCode(10);
+    try {
+      var db = null;
+      try { db = getMobDb(); } catch (e0) { db = null; }
+      var dbN = 0;
+      try { for (var k in db) { if (Object.prototype.hasOwnProperty.call(db, k)) dbN++; } } catch (e1) {}
+      L.push("首领诊断（助手版本 " + VER + "）");
+      L.push("怪物库条目=" + dbN);
+      var tgt = (zLock && zLock.gid) ? (zLock.name || String(zLock.gid)) : "无";
+      L.push("当前目标=" + tgt + ((zLock && zLock.gid) ? ("（编号=" + gidInt(zLock.gid) + (zLock.reactive ? " 还击" : "") + "）") : ""));
+      var actNow = ($id("dsh-z-bossact") && $id("dsh-z-bossact").value) || "不处理";
+      L.push("首领动作=" + actNow + " 判定距离=" + (zBossDistUsed || zBossDistNow()) + "格");
+      var mobsD = (scanMobs && scanMobs.length) ? scanMobs : (lastMobs || []);
+      L.push("附近怪物（最多 8 只，共 " + mobsD.length + " 只）：");
+      var shown = 0;
+      for (var i = 0; i < mobsD.length && shown < 8; i++) {
+        var m = mobsD[i];
+        if (!m) continue;
+        shown++;
+        var midD = m.mid != null ? String(m.mid) : "";
+        var mbD = null; try { mbD = (db && midD) ? db[midD] : null; } catch (e2) { mbD = null; }
+        var mvD = (mbD && mbD.MvpDropsNum != null) ? String(mbD.MvpDropsNum) : "无";
+        L.push("  " + shown + ". 编号=" + (midD || "未知") + " 名称=" + (m.name || "未知") + " 在库=" + (mbD ? "是" : "否") +
+          " 首领值=" + mvD + " 距离=" + (m.dist >= 0 ? distInt(m.dist) : "未知") + " 首领=" + (m.isBoss ? "是" : "否") +
+          (zBossIgnoredGid(m.GID, m.mid) ? " 忽略" : ""));
+      }
+      if (!shown) L.push("  视野内没有怪物");
+      L.push("本拍裁决：忽略集合=" + (zBossIgnoreAll ? "开" : "关") + " 放行编号=" + (zBossAllowGid || "无") + " 最高优先编号=" + (zBossWantGid || "无"));
+      L.push("挡住这一只的是：" + (zBossLastBlock || "没有挡住（首领只按上面的动作裁决，名单约束已撤）"));
+      return L.join(br);
+    } catch (e) { return "首领诊断生成失败"; }
+  }
+  // 「首领诊断」按钮：把裁决文本写进只读文本框（事件委托，面板重建/换页后仍有效）
+  try {
+    document.addEventListener("click", function (e) {
+      var t = e.target;
+      if (!t || t.id !== "dsh-z-bossdiag") return;
+      try {
+        var txtD = zBossDiagText();
+        var boxD = $id("dsh-z-bossdiagbox");
+        if (boxD) { boxD.value = txtD; boxD.focus(); boxD.select(); }
+        setStatus("首领诊断已写入文本框，可手动复制", "ok");
+        tlog("boss-diag-open");
+      } catch (e2) {}
+    }, true);
+  } catch (e) {}
   function tickSelfHeal() {
     try {
       if (saved.healFirst !== true || ordinaryCastBlocked() || !clientReady() || !isActFreeOnline("heal")) return false;
@@ -9292,8 +9525,14 @@
       return true;
     } catch (e) { return false; }
   }
-  function markFlyFail() { try { flyFailCount++; if (flyFailCount >= 3) flyFailUntil = Date.now() + 10000; } catch (e) {} }
-  function markFlyOk() { flyFailCount = 0; }
+  // V2.38.15：首领触发的脱离不吃普通「连续 3 次失败停 10 秒」，连续 15 次才停
+  function markFlyFail(fromBoss) {
+    try {
+      if (fromBoss) { flyBossFailCount++; if (flyBossFailCount >= 15) flyFailUntil = Date.now() + 10000; return; }
+      flyFailCount++; if (flyFailCount >= 3) flyFailUntil = Date.now() + 10000;
+    } catch (e) {}
+  }
+  function markFlyOk() { flyFailCount = 0; flyBossFailCount = 0; }
   // ================= /V1.9.4 =================
   function checkDefense(mobs, ent) {
     try {
@@ -9303,36 +9542,37 @@
       //   仅卡死瞬移绑定战斗态；全部防御瞬移仅在「有怪」战斗地图生效（主城/无怪图不触发）。
       var cMap = getCurrentMapInfo();
       var isCombatMap = defSnap.isCombatMap;
+      var inFight = defSnap.inFight; // V2.38.15：战斗地图 或 视野内确有怪物实体（卡死瞬移仍只认 isCombatMap）
       if (!clientReady()) return;
       // V2.35.2：死亡守卫——角色阵亡(HP=0)时清空瞬移/脱战残留（瞬移术/翅膀对尸体无效），
       //   否则死后 checkDefense 仍按 HP=0 判低血→瞬移，复活换图后残留 escapeState 继续乱飞。
       var _deadEnt0 = CLIENT.SS && CLIENT.SS.Entity, _deadLife0 = _deadEnt0 && _deadEnt0.life;
-      if (_deadLife0 && _deadLife0.hp != null && Number(_deadLife0.hp) <= 0) { resetEmergencyEscape(0); escapeBackoffUntil = 0; flyFailCount = 0; flyFailUntil = 0; lastFly = 0; return; }
+      if (_deadLife0 && _deadLife0.hp != null && Number(_deadLife0.hp) <= 0) { resetEmergencyEscape(0); escapeBackoffUntil = 0; flyFailCount = 0; flyBossFailCount = 0; flyFailUntil = 0; lastFly = 0; return; }
       var now = Date.now();
       zDefTickAt = now;
       // V2.34.0 A2：此处不再按「紧急原因」提前 return——判定顺序固定：
       //   0 瘫痪(坐下)守卫 → 1 BOSS → 2 血量安全线 → 3 群殴(含远程) → 4 解围技能(独立)
       doSitCycle(mobs);
-      var needFly = false, reason = "";
+      var needFly = false, reason = "", flyFromBoss = false; // V2.38.15：flyFromBoss=本拍要飞的原因来自首领脱离
       // ---- (1) BOSS 三模式（最高优先级；内部先看血量——血量瀑布在下方先判，血线之下任何模式都先飞）----
       var bossD = zBossDecide(mobs);
-      var bossFly = !!bossD.fly && isCombatMap, bossFlyReason = bossD.reason;
+      var bossFly = !!bossD.fly && inFight, bossFlyReason = bossD.reason;
       zLastBossAct = bossD.act; zLastBossHp = bossD.hp;
-      if (btDiagOn) btLog('def', 'mobs=' + mobs.length + ' isCombatMap=' + isCombatMap + ' bossAct=' + bossD.act + ' zRunning=' + zRunning);
+      if (btDiagOn) btLog('def', 'mobs=' + mobs.length + ' isCombatMap=' + isCombatMap + ' inFight=' + inFight + ' bossAct=' + bossD.act + ' zRunning=' + zRunning);
       var life = ent && ent.life;
       var hpDrop = 0;
       if (life) {
         var hpPct = life.maxhp > 0 ? life.hp / life.maxhp * 100 : 100;
         var spPct = life.maxsp > 0 ? life.sp / life.maxsp * 100 : 100;
         hpDrop = hpDrop2sPct(life.maxhp, now);
-        if (isCombatMap && hpPct < (parseInt($id("dsh-z-hpfly").value, 10) || 20)) { needFly = true; reason = "HP" + Math.round(hpPct) + "%"; }
-        if (isCombatMap && spPct < (parseInt($id("dsh-z-spfly").value, 10) || 10)) { needFly = true; reason = "SP" + Math.round(spPct) + "%"; }
+        if (inFight && hpPct < (parseInt($id("dsh-z-hpfly").value, 10) || 20)) { needFly = true; reason = "HP" + Math.round(hpPct) + "%"; }
+        if (inFight && spPct < (parseInt($id("dsh-z-spfly").value, 10) || 10)) { needFly = true; reason = "SP" + Math.round(spPct) + "%"; }
         // V2.34.2：失血速率紧急逃生——固定血线会被「一秒掉 25%」的爆发直接跨过去
-        if (isCombatMap && hpDrop >= 25 && mobs.length > 0) { needFly = true; reason = "失血" + Math.round(hpDrop) + "%/2s"; }
+        if (inFight && hpDrop >= 25 && mobs.length > 0) { needFly = true; reason = "失血" + Math.round(hpDrop) + "%/2s"; }
         if (hpPct < (parseInt($id("dsh-z-hpout").value, 10) || 5)) { setStatus("HP极低，10秒后下线", "err"); }
         // V1.9.4 瀑布接管：低血(喝水线) + 无药 + 被围 → 升级瞬移（消 25% 无药死区）
         var potThrNow = potHpThr();
-        if (isCombatMap && potNoPotion && mobs.length > 0 && hpPct < potThrNow && !needFly) {
+        if (inFight && potNoPotion && mobs.length > 0 && hpPct < potThrNow && !needFly) {
           needFly = true; reason = "低血无药被围";
         }
       }
@@ -9353,16 +9593,17 @@
       if (grpN < 0) grpN = 0; // 0 = 群殴处理关闭
       var grpCnt = zGrpCount(mobs).n;
       zLastGrpCount = grpCnt;
-      var grpFly = grpN > 0 && grpCnt >= grpN && isCombatMap && $id("dsh-z-flygrp") && $id("dsh-z-flygrp").checked;
+      var grpFly = grpN > 0 && grpCnt >= grpN && inFight && $id("dsh-z-flygrp") && $id("dsh-z-flygrp").checked;
       // V2.34.0 A2/A3：血线之下任何模式都先飞（上方血量瀑布已判）；血线之上才轮到 BOSS 与群殴
-      if (!needFly && bossFly) { needFly = true; reason = bossFlyReason || "BOSS"; }
+      if (!needFly && bossFly) { needFly = true; reason = bossFlyReason || "BOSS"; flyFromBoss = true; }
       if (!needFly && grpFly) { needFly = true; reason = "群殴(" + grpCnt + "只)"; }
       // V2.16.0：防御瞬移总开关（dsh-z-flykill，默认开）——关掉后群殴/BOSS/低血/SP/被围/卡死/坐下看门狗全部不再瞬移，坐下回血不受影响
-      if ($id("dsh-z-flykill") && !$id("dsh-z-flykill").checked) needFly = false;
+      if ($id("dsh-z-flykill") && !$id("dsh-z-flykill").checked) { needFly = false; flyFromBoss = false; }
       // V2.15.22：SP 低瞬移让位——坐下条件满足且未被围、HP 未到危险线时，SP 瞬移让位给坐下回蓝
       if (needFly && /^SP/.test(reason) && needSitNow() && mobs.length < 3 && life && life.maxhp > 0 && (life.hp / life.maxhp * 100) >= (parseInt($id("dsh-z-hpfly").value, 10) || 20)) {
         needFly = false;
         reason = "";
+        flyFromBoss = false;
       }
       // V1.9.4：瞬移冷却门（连续失败 3 次后 10s 停手 + 瞬移间隔）——不再整拍 return，只挡瞬移本身
       var flyInt = (parseInt($id("dsh-z-flyint").value, 10) || 30) * 1000;
@@ -9374,22 +9615,29 @@
         else if (hpDrop >= 25) critEsc = true;
         else if (hpNowPct < 60 && zQoaNearCount(mobs) >= 3) critEsc = true;
       }
-      if (critEsc) { flyFailCount = 0; flyFailUntil = 0; }
-      var flyCool = (now < flyFailUntil) || (now - lastFly < (critEsc ? 1000 : flyInt));
-      if (needFly && !flyCool) {
+      if (critEsc) { flyFailCount = 0; flyBossFailCount = 0; flyFailUntil = 0; }
+      // V2.38.15：首领触发的脱离不吃普通「连续 3 次失败停 10 秒」，只用 1 秒防抖；
+      //   角色处于不能行动状态（晕眩/冰冻/石化/睡眠）时本拍跳过尝试，且不计入失败。
+      var flyBossStuck = false;
+      if (flyFromBoss) { try { flyBossStuck = !canActNow(); } catch (eSA) { flyBossStuck = false; } }
+      var flyCool = flyFromBoss
+        ? (now - lastFly < 1000)
+        : ((now < flyFailUntil) || (now - lastFly < (critEsc ? 1000 : flyInt)));
+      var flyIssued = !!needFly && !flyCool && !flyBossStuck; // V2.38.15：「本拍真的发出瞬移」的统一标志
+      if (flyIssued) {
         zLastFlyReason = reason; // V2.34.0 A7：诊断用最近一次飞的原因
       zLastFlyReasonAt = Date.now();
         // 紧急防御只走已学瞬移术；确认地图/坐标变化前持续阻塞治愈与普通技能。
         var flyResult = requestEmergencyEscape(reason);
         var flyOk = flyResult === "teleport" || flyResult === "wait" || flyResult === "stand" || flyResult === "backoff"; // V2.34.2：退避/等待不算失败，避免“飞不出去→锁更久”自锁
         if (btDiagOn) btLog('def-fly', reason + ' -> ' + (flyOk ? '成功' : '失败') + ' (failCnt=' + flyFailCount + ' failUntil=' + (flyFailUntil - now > 0 ? ((flyFailUntil - now) / 1000).toFixed(1) + 's后' : '无') + ')');
-        if (!flyOk) markFlyFail(); else markFlyOk();
+        if (!flyOk) markFlyFail(flyFromBoss); else markFlyOk();
         lastFly = now;
         setStatus("瞬移(" + reason + ")", "warn");
       }
-      // ---- (4) 解围技能（独立）：只有上方都不需要飞时才考虑；血线之上、带技能 CD 门；
-      //        不挡普通攻击技能（不进 emergencyThreatReason / 不触发 ordinaryCastBlocked）----
-      else if (!needFly) {
+      // ---- (4) 解围技能（独立）：只要本拍没有真的发出瞬移就独立判定（飞被冷却挡住的那一拍照旧可放）；
+      //        血线之上、带技能 CD 门；不挡普通攻击技能（不进 emergencyThreatReason / 不触发 ordinaryCastBlocked）----
+      if (!flyIssued) {
         zQoaTry(mobs, ent, now);
       }
       // V2.16.19：坐下周期已提前到本函数开头（不受瞬移冷却影响），此处不再重复调用
@@ -10383,6 +10631,7 @@
       var hitNear = null, hitNearD = 1e9, hitNearHp = 1e18;    // 还击候选（兜底）
       var heldNear = null, heldNearD = 1e9, heldNearHp = 1e18; // V2.38.4 G2②：chaseHold 保持中的那只怪（优先，防两只怪之间来回换目标点）
       var zReactiveGid = zLock.reactive ? gidInt(zLock.gid) : 0; // V2.34.4：还击锁定的攻击者必须被追击（与 zAttack 同锚点）
+      var zBossChaseGid = zBossWantGid || 0; // V2.38.15：被首领设置指定为最高优先的那只（优先攻击 / 尾刀到线）越过锁定名单与「打全部怪」被追击
       var zWalkSeenMob = 0, zWalkBlockedMob = 0; // V2.38.4：视野内活怪数 / 被名单门挡掉的怪数（仅诊断，不参与筛选）
       if (EM && EM.forEach) {
         EM.forEach(function (e) {
@@ -10391,11 +10640,12 @@
             if (e.isDeath) return;
             if (e.ACTION && e.action != null && e.action === e.ACTION.DIE) return;
             if (e.remove_tick) return;
-            // V2.34.0 A3：尾刀模式未到尾刀线的 BOSS 不追（既不打也不飞）
-            if (zBossSkipGid && gidInt(e.GID) === zBossSkipGid) return;
             var mid = e._job != null ? String(e._job) : (e.job != null ? String(e.job) : (e.mobId != null ? String(e.mobId) : null));
+            // V2.38.15：首领忽略集合统一剔除（不处理 / 尾刀未到线 / 血量未知 → 不追、不打、不因它飞）；普通怪一律不受影响
+            if (zBossIgnoredGid(e.GID, mid)) return;
             var inLockN = anyLock ? !!(mid && lockList[mid]) : zAllMobsW; // V2.34.4：名单非空→只认名单；名单为空→按「打全部怪」
             if (!inLockN && zReactiveGid && gidInt(e.GID) === zReactiveGid) inLockN = true;
+            if (!inLockN && zBossChaseGid && gidInt(e.GID) === zBossChaseGid) inLockN = true; // V2.38.15：首领最高优先目标
             zWalkSeenMob++;
             if (!inLockN && !allowHitTarget) zWalkBlockedMob++; // V2.38.4：被名单门挡掉的怪计数（仅诊断，不参与筛选）
             if (!inLockN && !allowHitTarget) return;
@@ -10410,6 +10660,8 @@
               var tier = (zHitBy[gidK] && (now - zHitBy[gidK].ts) < zHitKeepMs) ? 2 : (d <= 1 ? 1 : 0);
               if (!lockNear || tier > lockNearTier || (tier === lockNearTier && (hpNow < lockNearHp || (hpNow === lockNearHp && d < lockNearD)))) { lockNear = e; lockNearD = d; lockNearHp = hpNow; lockNearTier = tier; }
             } else {
+              // V2.38.15：首领一律不进还击候选（还击只对非首领怪生效）
+              if (isBossMid(mid)) return;
               if (!hitNear || hpNow < hitNearHp || (hpNow === hitNearHp && d < hitNearD)) { hitNear = e; hitNearD = d; hitNearHp = hpNow; }
             }
           } catch (e2) {}
@@ -11010,7 +11262,7 @@
           if (bEnt && bEnt.position && ent.position) {
             var bd = zRangeDist(bEnt.position, ent.position); // V2.34.3：格子距离口径
             var bgid = bEnt.GID != null ? bEnt.GID : bossWantD.rec.GID;
-            if (bd <= (npMode ? npThD : atkRange) && defSnap && defSnap.isCombatMap && gidInt(zLock.gid) !== gidInt(bgid)) {
+            if (bd <= (npMode ? npThD : atkRange) && defSnap && defSnap.inFight && gidInt(zLock.gid) !== gidInt(bgid)) {
               zLock.gid = bgid;
               zLock.name = (bEnt.display && bEnt.display.name) || String(bEnt._job != null ? bEnt._job : bgid);
               zLock.dist = bd; zLock.reactive = false; zLock.done = false;
@@ -11022,10 +11274,13 @@
           }
         }
       } catch (eBoss) {}
-      // V2.34.0 追改：尾刀模式下锁定的 BOSS 未到尾刀线（zBossSkipGid）→ 本拍不打它、不因它保持追击、也不因它拒绝换目标，
-      //   且绝不清除 zLock.gid：锁留着，HP% 掉进 dsh-z-bosshp 尾刀线后同一把锁自动恢复生效，用户无需重新锁定
-      var zLockBossSkip = !!(zBossSkipGid && zLock.gid && gidInt(zLock.gid) === zBossSkipGid);
-      if (zLockBossSkip) zMon.action = "锁定BOSS未到尾刀线（等待残血，保留锁）";
+      // V2.38.15：锁定的首位首领落在忽略集合里（不处理 / 尾刀未到线 / 血量未知）→ 本拍不打它、不因它保持追击、也不因它拒绝换目标，
+      //   且绝不清除 zLock.gid：锁留着，条件满足后同一把锁自动恢复生效，用户无需重新锁定
+      // V2.38.15 审计修复：只有「锁定的确是首领」才走忽略集合；用户手点的普通怪照旧正常解析与攻击（mid 取不到也按普通怪处理）
+      var zLockEntSkip = zLock.gid ? zEntOf(zLock.gid) : null;
+      var zLockMidSkip = zLockEntSkip ? (zLockEntSkip._job != null ? zLockEntSkip._job : (zLockEntSkip.job != null ? zLockEntSkip.job : zLockEntSkip.mobId)) : null;
+      var zLockBossSkip = !!(zLock.gid && zBossIgnoredGid(zLock.gid, zLockMidSkip));
+      if (zLockBossSkip) zMon.action = "锁定首领在忽略集合（保留锁）";
       if (!target && zLock.gid && !zLockBossSkip) {
         EM.forEach(function (e) {
           try {
@@ -11068,9 +11323,9 @@
             if (e.isDeath) return;
             if (e.ACTION && e.action != null && e.action === e.ACTION.DIE) return;
             if (e.remove_tick) return;
-            // V2.34.0 A3：尾刀模式未到尾刀线的 BOSS 不进候选（既不打也不飞）
-            if (zBossSkipGid && gidInt(e.GID) === zBossSkipGid) return;
             var mid = e._job != null ? String(e._job) : (e.job != null ? String(e.job) : (e.mobId != null ? String(e.mobId) : null));
+            // V2.38.15：首领忽略集合统一剔除（不处理 / 尾刀未到线 / 血量未知 → 不进候选）；普通怪一律不受影响
+            if (zBossIgnoredGid(e.GID, mid)) return;
             var inLock = anyLock ? !!(mid && lockList[mid]) : zAllMobs; // V2.34.4：名单非空→只认名单；名单为空→按「打全部怪」
             if (!ent.position || !e.position) return;
             var d = zRangeDist(e.position, ent.position); // V2.34.3：格子距离口径
@@ -11084,8 +11339,8 @@
                 if (!target || tier > bestTier || (tier === bestTier && (hpNow < bestHp || (hpNow === bestHp && d < best)))) { target = e; best = d; bestHp = hpNow; bestTier = tier; }
               }
             } else {
-              // 非锁定怪：仅用于「还击」候选（攻击距离内最近的）
-              if (d <= atkRange && d < hitBest) { hitBest = d; hitTarget = e; }
+              // 非锁定怪：仅用于「还击」候选（攻击距离内最近的）；V2.38.15：首领一律不进还击候选
+              if (!isBossMid(mid) && d <= atkRange && d < hitBest) { hitBest = d; hitTarget = e; }
             }
           } catch (e2) {}
         });
@@ -11146,6 +11401,11 @@
           }
         } catch (eH) {}
         var hitCandEnt = hitCandGid ? zEntOf(hitCandGid) : null;
+        // V2.38.15：这一条还击候选同样排除首领（还击只对非首领怪生效）
+        if (hitCandEnt) {
+          var hitCandMid = hitCandEnt._job != null ? hitCandEnt._job : (hitCandEnt.job != null ? hitCandEnt.job : (hitCandEnt.mobId != null ? hitCandEnt.mobId : (hitCandEnt.mid != null ? hitCandEnt.mid : null)));
+          if (isBossMid(hitCandMid)) hitCandEnt = null;
+        }
         if (hitCandEnt) {
           if (onaMode === "瞬移" && !($id("dsh-z-flykill") && !$id("dsh-z-flykill").checked)) {
             requestEmergencyEscape("最近受击");
@@ -12037,6 +12297,16 @@
     if (attMixMargEl) {
       if (saved.attMixGap != null) attMixMargEl.value = saved.attMixGap;
       attMixMargEl.addEventListener("change", function () { saved.attMixGap = parseInt(this.value, 10) || 0; saveSaved(saved); });
+    }
+    // V2.38.15：首领判定距离（格）随角色档保存/恢复；默认 14，可填 5~40
+    var bossDistEl = $id("dsh-z-bossdist");
+    if (bossDistEl) {
+      var bdSaved = parseInt(saved.bossDist, 10);
+      bossDistEl.value = (isNaN(bdSaved) || bdSaved < 5 || bdSaved > 40) ? 14 : bdSaved;
+      bossDistEl.addEventListener("change", function () {
+        var bv = parseInt(this.value, 10); if (isNaN(bv) || bv < 5) bv = 5; if (bv > 40) bv = 40;
+        this.value = bv; saved.bossDist = bv; try { saveSaved(saved); } catch (e) {}
+      });
     }
     // V2.22.0：助手自动战斗默认打全部怪
     var allMobsEl = $id("dsh-z-allmobs");
@@ -14934,8 +15204,11 @@
       // V1.7.6 横条可拖动：拖到哪停哪，位置持久化；恢复保存的位置
       try {
         var zp = JSON.parse(localStorage.getItem("dsh_zhud_pos") || "null");
-        if (zp && zp.length === 2) {
-          zHudEl.style.left = zp[0] + "px"; zHudEl.style.top = zp[1] + "px";
+        // V2.38.15：记下的位置先按屏幕比例换算到当前视口，再夹回可视区
+        var zhp = (zp && zp.length >= 2) ? roFloatScaled({ x: zp[0], y: zp[1], vw: zp[2], vh: zp[3] }, roVw(), roVh()) : null;
+        if (zhp) {
+          var zhq = roFloatFit(zhp.x, zhp.y, 0, 0, roVw(), roVh());
+          zHudEl.style.left = zhq.x + "px"; zHudEl.style.top = zhq.y + "px";
           zHudEl.style.transform = "none";
         }
       } catch (e) {}
@@ -14947,8 +15220,9 @@
         var ny = Math.max(0, Math.min(roVh() - 24, y));
         zHudEl.style.left = nx + "px"; zHudEl.style.top = ny + "px";
         zHudEl.style.transform = "none";
-        try { localStorage.setItem("dsh_zhud_pos", JSON.stringify([nx, ny])); } catch (err) {}
+        try { localStorage.setItem("dsh_zhud_pos", JSON.stringify([nx, ny, roVw(), roVh()])); } catch (err) {} // V2.38.15：连同当时的视口一起记下
       });
+      dshFloatRegLs(zHudEl, "dsh_zhud_pos", function (e) { e.style.transform = "none"; }); // V2.38.15：尺寸变化时按屏幕比例跟随
     } catch (e) {}
   }
   // V2.36.15：界面上的怪物距离一律只保留小数点前（格子/米都是整数）
@@ -15027,14 +15301,15 @@
       ".dsh-mob-info{margin-top:4px;color:#e8e8e8;font-size:clamp(10px,0.9vw,12px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 2px #000,0 0 5px rgba(0,0,0,.9)}" +
       ".dsh-mob-info b{color:#ffd75e;font-weight:bold}" +
       ".dsh-mob-info a{color:#9ecbff;font-weight:bold;text-decoration:none;text-shadow:0 1px 2px #000,0 0 5px rgba(0,0,0,.9)}" +
-      "#dsh-party-float{display:grid;grid-template-columns:1fr 1fr;gap:3px;width:clamp(220px,18vw,300px)}" +
+      "#dsh-party-float{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:clamp(220px,18vw,300px)}" + // V2.38.15：块间距留出加粗外圈的位置，相邻方块不再糊成一条边
       "#dsh-party-float .dsh-pcells{display:contents}" +
-      ".dsh-pcell{position:relative;border-radius:2px;overflow:hidden;padding:clamp(5px,0.6vw,8px) clamp(7px,0.8vw,10px);padding-top:clamp(8px,1vw,13px);cursor:pointer;transition:transform .12s}" +
-      ".dsh-pcell .dsh-hp-edge{position:absolute;top:0;left:0;height:clamp(3px,0.35vw,5px);background:rgba(255,255,255,.85);box-shadow:0 0 3px rgba(0,0,0,.4)}" +
+      ".dsh-pcell{position:relative;border-radius:3px;overflow:hidden;padding:clamp(5px,0.6vw,8px) clamp(7px,0.8vw,10px);padding-top:clamp(8px,1vw,13px);cursor:pointer;transition:transform .12s;" +
+        "background:rgba(10,13,18,.8);box-shadow:0 4px 10px rgba(0,0,0,.85),0 0 0 3px var(--dsh-pjob,#7d8894),inset 0 1px 0 rgba(255,255,255,.18)}" +
+      ".dsh-pcell .dsh-pfill{position:absolute;left:0;top:0;bottom:0;width:0%;z-index:0;transition:width .2s}" +
       ".dsh-pcell:hover{transform:scale(1.03)}" +
-      ".dsh-pcell.selected{transform:scale(1.08);box-shadow:0 0 14px rgba(255,255,255,.75),0 2px 6px rgba(0,0,0,.6);z-index:2}" +
-      ".dsh-pcell .dsh-pname{color:#fff;font-weight:bold;font-size:clamp(11px,1.05vw,14px);line-height:1.25;text-shadow:-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000,0 2px 3px rgba(0,0,0,.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
-      ".dsh-pcell .dsh-php{color:#fff;font-variant-numeric:tabular-nums;font-size:clamp(10px,0.95vw,12px);text-shadow:-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000,0 2px 3px rgba(0,0,0,.9)}" +
+      ".dsh-pcell.selected{transform:scale(1.08);z-index:2;box-shadow:0 0 0 3px var(--dsh-pjob,#7d8894),0 0 14px rgba(255,255,255,.8),0 4px 10px rgba(0,0,0,.85)}" +
+      ".dsh-pcell .dsh-pname{position:relative;z-index:1;color:#fff;font-weight:bold;font-size:clamp(11px,1.05vw,14px);line-height:1.25;text-shadow:-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000,0 2px 3px rgba(0,0,0,.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+      ".dsh-pcell .dsh-php{position:relative;z-index:1;color:#fff;font-variant-numeric:tabular-nums;font-size:clamp(10px,0.95vw,12px);text-shadow:-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000,0 2px 3px rgba(0,0,0,.9)}" +
       ".dsh-pcell.selected .dsh-pname{color:#ffe27a}" +
       ".dsh-pfoot{grid-column:1 / -1;display:flex;align-items:center;gap:8px;color:#fff;font-size:clamp(10px,0.9vw,12px);text-shadow:0 1px 2px #000,0 0 6px #000}" +
       ".dsh-pfoot label{display:flex;align-items:center;gap:3px;cursor:pointer}" +
@@ -15049,6 +15324,7 @@
       if (e.button !== 0) return;
       if (e.target && e.target.closest && e.target.closest("a,input,label,button,select")) return; // 控件交互不抢拖
       pid = e.pointerId; el._dshMoved = false;
+      try { el.__dsDragging = true; } catch (ed0) {}   // V2.38.15：拖动期间不做比例跟随
       try { el.setPointerCapture(pid); } catch (e0) {}
       var r = el.getBoundingClientRect();
       el.style.left = r.left + "px"; el.style.top = r.top + "px"; el.style.right = "auto";
@@ -15066,9 +15342,10 @@
     function end(e) {
       if (pid === null || (e && e.pointerId !== pid)) return;
       pid = null;
+      try { el.__dsDragging = false; } catch (ed1) {}
       if (el._dshMoved) {
         var r = el.getBoundingClientRect();
-        try { saved[posKey] = { x: Math.round(r.left), y: Math.round(r.top) }; saveSaved(saved); } catch (e2) {}
+        try { saved[posKey] = { x: Math.round(r.left), y: Math.round(r.top), vw: roVw(), vh: roVh() }; saveSaved(saved); } catch (e2) {} // V2.38.15：连同当时的视口一起记下
       }
     }
     el.addEventListener("pointerup", end);
@@ -15076,8 +15353,47 @@
   }
   function dshFloatPlace(el, posKey, dx, dy) {
     var pos = saved && saved[posKey];
-    el.style.left = (pos && isFinite(Number(pos.x)) ? Number(pos.x) : dx) + "px";
-    el.style.top = (pos && isFinite(Number(pos.y)) ? Number(pos.y) : dy) + "px";
+    // V2.38.15：记下的位置先按屏幕比例换算到当前视口，再夹回可视区（旧记忆没有基准就不换算）
+    var p = (pos && isFinite(Number(pos.x)) && isFinite(Number(pos.y))) ? roFloatScaled(pos, roVw(), roVh()) : null;
+    if (!p) p = { x: dx, y: dy };
+    var sz = roFloatSize(el);
+    var q = roFloatFit(p.x, p.y, sz.w, sz.h, roVw(), roVh());
+    el.style.left = q.x + "px";
+    el.style.top = q.y + "px";
+  }
+  // V2.38.15：位置存 saved[posKey] 的悬浮层统一登记（尺寸变化时按屏幕比例跟随并夹回可视区）
+  function dshFloatRegSaved(el, posKey) {
+    roFloatReg({
+      key: "saved:" + posKey,
+      el: function () { return el; },
+      drag: function () { return !!el.__dsDragging; },
+      get: function () {
+        var p = saved && saved[posKey];
+        return (p && isFinite(Number(p.x)) && isFinite(Number(p.y))) ? p : null;
+      },
+      set: function (e, x, y, vw, vh) {
+        e.style.left = Math.round(x) + "px"; e.style.top = Math.round(y) + "px";
+        try { saved[posKey] = { x: Math.round(x), y: Math.round(y), vw: vw, vh: vh }; saveSaved(saved); } catch (e2) {}
+      }
+    });
+  }
+  // V2.38.15：位置存 localStorage 数组 [x, y, 视口宽, 视口高] 的悬浮层统一登记；extra 用来清掉 right/bottom/transform 之类的旧锚点
+  function dshFloatRegLs(el, lsKey, extra) {
+    roFloatReg({
+      key: "ls:" + lsKey,
+      el: function () { return el; },
+      drag: function () { return !!el.__dsDragging; },
+      get: function () {
+        var a = null;
+        try { a = JSON.parse(localStorage.getItem(lsKey) || "null"); } catch (e) {}
+        return (a && a.length >= 2 && isFinite(Number(a[0])) && isFinite(Number(a[1]))) ? { x: Number(a[0]), y: Number(a[1]), vw: a[2], vh: a[3] } : null;
+      },
+      set: function (e, x, y, vw, vh) {
+        e.style.left = Math.round(x) + "px"; e.style.top = Math.round(y) + "px";
+        try { if (extra) extra(e); } catch (e1) {}
+        try { localStorage.setItem(lsKey, JSON.stringify([Math.round(x), Math.round(y), vw, vh])); } catch (e2) {}
+      }
+    });
   }
   function fmtK(n) { n = Math.floor(Number(n) || 0); return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
   // 按怪物ID的外链：「数量」→RO321 re_mob_db、「资料」→DVG monsterinfo（不依赖中文名）
@@ -15149,6 +15465,7 @@
     document.documentElement.appendChild(el);
     dshFloatPlace(el, "tgtBarPos", Math.round(window.innerWidth * 0.08), Math.round(window.innerHeight * 0.14));
     dshFloatDrag(el, "tgtBarPos");
+    dshFloatRegSaved(el, "tgtBarPos");
     var img = el.querySelector("#dsh-tgt-img"), fb = el.querySelector("#dsh-tgt-fb");
     img.addEventListener("load", function () { img.style.display = "block"; fb.style.display = "none"; });
     img.addEventListener("error", function () { img.style.display = "none"; fb.style.display = "flex"; });
@@ -15267,6 +15584,16 @@
     if (PARTY_JOB_COLORS[j]) return PARTY_JOB_COLORS[j];
     return "hsl(" + ((job * 47) % 360) + ",45%,55%)";  // 未收录职业：稳定散列色
   }
+  // V2.38.15：整块显血的颜色三段（0% 单独一档暗红，空块与低血一眼可辨）
+  var PARTY_HP_BASE = "rgba(10,13,18,.8)";
+  var PARTY_HP_HIGH = "#4caf2e", PARTY_HP_MID = "#e0b30f", PARTY_HP_LOW = "#d8402c", PARTY_HP_ZERO = "#5b1a14";
+  function partyHpColor(pct) {
+    var p = Number(pct);
+    if (!isFinite(p) || p <= 0) return PARTY_HP_ZERO;
+    if (p >= 60) return PARTY_HP_HIGH;
+    if (p >= 30) return PARTY_HP_MID;
+    return PARTY_HP_LOW;
+  }
   var dshPartyFloat = null;
   function ensurePartyFloat() {
     if (dshPartyFloat && dshPartyFloat.parentNode) return dshPartyFloat;
@@ -15280,6 +15607,7 @@
     document.documentElement.appendChild(el);
     dshFloatPlace(el, "partyPos", Math.round(window.innerWidth * 0.76), Math.round(window.innerHeight * 0.30));
     dshFloatDrag(el, "partyPos");
+    dshFloatRegSaved(el, "partyPos");
     // 点击色块 = 锁定该队友为目标（拖拽位移 >3px 不触发选中）
     el.addEventListener("click", function (e) {
       if (el._dshMoved) return;
@@ -15359,13 +15687,18 @@
     var dead = !isSelf && !offline && !diffMap && (o.dead || (hm > 0 && hp <= 0));
     var mapLabel = memMap;
     if (memMap) { try { if (!CLIENT.DB) CLIENT.DB = requireDB("DB/DBManager"); if (CLIENT.DB && typeof CLIENT.DB.getMapName === "function") { var _mn = CLIENT.DB.getMapName(memMap); if (_mn && String(_mn) !== memMap) mapLabel = String(_mn); } } catch (e) {} }
-    var bg, label, edgeW;
-    if (dead) { bg = "#5a5a5a"; label = "死亡"; edgeW = 0; }
-    else if (offline) { bg = "#6b7280"; label = "离线"; edgeW = 0; }
-    else if (diffMap) { bg = "#2b6cb0"; label = "异图·" + roEscTxt(mapLabel || "?"); edgeW = 0; }
-    else { bg = partyJobColor(o.job); label = hm > 0 ? (fmtK(hh) + " / " + fmtK(hm)) : "--"; edgeW = pct; }
-    return '<div class="dsh-pcell' + (sel ? " selected" : "") + '" data-aid="' + roEscTxt(o.AID) + '" data-nm="' + roEscTxt(o.name) + '" style="background:' + bg + (isSelf ? ";cursor:default" : "") + '">' +
-      '<div class="dsh-hp-edge" style="width:' + edgeW + '%"></div>' +
+    var bg, label, fill = "";
+    if (dead) { bg = "#5a5a5a"; label = "死亡"; }
+    else if (offline) { bg = "#6b7280"; label = "离线"; }
+    else if (diffMap) { bg = "#2b6cb0"; label = "异图·" + roEscTxt(mapLabel || "?"); }
+    else {
+      // V2.38.15：整块按血量百分比填充（绿 / 黄 / 红），死亡·离线·异图 三态不用填充
+      bg = PARTY_HP_BASE;
+      label = hm > 0 ? (fmtK(hh) + " / " + fmtK(hm)) : "--";
+      fill = '<div class="dsh-pfill" style="width:' + pct + '%;background:' + partyHpColor(pct) + '"></div>';
+    }
+    return '<div class="dsh-pcell' + (sel ? " selected" : "") + '" data-aid="' + roEscTxt(o.AID) + '" data-nm="' + roEscTxt(o.name) + '" data-pct="' + pct + '" style="--dsh-pjob:' + partyJobColor(o.job) + ';background:' + bg + (isSelf ? ";cursor:default" : "") + '">' +
+      fill +
       '<div class="dsh-pname">' + roEscTxt(o.name || ("AID " + o.AID)) + '</div>' +
       '<div class="dsh-php">' + label + '</div></div>';
   }
@@ -15761,8 +16094,11 @@
       // V2.36.15：战斗提示横条可拖动（拖到哪停哪，位置持久化在 dsh_ztip_pos）
       try {
         var tp = JSON.parse(localStorage.getItem("dsh_ztip_pos") || "null");
-        if (tp && tp.length === 2) {
-          zTipEl.style.left = tp[0] + "px"; zTipEl.style.top = tp[1] + "px";
+        // V2.38.15：记下的位置先按屏幕比例换算到当前视口，再夹回可视区
+        var ztp = (tp && tp.length >= 2) ? roFloatScaled({ x: tp[0], y: tp[1], vw: tp[2], vh: tp[3] }, roVw(), roVh()) : null;
+        if (ztp) {
+          var ztq = roFloatFit(ztp.x, ztp.y, 0, 0, roVw(), roVh());
+          zTipEl.style.left = ztq.x + "px"; zTipEl.style.top = ztq.y + "px";
           zTipEl.style.bottom = "auto";
         }
       } catch (e1) {}
@@ -15772,9 +16108,10 @@
           var ny = Math.max(0, Math.min(roVh() - 24, y));
           zTipEl.style.left = nx + "px"; zTipEl.style.top = ny + "px";
           zTipEl.style.bottom = "auto";
-          try { localStorage.setItem("dsh_ztip_pos", JSON.stringify([nx, ny])); } catch (err2) {}
+          try { localStorage.setItem("dsh_ztip_pos", JSON.stringify([nx, ny, roVw(), roVh()])); } catch (err2) {} // V2.38.15：连同当时的视口一起记下
         });
       } catch (e2) {}
+      dshFloatRegLs(zTipEl, "dsh_ztip_pos", function (e) { e.style.bottom = "auto"; }); // V2.38.15：尺寸变化时按屏幕比例跟随
     } catch (e) {}
   }
   function renderZTip() {
@@ -17895,7 +18232,14 @@
   // 用户口径：启动时清零当前角色档的锁定名单并改打全部怪；战斗阶段只自动捡卡片与装备；释放租约时还原「打全部怪」原值（名单不还原）。
   var apiAllMobsSaved = null;
   function apiAllMobsRestore() {
-    try { if (apiAllMobsSaved === null) return false; var el = $id("dsh-z-allmobs"); if (el) el.checked = !!apiAllMobsSaved; } catch (e) {}
+    try {
+      if (apiAllMobsSaved === null) return false;
+      var v = !!apiAllMobsSaved;
+      try { var el = $id("dsh-z-allmobs"); if (el) el.checked = v; } catch (e0) {}
+      // V2.38.15 审计修复：按记下的原值回写设置并走同一套保存路径（saved + 角色档 ui 表），保证释放后落盘状态与启动代打前完全一致
+      try { if (saved && saved.allMobs !== v) { saved.allMobs = v; saveSaved(saved); } } catch (e1) {}
+      try { if (typeof captureAll === "function") captureAll(); } catch (e2) {}
+    } catch (e) {}
     apiAllMobsSaved = null;
     return true;
   }
@@ -17909,6 +18253,10 @@
       if (!apiLease || apiLease.owner !== owner) return { ok: false, error: "lease-required" };
       var badScope = apiGuard(owner, "dojo"); if (badScope) return badScope; // V2.38.13 FIX-3：清名单/改打全部怪属于 dojo 能力，必须走同一道门
       var o = opts || {}, cleared = 0;
+      // V2.38.15：先记下「打全部怪」原值 —— 清空名单会触发自动勾选，自动值绝不能被当成原值
+      var allMobsEl0 = null;
+      try { allMobsEl0 = $id("dsh-z-allmobs"); } catch (eA) { allMobsEl0 = null; }
+      if (o.allMobs === true && allMobsEl0 && apiAllMobsSaved === null) apiAllMobsSaved = !!allMobsEl0.checked;
       if (o.clearLocks === true) {
         try {
           // 只清当前角色档：未识别时名单是别档副本，一律拒绝，绝不误删别人档里的名单
@@ -17922,8 +18270,7 @@
       }
       if (o.allMobs === true) {
         try {
-          var el = $id("dsh-z-allmobs");
-          if (el) { if (apiAllMobsSaved === null) apiAllMobsSaved = !!el.checked; el.checked = true; }
+          if (allMobsEl0) { if (apiAllMobsSaved === null) apiAllMobsSaved = !!allMobsEl0.checked; allMobsEl0.checked = true; }
         } catch (eM) {}
       }
       return { ok: true, cleared: cleared, allMobsRestore: apiAllMobsSaved };
@@ -18442,11 +18789,16 @@
     box.id = "dsh-mvp-timers";
     box.style.cssText = "position:fixed;z-index:2147482000;box-sizing:border-box;min-width:220px;min-height:40px;max-width:100vw;max-height:100vh;color:#edf4ff;border:1px solid #8298b066;border-radius:8px;padding:8px;font:13px/1.5 sans-serif;display:flex;flex-direction:column;overflow:hidden;text-shadow:0 1px 3px #000";
     box.style.width = width + "px";
-    box.style.left = number(prefs.left, Math.max(0, innerWidth - width - 12), 0, Math.max(0, innerWidth - width)) + "px";
-    box.style.top = number(prefs.top, 80, 0, Math.max(0, innerHeight - 40)) + "px";
+    // V2.38.15：记住的位置先按屏幕比例换算到当前视口，再夹回可视区（旧记忆没有基准就不换算）
+    var mvpP = (typeof prefs.left === "number" && typeof prefs.top === "number" && isFinite(prefs.left) && isFinite(prefs.top))
+      ? roFloatScaled({ x: prefs.left, y: prefs.top, vw: prefs.vw, vh: prefs.vh }, innerWidth, innerHeight) : null;
+    if (!mvpP) mvpP = { x: number(prefs.left, Math.max(0, innerWidth - width - 12), 0, Math.max(0, innerWidth - width)), y: number(prefs.top, 80, 0, Math.max(0, innerHeight - 40)) };
+    var mvpQ = roFloatFit(mvpP.x, mvpP.y, width, 40, innerWidth, innerHeight);
+    box.style.left = mvpQ.x + "px";
+    box.style.top = mvpQ.y + "px";
     function save() {
       var rect = box.getBoundingClientRect();
-      try { localStorage.setItem(key, JSON.stringify({left:rect.left,top:rect.top,width:rect.width,height:collapsed?height:rect.height,alpha:alpha,collapsed:collapsed})); } catch (e) {}
+      try { localStorage.setItem(key, JSON.stringify({left:rect.left,top:rect.top,vw:innerWidth,vh:innerHeight,width:rect.width,height:collapsed?height:rect.height,alpha:alpha,collapsed:collapsed})); } catch (e) {} // V2.38.15：连同当时的视口一起记下
     }
     function clamp() {
       var r = box.getBoundingClientRect();
@@ -18498,11 +18850,28 @@
     save = function () {
       originalSave();
       var rect = box.getBoundingClientRect();
-      try { localStorage.setItem(key, JSON.stringify({left:rect.left,top:rect.top,width:rect.width,height:collapsed?height:rect.height,alpha:alpha,collapsed:collapsed,hidden:box.style.display==="none"})); } catch (e) {}
+      try { localStorage.setItem(key, JSON.stringify({left:rect.left,top:rect.top,vw:innerWidth,vh:innerHeight,width:rect.width,height:collapsed?height:rect.height,alpha:alpha,collapsed:collapsed,hidden:box.style.display==="none"})); } catch (e) {} // V2.38.15：连同当时的视口一起记下
     };
     closeBtn.onclick = function () { save(); box.style.display = "none"; };
-    if (typeof ResizeObserver !== "undefined") new ResizeObserver(function () { if (!collapsed) height = box.getBoundingClientRect().height; clamp(); save(); }).observe(box);
-    window.addEventListener("resize", function () { clamp(); save(); });
+    // V2.38.15：视口变化时不在这里落盘（否则会把按比例的位置写成绝对值），统一交给下面的按比例跟随
+    if (typeof ResizeObserver !== "undefined") new ResizeObserver(function () { if (!collapsed) height = box.getBoundingClientRect().height; if (!roFloatVpSame()) return; clamp(); save(); }).observe(box);
+    roFloatReg({ // V2.38.15：登记进悬浮层跟随表 —— 尺寸变化时按屏幕比例跟随并夹回可视区
+      key: "mvp",
+      el: function () { return box; },
+      drag: function () { return !!drag || !!box.__dsDragging; },
+      get: function () {
+        var p = null; try { p = JSON.parse(localStorage.getItem(key) || "{}") || {}; } catch (e0) {}
+        return (p && typeof p.left === "number" && typeof p.top === "number" && isFinite(p.left) && isFinite(p.top)) ? { x: p.left, y: p.top, vw: p.vw, vh: p.vh } : null;
+      },
+      set: function (e, x, y, vw, vh) {
+        e.style.left = Math.round(x) + "px"; e.style.top = Math.round(y) + "px";
+        var p = null; try { p = JSON.parse(localStorage.getItem(key) || "{}") || {}; } catch (e1) {}
+        p.left = Math.round(x); p.top = Math.round(y); p.vw = vw; p.vh = vh;
+        if (!(p.width > 0)) p.width = e.offsetWidth || 0;
+        if (!(p.height > 0)) p.height = e.offsetHeight || 0;
+        try { localStorage.setItem(key, JSON.stringify(p)); } catch (e2) {}
+      }
+    });
     mvpRender(); setInterval(mvpRender, 1000); mvpWatchDom();
   }
   // MVP_TIMER_END

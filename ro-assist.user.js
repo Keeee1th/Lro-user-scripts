@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.38.11
+// @version      2.38.12
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -120,6 +120,12 @@
 // 4. 临时战斗目标 API 在任何发包前严格验证 GID/MID、活体怪物和 MvpDropsNum；失效时自动清理。保留 v2.38.0 opcode 能力探测与启动自检修复。
 // 5. 版本：@version 2.38.0 → 2.38.1（VER 同步）；实验版同步。离线 runtime 151/151、opcode 9/9，独立定点复核 8/8 通过。
 
+// ---------------- V2.38.12 变更摘要 ----------------
+// 1. F1/F3 测试补强：用「可区分桩」给左键守卫加行为级红线 —— 引擎活动 UI 的 DOM 上左键必须整段合成触摸
+//    （桩可区分性：inAssistantUI(该元素)=false、vcEngineUiDom(同一元素)=true、vcInUi=true、simInUi=false）。此前只有源码正则，改回 vcInUi 仍会全绿。
+// 2. F4 右键抑制标志：清零提前到「任何右键按下」，引擎/助手 UI 上的右键不再把该次原生菜单吞掉。
+// 3. F5 菜单抑制器加目标校验：只有目标仍在游戏区域的本次拖拽才吞菜单，UI 上弹的一律放行（标志仍清零，避免泄漏到下一次）。
+// 4. 版本号 2.38.11 → 2.38.12（@version 与脚本内 VER 同步）。
 // ---------------- V2.38.11 变更摘要 ----------------
 // 1. 手机页鼠标转视角改绑**右键**（用户实测：左键被拖拽接管后点不了 NPC 对话与菜单）：
 //    左键完全恢复 V2.38.8 原行为 —— 按下立刻合成 touchstart、move/up 原样转发，不再等抬起、不再判阈值、不参与视角；
@@ -487,7 +493,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.38.11"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.38.12"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -3687,8 +3693,8 @@
           if (!simFromRealMouse(e)) return;
           var pid = e.pointerId || 0;
           if (e.button === 2) {   // V2.38.11：右键 = 视角拖拽候选（先只记待定；阈值内抬起就完全按原样走）
-            if (vcInUi(e.target)) return;   // 右键拖拽仍用宽排除（与滚轮同口径）：引擎活动 UI / 助手 UI 上一律不接管
-            vcCtxOnce = 0;         // 每次右键手势都从干净状态开始：上一次没被消费的抑制标志不许漏到这一次
+            vcCtxOnce = 0;         // F4：任何右键按下都先清零（含引擎/助手 UI 上的右键）—— 否则上一次没被消费的抑制标志会吞掉这次原生菜单
+            if (vcInUi(e.target)) return;   // 右键拖拽仍用宽排除（与滚轮同口径）：引擎活动 UI / 助手 UI 上一律不接管（标志此时已清零）
             simPending = { x: e.clientX, y: e.clientY, target: e.target, pid: pid, claimed: false, mode: "", btn: 2 };
             return;
           }
@@ -3774,6 +3780,10 @@
       function vcCtx(e) {   // V2.38.11：右键菜单抑制器 —— 只有「右键拖拽命中阈值后的那一次」contextmenu 才吞
         try {
           if (!vcCtxOnce) return;   // 静止右键点击 / 阈值内的右键移动：一律不拦（浏览器与游戏自己处理）
+          if (vcInUi(e.target)) {   // F5：只对它自己 claim 的那次拖拽生效，且目标必须仍在游戏区域；UI 上弹的菜单一律放行
+            vcCtxOnce = 0;          //    但标志照样清零：平台若在 mousedown 阶段就发 contextmenu（拖拽中弹出），也不会把它留到下一次右键
+            return;
+          }
           vcCtxOnce = 0;            // 只消费一次：一次右键拖拽恰好抑制一次
           e.preventDefault();
           vcLog("右键拖拽：已抑制本次右键菜单（静止右键不受影响）");

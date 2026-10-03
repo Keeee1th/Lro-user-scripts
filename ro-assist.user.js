@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.38.9
+// @version      2.38.10
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -120,6 +120,38 @@
 // 4. 临时战斗目标 API 在任何发包前严格验证 GID/MID、活体怪物和 MvpDropsNum；失效时自动清理。保留 v2.38.0 opcode 能力探测与启动自检修复。
 // 5. 版本：@version 2.38.0 → 2.38.1（VER 同步）；实验版同步。离线 runtime 151/151、opcode 9/9，独立定点复核 8/8 通过。
 
+// ---------------- V2.38.10 变更摘要 ----------------
+// 1. 手机端「背包整表」新增只读包流来源（ZC.SPLIT_SEND_ITEMLIST_NORMAL，op 0x0b09=2825）：必须 (帧长-5) 整除
+//    记录长以 PACKETVER 为权威（本服 20211103 ≥ 20181121 → 34B）；invType 必须 ===0（0=背包 / 1=推车 / 2=仓库，客户端 Online.js 373679-373714）；index i16@0 · ITID u32@2 · type u8@6 · count i16@7 ·
+//    WearState u32@9 · card1..4 u32@13/17/21/25 · HireExpireDate i32@29 · flag u8@33（bit0=IsIdentified、bit1=PlaceETCTab）。
+//    挂进 bagList()/bagItemByIndex() 的最前一路（⓪），原五路（uiComp → 组件模块 → UM.components → getComponent →
+//    CLIENT.SS.*）一行不动继续兜底：手机端组件全不可用时也能列出背包（件数、格子号、卡片、鉴定、穿戴位、到期时间）。
+//    口径：帧长不整除 / invType≠0（1=推车、2=仓库；只有 0=背包 才认） / 帧太短 / 空表 → 一律拒绝且**不动现有快照**；只有「服务器整份下发但一条都没拿到」才整份失效。
+//    背包记录里**没有「损坏」位**（bit1 是 PlaceETCTab，不是 damaged）、也没有精炼/随机词条/附魔等级 → 这些字段显式标
+//    「未知」（damagedKnown/refineKnown/optionsKnown/enchantKnown=false 且值为 null），绝不拿 bit1 冒充损坏、绝不填 0。
+//    会话语义与装备表同口径：SET(0x0b08/2824, invType=0) 清空 → 整表建立 → RESULT(0x0b0b/2827) 只关标记；推车/仓库的 SET/RESULT（invType 1/2）一律跳过：不清空、也不动背包快照；
+//    作废时机：进区/换 zone（113/2757）与回角色列表（107）；**同 zone 内的 145 换图不作废**——服务器按需重发整表，客户端 Inventory 也不因 145 清空。
+//    歧义帧（长度在 24B/34B 下都整除）与 PACKETVER 未知的 24B 形态一律拒绝且不动快照（C3 审计项）。
+//    已知限制（F4，非缺陷）：PACKETVER 三级来源（CLIENT.PACKETVER/packetver → CLIENT.VERSION → requireDB 的 PacketVerManager）
+//    全部拿不到时，(帧长-5) 为 408 倍数的真背包帧会被歧义判据拒绝（fail-closed，宁可拒读也不误读）；本服协议版本可得（20211103），正常不会踩到。
+//    PC 语义（C5 明示）：getMapName() 只在「客户端路线整条拿不到」时才回落到包流地图名；PC 上客户端有值 → 返回值一字不变。
+// 2. 手机端「当前地图 / 自身坐标」新增只读包流来源（逐行核对客户端自己的处理器，非猜测）：
+//    换图 ZC.NPCACK_MAPMOVE（op 145，22B：mapName[16]@2 + x u16@18 + y u16@20；客户端 380928 hookPacket→onMapChange→
+//    380324 MapRenderer.setMap(pkt.mapName)）、进区 HC.NOTIFY_ZONESVR(113,28B)/NOTIFY_ZONESVR2(2757,156B)
+//    mapName[16]@6（客户端 384225-384226 → onReceiveMapInfo → 384161 MapEngine.init(...,pkt.mapName)）、
+//    自身坐标 ZC.NOTIFY_PLAYERMOVE（op 135=0x87，12B：moveStartTime u32@2 + Pos2 6B@6 位打包，取 MoveData[2]/[3]
+//    = 本次走路的**目的地**；客户端 368171 onPlayerMove → SessionStorage.Entity.walkTo(MoveData[0..3])）。
+//    接入方式：只在 getMapName() 里「客户端路线整条拿不到（手机端 requireDB 白名单没有 Renderer/MapRenderer）」时兜底，
+//    PC 路径一行不动；坐标经 worldPktPos() 暴露（诊断/只读），**不接进寻路与逃脱判定**，避免改变既有语义。
+//    拿不到一律报「未知」：不伪造 0,0，换图/进区后清掉坐标，绝不沿用上一张图的坐标。
+// 3. 只读铁律：本版只新增只读解析与两个兜底读取点，自动丢弃的门禁（预览+armed 授权、装备保护优先、
+//    NPC 对话期间不丢、逐包重校验）一行未改；「换成包流来源后未武装时一个都不丢」的回归测试随版本落地（真帧驱动 + 变异体）。
+// 4. 版本号 2.38.9 → 2.38.10（@version 与脚本内 VER 同步）。
+// 5. 审计修正（V2.38.10 独立审计 C1/C3）：invType 判据方向修正为 ===0（原写 ===1 会让手机端背包读取整体失效）；
+//    记录长改由 PACKETVER 权威判定，24B/34B 歧义帧一律拒绝。
+// 6. F-D 真机确认项：地图/坐标两条来源的真包抓取、以及「同一 zone server 内换图是否重发 145」需真机抓包复核；
+//    两条来源的依据与不确定点详见 V2.38.10 交付报告（本会话结论：两条来源都存在于协议必发路径，但换图重发时机待真机确认）。
+// （上一版：V2.38.9 变更摘要）
 // ---------------- V2.38.9 变更摘要 ----------------
 // 1. 手机页（/?r=mn）新增「电脑鼠标也能转视角/缩放」：左键在画面上拖拽 = 偏航+俯仰（位移超过 5px 才算拖拽，
 //    拖拽期间与抬起都不再向游戏派发合成触摸，所以拖视角时角色不会乱跑、也不会触发拖拽结束时那一次点击走路），
@@ -440,7 +472,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.38.9"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.38.10"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -1374,9 +1406,12 @@
       if (cur) return cur;
       if (CLIENT.DB) {
         var nm = CLIENT.DB.getMapName && CLIENT.DB.getMapName(cur);
-        return nm || cur || "";
+        if (nm) return nm;
       }
-      return cur || "";
+      // V2.38.10 手机兜底：客户端路线整条拿不到时，用游戏下发的包流地图名（换图 145 / 进区 113·2757）；
+      //   没收到过就仍然返回空串（未知），绝不伪造成某张图。
+      var pkMap = (typeof worldPktMap === "function") ? worldPktMap() : "";
+      return pkMap || cur || "";
     } catch (e) { return ""; }
   }
   // 地图名口径规范化：去 .rsw/.gat 扩展名 + 去 map_ 前缀 + 转小写（V2.16.11 统一换图/传送比较口径）
@@ -9319,6 +9354,9 @@
       if (idx == null) return null;
       var i = Number(idx);
       if (isNaN(i)) return null;
+      // ⓪ V2.38.10：包流整表优先（手机端唯一可行），拿不到再走原来的组件路线
+      var pit = (typeof bagPktByIndex === "function") ? bagPktByIndex(i) : null;
+      if (pit) return pit;
       var c = bagInvComp();
       if (c && typeof c.getItemByIndex === "function") { try { var it = c.getItemByIndex(i); if (it) return it; } catch (e1) {} }
       var mods = ["UI/Components/Inventory/Inventory", "UI/Components/BasicInventory/BasicInventory"];
@@ -9335,7 +9373,11 @@
     var list = null;
     bagRead.source = "读取失败"; bagRead.count = 0; bagRead.arrows = 0;
     try {
-      // ⓪ V2.38.4 首选：uiComp("Inventory")（线上唯一可达的路线）
+      // ⓪ V2.38.10 最高优先级只读来源：包流整表（0x0b09/2825，34B 记录）——手机端组件全不可用时的唯一可行路线
+      var _bpk = (typeof bagPktSnapshot === "function") ? bagPktSnapshot() : null;   // typeof 守卫：局部切片测试环境可缺
+      // 包流有数据就直接返回：后续任一路线（含无效组件 .list）都不得覆盖或把它清成 null
+      if (_bpk) { var _plist = bagSourceTry("packet.0x0b09", _bpk); if (Array.isArray(_plist) && _plist.length) return _plist; }
+      // ① V2.38.4 首选（客户端路线，原样保留兜底）：uiComp("Inventory")（线上唯一可达的路线）
       var _ic = bagInvComp();
       if (_ic) list = bagSourceTry("uiComp.Inventory.list", _ic.list);
       // ①/② 组件模块的 .list（先 requireDB；桥接模块 require 白名单没有这些路径时静默跳过）
@@ -14096,6 +14138,8 @@
       // V2.38.7：装备整表 / 穿脱确认包流（只读；单帧异常只丢该帧）。
       //   typeof 守卫：局部切片测试环境里这个函数可能不在同一段代码中，缺了就当没有（绝不抛、绝不影响分帧与身份）。
       if (typeof gearPktHook === "function") gearPktHook(bytes, op);
+      if (typeof bagPktHook === "function") bagPktHook(bytes, op);       // V2.38.10 背包整表（0x0b09/2825）
+      if (typeof worldPktHook === "function") worldPktHook(bytes, op);   // V2.38.10 换图/进区/自身坐标（145/113/2757/135）
       // V2.38.8：直发传送回包（2634 = op u16 + response u32，6B；主表/补充表都能切出这一帧）
       if (op === 2634 && typeof tpOnAck === "function") tpOnAck(bytes);
       collectOpStat(bytes, op);
@@ -19534,6 +19578,303 @@
     try {
       return "装备包流=op:" + (gearPkt.listOp || 0) + " · 版本:v" + (gearPkt.ver || 0) + " · 记录长:" + (gearPkt.rec || 0) + " · 条数:" + (gearPkt.n || 0) + " · 命中槽:" + Object.keys(gearPkt.slots).length + " · complete:" + (gearPkt.complete ? "true" : "false") + " · 整表距今:" + (gearPkt.at ? (Date.now() - gearPkt.at) + "ms" : "未收到") + " · 穿脱ack:" + (gearPkt.ackN || 0) + (gearPkt.why ? (" · 说明:" + gearPkt.why) : "");
     } catch (e) { return "装备包流=读取异常"; }
+  }
+  // ===== V2.38.10 手机端只读包流来源②：背包整表（0x0b09/2825，34B 记录）＋ 当前地图/自身坐标 =====
+  // 依据全部逐字核对客户端（不是猜；行号取自本机 _dist/new-engine-local/www/Online.js 与
+  //   Ragna.roBrowser/src/Network/PacketStructure.js）：
+  //  · 背包：PacketStructure.js 14315-14344「//0xb09 PACKET.ZC.SPLIT_SEND_ITEMLIST_NORMAL」——
+  //      invType u8@4；item_size = PACKETVER>=20181121 ? 34 : 24；记录 34B：
+  //      index i16@0 · ITID u32@2 · type u8@6 · count i16@7 · WearState u32@9 · card1..4 u32@13/17/21/25 ·
+  //      HireExpireDate i32@29 · flag u8@33（bit0 = IsIdentified、bit1 = PlaceETCTab）。
+  //      ⚠ 背包记录里**没有「损坏」位**（bit1 是 PlaceETCTab，不是 damaged）：本解析器把 damaged 明确标「未知」，
+  //        绝不拿 bit1 冒充损坏、也绝不填 0（口径：拿不到的字段一律标未知）。精炼/随机词条/附魔等级同样不在本表 → 一并标未知。
+  //  · 换图：ZC.NPCACK_MAPMOVE（op 145，22B；mapName[16]@2 + x u16@18 + y u16@20）——客户端自己的换图分支：
+  //      Online.js 166107-166112 定义、208171 号表、380928 Network.hookPacket(..., onMapChange)、
+  //      380209 onMapChange、380324 MapRenderer.setMap(pkt.mapName)。
+  //  · 进区：HC.NOTIFY_ZONESVR（113，28B）/ HC.NOTIFY_ZONESVR2（2757，156B）mapName[16]@6（与既有 onZoneNotifyFrame 同口径）：
+  //      Online.js 384225-384226 hookPacket(..., onReceiveMapInfo) → 384161 MapEngine.init(..., pkt.mapName)。
+  //  · 自身坐标：ZC.NOTIFY_PLAYERMOVE（135 = 0x87，12B；moveStartTime u32@2 + Pos2 6B@6）——客户端自己的处理器
+  //      Online.js 368171-368172 onPlayerMove → SessionStorage.Entity.walkTo(MoveData[0..3])；Pos2 是 6 字节位打包
+  //      （Online.js 10933-10946 readPos2），MoveData[2]/[3] = 这次走路的**目的地** x/y，与客户端 walkTo 同语义。
+  // 只读铁律：本段只写自己的快照对象，从不改游戏状态、不发包、不碰任何门禁（自动丢弃的 armed/预览/NPC 阻断一行不动）。
+  var bagPkt = { list: null, byIndex: null, at: 0, changedAt: 0, complete: false, n: 0, rec: 0, listOp: 0, src: "", why: "", sess: 0, chunks: 0, sessOp: 0 };
+  var worldPkt = { map: "", mapAt: 0, mapOp: 0, x: null, y: null, posAt: 0, posOp: 0, src: "" };
+  // 数字兜底表：手机端拿不到 CLIENT.PS / psClassIndex 为空时也能认这些 opcode（值来自客户端号表，永远可用）。
+  var ZC_BAG_SPLIT_NUM = { 2825: { rec: 34 } };
+  var ZC_BAG_SPLIT_CLS = [["SPLIT_SEND_ITEMLIST_NORMAL", 2825, 34]];
+  var ZC_BAG_SESS_NUM = { 2824: { kind: "start", invOff: 4, varLen: true }, 2827: { kind: "end", invOff: 2, varLen: false } };
+  var ZC_BAG_SESS_CLS = [["SPLIT_SEND_ITEMLIST_SET", 2824, "start", 4], ["SPLIT_SEND_ITEMLIST_RESULT", 2827, "end", 2]];
+  var ZC_WORLD_NUM = { 145: { map: true }, 135: { pos: true }, 113: { zone: true }, 2757: { zone: true } };
+  var ZC_WORLD_CLS = [["NPCACK_MAPMOVE", 145, "map"], ["NOTIFY_PLAYERMOVE", 135, "pos"]];
+  var ZC_WORLD_HC_CLS = [["NOTIFY_ZONESVR", 113], ["NOTIFY_ZONESVR2", 2757]];
+  var __bagOps = { map: null, sig: -1 };
+  function bagPktOps() {
+    try {
+      var ix = psClassIndex();
+      var sig = ix ? ix.sig : -1;
+      if (__bagOps.map && __bagOps.sig === sig) return __bagOps.map;
+      var map = {}, k = "";
+      for (k in ZC_BAG_SPLIT_NUM) { var sv = ZC_BAG_SPLIT_NUM[k]; map[k] = { split: true, rec: sv.rec, op: Number(k) }; }
+      for (k in ZC_BAG_SESS_NUM) { var ev = ZC_BAG_SESS_NUM[k]; map[k] = { sess: ev.kind, invOff: ev.invOff, varLen: ev.varLen, op: Number(k) }; }
+      if (ix && ix.byName) {
+        for (var i = 0; i < ZC_BAG_SPLIT_CLS.length; i++) {
+          var c = ZC_BAG_SPLIT_CLS[i], r = ix.byName["ZC." + c[0]] || ix.byName["HC." + c[0]];
+          if (r && r.id > 0) map[r.id] = { split: true, rec: c[2], op: r.id, cls: c[0] };
+        }
+        for (var j = 0; j < ZC_BAG_SESS_CLS.length; j++) {
+          var d = ZC_BAG_SESS_CLS[j], r2 = ix.byName["ZC." + d[0]] || ix.byName["HC." + d[0]];
+          if (r2 && r2.id > 0) map[r2.id] = { sess: d[2], invOff: d[3], varLen: d[2] === "start", op: r2.id, cls: d[0] };
+        }
+      }
+      __bagOps = { map: map, sig: sig };
+      return map;
+    } catch (e) { return null; }
+  }
+  // 34B 记录 → 与客户端 Inventory 项同形的对象（消费者只读 ITID/index/count/type/WearState/slot.cardN/IsIdentified）。
+  function bagPktItem(dv, b) {
+    try {
+      var it = {
+        index: dv.getInt16(b, true), ITID: dv.getUint32(b + 2, true), type: dv.getUint8(b + 6),
+        count: dv.getInt16(b + 7, true), WearState: dv.getUint32(b + 9, true), slot: {},
+        HireExpireDate: dv.getInt32(b + 29, true), src: "packet"
+      };
+      it.slot.card1 = dv.getUint32(b + 13, true); it.slot.card2 = dv.getUint32(b + 17, true);
+      it.slot.card3 = dv.getUint32(b + 21, true); it.slot.card4 = dv.getUint32(b + 25, true);
+      it.cards = [];
+      for (var c = 1; c <= 4; c++) { var cv = it.slot["card" + c]; if (cv) it.cards.push(cv); }
+      var flag = dv.getUint8(b + 33);
+      it.IsIdentified = flag & 1; it.PlaceETCTab = flag & 2; it.identified = !!(flag & 1);
+      it.amount = it.count;   // 旧消费者也可能读 amount（与 count 同值，不伪造）
+      // 记录里没有的字段：显式标未知（绝不填 0 —— 0 会被当成「没损坏/精炼 0」这种确定信息）
+      it.damaged = null; it.damagedKnown = false;
+      it.refine = null; it.refineKnown = false;
+      it.options = null; it.optionsKnown = false;
+      it.enchantgrade = null; it.enchantKnown = false;
+      return it;
+    } catch (e) { return null; }
+  }
+  function bagPktReset(why) {
+    try {
+      bagPkt.list = null; bagPkt.byIndex = null; bagPkt.complete = false; bagPkt.n = 0; bagPkt.rec = 0;
+      bagPkt.at = 0; bagPkt.listOp = 0; bagPkt.chunks = 0; bagPkt.src = "";
+      if (why) identityLogLine("bag-pkt-reset " + why);
+    } catch (e) {}
+  }
+  function bagPktInvalidate(why) {
+    try {
+      bagPkt.complete = false; bagPkt.at = 0;
+      bagPkt.why = "未收到背包数据（" + why + "）";
+      identityLogLine("bag-pkt-invalid " + why);
+    } catch (e) {}
+  }
+  // 背包整表（严格 fail-soft）：记录长以 PACKETVER 为权威（>=20181121 → 34B；本服 20211103）；invType 必须 ===0。
+  //   invType 口径（客户端 Online.js 373679-373714 实跑 + 仓库内实机抓包 _tmp_client_verify/report-fix0311.json）：0=背包、1=推车、2=仓库。
+  //   任何不满足一律拒绝且不动现有快照。
+  // PACKETVER：客户端 PacketStructure.js 14319「item_size = PACKETVER >= 20181121 ? 34 : 24」的权威判据。
+  //   本服 packetver=20211103（脚本 14025 行既有注释同值）→ 34B。拿不到就返回 0，走「长度有歧义就拒绝」的保守分支。
+  function bagPktVer() {
+    try {
+      var v = 0;
+      try { v = Number(CLIENT && (CLIENT.PACKETVER || CLIENT.packetver)) || 0; } catch (e1) {}
+      if (!(v > 0)) { try { v = Number(CLIENT && CLIENT.VERSION && (CLIENT.VERSION.PACKETVER || CLIENT.VERSION.packetver)) || 0; } catch (e2) {} }
+      if (!(v > 0)) { try { var PVM = requireDB("Network/PacketVerManager"); v = Number(PVM && (PVM.packetver || PVM.PACKETVER || PVM.VERSION)) || 0; } catch (e3) {} }
+      return (v > 0 && isFinite(v)) ? v : 0;
+    } catch (e) { return 0; }
+  }
+  function bagPktParseSplit(bytes, op, f) {
+    try {
+      var total = (bytes && bytes.byteLength) || 0;
+      if (!(total >= 5)) { bagPkt.why = "背包整表 op" + op + " 帧长 " + total + " 太短（< 5 = op+total+invType）→ 不解析"; return false; }
+      // 记录长以 PACKETVER 为权威（>=20181121 → 34B；本服 20211103）。PACKETVER 拿不到时：5+24m 与 5+34n 同时成立的帧
+      //   （即 (帧长-5) 模 408 为 0，例如 413B = 5+17×24 = 5+12×34）长度有歧义 → 一律拒绝并记日志，绝不动现有快照。
+      var rec = f.rec, ver = bagPktVer();
+      if (ver > 0) {
+        if (ver < 20181121) {
+          bagPkt.why = "背包整表 op" + op + " PACKETVER=" + ver + " < 20181121 → 24B 记录布局（本版只实现 34B）→ 拒绝，不动现有快照";
+          identityLogLine("bag-pkt-split-24b op=" + op + " ver=" + ver);
+          return false;
+        }
+        rec = 34;
+      } else if (((total - 5) > 0) && (((total - 5) % 24) === 0) && (((total - 5) % 34) === 0)) {   // 0 条是合法空表，不算歧义
+        bagPkt.why = "背包整表 op" + op + " 帧长 " + total + " 在 24B/34B 下都整除（PACKETVER 未知）→ 长度有歧义，一律拒绝且不动现有快照";
+        identityLogLine("bag-pkt-split-ambiguous op=" + op + " len=" + total + " sizes=24/34");
+        return false;
+      }
+      if (rec !== f.rec) identityLogLine("bag-pkt-split-rec-mismatch op=" + op + " 权威 rec=" + rec + " 表内 f.rec=" + f.rec + " → 以权威为准");
+      if (((total - 5) % rec) !== 0) {
+        bagPkt.why = "背包整表 op" + op + " 帧长 " + total + " 不是「5 + 记录长" + rec + " 的整数倍」→ 版本不符，不解析";
+        identityLogLine("bag-pkt-split-reject op=" + op + " len=" + total + " rec=" + rec);
+        return false;
+      }
+      var dv = new DataView(bytes);
+      var invType = dv.getUint8(4);
+      if (invType !== 0) {
+        bagPkt.why = "背包整表 op" + op + " invType=" + invType + "（不是 0=背包；1=推车/2=仓库）→ 不解析（fail-soft，不动现有快照）";
+        identityLogLine("bag-pkt-split-reject op=" + op + " invType=" + invType);
+        return false;
+      }
+      var cnt = (total - 5) / rec, list = [], byIndex = {};
+      for (var i = 0; i < cnt; i++) {
+        var it = bagPktItem(dv, 5 + i * rec);   // 遍历必须用权威 rec（PACKETVER 派生），不能跟随表内 f.rec：两者脱钩即走偏
+        if (!it) continue;
+        byIndex[String(it.index)] = it;
+        list.push(it);
+      }
+      bagPkt.list = list; bagPkt.byIndex = byIndex;
+      bagPkt.listOp = op; bagPkt.rec = rec; bagPkt.n = cnt;
+      bagPkt.at = Date.now(); bagPkt.changedAt = bagPkt.at; bagPkt.src = "packet";
+      bagPkt.complete = (cnt > 0);   // 空表不置 complete：0 件绝不是「背包为空」的成功
+      bagPkt.why = (cnt > 0) ? "" : ("背包整表 0 条（op" + op + " 帧长 " + total + "）→ 不算成功");
+      if (cnt > 0 && bagPkt.sess) bagPkt.chunks++;
+      identityLogLine("bag-pkt-split op=" + op + " invType=0 rec=" + rec + " n=" + cnt + " complete=" + bagPkt.complete);
+      return true;
+    } catch (e) { bagPkt.why = "背包整表解析异常：" + (e && e.message ? e.message : e); return false; }
+  }
+  // 分流会话状态机（与装备表同一套口径）：SET(0x0b08/2824，invType 0=背包) 开始 → 清空；
+  //   RESULT(0x0b0b/2827) 结束 → 只关标记（本次会话拿到过非空整表就保留 complete）；一条都没拿到 → 整份失效（fail-closed）。
+  function bagPktParseSess(bytes, op, f) {
+    try {
+      var total = (bytes && bytes.byteLength) || 0;
+      var need = f.varLen ? 5 : (f.invOff + 1);
+      if (!(total >= need)) { identityLogLine("bag-pkt-sess-short op=" + op + " len=" + total + " need=" + need); return false; }
+      var invType = new DataView(bytes).getUint8(f.invOff);
+      if (invType !== 0) { identityLogLine("bag-pkt-sess-skip op=" + op + " " + f.sess + " invType=" + invType + "（非背包分流，不动背包快照）"); return true; }
+      if (f.sess === "start") { bagPktReset("分流会话开始 op" + op); bagPkt.sess = 1; bagPkt.chunks = 0; bagPkt.sessOp = op; return true; }
+      var got = bagPkt.chunks > 0;
+      bagPkt.sess = 0;
+      if (!got) bagPktInvalidate("分流会话结束 op" + op + " 但本次会话一条整表都没收到");
+      else identityLogLine("bag-pkt-sess-end op=" + op + " chunks=" + bagPkt.chunks + " n=" + bagPkt.n + " complete=" + bagPkt.complete);
+      return true;
+    } catch (e) { return false; }
+  }
+  // 收包入口（由 dispatchInboundFrame 逐帧调用）：单帧异常只丢该帧，绝不外抛到分帧器
+  function bagPktHook(bytes, op) {
+    try {
+      if (typeof op !== "number") return;
+      var ops = identityPktOps();
+      if (ops) {
+        if (ops.zone[op]) { bagPktReset("zone op" + op); bagPkt.why = "换图/进区（op" + op + "）→ 背包整表作废，等下一次会话"; return; }
+        if (ops.charlist[op]) { bagPktReset("charlist op" + op); return; }
+      }
+      var map = bagPktOps();
+      if (!map) return;
+      var f = map[op];
+      if (!f) return;
+      if (f.split) { bagPktParseSplit(bytes, op, f); return; }
+      if (f.sess) bagPktParseSess(bytes, op, f);
+    } catch (e) {}
+  }
+  // 整表快照：与客户端 Inventory 同生命周期 —— 收到过非空整表就一直可用，直到下一次会话/换图/换角色把它清掉。
+  //   不像装备表那样加 60 秒 TTL：背包整表由服务器按需重发（开关背包、拾取、丢弃、换图都会重发），客户端 Inventory 同样常驻；
+  //   加短 TTL 会让手机端在两次重发之间突然「读不到背包」，反而比客户端更差。
+  function bagPktSnapshot() {
+    try {
+      if (!bagPkt.complete || !(bagPkt.n > 0)) return null;
+      if (!bagPkt.list || !bagPkt.list.length) return null;
+      return bagPkt.list;
+    } catch (e) { return null; }
+  }
+  function bagPktByIndex(idx) {
+    try {
+      if (!bagPkt.byIndex || idx == null) return null;
+      var i = Number(idx); if (!isFinite(i)) return null;
+      return bagPkt.byIndex[String(i)] || null;
+    } catch (e) { return null; }
+  }
+  function bagPktDiagText() {
+    try {
+      return "背包包流=op:" + (bagPkt.listOp || 0) + " · 记录长:" + (bagPkt.rec || 0) + " · 条数:" + (bagPkt.n || 0) + " · 可用:" + bagPkt.complete + " · 会话:" + (bagPkt.sess || 0) + " · 说明:" + (bagPkt.why || "");
+    } catch (e) { return "背包包流=读取异常"; }
+  }
+  var __worldOps = { map: null, sig: -1 };
+  function worldPktOps() {
+    try {
+      var ix = psClassIndex();
+      var sig = ix ? ix.sig : -1;
+      if (__worldOps.map && __worldOps.sig === sig) return __worldOps.map;
+      var map = {}, k = "";
+      for (k in ZC_WORLD_NUM) { var wv = ZC_WORLD_NUM[k], d0 = { op: Number(k) }; if (wv.map) d0.map = true; if (wv.pos) d0.pos = true; if (wv.zone) d0.zone = true; map[k] = d0; }
+      if (ix && ix.byName) {
+        for (var i = 0; i < ZC_WORLD_CLS.length; i++) {
+          var c = ZC_WORLD_CLS[i], r = ix.byName["ZC." + c[0]] || ix.byName["HC." + c[0]];
+          if (r && r.id > 0) { var d1 = { op: r.id, cls: c[0] }; d1[c[2]] = true; map[r.id] = d1; }
+        }
+        for (var j = 0; j < ZC_WORLD_HC_CLS.length; j++) {
+          var h = ZC_WORLD_HC_CLS[j], r2 = ix.byName["HC." + h[0]] || ix.byName["ZC." + h[0]];
+          if (r2 && r2.id > 0) map[r2.id] = { zone: true, op: r2.id, cls: h[0] };
+        }
+      }
+      __worldOps = { map: map, sig: sig };
+      return map;
+    } catch (e) { return null; }
+  }
+  // Pos2：6 字节位打包 → [x0,y0,x1,y1,dir,n]（客户端 readPos2 原样搬，Online.js 10933-10946）
+  function worldPktPos2(dv, off) {
+    try {
+      var a = dv.getInt8(off), b = dv.getInt8(off + 1), c = dv.getInt8(off + 2), d = dv.getInt8(off + 3), e = dv.getInt8(off + 4), f = dv.getInt8(off + 5);
+      return [ (a & 255) << 2 | (b & 192) >> 6, (b & 63) << 4 | (c & 240) >> 4, (d & 252) >> 2 | (c & 15) << 6, (d & 3) << 8 | e & 255, (f & 240) >> 4, f & 15 ];
+    } catch (e0) { return null; }
+  }
+  function worldPktReset(why) {
+    try {
+      worldPkt.map = ""; worldPkt.mapAt = 0; worldPkt.mapOp = 0;
+      worldPkt.x = null; worldPkt.y = null; worldPkt.posAt = 0; worldPkt.posOp = 0; worldPkt.src = "";
+      if (why) identityLogLine("world-pkt-reset " + why);
+    } catch (e) {}
+  }
+  // 只读：换图(145)/进区(113,2757) 更新地图名；走路(135) 更新自身坐标。读不到就是未知，绝不伪造 0,0、也绝不沿用上一张图的坐标。
+  function worldPktHook(bytes, op) {
+    try {
+      if (typeof op !== "number") return;
+      var ops = identityPktOps();
+      if (ops && ops.charlist[op]) { worldPktReset("charlist op" + op); return; }
+      var map = worldPktOps();
+      if (!map) return;
+      var f = map[op];
+      if (!f) return;
+      var total = (bytes && bytes.byteLength) || 0;
+      var dv = new DataView(bytes);
+      if (f.map) {   // 145 ZC.NPCACK_MAPMOVE：mapName[16]@2 + x u16@18 + y u16@20（同包自带落地坐标）
+        if (total < 22) { identityLogLine("world-pkt-short op=" + op + " len=" + total + " need=22"); return; }
+        var nm = readFixedStr(dv, 2, 16);
+        if (!nm) return;
+        var nx = dv.getUint16(18, true), ny = dv.getUint16(20, true);
+        worldPkt.map = nm; worldPkt.mapAt = Date.now(); worldPkt.mapOp = op; worldPkt.src = "packet";
+        worldPkt.x = nx; worldPkt.y = ny; worldPkt.posAt = worldPkt.mapAt; worldPkt.posOp = op;
+        identityLogLine("world-pkt-map op=" + op + " map=" + nm + " x=" + nx + " y=" + ny);
+        return;
+      }
+      if (f.pos) {   // 135 ZC.NOTIFY_PLAYERMOVE：moveStartTime u32@2 + Pos2 6B@6 → MoveData[2]/[3] 是目的地
+        if (total < 12) { identityLogLine("world-pkt-short op=" + op + " len=" + total + " need=12"); return; }
+        var md = worldPktPos2(dv, 6);
+        if (!md) return;
+        worldPkt.x = md[2]; worldPkt.y = md[3]; worldPkt.posAt = Date.now(); worldPkt.posOp = op;
+        return;
+      }
+      if (f.zone) {   // 113/2757 HC.NOTIFY_ZONESVR(/2)：mapName[16]@6（与 onZoneNotifyFrame 同口径）
+        if (total < 22) return;
+        var zn = readFixedStr(dv, 6, 16);
+        if (!zn) return;
+        worldPkt.map = zn; worldPkt.mapAt = Date.now(); worldPkt.mapOp = op; worldPkt.src = "packet";
+        worldPkt.x = null; worldPkt.y = null; worldPkt.posAt = 0; worldPkt.posOp = 0;   // 换区 → 坐标未知，绝不沿用上一张图的坐标
+        identityLogLine("world-pkt-zone op=" + op + " map=" + zn);
+        return;
+      }
+    } catch (e) {}
+  }
+  function worldPktMap() { try { return worldPkt.map || ""; } catch (e) { return ""; } }
+  function worldPktPos() {
+    try {
+      if (worldPkt.x == null || worldPkt.y == null) return null;   // 未知就是未知（x=0/y=0 是合法坐标，不能用真假值判断）
+      return { x: Number(worldPkt.x), y: Number(worldPkt.y), at: worldPkt.posAt || 0, op: worldPkt.posOp || 0 };
+    } catch (e) { return null; }
+  }
+  function worldPktDiagText() {
+    try {
+      return "地图包流=来源:" + (worldPkt.src || "未收到") + " · 地图:" + (worldPkt.map || "未知") + "(op:" + (worldPkt.mapOp || 0) + ")"
+        + " · 坐标:" + (worldPktPos() ? (worldPkt.x + "," + worldPkt.y + "(op:" + (worldPkt.posOp || 0) + ")") : "未知")
+        + " · 背包:" + bagPktDiagText();
+    } catch (e) { return "地图包流=读取异常"; }
   }
   function gearReadEquipped() {
     var out = { slots: {}, n: 0, ok: false, why: "", routes: {}, missWhy: {}, missing: [], complete: false, src: "" };

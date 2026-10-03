@@ -914,8 +914,8 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
   // 1) 版本号：稳定版与实验版都必须是 2.36.1（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.9', name + ' @version 必须是 2.38.9（锚定行首元数据行）');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.9', name + ' 运行时常量 VER 必须是 2.38.9');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.10', name + ' @version 必须是 2.38.10（锚定行首元数据行）');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.10', name + ' 运行时常量 VER 必须是 2.38.10');
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
   const stripHead = (s) => s.replace(/\r\n/g,'\n').split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
@@ -1287,8 +1287,8 @@ test('V2.34.5 战斗诊断快照 prof 字段已就位（不改既有字段）', 
 // ================= V2.34.5：配置自动备份（两代）/ 黄金副本找回（纯函数真值表 / 按钮 / 键隔离）=================
 test('V2.34.5 版本号升到 2.34.5（@version 与运行时常量一致，两文件同步）', () => {
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.9', name + ' @version 必须是 2.38.9（锚定行首元数据行）');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.9', name + ' 运行时常量 VER 必须是 2.38.9');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.10', name + ' @version 必须是 2.38.10（锚定行首元数据行）');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.10', name + ' 运行时常量 VER 必须是 2.38.10');
   }
 });
 
@@ -1577,7 +1577,7 @@ test('V2.38.2 定点修复：随时丢弃开启时零候选不抛错（阈值模
 
 // ================= V2.35.1 assistant API + standalone dojo =================
 const splitSources=[['stable',source],['exp',expSource]];
-test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(s)?.[1],'2.38.9',name+' @version 必须锚定行首元数据行（旧的非锚定正则可能命中变更日志/正文里的 @version 字样）');assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
+test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(s)?.[1],'2.38.10',name+' @version 必须锚定行首元数据行（旧的非锚定正则可能命中变更日志/正文里的 @version 字样）');assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
 test('V2.35.1 public API uses owner-only external signatures and validates the current lease owner',()=>{for(const[,s]of splitSources){assert.ok(s.includes('/^[A-Za-z0-9_.:-]{8,128}$/'));assert.ok(s.includes('dojo:1,battle:1,movement:1,dialog:1,arrow:1,fly:1'));assert.ok(s.includes('if(apiLease&&apiLease.owner!==owner)'));for(const sig of ['apiHas(owner,scope)','apiSnapshot(owner)','apiRelease(owner)','apiContact(owner,gid)','apiWalk(owner,payload)','apiChoose(owner,payload)','apiBattle(owner,on)','apiSetArrow(owner,target)','apiClearArrow(owner)','apiFly(owner,payload)'])assert.ok(s.includes('function '+sig),sig);assert.ok(s.includes('apiLease.generation===generation'));assert.ok(!s.includes('apiHas(owner,generation'));}});
 test('V2.35.1 snapshot and battle/menu ownership contracts are explicit',()=>{for(const[,s]of splitSources){for(const key of ['ready:','map:','player:','mobs:','npcs:','target:','inDojoMap:','dialogOpen:','menu:','battleState:','busy:','arrow:'])assert.ok(s.includes(key),key);assert.ok(s.includes('if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"}'));assert.ok(s.includes('b.state="pending-on"'));assert.ok(s.includes('if(b.state!=="owned")return {ok:true,result:"not-owned"}'));assert.ok(s.includes('l.battle.state==="owned"||l.battle.state==="pending-off"'));assert.ok(s.includes('if(s!==false)return {ok:true,result:s===true?"preexisting":"unknown"}'));}});
 test('V2.36.11 arrow rules use a per-monster table plus a default arrow',()=>{for(const[name,s]of splitSources){
@@ -4153,8 +4153,8 @@ test('V2.38.4 静态断言：新函数就位、判定链未改、零发包零 ho
     const sum = src.slice(src.indexOf('// ---------------- V2.38.4 变更摘要'), src.indexOf('// ---------------- V2.38.3 变更摘要'));
     assert.ok(sum.includes('入站分帧') && sum.includes('气弹') && sum.includes('按帧') && sum.includes('2.38.4'), name + ' V2.38.4 摘要必须覆盖：分帧 / 气弹 / 抓包按帧 / 版本');
     assert.ok(!EMOJI.test(sum) && !EMOJI.test(code), name + ' 新增内容不得含 emoji');
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.9', name + ' @version 必须是 2.38.9');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.9', name + ' VER 必须是 2.38.9');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.10', name + ' @version 必须是 2.38.10');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.10', name + ' VER 必须是 2.38.10');
   }
   assert.equal((source.match(/(?<!\r)\n/g) || []).length, 0, '稳定版必须纯 CRLF');
   assert.equal((expSource.match(/\r\n/g) || []).length, 0, '实验版必须纯 LF');
@@ -5105,7 +5105,7 @@ test('V2.38.4 静态断言：三处新口径就位、分帧分派链与已完成
     assert.ok(src.includes('if (!clientScriptPresent()) injectClient(cfg, false);'), name + ' 本机私有入口保持现状（DOM 去重 + 立即注入）');
     assert.ok(src.includes('if (state.ready || state.bootedByWrapper || state.bootedByPlugin) return;'), name + ' 启动去重必须保留');
     assert.ok(src.includes('officialBooted: false,'), name + ' state 必须有 officialBooted 标记');
-    assert.ok(src.includes('// @version      2.38.9') && src.includes('var VER = "2.38.9";'), name + ' 版本必须仍是 2.38.9（V2.38.9 批次：直发传送 + 审计 F1/F2/F4）');
+    assert.ok(src.includes('// @version      2.38.10') && src.includes('var VER = "2.38.10";'), name + ' 版本必须仍是 2.38.10（V2.38.9 批次：直发传送 + 审计 F1/F2/F4）');
     assert.ok(src.includes('// ---------------- V2.38.9 变更摘要 ----------------'), name + ' 必须有 V2.38.9 变更摘要（视角控制 + 审计收尾）');
     // 已完成批次与分帧分派链不得回改
     assert.equal((src.match(/op === 307/g) || []).length, 1, name + ' 摆摊识别集合仍只出现一处（拉黑/闸门批次未回改）');
@@ -6033,8 +6033,8 @@ test('V2.38.4 审计修正 静态：F1–F6 锚点就位，旧的跨角色认领
     assert.ok(t.includes('L.push("识别状态："'), name + ' 诊断必须有「识别状态：」');
     assert.ok(t.includes('L.push("未认领旧档："'), name + ' 诊断必须有「未认领旧档：」');
     // 版本不变
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.9', name + ' @version 必须仍是 2.38.9');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.9', name + ' VER 必须仍是 2.38.9');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.10', name + ' @version 必须仍是 2.38.9');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.10', name + ' VER 必须仍是 2.38.9');
   }
   assert.equal((source.match(/(?<!\r)\n/g) || []).length, 0, '稳定版必须纯 CRLF');
   assert.equal((expSource.match(/\r\n/g) || []).length, 0, '实验版必须纯 LF');

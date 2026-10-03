@@ -479,8 +479,8 @@ test('V2.38.7 9a 启动期（未进游戏）不刷「角色未识别」，已进
 test('V2.38.8 结构断言：版本与 EOL 不变量（两文件）', () => {
   const stable = readSrc('ro-assist.user.js'), exp = readSrc('ro-assist-exp.user.js');
   for (const [name, src] of [['stable', stable], ['exp', exp]]) {
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.9', name + ' @version 必须是 2.38.9');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.9', name + ' VER 必须是 2.38.9');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.10', name + ' @version 必须是 2.38.10');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.10', name + ' VER 必须是 2.38.10');
     assert.ok(src.includes('// ---------------- V2.38.8 变更摘要 ----------------'), name + ' 必须有 V2.38.8 变更摘要');
     assert.ok(src.includes('// ---------------- V2.38.9 变更摘要 ----------------'), name + ' 必须有 V2.38.9 变更摘要（视角控制 + 审计收尾）');
     assert.ok(src.includes('// ---------------- V2.38.7 变更摘要 ----------------'), name + ' V2.38.7 摘要必须保留（历史批次不删）');

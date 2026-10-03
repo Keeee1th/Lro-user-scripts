@@ -236,8 +236,8 @@ for (const [label, fn] of checks) {
 test('V2.38.8 结构断言：版本 2.38.9、九处门就位、EOL 与两文件差异不变', () => {
   const stable = SOURCES[0][1], exp = SOURCES[1][1];
   for (const [name, src] of SOURCES) {
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.10', name + ' @version 必须是 2.38.10');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.10', name + ' VER 必须是 2.38.10');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.11', name + ' @version 必须是 2.38.11');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.11', name + ' VER 必须是 2.38.11');
     const t = lfSrc(src);
     const gates = [
       ['saveProfiles', '      if (!profWriteGuard("档案落盘")) return;'],

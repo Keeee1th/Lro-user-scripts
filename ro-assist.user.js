@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手）
 // @namespace    dsh.ro-plugin
-// @version      2.38.10
+// @version      2.38.11
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -120,6 +120,21 @@
 // 4. 临时战斗目标 API 在任何发包前严格验证 GID/MID、活体怪物和 MvpDropsNum；失效时自动清理。保留 v2.38.0 opcode 能力探测与启动自检修复。
 // 5. 版本：@version 2.38.0 → 2.38.1（VER 同步）；实验版同步。离线 runtime 151/151、opcode 9/9，独立定点复核 8/8 通过。
 
+// ---------------- V2.38.11 变更摘要 ----------------
+// 1. 手机页鼠标转视角改绑**右键**（用户实测：左键被拖拽接管后点不了 NPC 对话与菜单）：
+//    左键完全恢复 V2.38.8 原行为 —— 按下立刻合成 touchstart、move/up 原样转发，不再等抬起、不再判阈值、不参与视角；
+//    右键在游戏画面上按住并移动超过 5px（原阈值）才算拖拽 → 转视角/俯仰，主路 camera 与备路合成两指手势、排队与上下限回绕全部复用。
+// 2. 右键细节（逐条对齐要求）：
+//    · 静止右键点击（未过阈值就抬起）：不转视角、不派发任何合成触摸、不拦浏览器右键菜单（contextmenu 一次都不 preventDefault）；
+//    · 只有「确实超过阈值的右键拖拽」才抑制这一次右键菜单，且只抑制一次（标志在每次右键按下重置、被 contextmenu 消费后清零）；
+//    · 右键拖拽期间与抬起都不派发任何合成触摸（避免带着角色乱跑），抬起也不补合成点击；
+//    · 引擎活动 UI 窗口与助手自己的界面上：右键拖拽不转视角、右键菜单原样（复用同一套 vcInUi 排除，未新增特例）；
+//    · 滚轮缩放、左下角 7 键按钮组、触摸设备（pointerType=touch）、ALT+左键旧路径：一行未改。
+// 3. 冲突说明（依据安全）：用户口径「手机端右键功能失效，被整合到左键点击玩家的动作上了」——即手机页右键**没有游戏内用途**，
+//    因此右键绑拖拽是安全的，抑制右键菜单不会挡住任何游戏功能：只有真正拖拽的那一次由本层吞掉，静止右键（未过阈值）一律原样放行。
+// 4. 版本号 2.38.10 → 2.38.11（@version 与脚本内 VER 同步）。
+// 5. B1 复审修复：左键守卫恢复 V2.38.8 语义（鼠标层只排除助手自己的界面 inAssistantUI）；V2.38.9 起误用在左键上的宽排除 vcInUi
+//    （引擎界面 DOM 的 button/a/input、MouseEventHandler.intersect=false 的非画布位置）只留给右键拖拽与滚轮，左键不再受其影响。
 // ---------------- V2.38.10 变更摘要 ----------------
 // 1. 手机端「背包整表」新增只读包流来源（ZC.SPLIT_SEND_ITEMLIST_NORMAL，op 0x0b09=2825）：必须 (帧长-5) 整除
 //    记录长以 PACKETVER 为权威（本服 20211103 ≥ 20181121 → 34B）；invType 必须 ===0（0=背包 / 1=推车 / 2=仓库，客户端 Online.js 373679-373714）；index i16@0 · ITID u32@2 · type u8@6 · count i16@7 ·
@@ -472,7 +487,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.38.10"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.38.11"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -3645,8 +3660,12 @@
       //      只把位移交给视角控制层（camera 直接改相机 / touch 合成两指手势）。
       //   ALT+左键：保持旧行为（立刻合成），不接管；右键（button!==0）本就不合成，也不拦。
       var simTouchId = 1;
+      var vcCtxOnce = 0;   // V2.38.11：右键拖拽「欠一次菜单抑制」的标志（只消费一次；每次右键按下重置）
       var simPending = null;   // {x,y,target,pid}
       var simActive = null;    // 仅 ALT 兜底路径：已派发 touchstart 的手势
+      function simInUi(t) {   // B1 审计修复：恢复 V2.38.8 的鼠标层排除语义 —— 只排除助手自己的界面
+        return inAssistantUI(t);
+      }
       function simFromRealMouse(e) {
         try {
           if (e.pointerType !== undefined) return e.pointerType === "mouse";
@@ -3665,16 +3684,21 @@
       }
       function simDown(e) {
         try {
-          if (e.button !== 0 || !simFromRealMouse(e) || vcInUi(e.target)) return;
+          if (!simFromRealMouse(e)) return;
           var pid = e.pointerId || 0;
-          if (e.altKey) {   // ALT 手势照旧：立刻合成，不接管
-            var ta = simMkTouch(e.clientX, e.clientY, e.target);
-            if (!ta) return;
-            simActive = { t: ta, target: e.target, pid: pid };
-            simFire("touchstart", [ta], [ta], e.target);
+          if (e.button === 2) {   // V2.38.11：右键 = 视角拖拽候选（先只记待定；阈值内抬起就完全按原样走）
+            if (vcInUi(e.target)) return;   // 右键拖拽仍用宽排除（与滚轮同口径）：引擎活动 UI / 助手 UI 上一律不接管
+            vcCtxOnce = 0;         // 每次右键手势都从干净状态开始：上一次没被消费的抑制标志不许漏到这一次
+            simPending = { x: e.clientX, y: e.clientY, target: e.target, pid: pid, claimed: false, mode: "", btn: 2 };
             return;
           }
-          simPending = { x: e.clientX, y: e.clientY, target: e.target, pid: pid, claimed: false, mode: "" };
+          if (e.button !== 0) return;
+          if (simInUi(e.target)) return;   // 左键恢复 V2.38.8 排除语义：引擎界面 DOM 的 button/a/input、intersect=false 处**不**排除
+          // 左键（含 ALT+左键）：完全恢复 V2.38.8 原行为 —— 按下立刻合成 touchstart，全程原样转发，不参与视角、不等抬起
+          var ta = simMkTouch(e.clientX, e.clientY, e.target);
+          if (!ta) return;
+          simActive = { t: ta, target: e.target, pid: pid };
+          simFire("touchstart", [ta], [ta], e.target);
         } catch (e2) {}
       }
       function simMove(e) {
@@ -3698,6 +3722,7 @@
             if (p.mode === "off") return;
             vcEnsureOrigin();
             p.claimed = true;
+            if (p.btn === 2) vcCtxOnce = 1;   // V2.38.11：只有「确实超过阈值的右键拖拽」才抑制这一次右键菜单
             p.lx = p.x; p.ly = p.y;
             p.yawBase = vcS.acc.yaw;      // 备路：acc 记的是「相对重置目标的偏移」，重置才能用反向手势精确回到起点
             p.pitchBase = vcS.acc.pitch;
@@ -3739,11 +3764,20 @@
           if (e.pointerId !== undefined && e.pointerId !== p.pid) return;
           simPending = null;
           if (p.claimed) { if (p.mode === "touch" && p.sub) vcQPush({ t: "end", wait: 1 }); return; }   // F-B：末帧之后再 touchend
+          if (p.btn === 2) return;   // V2.38.11：静止右键点击按原样 —— 不合成触摸、不拦菜单（右键菜单照旧由游戏/浏览器处理）
           var t = simMkTouch(p.x, p.y, p.target);   // 一次点击：此刻才合成（按下→抬起一次完成，游戏侧无悬空触摸）
           if (!t) return;
           simFire("touchstart", [t], [t], p.target);
           simFire("touchend", [], [t], p.target);
         } catch (e5) {}
+      }
+      function vcCtx(e) {   // V2.38.11：右键菜单抑制器 —— 只有「右键拖拽命中阈值后的那一次」contextmenu 才吞
+        try {
+          if (!vcCtxOnce) return;   // 静止右键点击 / 阈值内的右键移动：一律不拦（浏览器与游戏自己处理）
+          vcCtxOnce = 0;            // 只消费一次：一次右键拖拽恰好抑制一次
+          e.preventDefault();
+          vcLog("右键拖拽：已抑制本次右键菜单（静止右键不受影响）");
+        } catch (e2) {}
       }
       function simCancel() { try { simPending = null; if (simActive) { var o = simActive.target, t = simActive.t; simActive = null; if (o && t) simFire("touchend", [], [t], o); } } catch (e) {} }
       try {
@@ -3758,6 +3792,7 @@
           document.addEventListener("mouseup", simUp, true);
         }
         try { window.addEventListener("blur", simCancel, true); } catch (eB) {}
+        try { document.addEventListener("contextmenu", vcCtx, true); } catch (eC) {}
         try { document.addEventListener("wheel", vcOnWheel, { passive: false, capture: false }); } catch (eW) { try { document.addEventListener("wheel", vcOnWheel, false); } catch (eW2) {} }
         if (document.readyState === "loading") { try { window.addEventListener("load", vcBox, false); } catch (eL) { vcBox(); } } else { vcBox(); }
       } catch (eAll) {}

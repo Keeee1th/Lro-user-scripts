@@ -914,8 +914,8 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
   // 1) 版本号：稳定版与实验版都必须是 2.36.1（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.10', name + ' @version 必须是 2.38.10（锚定行首元数据行）');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.10', name + ' 运行时常量 VER 必须是 2.38.10');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.11', name + ' @version 必须是 2.38.11（锚定行首元数据行）');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.11', name + ' 运行时常量 VER 必须是 2.38.11');
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
   const stripHead = (s) => s.replace(/\r\n/g,'\n').split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
@@ -1287,8 +1287,8 @@ test('V2.34.5 战斗诊断快照 prof 字段已就位（不改既有字段）', 
 // ================= V2.34.5：配置自动备份（两代）/ 黄金副本找回（纯函数真值表 / 按钮 / 键隔离）=================
 test('V2.34.5 版本号升到 2.34.5（@version 与运行时常量一致，两文件同步）', () => {
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.10', name + ' @version 必须是 2.38.10（锚定行首元数据行）');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.10', name + ' 运行时常量 VER 必须是 2.38.10');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.11', name + ' @version 必须是 2.38.11（锚定行首元数据行）');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.11', name + ' 运行时常量 VER 必须是 2.38.11');
   }
 });
 
@@ -1577,7 +1577,7 @@ test('V2.38.2 定点修复：随时丢弃开启时零候选不抛错（阈值模
 
 // ================= V2.35.1 assistant API + standalone dojo =================
 const splitSources=[['stable',source],['exp',expSource]];
-test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(s)?.[1],'2.38.10',name+' @version 必须锚定行首元数据行（旧的非锚定正则可能命中变更日志/正文里的 @version 字样）');assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
+test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(s)?.[1],'2.38.11',name+' @version 必须锚定行首元数据行（旧的非锚定正则可能命中变更日志/正文里的 @version 字样）');assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
 test('V2.35.1 public API uses owner-only external signatures and validates the current lease owner',()=>{for(const[,s]of splitSources){assert.ok(s.includes('/^[A-Za-z0-9_.:-]{8,128}$/'));assert.ok(s.includes('dojo:1,battle:1,movement:1,dialog:1,arrow:1,fly:1'));assert.ok(s.includes('if(apiLease&&apiLease.owner!==owner)'));for(const sig of ['apiHas(owner,scope)','apiSnapshot(owner)','apiRelease(owner)','apiContact(owner,gid)','apiWalk(owner,payload)','apiChoose(owner,payload)','apiBattle(owner,on)','apiSetArrow(owner,target)','apiClearArrow(owner)','apiFly(owner,payload)'])assert.ok(s.includes('function '+sig),sig);assert.ok(s.includes('apiLease.generation===generation'));assert.ok(!s.includes('apiHas(owner,generation'));}});
 test('V2.35.1 snapshot and battle/menu ownership contracts are explicit',()=>{for(const[,s]of splitSources){for(const key of ['ready:','map:','player:','mobs:','npcs:','target:','inDojoMap:','dialogOpen:','menu:','battleState:','busy:','arrow:'])assert.ok(s.includes(key),key);assert.ok(s.includes('if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"}'));assert.ok(s.includes('b.state="pending-on"'));assert.ok(s.includes('if(b.state!=="owned")return {ok:true,result:"not-owned"}'));assert.ok(s.includes('l.battle.state==="owned"||l.battle.state==="pending-off"'));assert.ok(s.includes('if(s!==false)return {ok:true,result:s===true?"preexisting":"unknown"}'));}});
 test('V2.36.11 arrow rules use a per-monster table plus a default arrow',()=>{for(const[name,s]of splitSources){
@@ -4153,8 +4153,8 @@ test('V2.38.4 静态断言：新函数就位、判定链未改、零发包零 ho
     const sum = src.slice(src.indexOf('// ---------------- V2.38.4 变更摘要'), src.indexOf('// ---------------- V2.38.3 变更摘要'));
     assert.ok(sum.includes('入站分帧') && sum.includes('气弹') && sum.includes('按帧') && sum.includes('2.38.4'), name + ' V2.38.4 摘要必须覆盖：分帧 / 气弹 / 抓包按帧 / 版本');
     assert.ok(!EMOJI.test(sum) && !EMOJI.test(code), name + ' 新增内容不得含 emoji');
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.10', name + ' @version 必须是 2.38.10');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.10', name + ' VER 必须是 2.38.10');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.11', name + ' @version 必须是 2.38.11');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.11', name + ' VER 必须是 2.38.11');
   }
   assert.equal((source.match(/(?<!\r)\n/g) || []).length, 0, '稳定版必须纯 CRLF');
   assert.equal((expSource.match(/\r\n/g) || []).length, 0, '实验版必须纯 LF');
@@ -5105,7 +5105,7 @@ test('V2.38.4 静态断言：三处新口径就位、分帧分派链与已完成
     assert.ok(src.includes('if (!clientScriptPresent()) injectClient(cfg, false);'), name + ' 本机私有入口保持现状（DOM 去重 + 立即注入）');
     assert.ok(src.includes('if (state.ready || state.bootedByWrapper || state.bootedByPlugin) return;'), name + ' 启动去重必须保留');
     assert.ok(src.includes('officialBooted: false,'), name + ' state 必须有 officialBooted 标记');
-    assert.ok(src.includes('// @version      2.38.10') && src.includes('var VER = "2.38.10";'), name + ' 版本必须仍是 2.38.10（V2.38.9 批次：直发传送 + 审计 F1/F2/F4）');
+    assert.ok(src.includes('// @version      2.38.11') && src.includes('var VER = "2.38.11";'), name + ' 版本必须仍是 2.38.11（V2.38.9 批次：直发传送 + 审计 F1/F2/F4）');
     assert.ok(src.includes('// ---------------- V2.38.9 变更摘要 ----------------'), name + ' 必须有 V2.38.9 变更摘要（视角控制 + 审计收尾）');
     // 已完成批次与分帧分派链不得回改
     assert.equal((src.match(/op === 307/g) || []).length, 1, name + ' 摆摊识别集合仍只出现一处（拉黑/闸门批次未回改）');
@@ -6033,8 +6033,8 @@ test('V2.38.4 审计修正 静态：F1–F6 锚点就位，旧的跨角色认领
     assert.ok(t.includes('L.push("识别状态："'), name + ' 诊断必须有「识别状态：」');
     assert.ok(t.includes('L.push("未认领旧档："'), name + ' 诊断必须有「未认领旧档：」');
     // 版本不变
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.10', name + ' @version 必须仍是 2.38.9');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.10', name + ' VER 必须仍是 2.38.9');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.11', name + ' @version 必须仍是 2.38.9');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.11', name + ' VER 必须仍是 2.38.9');
   }
   assert.equal((source.match(/(?<!\r)\n/g) || []).length, 0, '稳定版必须纯 CRLF');
   assert.equal((expSource.match(/\r\n/g) || []).length, 0, '实验版必须纯 LF');
@@ -7524,14 +7524,14 @@ function vcModeCheck(w,name){
   w.press('pointerdown',10,10,{target:ui});w.press('pointerup',10,10,{target:ui});
   assert.equal(w.call('vcS.mode'),'',name+' 点助手自己的界面不得把模式锁成 touch');
   // 引擎没就绪时拖拽：本次只能尽力而为，但结论不许被定死
-  w.press('pointerdown',300,300);w.press('pointermove',420,300);w.pump(3);w.press('pointerup',420,300);w.pump(2);
+  w.press('pointerdown',300,300,{button:2});w.press('pointermove',420,300);w.pump(3);w.press('pointerup',420,300);w.pump(2);
   assert.equal(w.call('vcS.mode'),'',name+' 引擎就绪前的拖拽不得把模式锁成 touch');
   assert.equal(w.vcModeEnsure(),'touch',name+' 引擎就绪前只能按备路尽力跑');
   assert.equal(w.call('vcS.mode'),'',name+' 备路结论在引擎就绪前不得落缓存');
   w.loadEngine();w.cam.angleFinal[1]=0;w.settle();
   assert.equal(w.vcModeEnsure(),'camera',name+' 引擎就绪且相机模块可用后必须判为主路 camera');
   assert.equal(w.call('vcS.mode'),'camera',name+' 主路结论必须落缓存（升级后不再回退）');
-  w.press('pointerdown',300,300);w.press('pointermove',420,300);w.pump(3);w.press('pointerup',420,300);w.pump(2);
+  w.press('pointerdown',300,300,{button:2});w.press('pointermove',420,300);w.pump(3);w.press('pointerup',420,300);w.pump(2);
   assert.ok(w.cam.angleFinal[1] < -80, name+' 升级后拖拽必须真的转偏航（实际 '+w.cam.angleFinal[1]+'）');
 }
 function vcZoomResetCheck(w,name){
@@ -7552,7 +7552,7 @@ function vcPendingDragCheck(w,name){
   w.pump(4);
   w.cam.angleFinal[0]=220;w.cam.angle[0]=220;w.cam.angleFinal[1]=0;w.cam.angle[1]=0;w.settle();
   w.call("vcStep('pitch',1)");                                     // 上一段手势（按钮）已经受理、还没发完
-  w.press('pointerdown',300,300);w.press('pointermove',400,300);   // 紧接着就开始拖拽
+  w.press('pointerdown',300,300,{button:2});w.press('pointermove',400,300);   // 紧接着就开始拖拽（V2.38.11：右键）
   w.pump(3);w.press('pointerup',400,300);w.pump(30);
   assert.ok(w.cam.angleFinal[1] < -60, name+' F2 上一段手势没收完时的拖拽不许被吃掉（期望≈-72，实际 '+w.cam.angleFinal[1]+'）');
   assert.ok(Math.abs(w.cam.angleFinal[0]-228)<=2, name+' F2 旧队列的俯仰只算按钮那一次、不许泄漏进拖拽（期望 228，实际 '+w.cam.angleFinal[0]+'）');
@@ -7568,7 +7568,7 @@ function vcPitchCheck(w,name){
 function vcFixCheck(w,name){
   assert.equal(w.vcModeEnsure(),'touch',name+' 前置：必须处于备路 touch');
   // 非收敛场景：拖拽后**不给引擎帧**就把目标拉走（引擎当前角度 angle[1] 还停在起点）
-  w.press('pointerdown',300,300);w.press('pointermove',420,300);w.pump(2,true);   // 只发事件、不跑引擎帧 → 未收敛
+  w.press('pointerdown',300,300,{button:2});w.press('pointermove',420,300);w.pump(2,true);   // 只发事件、不跑引擎帧 → 未收敛
   assert.ok(Math.abs(w.cam.angleFinal[1])>80,name+' 前置：拖拽必须已经把目标偏航拉走（实际 '+w.cam.angleFinal[1]+'）');
   assert.ok(Math.abs(w.cam.angle[1])<1,name+' 前置：此时引擎的当前角度还没收敛（实际 '+w.cam.angle[1]+'）');
   w.vcReset();w.pump(24);
@@ -7628,7 +7628,7 @@ function vcWorld(src,over,opt){
 function vcCamCheck(w,name){
   assert.equal(w.vcModeEnsure(),'camera',name+' 有相机模块时必须走主路 camera');
   // 1) 拖拽角度累积（公式与 Camera.processMouseAction 同形：dx→偏航 -dx/宽*720、dy→俯仰 +dy/高*300）
-  w.press('pointerdown',100,100);w.press('pointermove',140,110);w.press('pointermove',200,140);
+  w.press('pointerdown',100,100,{button:2});w.press('pointermove',140,110);w.press('pointermove',200,140);
   assert.equal(w.cam.angleFinal[0],244,name+' 俯仰必须累积（220+40/500*300）');
   assert.equal(w.cam.angleFinal[1],-72,name+' 偏航必须累积（0-100/1000*720）');
   assert.equal(w.rec.dispatched.length,0,name+' 拖拽期间不许向游戏派发任何合成触摸（否则单指摇杆会带着角色乱跑）');
@@ -7653,13 +7653,22 @@ function vcCamCheck(w,name){
   // 4) 阈值：≤5px 是一次点击（照旧走路），>5px 才算拖拽
   w.cam.angleFinal[0]=220;w.cam.angleFinal[1]=0;w.settle();
   w.rec.dispatched.length=0;
-  w.press('pointerdown',50,50);w.press('pointermove',52,51);w.press('pointerup',52,51);
-  assert.deepEqual(w.rec.dispatched.map(e=>e.type),['touchstart','touchend'],name+' 阈值内必须仍是一次点击（touchstart+touchend，走路路径保留）');
-  assert.equal(w.cam.angleFinal[0],220,name+' 点击不得改相机');
+  // V2.38.11：左键彻底不参与视角 —— 阈值内/超过阈值都整段原样转发，相机一动不动
   w.rec.dispatched.length=0;
   w.press('pointerdown',50,50);w.press('pointermove',60,50);w.press('pointerup',60,50);
-  assert.equal(w.rec.dispatched.length,0,name+' 超过阈值必须不派发任何触摸（抑制这次点击走路）');
-  assert.equal(w.cam.angleFinal[1],-7.2,name+' 超过阈值必须真的转视角');
+  assert.deepEqual(w.rec.dispatched.map(e=>e.type),['touchstart','touchmove','touchend'],name+' 左键拖拽必须整段原样转发（含 touchmove，恢复 V2.38.8 行为）');
+  assert.deepEqual([w.cam.angleFinal[0],w.cam.angleFinal[1]],[220,0],name+' 左键拖拽绝不能改相机');
+  // 右键：阈值内只是一次普通右键（不转视角、不拦菜单）；超过阈值才算拖拽
+  w.rec.dispatched.length=0;w.rec.pd=0;
+  w.press('pointerdown',50,50,{button:2});w.press('pointermove',52,51);w.press('pointerup',52,51);w.press('contextmenu',52,51,{button:2});
+  assert.equal(w.rec.dispatched.length,0,name+' 阈值内的右键移动不得合成任何触摸');
+  assert.equal(w.rec.pd,0,name+' 阈值内的右键移动不得拦右键菜单');
+  w.rec.pd=0;
+  w.press('pointerdown',50,50,{button:2});w.press('pointermove',60,50);w.press('pointerup',60,50);
+  assert.equal(w.rec.dispatched.length,0,name+' 右键超过阈值必须不派发任何触摸（抑制这次点击走路）');
+  assert.equal(w.cam.angleFinal[1],-7.2,name+' 右键超过阈值必须真的转视角');
+  w.press('contextmenu',60,50,{button:2});
+  assert.equal(w.rec.pd,1,name+' 右键拖拽后 contextmenu 必须恰好被抑制一次（实际 '+w.rec.pd+'）');
   // 5) 按钮组 7 键
   const box=w.box();
   assert.ok(box&&box.children.length===7,name+' 左下角必须有 7 个视角按钮');
@@ -7677,12 +7686,12 @@ function vcCamCheck(w,name){
 }
 function vcGuardCheck(w,name){
   const base=[w.cam.angleFinal[0],w.cam.angleFinal[1]];
-  // 1) 右键：不拦、不合成、不转视角、不 preventDefault
+  // 1) V2.38.11：静止右键 = 完全按原样（不合成、不转视角、不拦菜单）；本服手机页右键无游戏内用途，故拖拽抑制菜单不会挡功能
   w.rec.dispatched.length=0;w.rec.pd=0;
-  w.press('pointerdown',10,10,{button:2});w.press('pointerup',10,10,{button:2});
-  assert.equal(w.rec.dispatched.length,0,name+' 右键不得合成任何触摸');
-  assert.equal(w.rec.pd,0,name+' 右键不得被 preventDefault');
-  assert.deepEqual([w.cam.angleFinal[0],w.cam.angleFinal[1]],base,name+' 右键不得改视角');
+  w.press('pointerdown',10,10,{button:2});w.press('pointerup',10,10,{button:2});w.press('contextmenu',10,10,{button:2});
+  assert.equal(w.rec.dispatched.length,0,name+' 静止右键不得合成任何触摸');
+  assert.equal(w.rec.pd,0,name+' 静止右键不得被 preventDefault');
+  assert.deepEqual([w.cam.angleFinal[0],w.cam.angleFinal[1]],base,name+' 静止右键不得改视角');
   // 2) ALT+左键：照旧旧行为（立刻合成），不接管视角
   w.rec.dispatched.length=0;
   w.press('pointerdown',10,10,{altKey:true});w.press('pointermove',90,10,{altKey:true});w.press('pointerup',90,10,{altKey:true});
@@ -7702,7 +7711,7 @@ function vcGuardCheck(w,name){
   assert.equal(w.rec.pd,0,name+' 引擎 UI 组件上的滚轮不得 preventDefault');
   w.press('pointerdown',10,10,{target:uiTarget});w.press('pointermove',120,10,{target:uiTarget});w.press('pointerup',120,10,{target:uiTarget});
   assert.equal(w.cam.angleFinal[1],base[1],name+' 引擎 UI 组件上的拖拽不得转视角');
-  assert.equal(w.rec.dispatched.length,0,name+' 引擎 UI 组件上不得合成触摸（该窗口自己处理鼠标点击，V2.8.1 定下的行为）');
+  assert.equal(w.rec.dispatched.length,0,name+' 该目标在桩环境里被判成助手 UI（inAssistantUI 命中）→ 左键不合成（v2.38.8 也只排除助手界面，行为一致）');
   // 4b) 指针停在引擎窗口上（MouseEventHandler.intersect=false）且不在画布：同样不接管
   w.meh.intersect=false;
   w.rec.dispatched.length=0;w.rec.pd=0;w.cam.zoomCalls.length=0;
@@ -7711,7 +7720,7 @@ function vcGuardCheck(w,name){
   assert.equal(w.cam.zoomCalls.length,0,name+' intersect=false（指针在引擎窗口上）的滚轮不得缩放');
   w.press('pointerdown',10,10,{target:uiFar});w.press('pointermove',120,10,{target:uiFar});w.press('pointerup',120,10,{target:uiFar});
   assert.equal(w.cam.angleFinal[1],base[1],name+' intersect=false 时的拖拽不得转视角');
-  assert.equal(w.rec.dispatched.length,0,name+' intersect=false 时不得合成触摸');
+  assert.equal(w.rec.dispatched.length,0,name+' 该桩元素同样被判成助手 UI → 左键不合成（行为与 v2.38.8 一致）');
   w.meh.intersect=true;
   // 5) 滚轮方向与吞掉行为
   w.cam.zoomCalls.length=0;w.rec.pd=0;
@@ -7725,6 +7734,54 @@ function vcGuardCheck(w,name){
   w.press('pointerdown',10,10,{target:aui});w.press('pointermove',120,10,{target:aui});w.press('pointerup',120,10,{target:aui});
   assert.equal(w.cam.zoomCalls.length,0,name+' 助手 UI 内的滚轮不得缩放');
   assert.equal(w.rec.dispatched.length,0,name+' 助手 UI 内不得合成触摸');
+  // 7) V2.38.11：左键完全恢复原样（不参与视角、整段原样转发）
+  w.rec.dispatched.length=0;w.rec.pd=0;
+  const lb=[w.cam.angleFinal[0],w.cam.angleFinal[1]];
+  w.press('pointerdown',300,300);w.press('pointermove',340,300);w.press('pointermove',420,300);w.press('pointerup',420,300);
+  assert.deepEqual(w.rec.dispatched.map(e=>e.type),['touchstart','touchmove','touchmove','touchend'],name+' 左键必须整段原样转发（恢复原行为）');
+  assert.deepEqual([w.cam.angleFinal[0],w.cam.angleFinal[1]],lb,name+' 左键拖拽绝不能改视角');
+  // 8) V2.38.11：右键拖拽生效、期间零合成触摸、菜单恰好抑制一次且只消费一次
+  w.rec.dispatched.length=0;w.rec.pd=0;w.cam.angleFinal[1]=0;
+  w.press('pointerdown',300,300,{button:2});w.press('pointermove',340,300);w.press('pointermove',420,300);w.press('pointerup',420,300);
+  assert.equal(w.rec.dispatched.length,0,name+' 右键拖拽期间与抬起不得派发任何合成触摸');
+  assert.ok(w.cam.angleFinal[1]<-80,name+' 右键拖拽必须真的转偏航（实际 '+w.cam.angleFinal[1]+'）');
+  w.press('contextmenu',420,300,{button:2});
+  assert.equal(w.rec.pd,1,name+' 右键拖拽后 contextmenu 必须恰好被抑制一次（实际 '+w.rec.pd+'）');
+  w.press('contextmenu',420,300,{button:2});
+  assert.equal(w.rec.pd,1,name+' 抑制标志只消费一次：第二个 contextmenu 不许再被拦');
+  // 9) V2.38.11：静止右键 / 阈值内右键移动一律按原样
+  w.rec.dispatched.length=0;w.rec.pd=0;const rb=[w.cam.angleFinal[0],w.cam.angleFinal[1]];
+  w.press('pointerdown',50,50,{button:2});w.press('pointerup',50,50,{button:2});w.press('contextmenu',50,50,{button:2});
+  assert.equal(w.rec.dispatched.length,0,name+' 静止右键点击不得合成任何触摸');
+  assert.equal(w.rec.pd,0,name+' 静止右键点击不得拦右键菜单');
+  w.press('pointerdown',50,50,{button:2});w.press('pointermove',52,51);w.press('pointerup',52,51);w.press('contextmenu',52,51,{button:2});
+  assert.equal(w.rec.pd,0,name+' 阈值内的右键移动同样不得拦右键菜单');
+  assert.deepEqual([w.cam.angleFinal[0],w.cam.angleFinal[1]],rb,name+' 静止右键/阈值内右键移动不得改视角');
+  // 10) V2.38.11：引擎活动 UI 与助手 UI 上的右键拖拽一律不接管、菜单原样
+  w.rec.dispatched.length=0;w.rec.pd=0;const ub=[w.cam.angleFinal[0],w.cam.angleFinal[1]];
+  w.press('pointerdown',10,10,{button:2,target:uiTarget});w.press('pointermove',120,10,{target:uiTarget});w.press('pointerup',120,10,{target:uiTarget});w.press('contextmenu',120,10,{button:2,target:uiTarget});
+  assert.deepEqual([w.cam.angleFinal[0],w.cam.angleFinal[1]],ub,name+' 引擎活动 UI 上的右键拖拽不得转视角');
+  assert.equal(w.rec.pd,0,name+' 引擎 UI 上的右键菜单必须按原样（不得拦）');
+  w.press('pointerdown',10,10,{button:2,target:aui});w.press('pointermove',120,10,{target:aui});w.press('pointerup',120,10,{target:aui});w.press('contextmenu',120,10,{button:2,target:aui});
+  assert.deepEqual([w.cam.angleFinal[0],w.cam.angleFinal[1]],ub,name+' 助手 UI 上的右键拖拽不得转视角');
+  assert.equal(w.rec.pd,0,name+' 助手 UI 上的右键菜单必须按原样');
+}
+function vcLeftGateCheck(w,name,fullSrc){
+  // B1：桩环境的 inAssistantUI 把 vcEl 造的元素一律判成助手 UI →「引擎 DOM 元素」在行为层不可分辨；
+  // 因此这里用源码级结构断言钉死左键守卫，行为层由既有左键基线用例（canvas 目标）承担。
+  const src=(fullSrc&&fullSrc.indexOf('function simInUi(t)')>=0)?fullSrc:(w.src||'');
+  console.log('[V2.38.11 B1 源]'+name+' fullSrc='+(fullSrc?fullSrc.length:0)+' slice='+((w.src||'').length)+' 用到的源含 simInUi='+(src.indexOf('function simInUi(t)')>=0));
+  assert.ok(/function simInUi\(t\) \{[^}]*return inAssistantUI\(t\);/.test(src),name+' 左键守卫必须是 v2.38.8 的 simInUi=inAssistantUI');
+  const leftGate=src.split('\n').filter(l=>l.indexOf('if (simInUi(e.target)) return;')>=0);
+  assert.equal(leftGate.length,1,name+' 左键分支必须且只能有一道 simInUi 守卫（实际 '+leftGate.length+'）');
+  const down=src.slice(src.indexOf('function simDown(e)'),src.indexOf('function simMove(e)'));
+  assert.ok(down.indexOf('if (simInUi(e.target)) return;')>0,name+' simInUi 守卫必须落在 simDown 的左键分支里');
+  assert.ok(down.indexOf('if (vcInUi(e.target)) return;')>0,name+' 右键分支必须用 vcInUi（宽排除保留给右键拖拽）');
+  assert.ok(down.indexOf('if (simInUi(e.target)) return;')>down.indexOf('if (e.button !== 0) return;'),name+' 左键守卫必须在「非左键直接 return」之后（即只作用于左键）');
+  assert.ok(down.indexOf('if (vcInUi(e.target)) return;')<down.indexOf('if (e.button !== 0) return;'),name+' vcInUi 必须在左键分支之前（只作用于右键候选）');
+  assert.ok(/function vcCtx\(e\)/.test(src)&&/addEventListener\("contextmenu", vcCtx, true\)/.test(src),name+' 菜单抑制器与注册必须仍在');
+  assert.ok(src.indexOf('if (!vcCtxOnce) return;')>0&&src.indexOf('if (p.btn === 2) vcCtxOnce = 1;')>0,name+' 菜单抑制的两道条件必须仍在（静止右键不拦 / 命中阈值只抑制一次）');
+  return JSON.stringify({左键守卫:'simInUi=inAssistantUI（v2.38.8 等价）',simInUi守卫数:leftGate.length,右键守卫:'vcInUi（宽排除保留）',菜单抑制:'静止右键不拦+命中阈值一次'});
 }
 function vcBoundsCheck(w,name){
   const b=w.vcBounds();
@@ -7738,7 +7795,7 @@ function vcBoundsCheck(w,name){
 function vcTouchCheck(w,name){
   assert.equal(w.vcModeEnsure(),'touch',name+' 相机模块不可达时必须退到备路 touch');
   // 1) 水平拖拽 = 合成两指旋转 → 偏航（dx 120 → -120/1000*720 = -86.4；引擎 c() 会量化到整度）
-  w.press('pointerdown',300,300);w.press('pointermove',340,300);w.pump(2);w.press('pointermove',420,300);w.pump(2);w.press('pointerup',420,300);w.pump(3);
+  w.press('pointerdown',300,300,{button:2});w.press('pointermove',340,300);w.pump(2);w.press('pointermove',420,300);w.pump(2);w.press('pointerup',420,300);w.pump(3);
   assert.deepEqual(w.rec.events.map(e=>e.type),['touchstart','touchmove','touchmove','touchend'],name+' 备路拖拽必须是两指手势序列');
   assert.ok(w.rec.events[0].n===2&&w.rec.events[1].n===2,name+' 备路必须是 2 指（单指会走摇杆走路）');
   assert.equal(w.engine.log.onTouchMove,0,name+' 备路绝不能触发 Core/Mobile 的单指 onTouchMove（会带着角色走）');
@@ -7751,7 +7808,7 @@ function vcTouchCheck(w,name){
   assert.ok(Math.abs(w.cam.angleFinal[0]-220) <= 2, name+' 备路重置必须把俯仰也带回起点（实际 '+w.cam.angleFinal[0]+'）');
   assert.equal(w.engine.log.onTouchMove + w.engine.log.onTouchEnd,0,name+' 重置手势也不得触发单指路径');
   // 3) 竖直拖拽 = 俯仰（走引擎 SHIFT 分支，每帧由 Camera.update 应用）
-  w.press('pointerdown',300,300);w.press('pointermove',302,320);w.pump(4);w.press('pointermove',302,400);w.pump(4);
+  w.press('pointerdown',300,300,{button:2});w.press('pointermove',302,320);w.pump(4);w.press('pointermove',302,400);w.pump(4);
   w.press('pointerup',302,400);w.pump(6);
   assert.ok(Math.abs(w.cam.angleFinal[0]-268)<=1.5, name+' 备路俯仰增量必须等于 dy/高*300（期望 268，实际 '+w.cam.angleFinal[0]+'）');
   assert.equal(w.engine.SHIFT,false,name+' 手势结束后 SHIFT 必须复位');
@@ -7861,7 +7918,52 @@ test('V2.38.9 F5：teleport(map,opt) 挂在公开门面 window.__ROPlugin 上且
     console.log('[F5 门面]['+name+'] window.__ROPlugin.teleport 可达且发出 0x0a49');
   }
 });
-test('V2.38.9 视角控制变异体：阈值/上下限/右键/触摸/派发/快照/引擎UI/模式锁定/一帧全发/重置算死/缩放反拉/同步start 十二处改动必须被真实行为断言杀死（两文件）',()=>{
+test('V2.38.11 电脑版零影响：整块视角控件（含全部监听器）只在 IS_MN 手机页装配（两文件）',()=>{
+  for(const [name,src] of VC_FILES_SRC){
+    const lines=src.split(/\r?\n/);
+    const iBegin=lines.findIndex(l=>l.includes('// === VC_BEGIN ==='));
+    const iEnd=lines.findIndex(l=>l.includes('// === VC_END ==='));
+    let iIsMn=-1;for(let i=iBegin;i>=0;i--){if(/(^|[^A-Za-z0-9_])(if\s*\(\s*IS_MN\s*\)|IS_MN\s*&&|IS_MN\s*\?)/.test(lines[i])){iIsMn=i;break;}}
+    assert.ok(iIsMn>=0&&iBegin>iIsMn&&iEnd>iBegin,name+' 视角控件必须整块包在 IS_MN 条件里（找到的行 '+(iIsMn+1)+'）');
+    const HANDLERS='simDown|simMove|simUp|vcCtx|vcOnWheel';
+    const inside=lines.slice(iIsMn,iEnd+1).filter(l=>new RegExp('document\\.addEventListener\\("(pointerdown|pointermove|pointerup|pointercancel|mousedown|mousemove|mouseup|contextmenu|wheel)",\\s*('+HANDLERS+')').test(l)).length;
+    const outside=lines.filter((l,i)=>new RegExp('document\\.addEventListener\\("(pointerdown|pointermove|pointerup|pointercancel|mousedown|mousemove|mouseup|contextmenu|wheel)",\\s*('+HANDLERS+')').test(l)&&!(i>iIsMn&&i<iEnd)).length;
+    assert.ok(inside>=9,name+' IS_MN 分支内必须有整套监听器（实际 '+inside+'）');
+    assert.equal(outside,0,name+' 这套监听器一个都不许出现在 IS_MN 条件之外（PC 页零监听器，实际 '+outside+'）');
+    console.log('[V2.38.11 IS_MN 门禁]['+name+'] IS_MN 判定='+(iIsMn+1)+' 行；VC 块='+(iBegin+1)+'..'+(iEnd+1)+' 行；门禁内 document.addEventListener='+inside+' 门禁外同类='+outside);
+  }
+  console.log('[V2.38.11 IS_MN 门禁] IS_MN = /[?&]r=mn/.test(location.search)（产品第 470 行）→ PC 客户端页为 false，整块 VC 一行都不执行');
+});
+test('V2.38.11 左键恢复原样 / 右键拖拽生效：原始输出（两文件）',()=>{
+  for(const [name,src] of VC_FILES_SRC){
+    const w=vcWorld(src);
+    const base=[w.cam.angleFinal[0],w.cam.angleFinal[1]];
+    w.rec.dispatched.length=0;w.rec.pd=0;
+    w.press('pointerdown',300,300);w.press('pointermove',340,300);w.press('pointermove',420,300);w.press('pointerup',420,300);
+    const left=w.rec.dispatched.map(e=>e.type);
+    console.log('[V2.38.11 左键]['+name+'] 合成事件='+JSON.stringify(left)+' 相机='+JSON.stringify([w.cam.angleFinal[0],w.cam.angleFinal[1]])+' 与基线相同='+(JSON.stringify([w.cam.angleFinal[0],w.cam.angleFinal[1]])===JSON.stringify(base))+' contextmenu抑制='+w.rec.pd);
+    assert.deepEqual(left,['touchstart','touchmove','touchmove','touchend'],name+' 左键必须整段原样转发');
+    assert.deepEqual([w.cam.angleFinal[0],w.cam.angleFinal[1]],base,name+' 左键拖拽不得改视角');
+    w.rec.dispatched.length=0;w.rec.pd=0;w.cam.angleFinal[1]=0;
+    w.press('pointerdown',300,300,{button:2});w.press('pointermove',340,300);w.press('pointermove',420,300);w.press('pointerup',420,300);
+    console.log('[V2.38.11 右键]['+name+'] 合成事件='+JSON.stringify(w.rec.dispatched.map(e=>e.type))+' 偏航='+w.cam.angleFinal[1]+'（右键拖拽生效）');
+    assert.equal(w.rec.dispatched.length,0,name+' 右键拖拽期间与抬起不得派发任何合成触摸');
+    assert.ok(w.cam.angleFinal[1]<-80,name+' 右键拖拽必须真的转偏航（实际 '+w.cam.angleFinal[1]+'）');
+    w.rec.pd=0;w.press('contextmenu',420,300,{button:2});
+    console.log('[V2.38.11 右键菜单]['+name+'] 拖拽后 contextmenu 抑制次数='+w.rec.pd);
+    assert.equal(w.rec.pd,1,name+' 右键拖拽后 contextmenu 恰好抑制一次');
+  }
+});
+
+test('V2.38.11 B1 左键守卫恢复 v2.38.8 语义（源码结构 + 变异体钉死；行为层由左键基线用例承担）（两文件）',()=>{
+  for(const [name,src] of VC_FILES_SRC){
+    const w=vcWorld(src);
+    let info='';
+    try{info=vcLeftGateCheck(w,name,src);}catch(e){console.log('[V2.38.11 B1 失败]['+name+'] '+e.message);throw e;}
+    console.log('[V2.38.11 B1]['+name+'] '+info);
+  }
+});
+test('V2.38.9 视角控制变异体：阈值/上下限/右键/触摸/派发/快照/引擎UI/模式锁定/一帧全发/重置算死/缩放反拉/同步start 十六处改动必须被真实行为断言杀死（两文件）',()=>{
   const MUT=[
     ['M-VC1 拖拽阈值判定去掉（1px 抖动也算拖拽）',
       '            if ((dx * dx + dy * dy) <= VC_TH * VC_TH) return;   // 还在阈值内：不接管、也不派发给游戏',
@@ -7869,9 +7971,9 @@ test('V2.38.9 视角控制变异体：阈值/上下限/右键/触摸/派发/快�
     ['M-VC2 缩放改直写 zoomFinal（绕过引擎 setZoom 的上下限）',
       '        cam.setZoom(dir * VC_ZOOM_STEP);',
       '        cam.zoomFinal = cam.zoomFinal + 15 * dir;   // 变异：绕过上限/下限'],
-    ['M-VC3 右键也被接管（不再要求 button===0）',
-      "          if (e.button !== 0 || !simFromRealMouse(e) || vcInUi(e.target)) return;",
-      "          if (!simFromRealMouse(e) || vcInUi(e.target)) return;   // 变异：右键也接管"],
+    ['M-VC3 左键也被当成拖拽候选（不再区分左右键 → 左键交互又被接管）',
+      "          if (e.button === 2) {   // V2.38.11：右键 = 视角拖拽候选（先只记待定；阈值内抬起就完全按原样走）",
+      "          if (e.button === 0 || e.button === 2) {   // 变异：左键也接管"],
     ['M-VC4 触摸路径被覆盖（任何指针都当成真实鼠标）',
       '          if (e.pointerType !== undefined) return e.pointerType === "mouse";',
       '          return true;   // 变异：触摸指针也合成'],
@@ -7899,6 +8001,19 @@ test('V2.38.9 视角控制变异体：阈值/上下限/右键/触摸/派发/快�
     ['M-VC12 合成手势 touchstart 退回同步发（上一段迟到的 touchend 把新手势一起关掉 → 拖拽被吃）',
       '        vcQPush({ t: "start", mid: { x: mid.x, y: mid.y }, sub: sub });\n        return true;',
       '        vcSynStartNow({ x: mid.x, y: mid.y }, sub); return true;   // 变异：同步发 touchstart'],
+    // V2.38.11 新增变异：左键守卫 / 静止右键 / 菜单抑制 / 左键合成 四条红线（M-VC15、M-VC18 已剔除，理由见上）
+    ["M-VC13 静止右键也拦菜单（右键菜单被无条件 preventDefault）",
+      "          if (!vcCtxOnce) return;   // 静止右键点击 / 阈值内的右键移动：一律不拦（浏览器与游戏自己处理）",
+      "          if (false) return;   // 变异：无条件拦"],
+    ["M-VC14 右键拖拽不抑制菜单（命中阈值也不欠这一次抑制）",
+      "            if (p.btn === 2) vcCtxOnce = 1;   // V2.38.11：只有「确实超过阈值的右键拖拽」才抑制这一次右键菜单",
+      "            if (false) vcCtxOnce = 1;   // 变异：不抑制"],
+    ["M-VC16 左键不再合成触摸（手机页左键点不动，含 NPC 对话）",
+      "          var ta = simMkTouch(e.clientX, e.clientY, e.target);",
+      "          var ta = null;   // 变异：左键不合成"],
+    ["M-VC17 静止右键点击也合成触摸（点一下就走一步）",
+      "          if (p.claimed) { if (p.mode === \"touch\" && p.sub) vcQPush({ t: \"end\", wait: 1 }); return; }   // F-B：末帧之后再 touchend\n          if (p.btn === 2) return;   // V2.38.11：静止右键点击按原样 —— 不合成触摸、不拦菜单（右键菜单照旧由游戏/浏览器处理）",
+      "          if (p.claimed) { if (p.mode === \"touch\" && p.sub) vcQPush({ t: \"end\", wait: 1 }); return; }   // F-B：末帧之后再 touchend\n          if (false) return;   // 变异：静止右键也合成"],
   ];
   for(const [name,src] of VC_FILES_SRC){
     for(const [label,from,to] of MUT){
@@ -7915,6 +8030,8 @@ test('V2.38.9 视角控制变异体：阈值/上下限/右键/触摸/派发/快�
         else if(label.indexOf('M-VC7')===0)vcGuardCheck(w,name);else if(label.indexOf('M-VC6')===0)vcCamCheck(w,name);
         else if(label.indexOf('M-VC4')===0)vcGuardCheck(w,name);
         else if(label.indexOf('M-VC3')===0)vcGuardCheck(w,name);
+        else if(label.indexOf('M-VC13')===0||label.indexOf('M-VC14')===0||label.indexOf('M-VC15')===0||label.indexOf('M-VC16')===0||label.indexOf('M-VC17')===0)vcGuardCheck(w,name);
+        else if(label.indexOf('M-VC13')===0||label.indexOf('M-VC14')===0||label.indexOf('M-VC15')===0||label.indexOf('M-VC16')===0||label.indexOf('M-VC17')===0)vcGuardCheck(w,name);
         else vcCamCheck(w,name);
       }catch(e){killed=true;msg=e&&e.message||String(e);}
       assert.ok(killed,name+' 变异体必须被真实行为断言杀死：'+label);

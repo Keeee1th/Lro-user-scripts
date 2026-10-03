@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 原站插件模式（游戏助手 · 实验版）
 // @namespace    dsh.ro-plugin
-// @version      2.38.15
+// @version      2.38.17
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-assist-exp.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 原站以插件模式启动《仙境的传说》ROBrowser 客户端并连接原服务器；数据自动走本地镜像（127.0.0.1:8973）避免加载卡死，支持自动登录。PC 版直接打开 https://post.lastro.cn/ro/api.html 或备用线路 https://game.lastro.cn/ro/api.html?69.8；手机版打开 https://post.lastro.cn/?r=mn/index（登录页可选择平台与线路）。 新增私有本机客户端入口匹配（127.0.0.1:8971 / localhost:8971）。
@@ -141,6 +141,27 @@
 //     拖动结束立刻更新存值；用户正在拖动的那个元素在松手前不动。
 // 11. 界面：队伍血块改成整块按血量百分比显色（≥60% 绿 / 30~59% 黄 / <30% 红 / 0% 暗红），外圈职业色加粗到 3px 并加突出阴影，
 //     原来的顶部白色血条去掉；死亡 / 离线 / 异图 三态外观保持原样。
+// ---------------- V2.38.16 变更摘要 ----------------
+// 1. 代打准备留痕修正（F1）：只有代打确实启动（角色档可信 + 清名单成功）才记下「打全部怪」原值。
+//    角色档未识别/被拒时本拍直接返回，不再留下半份暂存状态——此前释放租约会照着「清名单自动勾上的值」回写设置，静默把「打全部怪」打开。
+// 2. 代打释放归还用户数据（F2）：清名单清的是角色档里的永久名单（profileLockSave → profiles[k].lockList），属于用户数据；
+//    现在启动前整份快照，释放时按「快照覆盖、代打期间新加的条目保留」合并归还，并且同样走那道写入门（未识别档不写盘）。
+// 3. 锁定目标编号解析（F3）：不再只靠 EntityManager.get——优先用本拍已经扫过的怪表（zWalk 的 EM 遍历产物，条目自带 mid），
+//    拿不到再退回 zEntOf，mid 链补上 .mid 兜底（与还击候选链同口径）；真的取不到才按普通怪处理，并按「段」记一次诊断计数
+//    （只进诊断环/本机日志，界面文案不变）。
+// 4. 离线自检：补「首领诊断传错 mid」的红线（「忽略」标记必须按 mid 判，传成 GID 必须变红），此前该变异存活。
+// 5. 文案（F5）：用户可见文案只描述用法与限制，去掉「客户端/发包/字段/接口/请求」等实现词，统一成玩家口径
+//    （例：客户端未就绪 → 游戏画面还没准备好；重启客户端 → 重启游戏；怪物库未就绪（客户端加载后重试）→ 怪物资料还没准备好（进游戏后重试））；
+//    注释、历史变更摘要、诊断日志与控制台文本不动。
+// 6. 版本：@version 2.38.15 → 2.38.16（VER 同步）；实验版同步。
+// ---------------- V2.38.17 变更摘要 ----------------
+// 1. 新增「死亡回放」（功能菜单 · 战斗辅助 · 默认开启）：角色死亡时记下一个片段并落到独立键
+//    （既不属于角色档，也不参与本机同步），窗口里能看到谁打的你、你当时的状态与死亡前几秒的时间线。
+// 2. 记录来源两条：服务器死亡通知为主路径；每秒实体死亡状态为兜底。同一次死亡只产一条记录，弹出冷却不少于 5 秒。
+// 3. 事件只驻留内存环（上限 400 条），落盘只在死亡那一刻做一次；历史最多 20 条，每条最多 120 个事件。
+// 4. 头像沿用怪物头像图源，取不到时退回名字首字色块（图源服务没启动也不报错）。
+// 5. 文案：窗口内一律玩家口径，不出现实现词、中英夹杂与表情符号。
+// 6. 版本：@version 2.38.16 → 2.38.17（VER 同步）；实验版同步。
 // ---------------- V2.38.1 变更摘要 ----------------
 // 1. 一键换装新增完整装备指纹：在物品ID/精炼/插卡之外，记录并严格匹配随机词条 index/value/param 与附魔强化等级 enchantgrade；旧预设兼容，重新覆盖后升级。
 // 2. BOSS 设置新增「优先攻击忽略攻击名单」逐角色开关；只放宽最终的优先攻击模式，瞬移和等待残血补尾刀仍遵守原名单门禁。
@@ -524,7 +545,7 @@
   }
   var LS_KEY = "dsh_ro_plugin_v1";
   var VERSION_RE = /\?([0-9.]+)/;
-  var VER = "2.38.15"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
+  var VER = "2.38.17"; // 面板标题/加载提示/日志统一版本号（bump 时与 @version 同步改）
   try { window.__dshCombinedActive = true; } catch (e) {} // V2.30.0 防双浮层让位旗标：独立版词条色脚本见旗标即让位
   // ==================== 统一采集器注册表（dsh-collect v1 · 内部命名空间，不新增 window 全局）====================
   // 五方法：register 注册 / sample 采集 / query 查询 / refresh 刷新 / release 释放
@@ -1137,7 +1158,7 @@
       app.src = "Online.js?" + version;
       document.getElementsByTagName("head")[0].appendChild(app);
       directInjected = true;
-      setStatus("已注入配置，正在启动客户端…");
+      setStatus("已注入配置，正在启动游戏…");
     } catch (e) {
       tlog("inject-error " + (e && e.message));
     }
@@ -1384,7 +1405,7 @@
         if (CZ_PROBE.resolved[name]) return CZ_PROBE.resolved[name];
         if (!CZ_PROBE.alerted) {
           CZ_PROBE.alerted = true;
-          try { setStatus("包体自检未通过，发包可能被服务器丢弃：" + (CZ_LABEL[name] || name) + "（期望 " + CZ_WANT[name].op + "）", "err"); } catch (e) {}
+          try { setStatus("自检未通过，动作可能无效：" + (CZ_LABEL[name] || name) + "（期望 " + CZ_WANT[name].op + "）", "err"); } catch (e) {}
           tlog("cz-probe-unsafe " + name);
         }
       }
@@ -1413,7 +1434,7 @@
   function czSelfCheck() {
     czResolve();
     var text = czReportText();
-    if (!CZ_PROBE.ok) return { ok: false, brief: CZ_PROBE.why || "包体自检未通过", text: text };
+    if (!CZ_PROBE.ok) return { ok: false, brief: CZ_PROBE.why || "自检未通过", text: text };
     var bad = [];
     CZ_PROBE.rows.forEach(function (r) { if (r.bytes !== r.want) bad.push((CZ_LABEL[r.name] || r.name) + "(发" + r.bytes + "≠期望" + r.want + ")"); });
     if (bad.length) return { ok: false, brief: "实测字节与期望不符：" + bad.join("，"), text: text };
@@ -1781,7 +1802,7 @@
       '<div class="row"><button id="dsh-open-gear" style="flex:1 1 auto">打开游戏内挂设置</button>' +
       '<button class="ghost" id="dsh-open-gear-skill" style="flex:0 0 auto">技能设置</button></div>' +
       '<div class="row"><span class="st" id="dsh-battlestate" style="font-size:10px">内挂状态: 未读取</span></div>' +
-      '<div class="sec">快速开关（直接发包给服务器，不依赖内挂窗口是否打开）</div>' +
+      '<div class="sec">快速开关（点一下直接生效，不依赖内挂窗口是否打开）</div>' +
       '<div class="row"><button id="dsh-np-atk" style="flex:0 0 auto">开自动战斗</button>' +
       '<button class="ghost" id="dsh-np-pick" style="flex:0 0 auto">开自动拾取</button>' +
       '<button class="ghost" id="dsh-np-eat" style="flex:0 0 auto">开自动吃药</button>' +
@@ -1805,7 +1826,7 @@
       '<div class="row"><span class="st" id="dsh-czlog" style="font-size:10px">包体自检：未检测（进图后点「包体自检」）</span>' +
       '<button class="ghost" id="dsh-czcheck" style="flex:0 0 auto;padding:0 8px;font-size:11px">包体自检</button></div>' +
       '<div id="dsh-fw-zhu2">' +
-      '<div class="sec">助手模式（自控发包 · 无CD）</div>' +
+      '<div class="sec">助手模式（自控出手 · 无CD）</div>' +
       '<div class="row"><label class="switch"><input id="dsh-healfirst" type="checkbox">优先使用治愈术替代药品（V2.29.0 自辅助页移入）</label><span class="st">未学会、SP不足或冷却时仍使用物品</span></div>' +
       '<div class="sec">防御与瞬移（助手自实现）</div>' +
       '<div class="row"><span class="lb">非选中怪攻击</span><select id="dsh-z-ona" style="flex:0 0 100px"><option>无视</option><option>瞬移</option><option selected>还击</option></select></div>' +
@@ -1859,7 +1880,7 @@
       '<span class="lb" style="min-width:26px">追怪</span><input id="dsh-z-chaseint" type="number" value="0.5" min="0.3" step="0.1" style="flex:0 0 44px"><span style="color:#5a6b7f">s（内挂模式助手主动追怪间隔）</span></div>' +
       '<div class="row"><span class="lb">寻怪方式</span><select id="dsh-z-huntmode" style="flex:0 0 118px">' +
       '<option value="self" selected>自研直走寻怪</option><option value="np">内挂机制寻怪</option><option value="hybrid">混合寻怪</option></select>' +
-      '<label class="switch" style="margin-left:2px"><input id="dsh-z-astar" type="checkbox" checked>A*绕障寻路</label><span class="st" style="font-size:10px">（内挂发包时机自动控制，无需调节）</span></div>' +
+      '<label class="switch" style="margin-left:2px"><input id="dsh-z-astar" type="checkbox" checked>A*绕障寻路</label><span class="st" style="font-size:10px">（内挂出手时机由助手自动控制，无需调节）</span></div>' +
       '<div class="row"><span class="lb" style="min-width:56px">接管距离</span><input id="dsh-z-takeover" type="number" value="12" min="3" max="30" step="1" style="flex:0 0 48px"><span class="st" style="font-size:10px">格（仅混合寻怪：锁定怪≤此距离→助手接管最后靠近+打怪）</span></div>' +
       '<div class="row"><span class="st" style="font-size:10px">内挂=只有可攻击到的锁定怪（射程内）才停内挂、助手战斗；无怪/锁定怪超出射程→持续内挂寻怪移动靠近</span></div>' +
       '<div class="row"><label class="switch"><input id="dsh-z-follow" type="checkbox" checked>锁定目标跟随追击</label>' +
@@ -1895,7 +1916,7 @@
       '<button class="ghost" id="dsh-skillimp" style="flex:0 0 auto">导入已学技能</button></div></div>' +
       '<details style="margin:6px 0"><summary>手动编辑技能顺序/条件（高级用法）</summary>' +
       '<textarea id="dsh-skillorder" rows="3" placeholder="技能顺序：每行 技能ID:等级:条件:释放%:次数:锁定次数:冷却秒&#10;例：271  :5   :球5,爆气:80 :20 :3:2&#10;   技能ID :等级:条件    :概率:次数:锁定次数:冷却秒&#10;条件=释放前置，须全满足，可空；球源401=该技能补球只用狂蓄气 / 球源261=只用蓄气 / 球源自动=按缺口现算（缺1-2颗用蓄气、缺3颗以上用狂蓄气）；该词不是门槛&#10;例：267:1:球1,球源261:100；271:5:球5,球源401,爆气:80:20:3:2&#10;释放%=0-100（省略=100）&#10;次数=整轮最多放N次（0=不限，重开重置）；锁定次数=每只怪最多放N次（0=不限，换怪重置）&#10;冷却秒=该技能间隔兜底秒数（0/省略=自动跟随服务器2842真实后摇，无数据默认250ms）&#10;等级超已学自动降级、未学自动跳过；只填ID也能用"></textarea>' +
-      '<div class="log" style="margin-top:2px">字段说明：技能ID:等级:条件:释放%:次数:锁定次数:冷却秒。条件=释放前置（如阿修罗需球5,爆气，自动补状态）；释放%=0-100（省略=100）；次数=整轮上限（OpenKore maxUses，重开自动战斗重置）；锁定次数=每只怪上限（换目标/解锁清零重计）；冷却秒=该技能释放间隔兜底（0/省略=自动跟随服务器2842真实后摇[动态]，无数据默认250ms）。技能按各自冷却独立释放，不再按攻击轮次重复发包。点选/拖拽生成的行只填前2段，无需手写。例：271:5:球5,爆气:80:20:3:2 = 阿修罗5级，需5球+爆气，80%概率，整轮最多20次，每只怪最多3次，间隔兜底2秒。 条件里还能写补球来源词 球源401（该技能补球只用狂蓄气）/ 球源261（只用蓄气）/ 球源自动（缺 1-2 颗用蓄气、缺 3 颗以上用狂蓄气），优先级高于上面的「补球来源」下拉；不写则跟随全局默认。例：267:1:球1,球源261:100 = 该技能需 1 颗球，且补球只用蓄气。</div>' +
+      '<div class="log" style="margin-top:2px">写法说明：技能ID:等级:条件:释放%:次数:锁定次数:冷却秒。条件=释放前置（如阿修罗需球5,爆气，自动补状态）；释放%=0-100（省略=100）；次数=整轮上限（重开自动战斗即重置）；锁定次数=每只怪上限（换目标/解锁清零重计）；冷却秒=该技能释放间隔兜底（0/省略=自动跟随服务器2842真实后摇[动态]，无数据默认250ms）。技能按各自冷却独立释放，不再按攻击轮次重复出手。点选/拖拽生成的行只填前2段，无需手写。例：271:5:球5,爆气:80:20:3:2 = 阿修罗5级，需5球+爆气，80%概率，整轮最多20次，每只怪最多3次，间隔兜底2秒。 条件里还能写补球来源词 球源401（该技能补球只用狂蓄气）/ 球源261（只用蓄气）/ 球源自动（缺 1-2 颗用蓄气、缺 3 颗以上用狂蓄气），优先级高于上面的「补球来源」下拉；不写则跟随全局默认。例：267:1:球1,球源261:100 = 该技能需 1 颗球，且补球只用蓄气。</div>' +
       '</details>' +
       '<div class="sec">辅助技能（选技能自动加判定条件 · 按间隔施放）</div>' +
       '<div class="row"><span class="lb">技能</span><select id="dsh-askskill" style="flex:0 0 auto;max-width:130px"><option value="">选择技能…</option></select>' +
@@ -1919,7 +1940,7 @@
       '<button class="ghost" id="dsh-askdown" style="flex:0 0 auto">↓下移</button>' +
       '<button class="ghost" id="dsh-askdel" style="flex:0 0 auto">删除选中</button></div></div>' +
       '<div class="log" id="dsh-bufflog" style="margin-top:2px">辅助技能：未启用</div>' +
-      '<div class="row"><span class="lb" style="min-width:48px">当前状态</span><span class="st" id="dsh-statusview" style="flex:1;line-height:1.6">未读取（客户端就绪后显示）</span>' +
+      '<div class="row"><span class="lb" style="min-width:48px">当前状态</span><span class="st" id="dsh-statusview" style="flex:1;line-height:1.6">未读取（游戏画面就绪后显示）</span>' +
       '<button class="ghost" id="dsh-statehelp" style="flex:0 0 auto">状态速查</button></div>' +
       '</div>' +
       '<div class="row"><span class="st" style="font-size:10px">附近怪物实时列表（一级窗口 · 可拖动浮窗）</span>' +
@@ -2105,8 +2126,8 @@
       '<div id="dsh-dps-skills" style="font-size:11px;max-height:170px;overflow:auto"><span class="st">暂无数据</span></div>' +
       '<div class="row"><button class="ghost" id="dsh-dps-reset-cur" style="flex:1">清零当前目标</button>' +
       '<button class="ghost" id="dsh-dps-reset-all" style="flex:1">清零本次统计</button></div>' +
-      '<div class="row"><span class="st" id="dsh-dps-state" style="font-size:10px">等待客户端伤害回调…</span></div>' +
-      '<div class="log">数据只保留在本次网页登录的内存中，不写浏览器存储。普攻独立计算；技能类型按 rAthena Type 字段分为物理、魔法、特殊、未知。10 秒无伤害自动切分有效战斗。</div>' +
+      '<div class="row"><span class="st" id="dsh-dps-state" style="font-size:10px">等待游戏伤害数据…</span></div>' +
+      '<div class="log">数据只保留在本次网页登录的内存中，不写浏览器存储。普攻独立计算；技能类型按游戏内置分类分为物理、魔法、特殊、未知。10 秒无伤害自动切分有效战斗。</div>' +
       '</div>' +
       '<div class="sec" style="display:flex;align-items:center;gap:6px"><span style="flex:1">首领警报（MVP / BOSS 出现提示）</span>' +
       '<button class="ghost" id="dsh-fw-btn-boss" data-fw="boss" style="flex:0 0 auto;padding:0 8px;font-size:11px">浮窗</button></div>' +
@@ -2119,7 +2140,7 @@
       '<div id="dsh-boss-list" style="font-size:11px;max-height:150px;overflow:auto"><span class="st">未检测到首领（换图或靠近后自动刷新）</span></div>' +
       '<div class="sec">最近警报</div>' +
       '<div id="dsh-boss-log" style="font-size:11px;max-height:90px;overflow:auto"><span class="st">暂无</span></div>' +
-      '<div class="log">首领判定用客户端怪物数据库的 MvpDropsNum 字段（就是 BOSS 瞬移用的那套，全服约 126 只），不做地图级兜底。同一只首领 60 秒内只提醒一次。总开关默认关闭，需要时在功能菜单里勾上。</div>' +
+      '<div class="log">首领判定用游戏内置怪物资料的首领标记（就是 BOSS 瞬移用的那套，全服约 126 只），不做地图级兜底。同一只首领 60 秒内只提醒一次。总开关默认关闭，需要时在功能菜单里勾上。</div>' +
       '</div>' +
       '</div>' +
       '<div class="sub-page" data-subpage="ap-sync">' +
@@ -2251,7 +2272,7 @@
     '<span class="st" id="dsh-server-note" style="font-size:10px">版本 ' + version + '</span></div>' +
     '<div class="row"><span class="lb">账号</span><input id="dsh-acc" placeholder="游戏账号" autocomplete="off"></div>' +
     '<div class="row"><span class="lb">密码</span><input id="dsh-pwd" type="password" placeholder="游戏密码" autocomplete="off"></div>' +
-    '<div class="row"><button id="dsh-save">保存并自动登录</button><button class="ghost" id="dsh-clear">清除</button><button class="ghost" id="dsh-reboot">重启客户端</button></div>' +
+    '<div class="row"><button id="dsh-save">保存并自动登录</button><button class="ghost" id="dsh-clear">清除</button><button class="ghost" id="dsh-reboot">重启游戏</button></div>' +
     '<div class="row"><button id="dsh-save-confirm" class="green" style="flex:0 0 auto">中转确认后登录已保存账号</button></div>' +
     '<div class="row"><span class="st" id="dsh-autolognote" style="font-size:10px">默认不自动登录：先在中转页/登录界面确认（避免挤掉中转会话），确认后点上方按钮登录已保存账号</span></div>' +
     '<div class="row"><button class="green" id="dsh-saveprofile" style="flex:0 0 auto">保存当前角色设置</button>' +
@@ -3018,6 +3039,663 @@
     return host;
   }
 
+  // ================= V2.38.17 死亡回放（文字型：击杀原因 + 死亡前 N 秒事件流 · 独立存盘，不进档案与同步键表）=================
+  // 口径：事件只驻留内存环（上限 400 条），落盘只在死亡那一刻做一次；记录键与角色档、本机同步键表完全隔离。
+  //   · 死亡判定两条路：服务器死亡通知（主路径）+ 每秒实体的死亡状态（兜底边沿）；同一次死亡只产一条记录。
+  //   · 每个函数自带 try/catch：任何异常只丢一条事件，绝不抛进主循环。
+  var DLOG_KEY = "dsh_ro_deathlog_v1";
+  var DLOG_RING_MAX = 400, DLOG_MAX_ITEMS = 20, DLOG_MAX_EVENTS = 120;
+  var DLOG_POP_GAP = 5000, DLOG_DEATH_GAP = 3000, DLOG_SPAN_MIN = 1, DLOG_SPAN_MAX = 10;
+  var __dshDeathEvt = [];
+  var dlogCfg = { auto: true, span: 3 };
+  var dlogDeathAt = 0, dlogDeadEdge = false, dlogPopAt = 0, dlogSig = "", dlogSigAt = 0, dlogMapLast = null;
+  var dlogCur = null, dlogDirty = true, dlogWasOpen = false, dlogNegCache = null;
+  function dlogDiag(ev, obj) { try { if (typeof dshDiag === "function") dshDiag(ev, obj || {}); } catch (e) {} }
+  function dlogIsArr(x) { try { return Object.prototype.toString.call(x) === "[object Array]"; } catch (e) { return false; } }
+  // ---- 存盘：独立键 { v:1, at, cfg:{auto,span}, items:[…] }（最新在前）----
+  function dlogParse() {
+    try {
+      var o = JSON.parse(localStorage.getItem(DLOG_KEY) || "null");
+      if (o && typeof o === "object" && Number(o.v) === 1 && dlogIsArr(o.items)) return o;
+    } catch (e) {}
+    return null;
+  }
+  function dlogBlank() { return { v: 1, at: 0, cfg: { auto: !!dlogCfg.auto, span: dlogCfg.span }, items: [] }; }
+  function dlogWrite(db) { try { localStorage.setItem(DLOG_KEY, JSON.stringify(db)); return true; } catch (e) { return false; } }
+  function dlogLoaded() { var db = dlogParse(); if (!db) db = dlogBlank(); if (!dlogIsArr(db.items)) db.items = []; db.v = 1; return db; }
+  function dlogList() { var db = dlogParse(); return (db && dlogIsArr(db.items)) ? db.items : []; }
+  function dlogCfgLoad() {
+    try {
+      var db = dlogParse();
+      if (db && db.cfg && typeof db.cfg === "object") {
+        if (typeof db.cfg.auto === "boolean") dlogCfg.auto = db.cfg.auto;
+        var sp = Math.round(Number(db.cfg.span));
+        if (isFinite(sp) && sp >= DLOG_SPAN_MIN && sp <= DLOG_SPAN_MAX) dlogCfg.span = sp;
+      }
+    } catch (e) {}
+    return dlogCfg;
+  }
+  function dlogCfgSave() {
+    try { var db = dlogLoaded(); db.cfg = { auto: !!dlogCfg.auto, span: dlogCfg.span }; return dlogWrite(db); } catch (e) { return false; }
+  }
+  function dlogStore(rec) {
+    try {
+      if (!rec) return false;
+      var db = dlogLoaded();
+      db.cfg = { auto: !!dlogCfg.auto, span: dlogCfg.span };
+      db.at = Number(rec.at) || Date.now();
+      db.items.unshift(rec);
+      if (db.items.length > DLOG_MAX_ITEMS) db.items.length = DLOG_MAX_ITEMS; // 条数上限：只留最新 20 条
+      if (dlogWrite(db)) return true;
+      try { db.items.pop(); } catch (e1) {}   // 容量满：静默丢最旧，再重试一次
+      return dlogWrite(db);
+    } catch (e) { return false; }
+  }
+  function dlogClear() { try { dlogWrite(dlogBlank()); dlogCur = null; dlogDirty = true; return true; } catch (e) { return false; } }
+  // ---- 事件环：追加式，超上限丢最旧；同一帧被两条来源各记一次时只留一条 ----
+  function dlogPushEvt(ev) {
+    try {
+      if (!ev || typeof ev.t !== "number" || !ev.k) return false;
+      var sig = [ev.k, ev.src || 0, ev.tg || 0, ev.id || 0, ev.skid || 0, ev.dmg || 0, ev.cnt || 0].join(":");
+      if (sig === dlogSig && ev.t - dlogSigAt >= 0 && ev.t - dlogSigAt <= 30) return false;
+      dlogSig = sig; dlogSigAt = ev.t;
+      DSHCollect.ringPush(__dshDeathEvt, ev, DLOG_RING_MAX);
+      return true;
+    } catch (e) { return false; }
+  }
+  function dlogWindowEvents(now, spanSec) {
+    var out = [];
+    try {
+      var sec = Math.round(Number(spanSec));
+      if (!isFinite(sec) || sec < DLOG_SPAN_MIN) sec = 3;
+      if (sec > DLOG_SPAN_MAX) sec = DLOG_SPAN_MAX;
+      var from = now - sec * 1000;
+      for (var i = 0; i < __dshDeathEvt.length; i++) {
+        var ev = __dshDeathEvt[i];
+        if (!ev || typeof ev.t !== "number") continue;
+        if (ev.t < from) continue;              // 回放时长之外的事件一律剔除
+        if (ev.t > now + 50) continue;          // 时钟回拨造成的未来事件同样剔除
+        out.push(ev);
+      }
+    } catch (e) {}
+    return out;
+  }
+  // ---- 身份 / 名字 / 编号 ----
+  function dlogSelfGid() {
+    try {
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      var g = gidInt(ent && ent.GID);
+      return g || gidInt(CLIENT.SS && CLIENT.SS.AID);
+    } catch (e) { return 0; }
+  }
+  function dlogEntOf(gid) {
+    try {
+      var EM = requireDB("Renderer/EntityManager");
+      return (EM && EM.get) ? EM.get(gid) : null;
+    } catch (e) { return null; }
+  }
+  function dlogEntName(gid) {
+    try { var n1 = dpsEntName(gid); if (n1) return String(n1); } catch (e1) {}
+    try {
+      var e = dlogEntOf(gid);
+      var n2 = e && ((e.display && e.display.name) || e.displayName || e.name);
+      if (n2) return String(n2);
+    } catch (e2) {}
+    return "";
+  }
+  function dlogEntMid(gid) {
+    try {
+      var e = dlogEntOf(gid);
+      if (!e) return 0;
+      var n = Math.floor(Number(e._job != null ? e._job : (e.job != null ? e.job : e.mobId)));
+      return (isFinite(n) && n > 0) ? n : 0;
+    } catch (e2) { return 0; }
+  }
+  function dlogSkillName(skid) {
+    try {
+      var id = Math.floor(Number(skid)) || 0;
+      if (!id) return null;
+      var n = getSkillNameById(id);
+      return n ? String(n) : null;   // 没收录的技能名 → 只留编号，名字为 null
+    } catch (e) { return null; }
+  }
+  function dlogDmgEvent(pkt) {
+    try {
+      if (!pkt) return null;
+      var src = gidInt(pkt.GID != null ? pkt.GID : pkt.AID);
+      var tg = gidInt(pkt.targetGID != null ? pkt.targetGID : pkt.targetID);
+      var dmg = Math.round(Number(pkt.damage) || 0);
+      if (!src || !dmg) return null;
+      var cnt = Math.round(Number(pkt.count) || 0); if (!(cnt > 0)) cnt = 1;
+      var skid = gidInt(pkt.SKID);
+      return { t: Date.now(), k: "dmg", src: src, tg: tg, mid: dlogEntMid(src), name: dlogEntName(src), skid: skid, sk: dlogSkillName(skid), dmg: dmg, cnt: cnt };
+    } catch (e) { return null; }
+  }
+  function dlogOnDamage(pkt) {
+    try {
+      if (!roModOn("deathlog")) return false; // 模块关闭：不记伤害
+      return dlogPushEvt(dlogDmgEvent(pkt));
+    } catch (e) { return false; }
+  }
+  function dlogOnRawDamage(bytes, op) {
+    try {
+      if (!roModOn("deathlog")) return false;   // 只看模块开关，不受已解析回调是否就绪影响
+      if (!bytes) return false;
+      var dv = new DataView(bytes), bl = bytes.byteLength, pkt = null;
+      if (op === 138 && bl >= 29) pkt = { GID: dv.getUint32(2, true), targetGID: dv.getUint32(6, true), damage: dv.getInt16(22, true), count: dv.getInt16(24, true) };
+      else if (op === 139 && bl >= 23) pkt = { GID: dv.getUint32(2, true), targetGID: dv.getUint32(6, true), damage: dv.getInt16(18, true), count: dv.getInt16(20, true) };
+      else if (op === 737 && bl >= 33) pkt = { GID: dv.getUint32(2, true), targetGID: dv.getUint32(6, true), damage: dv.getInt32(22, true), count: dv.getInt16(26, true) };
+      else if (op === 2248 && bl >= 34) pkt = { GID: dv.getUint32(2, true), targetGID: dv.getUint32(6, true), damage: dv.getInt32(22, true), count: dv.getInt16(27, true) };
+      else if (op === 276 && bl >= 31) pkt = { SKID: dv.getUint16(2, true), AID: dv.getUint32(4, true), targetID: dv.getUint32(8, true), damage: dv.getInt16(24, true), count: dv.getInt16(28, true) };
+      else if (op === 478 && bl >= 33) pkt = { SKID: dv.getUint16(2, true), AID: dv.getUint32(4, true), targetID: dv.getUint32(8, true), damage: dv.getInt32(24, true), count: dv.getInt16(30, true) };
+      if (!pkt) return false;
+      return dlogPushEvt(dlogDmgEvent(pkt));
+    } catch (e) { return false; }
+  }
+  // ---- 状态（每秒采样：在身且未过期）----
+  function dlogStatusName(id) { try { var n = statusNameById(id); return n ? String(n) : ""; } catch (e) { return ""; } }
+  function dlogIsNeg(id) {
+    try {
+      if (!dlogNegCache) {
+        dlogNegCache = {};
+        for (var cn in BUFF_DEBUFF_CN) { var s1 = buffStId(BUFF_DEBUFF_CN[cn]); if (s1 >= 0) dlogNegCache[s1] = 1; }
+        for (var i = 0; i < STATUS_ID_TABLE.length; i++) { var r0 = STATUS_ID_TABLE[i]; if (r0 && r0.deb) dlogNegCache[r0.id] = 1; }
+      }
+      return !!dlogNegCache[id];
+    } catch (e) { return false; }
+  }
+  function dlogStatusList(now) {
+    var out = [];
+    try {
+      for (var k in buffActive) {
+        var b = buffActive[k];
+        if (!b || !b.on) continue;
+        var id = Math.floor(Number(k));
+        if (!isFinite(id) || id < 0) continue;
+        var rem = -1;
+        if (b.endAt != null && b.endAt !== Infinity) rem = Math.max(0, Number(b.endAt) - now);
+        if (rem === 0) continue;   // 已经到点的状态不算在身
+        out.push({ id: id, name: dlogStatusName(id), neg: dlogIsNeg(id), rem: rem });
+      }
+    } catch (e) {}
+    return out;
+  }
+  // ---- 1 秒采样 + 死亡兜底 ----
+  function dlogSample() {
+    try {
+      if (!roModOn("deathlog")) return false; // 模块关闭：不采样
+      var now = Date.now(), ent = CLIENT.SS && CLIENT.SS.Entity;
+      if (!ent) return false;
+      var life = ent.life || {}, hp = Math.round(Number(life.hp) || 0), sp = Math.round(Number(life.sp) || 0);
+      var pos = null; try { pos = scrPos(); } catch (e0) {}
+      var x = pos ? Number(pos[0]) : null, y = pos ? Number(pos[1]) : null;
+      var map = ""; try { map = normMapKey(getMapName()); } catch (e1) {}
+      dlogPushEvt({ t: now, k: "hp", hp: hp, sp: sp, map: map, x: x, y: y });
+      if (map !== dlogMapLast) { dlogMapLast = map; dlogPushEvt({ t: now, k: "pos", map: map, x: x, y: y }); }
+      var sts = dlogStatusList(now);
+      for (var i = 0; i < sts.length; i++) dlogPushEvt({ t: now, k: "st", id: sts[i].id, name: sts[i].name, neg: sts[i].neg, rem: sts[i].rem });
+      dlogTick();
+      dlogPaint();
+      return true;
+    } catch (e) { return false; }
+  }
+  function dlogOnVanish(bytes) {
+    try {
+      if (!roModOn("deathlog")) return false; // 模块关闭：不认死亡通知
+      if (!bytes || bytes.byteLength < 7) return false;
+      var dv = new DataView(bytes), gid = gidInt(dv.getUint32(2, true)), type = dv.getUint8(6);
+      if (type !== 1) return false;
+      var mine = dlogSelfGid();
+      if (!mine || gid !== mine) return false;
+      return dlogHatch("vanish");
+    } catch (e) { return false; }
+  }
+  function dlogTick() {
+    try {
+      if (!roModOn("deathlog")) return false; // 模块关闭：不看死亡
+      var ent = CLIENT.SS && CLIENT.SS.Entity;
+      if (!ent) return false;
+      var dead = !!(ent.isDeath || (ent.ACTION && ent.action != null && ent.action === ent.ACTION.DIE));
+      if (!dead) { dlogDeadEdge = false; dlogDeathAt = 0; return false; }
+      if (dlogDeadEdge) return false;   // 边沿去重：一次死亡只走一次兜底
+      dlogDeadEdge = true;
+      return dlogHatch("tick");
+    } catch (e) { return false; }
+  }
+  function dlogHatch(src) {
+    try {
+      if (!roModOn("deathlog")) return false; // 模块关闭：不记录、不弹窗、不写盘
+      var now = Date.now();
+      if (dlogDeathAt && now - dlogDeathAt < DLOG_DEATH_GAP) return false; // 同一次死亡只产一条记录
+      dlogDeathAt = now;
+      var rec = dlogBuild(now, src);
+      if (!rec) return false;
+      dlogStore(rec);
+      dlogCur = rec;
+      dlogDirty = true;
+      dlogMaybePop(now);
+      return true;
+    } catch (e) { return false; }
+  }
+  function dlogMaybePop(now) {
+    try {
+      if (!dlogCfg.auto) return false;
+      if (dlogPopAt && now - dlogPopAt < DLOG_POP_GAP) return false; // 弹出冷却不少于 5 秒
+      if (typeof fwOpen !== "function") return false;
+      var ok = false;
+      try { ok = fwOpen("deathlog", true) === true; } catch (e1) { ok = false; }
+      if (ok) { dlogPopAt = now; dlogWasOpen = false; dlogDirty = true; return true; }
+      dlogDiag("deathlog-pop-fail", { at: now });   // 窗口没建起来：只写诊断日志，绝不抛进主循环
+      return false;
+    } catch (e) { dlogDiag("deathlog-pop-error", { message: String((e && e.message) || e) }); return false; }
+  }
+  // ---- 聚合 ----
+  function dlogBuildKillers(events, myGid) {
+    var map = {}, list = [];
+    try {
+      for (var i = 0; i < events.length; i++) {
+        var ev = events[i];
+        if (!ev || ev.k !== "dmg") continue;
+        var src = gidInt(ev.src);
+        if (!src) continue;
+        if (myGid && gidInt(ev.tg) !== myGid) continue;   // 只算打在我身上的
+        if (myGid && src === myGid) continue;             // 自己打自己不算
+        var k = map[src];
+        if (!k) { k = map[src] = { gid: src, mid: gidInt(ev.mid), name: ev.name || "", dmg: 0, segs: 0, hits: 0, from: ev.t, to: ev.t, skills: [] }; list.push(k); }
+        var d = Math.max(0, Number(ev.dmg) || 0), c = Math.max(1, Number(ev.cnt) || 1);
+        k.dmg += d; k.segs++; k.hits += c;
+        if (ev.t < k.from) k.from = ev.t;
+        if (ev.t > k.to) k.to = ev.t;
+        if (!k.name && ev.name) k.name = ev.name;
+        if (!k.mid && ev.mid) k.mid = gidInt(ev.mid);
+        var skid = gidInt(ev.skid), sk = null;
+        for (var j = 0; j < k.skills.length; j++) if (k.skills[j].skid === skid) { sk = k.skills[j]; break; }
+        if (!sk) { sk = { skid: skid, name: skid ? dlogSkillName(skid) : null, dmg: 0, hits: 0 }; k.skills.push(sk); }
+        sk.dmg += d; sk.hits += c;
+      }
+      list.sort(function (a, b) { return b.dmg - a.dmg || a.to - b.to; });
+      for (var m = 0; m < list.length; m++) list[m].skills.sort(function (a, b) { return b.dmg - a.dmg || a.skid - b.skid; });
+    } catch (e) {}
+    return list;
+  }
+  function dlogBuild(now, srcTag) {
+    try {
+      var span = Math.round(Number(dlogCfg.span));
+      if (!isFinite(span) || span < DLOG_SPAN_MIN) span = 3;
+      if (span > DLOG_SPAN_MAX) span = DLOG_SPAN_MAX;
+      var evs = dlogWindowEvents(now, span), myGid = dlogSelfGid();
+      var killers = dlogBuildKillers(evs, myGid);
+      var total = 0, i = 0;
+      for (i = 0; i < killers.length; i++) total += killers[i].dmg;
+      var top = killers.length ? killers[0] : null;
+      var lastEv = null;
+      for (i = 0; i < evs.length; i++) {
+        var e0 = evs[i];
+        if (!e0 || e0.k !== "dmg") continue;
+        if (myGid && gidInt(e0.tg) !== myGid) continue;
+        if (myGid && gidInt(e0.src) === myGid) continue;
+        lastEv = e0;
+      }
+      var lastK = null;
+      if (lastEv) for (i = 0; i < killers.length; i++) if (killers[i].gid === gidInt(lastEv.src)) { lastK = killers[i]; break; }
+      var stLast = {};
+      for (i = 0; i < evs.length; i++) if (evs[i].k === "st") stLast[evs[i].id] = evs[i];
+      var states = [], kk = "";
+      for (kk in stLast) {
+        var s3 = stLast[kk];
+        if (Number(s3.rem) === 0) continue;
+        states.push({ id: Math.floor(Number(s3.id)) || 0, name: s3.name || "", neg: !!s3.neg, rem: Number(s3.rem) });
+      }
+      states.sort(function (a, b) { return (b.neg ? 1 : 0) - (a.neg ? 1 : 0) || b.rem - a.rem; });
+      var debuffs = [];
+      for (i = 0; i < states.length; i++) if (states[i].neg) debuffs.push(states[i]);
+      var ent = CLIENT.SS && CLIENT.SS.Entity, life = (ent && ent.life) || {};
+      var hp = Math.round(Number(life.hp) || 0), hpMax = Math.round(Number(life.hp_max) || 0), sp = Math.round(Number(life.sp) || 0);
+      var map = "", x = null, y = null;
+      try { map = normMapKey(getMapName()); } catch (e2) {}
+      try { var posNow = scrPos(); if (posNow) { x = Number(posNow[0]); y = Number(posNow[1]); } } catch (e3) {}
+      for (i = evs.length - 1; i >= 0; i--) {
+        if (evs[i].k !== "hp") continue;
+        if (!hp) hp = Math.round(Number(evs[i].hp) || 0);
+        if (!sp) sp = Math.round(Number(evs[i].sp) || 0);
+        if (!map) map = evs[i].map || "";
+        if (x == null && evs[i].x != null) x = Number(evs[i].x);
+        if (y == null && evs[i].y != null) y = Number(evs[i].y);
+        break;
+      }
+      var mapCn = ""; try { mapCn = String(getMapNameCn() || ""); } catch (e4) {}
+      var cid = 0; try { cid = gidInt(selfCharId()); } catch (e5) {}
+      var nm = ""; try { nm = String(selfName() || ""); } catch (e6) {}
+      var key = ""; try { key = String(activeProfileKey() || ""); } catch (e7) {}
+      var evOut = evs;
+      if (evOut.length > DLOG_MAX_EVENTS) evOut = evOut.slice(evOut.length - DLOG_MAX_EVENTS); // 事件上限：只留最新的 120 条
+      return {
+        at: now, src: String(srcTag || ""), charId: cid, name: nm, key: key,
+        map: map, mapCn: mapCn, x: x, y: y, hp: hp, hpMax: hpMax, sp: sp,
+        span: span, total: total,
+        top: top ? { gid: top.gid, mid: top.mid, name: top.name, dmg: top.dmg } : null,
+        last: lastEv ? { gid: gidInt(lastEv.src), name: lastEv.name || "", dmg: Math.max(0, Number(lastEv.dmg) || 0), skid: gidInt(lastEv.skid), sk: lastEv.sk || null } : null,
+        killers: killers, states: states, debuffs: debuffs, events: evOut
+      };
+    } catch (e) { dlogDiag("deathlog-build-error", { message: String((e && e.message) || e) }); return null; }
+  }
+  // ---- 时间线：倒序展示，每行带当时血量与在身状态 ----
+  function dlogTimeline(rec) {
+    var rows = [];
+    try {
+      if (!rec || !dlogIsArr(rec.events)) return rows;
+      var evs = rec.events, samples = [], cur = null, dn = [];
+      for (var i = 0; i < evs.length; i++) {
+        var ev = evs[i];
+        if (ev.k === "hp") { cur = { t: ev.t, hp: ev.hp, sp: ev.sp, sts: [] }; samples.push(cur); continue; }
+        if (ev.k === "st") { if (cur) cur.sts.push({ id: ev.id, name: ev.name, neg: !!ev.neg, rem: ev.rem }); continue; }
+        if (ev.k === "dmg") dn.push(ev);
+      }
+      var pick = function (t) {
+        var s = null;
+        for (var j = 0; j < samples.length; j++) { if (samples[j].t <= t) s = samples[j]; else break; }
+        if (!s && samples.length) s = samples[0];
+        return s;
+      };
+      for (var m = 0; m < dn.length; m++) {
+        var d = dn[m], sm = pick(d.t);
+        rows.push({ t: d.t, dt: (Number(rec.at) - d.t) / 1000, src: gidInt(d.src), mid: gidInt(d.mid), name: d.name || "", skid: gidInt(d.skid), sk: d.sk || null, dmg: Math.max(0, Number(d.dmg) || 0), cnt: Math.max(1, Number(d.cnt) || 1), hp: sm ? sm.hp : null, sp: sm ? sm.sp : null, sts: sm ? sm.sts : [] });
+      }
+    } catch (e) {}
+    return rows;
+  }
+  // ---- 头像：图源取不到就退回名字首字色块（服务没起也不报错）----
+  function dlogAvatarSrc(mid) {
+    try { return String(typeof TGT_SPRITE_BASE === "string" ? TGT_SPRITE_BASE : "") + Number(mid) + ".png"; } catch (e) { return ""; }
+  }
+  function dlogAvatarShown() {
+    try {
+      this.style.display = "block";
+      var fb = this.parentNode ? this.parentNode.querySelector(".dsh-dlog-avfb") : null;
+      if (fb) fb.style.display = "none";
+      return true;
+    } catch (e) { return false; }
+  }
+  function dlogAvatarFallback(im) {
+    try {
+      im.style.display = "none"; // 头像取不到 → 藏图、亮首字色块（服务没启动也不报错）
+      var fb = im.parentNode ? im.parentNode.querySelector(".dsh-dlog-avfb") : null;
+      if (fb) fb.style.display = "flex";
+      return true;
+    } catch (e) { return false; }
+  }
+  function dlogWireAvatars(root) {
+    try {
+      if (!root || typeof root.querySelectorAll !== "function") return 0;
+      var imgs = root.querySelectorAll("img.dsh-dlog-av"), n = 0;
+      for (var i = 0; i < imgs.length; i++) {
+        var im = imgs[i];
+        if (!im) continue;
+        im.onload = dlogAvatarShown;
+        im.onerror = function () { dlogAvatarFallback(this); };
+        if (im.complete === true && Number(im.naturalWidth) > 0) { try { dlogAvatarShown.call(im); } catch (e1) {} }
+        n++;
+      }
+      return n;
+    } catch (e) { return 0; }
+  }
+  function dlogAvatarHtml(mid, name) {
+    var ch = (name && String(name).length) ? String(name).charAt(0) : "?";
+    var fb = '<span class="dsh-dlog-avfb">' + roEscTxt(ch) + '</span>';
+    if (mid) return '<span class="dsh-dlog-avbox"><img class="dsh-dlog-av" alt="" data-mid="' + Number(mid) + '" src="' + roEscTxt(dlogAvatarSrc(mid)) + '">' + fb + '</span>';
+    return '<span class="dsh-dlog-avbox">' + fb + '</span>';   // 没收录的怪：只有名字首字色块
+  }
+  // ---- 窗口内容 ----
+  function dlogFmtTime(t) {
+    try {
+      var d = new Date(Number(t) || 0), p = function (n) { return (n < 10 ? "0" : "") + n; };
+      return (d.getMonth() + 1) + "月" + d.getDate() + "日 " + p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+    } catch (e) { return ""; }
+  }
+  function dlogSec(x) { try { var v = Math.max(0, Number(x) || 0); return v >= 10 ? String(Math.round(v)) : v.toFixed(1); } catch (e) { return "0"; } }
+  function dlogSrcName(r) { return (r && r.name) ? String(r.name) : "未知来源"; }
+  function dlogHpText(v) { try { return (v == null || v === "") ? "未知" : fmtK(Number(v) || 0); } catch (e) { return "未知"; } }
+  function dlogSkillText(skid, sk) {
+    var id = Math.floor(Number(skid)) || 0;
+    if (!id) return "普攻";
+    return sk ? String(sk) : ("技能" + id);
+  }
+  function dlogReasonHtml(rec) {
+    var L = ['<div class="sec">这一次是怎么死的</div>'];
+    var topTxt = rec.top ? (dlogSrcName(rec.top) + "（" + fmtK(rec.top.dmg) + "）") : "没有记录到来源";
+    var lastTxt = rec.last ? (dlogSrcName(rec.last) + "（" + fmtK(rec.last.dmg) + " · " + dlogSkillText(rec.last.skid, rec.last.sk) + "）") : "无";
+    L.push('<div class="st" style="font-size:12px">死亡前 ' + rec.span + ' 秒共受到伤害 ' + fmtK(rec.total) + '</div>');
+    L.push('<div class="st" style="font-size:12px">最大来源：' + roEscTxt(topTxt) + '</div>');
+    L.push('<div class="st" style="font-size:12px">补最后一刀：' + roEscTxt(lastTxt) + '</div>');
+    L.push('<div class="st" style="font-size:12px">地图：' + roEscTxt(rec.mapCn || rec.map || "未知") + ((rec.x != null && rec.y != null) ? ('（' + Math.round(rec.x) + '，' + Math.round(rec.y) + '）') : '') + '　当时血量：' + dlogHpText(rec.hp) + (rec.hpMax ? (' / ' + fmtK(rec.hpMax)) : '') + '</div>');
+    L.push('<div class="st" style="font-size:12px">角色：' + roEscTxt(rec.name || "未识别") + '　时间：' + roEscTxt(dlogFmtTime(rec.at)) + '</div>');
+    return L.join("");
+  }
+  function dlogKillersHtml(rec) {
+    var L = ['<div class="sec">谁打的你</div>'];
+    var ks = (rec && dlogIsArr(rec.killers)) ? rec.killers : [];
+    if (!ks.length) { L.push('<div class="st">这段时间没有记录到打你的来源</div>'); return L.join(""); }
+    for (var i = 0; i < ks.length; i++) {
+      var k = ks[i];
+      L.push('<div class="dsh-dlog-row">' + dlogAvatarHtml(k.mid, k.name)
+        + '<span class="dsh-dlog-nm">' + roEscTxt(dlogSrcName(k)) + (k.mid ? (' <i style="font-style:normal;color:#7a8797">编号 ' + k.mid + '</i>') : '') + '</span>'
+        + '<span class="dsh-dlog-num">' + fmtK(k.dmg) + '</span>'
+        + '<span class="dsh-dlog-id">' + k.segs + ' 段 · ' + k.hits + ' 下</span></div>');
+      var sks = dlogIsArr(k.skills) ? k.skills : [];
+      for (var j = 0; j < sks.length; j++) L.push('<div class="dsh-dlog-sub">' + roEscTxt(dlogSkillText(sks[j].skid, sks[j].name)) + '：' + fmtK(sks[j].dmg) + '（' + sks[j].hits + ' 下）</div>');
+    }
+    return L.join("");
+  }
+  function dlogStateHtml(rec) {
+    var L = ['<div class="sec">你当时的状态</div>'];
+    var sts = (rec && dlogIsArr(rec.states)) ? rec.states : [];
+    if (!sts.length) {
+      L.push('<div class="st">致死时刻没有采样到状态</div>');
+    } else {
+      for (var i = 0; i < sts.length; i++) {
+        var s = sts[i];
+        L.push('<div class="dsh-dlog-row"><span class="dsh-dlog-id">编号 ' + s.id + '</span>'
+          + '<span class="dsh-dlog-nm">' + roEscTxt(s.name || ("状态" + s.id)) + '</span>'
+          + '<span class="dsh-dlog-neg">' + (s.neg ? "负面" : "增益") + '</span>'
+          + '<span class="dsh-dlog-num">' + (Number(s.rem) < 0 ? "剩余时间未知" : ("剩余约 " + dlogSec(Number(s.rem) / 1000) + " 秒")) + '</span></div>');
+      }
+    }
+    L.push('<div class="log">状态每秒采样一次：在这几秒里已经消失、又赶在新一次采样之前结束的状态，可能不会出现在这里。</div>');
+    return L.join("");
+  }
+  function dlogTimelineHtml(rec) {
+    var L = ['<div class="sec">时间线（越靠上越接近死亡）</div>'];
+    var rows = dlogTimeline(rec).reverse();
+    if (!rows.length) { L.push('<div class="st">这段时间没有记录到伤害</div>'); return L.join(""); }
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i], neg = [], sts = dlogIsArr(r.sts) ? r.sts : [];
+      for (var j = 0; j < sts.length; j++) if (sts[j].neg) neg.push(sts[j].name || ("状态" + sts[j].id));
+      L.push('<div class="dsh-dlog-row"><span class="dsh-dlog-dt">距死亡 ' + dlogSec(r.dt) + ' 秒</span>'
+        + '<span class="dsh-dlog-nm">' + roEscTxt(dlogSrcName(r)) + '</span>'
+        + '<span class="dsh-dlog-sk">' + roEscTxt(dlogSkillText(r.skid, r.sk)) + '</span>'
+        + '<span class="dsh-dlog-num">' + fmtK(r.dmg) + '</span>'
+        + '<span class="dsh-dlog-id">血量 ' + dlogHpText(r.hp) + (neg.length ? (' · ' + roEscTxt(neg.join("、"))) : '') + '</span></div>');
+    }
+    return L.join("");
+  }
+  function dlogHonestHtml(rec) {
+    var span = (rec && Number(rec.span)) ? Math.round(Number(rec.span)) : 3;
+    return '<div class="log">说明：伤害按攻击者分开记，同一只怪分成几段就是几段；没有法术编号的一律显示成「普攻」；'
+      + '怪物技能名没收录时显示成「技能」加编号；怪物头像取不到时，改成显示名字第一个字的色块。'
+      + '状态每秒采样一次，' + span + ' 秒里已经消失的状态可能没有被记下；这段时间之外的伤害不在本页。</div>';
+  }
+  function dlogEnsureHost() {
+    try {
+      var h = document.getElementById("dsh-fw-deathlog");
+      if (h) return h;
+      var dock = document.getElementById("dsh-deathlog-dock");
+      if (!dock) { dock = document.createElement("div"); dock.id = "dsh-deathlog-dock"; dock.style.display = "none"; document.documentElement.appendChild(dock); }
+      h = document.createElement("div");
+      h.id = "dsh-fw-deathlog";
+      h.innerHTML =
+        '<style>'
+        + '.dsh-dlog-avbox{position:relative;display:inline-block;flex:0 0 22px;width:22px;height:22px;vertical-align:middle}'
+        + '.dsh-dlog-av{width:22px;height:22px;object-fit:contain;display:none}'
+        + '.dsh-dlog-avfb{position:absolute;left:0;top:0;display:flex;align-items:center;justify-content:center;width:22px;height:22px;font-size:13px;font-weight:700;color:#fff;background:#7a8ea6;border-radius:3px}'
+        + '.dsh-dlog-row{display:flex;align-items:center;gap:5px;padding:2px 0;border-bottom:1px dashed #dfe6ef}'
+        + '.dsh-dlog-nm{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+        + '.dsh-dlog-num{flex:0 0 auto;text-align:right;color:#a33}'
+        + '.dsh-dlog-id{flex:0 0 auto;color:#5a6b7f}'
+        + '.dsh-dlog-neg{flex:0 0 auto;color:#a33}'
+        + '.dsh-dlog-dt{flex:0 0 86px;color:#5a6b7f}'
+        + '.dsh-dlog-sk{flex:0 0 96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+        + '.dsh-dlog-sub{padding:0 0 2px 27px;font-size:11px;color:#5a6b7f}'
+        + '.dsh-dlog-item{display:flex;align-items:center;gap:6px;margin:2px 0;padding:3px 4px;border:1px solid #dfe6ef;border-radius:3px;cursor:pointer}'
+        + '.dsh-dlog-item.on{background:#eef3fa;border-color:#8cb0d8}'
+        + '</style>'
+        + '<div class="sec">死亡回放（最近 20 次，逐次独立保存）</div>'
+        + '<div class="st" style="font-size:12px">角色死亡的那一刻记下一个片段：谁打的你、你当时的状态、死亡前几秒的时间线。</div>'
+        + '<label class="switch"><input id="dsh-deathlog-auto" type="checkbox">死亡后自动弹出</label>'
+        + '<div class="row"><span class="lb" style="min-width:52px">回放时长</span><input id="dsh-deathlog-span" type="number" min="1" max="10" step="1" value="3" style="width:56px"><span class="st">秒（1 到 10）</span></div>'
+        + '<div class="row" style="gap:5px;flex-wrap:wrap"><button id="dsh-deathlog-export">导出</button><button class="ghost" id="dsh-deathlog-clear">清空</button></div>'
+        + '<div id="dsh-deathlog-detail" style="font-size:12px"></div>'
+        + '<div class="sec">历史记录</div>'
+        + '<div id="dsh-deathlog-list" style="font-size:12px;max-height:160px;overflow:auto"></div>'
+        + '<div class="st" style="font-size:11px">点「导出」后，下面这个框里会出现这一次的完整文字，可直接复制。</div>'
+        + '<textarea id="dsh-deathlog-text" readonly placeholder="点「导出」后这里出现内容" style="width:100%;height:120px;font-size:11px"></textarea>';
+      dock.appendChild(h);
+      dlogDirty = true;
+      return h;
+    } catch (e) {
+      dlogDiag("deathlog-host-fail", { message: String((e && e.message) || e) });
+      return null;
+    }
+  }
+  function dlogRender() {
+    try {
+      var host = document.getElementById("dsh-fw-deathlog");
+      if (!host) return false;
+      var autoEl = $id("dsh-deathlog-auto"), spanEl = $id("dsh-deathlog-span");
+      if (autoEl) autoEl.checked = !!dlogCfg.auto;
+      if (spanEl && String(spanEl.value) !== String(dlogCfg.span)) spanEl.value = String(dlogCfg.span);
+      var det = $id("dsh-deathlog-detail"), rec = dlogCur;
+      if (det) {
+        det.innerHTML = rec
+          ? (dlogReasonHtml(rec) + dlogKillersHtml(rec) + dlogStateHtml(rec) + dlogTimelineHtml(rec) + dlogHonestHtml(rec))
+          : '<div class="st">还没有记录。角色死亡时会自动记下这一次的经过。</div>';
+      }
+      var listEl = $id("dsh-deathlog-list"), items = dlogList();
+      if (listEl) {
+        if (!items.length) listEl.innerHTML = '<div class="st">暂无历史记录</div>';
+        else {
+          var h = [];
+          for (var i = 0; i < items.length; i++) {
+            var it = items[i] || {};
+            h.push('<div class="dsh-dlog-item' + ((rec && Number(rec.at) === Number(it.at)) ? " on" : "") + '" data-dlog-at="' + Number(it.at) + '">'
+              + '<span class="dsh-dlog-item-t">' + roEscTxt(dlogFmtTime(it.at)) + '</span>'
+              + '<span class="dsh-dlog-item-m">' + roEscTxt(it.mapCn || it.map || "未知") + '</span>'
+              + '<span class="dsh-dlog-item-c">' + roEscTxt(it.name || "未识别") + '</span>'
+              + '<span class="dsh-dlog-num">' + fmtK(it.total) + '</span></div>');
+          }
+          listEl.innerHTML = h.join("");
+        }
+      }
+      dlogWireAvatars(host);
+      dlogDirty = false;
+      return true;
+    } catch (e) { dlogDiag("deathlog-render-fail", { message: String((e && e.message) || e) }); return false; }
+  }
+  function dlogPaint() {
+    try {
+      var open = false;
+      try { open = fwActualOpen("deathlog") === true; } catch (e0) { open = false; }
+      if (!open) { dlogWasOpen = false; return false; }
+      if (!dlogWasOpen || dlogDirty) { dlogWasOpen = true; return dlogRender(); }
+      return false;
+    } catch (e) { return false; }
+  }
+  function dlogText(rec) {
+    var L = [];
+    try {
+      if (!rec) return "";
+      var br = String.fromCharCode(10);
+      L.push("死亡回放 " + dlogFmtTime(rec.at));
+      L.push("角色：" + (rec.name || "未识别") + "　角色档：" + (rec.key || "") + "　地图：" + (rec.mapCn || rec.map || "未知") + ((rec.x != null && rec.y != null) ? ('（' + Math.round(rec.x) + '，' + Math.round(rec.y) + '）') : '') + "　血量：" + dlogHpText(rec.hp) + (rec.hpMax ? (' / ' + fmtK(rec.hpMax)) : ''));
+      L.push("死亡前 " + rec.span + " 秒受到伤害：" + fmtK(rec.total) + "；最大来源：" + (rec.top ? dlogSrcName(rec.top) : "无") + "；补最后一刀：" + (rec.last ? (dlogSrcName(rec.last) + " " + dlogSkillText(rec.last.skid, rec.last.sk)) : "无"));
+      L.push("谁打的你：");
+      var ks = dlogIsArr(rec.killers) ? rec.killers : [];
+      for (var i = 0; i < ks.length; i++) {
+        L.push("  " + dlogSrcName(ks[i]) + (ks[i].mid ? ("（编号 " + ks[i].mid + "）") : "") + "：" + ks[i].dmg + "，共 " + ks[i].segs + " 段 / " + ks[i].hits + " 下");
+        var sks = dlogIsArr(ks[i].skills) ? ks[i].skills : [];
+        for (var j = 0; j < sks.length; j++) L.push("    " + dlogSkillText(sks[j].skid, sks[j].name) + "：" + sks[j].dmg + "（" + sks[j].hits + " 下）");
+      }
+      L.push("时间线：");
+      var rows = dlogTimeline(rec).reverse();
+      for (var m = 0; m < rows.length; m++) {
+        var r = rows[m], neg = [], sts = dlogIsArr(r.sts) ? r.sts : [];
+        for (var n = 0; n < sts.length; n++) if (sts[n].neg) neg.push(sts[n].name || ("状态" + sts[n].id));
+        L.push("  距死亡 " + dlogSec(r.dt) + " 秒　" + dlogSrcName(r) + "　" + dlogSkillText(r.skid, r.sk) + "　" + r.dmg + "　血量 " + dlogHpText(r.hp) + (neg.length ? ("　" + neg.join("、")) : ""));
+      }
+      return L.join(br);
+    } catch (e) { return ""; }
+  }
+  // 窗内按钮与输入：一律捕获阶段委托（浮窗有自己的冒泡隔离，冒泡阶段收不到）
+  function dlogOnClick(e) {
+    try {
+      var t = e && e.target;
+      if (!t || !t.id) return;
+      if (t.id === "dsh-deathlog-clear") {
+        dlogClear();
+        try { setStatus("死亡回放记录已清空", "ok"); } catch (e1) {}
+        dlogRender();
+        return;
+      }
+      if (t.id === "dsh-deathlog-export") {
+        var rec = dlogCur || dlogList()[0] || null;
+        if (!rec) { try { setStatus("还没有可导出的记录", "warn"); } catch (e2) {} return; }
+        var box = $id("dsh-deathlog-text");
+        if (box) { box.value = dlogText(rec); try { box.focus(); box.select(); } catch (e3) {} }
+        try { setStatus("这一次的完整文字已写到下面的框里，可直接复制", "ok"); } catch (e4) {}
+        return;
+      }
+      var item = (t.closest ? t.closest("[data-dlog-at]") : null);
+      if (item && item.getAttribute) {
+        var at = Number(item.getAttribute("data-dlog-at")), items = dlogList();
+        for (var i = 0; i < items.length; i++) {
+          if (Number(items[i].at) === at) { dlogCur = items[i]; dlogDirty = true; dlogRender(); break; }
+        }
+      }
+    } catch (e) {}
+  }
+  function dlogOnChange(e) {
+    try {
+      var t = e && e.target;
+      if (!t || !t.id) return;
+      if (t.id === "dsh-deathlog-auto") {
+        dlogCfg.auto = !!t.checked;
+        dlogCfgSave();
+        try { setStatus(dlogCfg.auto ? "死亡后自动弹出已开启" : "死亡后自动弹出已关闭", "ok"); } catch (e1) {}
+        return;
+      }
+      if (t.id === "dsh-deathlog-span") {
+        var v = Math.round(Number(t.value));
+        if (!isFinite(v) || v < DLOG_SPAN_MIN) v = DLOG_SPAN_MIN;
+        if (v > DLOG_SPAN_MAX) v = DLOG_SPAN_MAX;
+        dlogCfg.span = v;
+        t.value = String(v);
+        dlogCfgSave();
+        try { setStatus("回放时长已改为 " + v + " 秒", "ok"); } catch (e2) {}
+      }
+    } catch (e) {}
+  }
+  function dlogReset(reason) {
+    try {
+      __dshDeathEvt.length = 0;
+      dlogDeathAt = 0; dlogDeadEdge = false;
+      dlogSig = ""; dlogSigAt = 0; dlogMapLast = null;
+      dlogPopAt = 0; dlogCur = null; dlogDirty = true; dlogNegCache = null;
+      return true;
+    } catch (e) { return false; }
+  }
+  try { document.addEventListener("click", dlogOnClick, true); } catch (eDL1) {}
+  try { document.addEventListener("change", dlogOnChange, true); } catch (eDL2) {}
+  dlogCfgLoad();
+  // ================= V2.38.17 死亡回放 END =================
   // 三个可浮窗区块注册（V2.10.0）：本图怪物锁定 / 传送功能 / 助手技能设置
   try {
     fwReg("mlock", "攻击名单", function () { return document.getElementById("dsh-fw-mlock"); });
@@ -3039,6 +3717,7 @@
     fwReg("tpp", "传送点快捷条", function () { return document.getElementById("dsh-fw-tpp"); }); // V2.29.0
   fwReg("dps", "伤害统计", function () { return document.getElementById("dsh-fw-dps"); });   // V2.24.0
   fwReg("boss", "首领警报", function () { return document.getElementById("dsh-fw-boss"); }); // V2.24.0
+  fwReg("deathlog", "死亡回放", dlogEnsureHost); // V2.38.17
     panel.addEventListener("click", function (ev) {
       try {
         var b = ev.target && ev.target.closest ? ev.target.closest("[data-fw]") : null;
@@ -3101,6 +3780,7 @@
     { id: "aid",   name: "战斗辅助",        kind: "fw", sec: "战斗辅助" },
     { id: "party", name: "队伍血条",        kind: "fw", sec: "战斗辅助" },
     { id: "dps",   name: "伤害统计",        kind: "fw", sec: "战斗辅助" },
+    { id:"deathlog", name:"死亡回放", kind:"fw", sec:"战斗辅助" },
     { id: "boss",  name: "首领警报",        kind: "fw", sec: "战斗辅助", defOff: true },
     { id: "askcombo", name: "一键补 buff（技能+物品）", kind: "action", noToggle: true, sec: "战斗辅助" },
     { id: "item",  name: "物品 · 拾取与整理", kind: "fw", sec: "战斗辅助" },
@@ -3245,9 +3925,9 @@
     // V2.19.0：原说明行（勾选=启用 · 点键位=设快捷键 · 右键键位=清除）删除，改为「重启客户端」按钮。
     //   设置本来就是改一下自动存（按角色），不需要「保存设置」按钮。
     var rbRow = document.createElement("div"); rbRow.className = "ro-row"; rbRow.style.margin = "0 0 4px";
-    var rbBtn = document.createElement("button"); rbBtn.type = "button"; rbBtn.textContent = "重启客户端";
+    var rbBtn = document.createElement("button"); rbBtn.type = "button"; rbBtn.textContent = "重启游戏";
     rbBtn.style.cssText = "flex:1;height:20px;font-size:11px;";
-    rbBtn.title = "重新加载客户端页面（设置已自动保存，不会丢）";
+    rbBtn.title = "重新加载游戏页面（设置已自动保存，不会丢）";
     rbBtn.addEventListener("click", function () { try { location.reload(); } catch (e) {} });
     rbRow.appendChild(rbBtn);
     body.appendChild(rbRow);
@@ -3314,7 +3994,7 @@
     bmc.checked = blockMcEnabled();
     bmc.addEventListener("change", function () {
       blockMcSave(bmc.checked);
-      setStatus(bmc.checked ? "已开启：点击其他玩家的摆摊商店不弹出窗口（请求直接拦截，窗口不会出现）" : "已关闭：点击立即恢复正常，其他玩家的摆摊商店照原样弹出", "ok");
+      setStatus(bmc.checked ? "已开启：点击其他玩家的摆摊商店不弹出窗口（点击会被直接拦下，窗口不会出现）" : "已关闭：点击立即恢复正常，其他玩家的摆摊商店照原样弹出", "ok");
       tlog("block-mc-set enabled=" + (bmc.checked === true));
     });
     roMenuRow(body, "点击其他玩家的摆摊商店不弹出窗口（默认开）", bmc);
@@ -4315,7 +4995,7 @@
       var want = !npHuntOn;
       var result = npRequestBattle(want, "hotkey", true);
       // V2.38.13 FIX-12：代打期间被抑制必须与 setBattle 同一句话，不许再说成「状态未确认」
-      setStatus(result === "sent" ? "内挂自动战斗：快捷键已请求切换一次" : (result === "suppressed" ? "外部代打进行中：不开内挂自动战斗（已抑制）" : "内挂自动战斗状态未确认，未重复切换"), npResultKind(result, result === "sent" ? "ok" : "warn"));
+      setStatus(result === "sent" ? "内挂自动战斗：已用快捷键切换一次" : (result === "suppressed" ? "外部代打进行中：不开内挂自动战斗（已抑制）" : "内挂自动战斗状态未确认，未重复切换"), npResultKind(result, result === "sent" ? "ok" : "warn"));
       tlog("hk np-toggle target=" + want + " result=" + result);
     } catch (e) {}
   }
@@ -5453,6 +6133,7 @@
       // V2.38.4-审计修正（F3）：连续死亡保护是页面会话级计数，真正切档时必须清零。
       //   否则「A 死 2 次 → 切到 B → B 再死 1 次」会累计到 3 次把 B 自动下线；deathGuardDone 同理会让本页面内永久不再保护。
       try { deathGuardAt = []; deathGuardDone = false; deathGuardDead = false; } catch (eDG) {}
+      try { dlogReset("切换角色"); } catch (eDL) {}
       var npZeroWasOn = false; try { npZeroWasOn = (npBattleState() === true); } catch (e0) {} // V2.38.2：换角色=挂机结束，先记下旧角色内挂是否确认在跑（下一行 reset 之后就查不到了）
       try { npResetBattleState(); } catch (e0) {} // 换角色：旧角色排队意图绝不能落到新角色
       try { dojoStop("换角色"); } catch (e5) {} // V2.36.0：换角色立即停止内置道馆并释放租约
@@ -6267,7 +6948,7 @@
   // 宠物指令：1=喂食 2=表演 3=变蛋(收回) 4=卸装备（客户端真实机制=COMMAND_PET）
   function petCmd(cSub, logName) {
     try {
-      if (!clientReady()) { petLog("客户端未就绪"); return false; }
+      if (!clientReady()) { petLog("游戏画面还没准备好"); return false; }
       var p = new (czp("COMMAND_PET"))();
       p.cSub = cSub;
       CLIENT.NM.sendPacket(p);
@@ -6333,7 +7014,7 @@
   }
   onId("dsh-petegg", "click", function () {
     try {
-      if (!clientReady()) { setStatus("客户端未就绪", "err"); return; }
+      if (!clientReady()) { setStatus("游戏画面还没准备好", "err"); return; }
       var egg = findPetEgg();
       if (!egg) { setStatus("背包未找到宠物蛋", "err"); return; }
       var p = new (czp("SELECT_PETEGG"))();
@@ -6464,6 +7145,7 @@
   setInterval(function () { for (var i = 0; i < masterTicks.length; i++) { try { masterTicks[i](); } catch (e) {} } }, 1000);
   masterTickReg(function () { try { identityTick(); } catch (e) {} }); // V2.38.6：身份拍（复用 1s masterTick，不新增定时器）
   masterTickReg(function () { try { tickFollow(); } catch (e) {} });
+  masterTickReg(function () { try { dlogSample(); } catch (e) {} }); // V2.38.17：死亡回放 1 秒采样 + 死亡兜底
   setTimeout(scanPlayers, 3000);
 
   // ---------------- B2：自动吃药（背包红/蓝药 + HP/SP 阈值）----------------
@@ -6565,7 +7247,7 @@
   // V2.21.0 一键加红蓝药：从背包找红药/蓝药，生成 HP低于50% / SP低于30% 两条规则（可在列表里改数值）
   onId("dsh-potquick", "click", function () {
     try {
-      if (!clientReady()) { setStatus("客户端未就绪，进图后再点", "err"); return; }
+      if (!clientReady()) { setStatus("游戏画面还没准备好，进图后再点", "err"); return; }
       var hp = findPotion(true), sp = findPotion(false);
       if (!hp && !sp) { setStatus("背包里没找到红药/蓝药（药名需含「红色药水/白色药水/蓝色药水」等关键词）", "err"); return; }
       var added = 0;
@@ -7450,13 +8132,13 @@
   serverSel.addEventListener("change", function () {
     var v = parseInt(serverSel.value, 10);
     if (v === DEFAULTS.ClientVer) return;
-    if (!window.confirm("切换线路将重启客户端并重新登录（" + (SERVER_NAMES[v] || "未知服") + "）。\n注意：两服账号不互通，切换后需用对应服的账号登录。")) {
+    if (!window.confirm("切换线路将重启游戏并重新登录（" + (SERVER_NAMES[v] || "未知服") + "）。\n注意：两服账号不互通，切换后需用对应服的账号登录。")) {
       serverSel.value = String(DEFAULTS.ClientVer);
       return;
     }
     saved.server = v;
     saveSaved(saved);
-    setStatus("已切换到「" + (SERVER_NAMES[v] || "未知服") + "」，正在重启客户端…", "ok");
+    setStatus("已切换到「" + (SERVER_NAMES[v] || "未知服") + "」，正在重启游戏…", "ok");
     tlog("switch-server cv=" + v);
     location.replace(switchServerUrl(v));
   });
@@ -7466,7 +8148,7 @@
     if (!acc || !pwd) { setStatus("请填写账号和密码", "err"); return; }
     saved.account = acc; saved.password = pwd;
     saveSaved(saved);
-    setStatus("已保存，重启客户端生效", "ok");
+    setStatus("已保存，重启游戏生效", "ok");
     renderWinInfo();
   });
   onId("dsh-clear", "click", function () {
@@ -7985,11 +8667,11 @@
   try {
     onId("dsh-open-gear", "click", function () {
       if (neiGearOpen()) { neiGearTab("openattack"); setStatus("已打开游戏内挂设置（战斗设置页）", "ok"); }
-      else setStatus("没找到内挂齿轮（客户端内挂组件未就绪，进图后再试）", "err");
+      else setStatus("没找到内挂齿轮（游戏内挂面板还没准备好，进图后再试）", "err");
     });
     onId("dsh-open-gear-skill", "click", function () {
       if (neiGearOpen()) { neiGearTab("openattack"); setStatus("已打开游戏内挂设置（技能在战斗设置页里）", "ok"); }
-      else setStatus("没找到内挂齿轮（客户端内挂组件未就绪，进图后再试）", "err");
+      else setStatus("没找到内挂齿轮（游戏内挂面板还没准备好，进图后再试）", "err");
     });
   } catch (e) {}
   // ---------------- 内挂 DOM 探查（V2.15.9 一次性工具：拿内挂窗口真实控件位置，服务端落盘）----------------
@@ -8184,7 +8866,7 @@
   function setBattle(on) {
     var result = npRequestBattle(on, "setBattle", true);
     dshDiag("set-battle", { on: !!on, result: result });
-    setStatus(result === "failed" ? "内挂开关发送失败：客户端未就绪" : (result === "suppressed" ? "外部代打进行中：不开内挂自动战斗（已抑制）" : (result === "already" ? "内挂自动战斗已处于目标状态" : (result === "queued" ? "内挂自动战斗请求已排队" : "内挂自动战斗请求已发送"))), npResultKind(result, result === "failed" ? "err" : "ok"));
+    setStatus(result === "failed" ? "内挂开关发送失败：游戏画面还没准备好" : (result === "suppressed" ? "外部代打进行中：不开内挂自动战斗（已抑制）" : (result === "already" ? "内挂自动战斗已处于目标状态" : (result === "queued" ? "内挂自动战斗：已排队" : "内挂自动战斗：已发送"))), npResultKind(result, result === "failed" ? "err" : "ok"));
     tlog("setBattle on=" + on + " result=" + result);
   }
   onId("dsh-battleon", "click", function () { setBattle(true); });
@@ -8197,21 +8879,21 @@
   function npIsThree() { return DEFAULTS.ClientVer === 3; }
   function npSendUpdate(id, value) {
     try {
-      if (!clientReady()) { npLog("客户端未就绪"); return false; }
+      if (!clientReady()) { npLog("游戏画面还没准备好"); return false; }
       var p = new (czp("NOTIFY_UPDATEINFO"))();
       p.id = id; p.value = value;
       CLIENT.NM.sendPacket(p);
       return true;
-    } catch (e) { npLog("发包异常: " + e.message); return false; }
+    } catch (e) { npLog("动作异常: " + e.message); return false; }
   }
   function npSendWhisper(receiver) {
     try {
-      if (!clientReady()) { npLog("客户端未就绪"); return false; }
+      if (!clientReady()) { npLog("游戏画面还没准备好"); return false; }
       var p = new (czp("WHISPER"))();
       p.receiver = receiver; p.msg = "0";
       CLIENT.NM.sendPacket(p);
       return true;
-    } catch (e) { npLog("发包异常: " + e.message); return false; }
+    } catch (e) { npLog("动作异常: " + e.message); return false; }
   }
   function npCmd(label, id3, id5, val) {
     // 三转 → WHISPER NPC:setauto*；二转 → NOTIFY_UPDATEINFO
@@ -8413,7 +9095,7 @@
       if (this.value === "np" || this.value === "hybrid") {
         npCalibrate();               // 仅首次未知态校准，不周期覆盖
         npSyncTargets();             // 锁定目录同步给内挂（只追锁定怪）
-        setStatus(this.value === "hybrid" ? "已切到混合寻怪（内挂长距离寻怪，锁定怪≤接管距离才由助手接管）" : "已切到内挂机制寻怪（点开自动战斗后由助手状态机自动发包寻怪）", "ok");
+        setStatus(this.value === "hybrid" ? "已切到混合寻怪（内挂长距离寻怪，锁定怪≤接管距离才由助手接管）" : "已切到内挂机制寻怪（点开自动战斗后由助手自动接管寻怪）", "ok");
         tlog("huntmode->" + this.value + " (no toggle until start)");
       } else {
         npHuntStop("mode-change", true);
@@ -8591,7 +9273,7 @@
     var el = $id("dsh-lockhits");
     if (!el) return;
     var mobDB = getMobDb();
-    if (!mobDB) { el.innerHTML = '<div class="st">怪物库未就绪（客户端加载后重试）</div>'; return; }
+    if (!mobDB) { el.innerHTML = '<div class="st">怪物资料还没准备好（进游戏后重试）</div>'; return; }
     kw = String(kw || "").trim();
     if (!kw) { el.innerHTML = '<div class="st">输入怪物名或ID → 点一整行直接加入攻击名单。</div>'; return; }
     var hits = [];
@@ -8733,7 +9415,7 @@
     try {
       var el = $id("dsh-scanlist");
       if (!el) return;
-      if (!window.require) { el.textContent = "客户端未就绪"; return; }
+      if (!window.require) { el.textContent = "游戏画面还没准备好"; return; }
       var EM = requireDB("Renderer/EntityManager");
       if (!EM || !EM.forEach) { el.textContent = "实体管理器不可用"; return; }
       var ent = CLIENT.SS && CLIENT.SS.Entity;
@@ -9413,6 +10095,7 @@
       target: zLastTargetGID != null ? zLastTargetGID : null,
       zLockGid: zLock.gid != null ? gidInt(zLock.gid) : null,
       zLockDone: !!zLock.done,
+      lockMidMiss: zLockMidMissCount, // V2.38.16 F3：锁定目标 mid 取不到（只能按普通怪处理）的段数
       escapePend: escapePending(),
       sitting: isSitting(),
       hitByCount: hf.n,
@@ -9967,7 +10650,7 @@
     if (!_czchk.ok) {
       zRunning = false;
       try { $id("dsh-z-state").textContent = "助手未启动（包体自检未通过）"; } catch (e0) {}
-      setStatus("拒绝启动助手模式：" + _czchk.brief + "。发包 opcode 与本服 CZ 表不一致，发了也会被服务器丢弃。", "err");
+      setStatus("拒绝启动助手模式：" + _czchk.brief + "。动作可能无效（本服动作格式不一致），请重开页面再试。", "err");
       tlog("zhu-refuse cz-selfcheck " + _czchk.brief);
       return;
     }
@@ -9996,7 +10679,7 @@
     }
     var sec = Math.max(0.25, parseFloat($id("dsh-z-attint").value) || 0.25);
     zAttTimer = setInterval(zAttack, sec * 1000);
-    setStatus("助手模式已启动（扫描+攻击）· 包体自检 " + _czchk.brief, "ok");
+    setStatus("助手模式已启动（扫描+攻击）· 动作自检 " + _czchk.brief, "ok");
   }
   function stopZhu() {
     if (!deathReturnStopping) deathReturnCancel("手动停止战斗");
@@ -10027,7 +10710,7 @@
     try {
       // V2.15.12：内挂自动战斗开着时角色移动由服务器控制，客户端走路包会被覆盖 → 先关内挂再走（走完不自动恢复，用户可再开）
       try { if (npHuntOn) npHuntStop("walkToXY", true); } catch (e) {}
-      if (!clientReady()) { mvLog("客户端未就绪"); return false; }
+      if (!clientReady()) { mvLog("游戏画面还没准备好"); return false; }
       var ent = CLIENT.SS.Entity;
       if (!ent || !ent.position) { mvLog("未获取到角色坐标"); return false; }
       moveXY.busy = true;
@@ -10155,7 +10838,7 @@
   function tickMoveXY() {
     if (!moveXY.busy) return;
     try {
-      if (!clientReady()) { moveXY.busy = false; mvLog("客户端掉线，停止走路"); return; }
+      if (!clientReady()) { moveXY.busy = false; mvLog("游戏掉线，停止走路"); return; }
       var ent = CLIENT.SS.Entity;
       if (!ent || !ent.position) return;
       var d = Math.abs(ent.position[0] - moveXY.tx) + Math.abs(ent.position[1] - moveXY.ty);
@@ -10711,8 +11394,8 @@
         zWalkState.routeActive = true;
         zWalkState.routeTotal = zRouteTotalNow; zWalkState.routeIdx = zRouteIdxNow;
         zAtkWhy = "客户端路线进行中";
-        zMon.action = "客户端路线进行中（" + zRouteIdxNow + "/" + zRouteTotalNow + "格），仅扫描…";
-        setStatus("客户端路线进行中（" + zRouteIdxNow + "格），仅扫描…", "st");
+        zMon.action = "游戏自动寻路进行中（" + zRouteIdxNow + "/" + zRouteTotalNow + "格），仅扫描…";
+        setStatus("游戏自动寻路进行中（" + zRouteIdxNow + "格），仅扫描…", "st");
         return;
       }
       if (zRouteExtNow && near) {
@@ -10723,7 +11406,7 @@
         var zRouteCancel = "none";
         try { var zEnRC = CLIENT.SS && CLIENT.SS.Entity; if (zEnRC && typeof zEnRC.resetRoute === "function") { zEnRC.resetRoute(); zRouteCancel = "resetRoute"; } } catch (eRC) {}
         tlog("walk-route-engage 客户端路线进行中（" + zRouteIdxNow + "/" + zRouteTotalNow + "格）扫到目标 " + (near._job != null ? near._job : near.GID) + " → 主动接战，取消本地路线(" + zRouteCancel + ")");
-        setStatus("客户端路线中扫到目标，主动接战…", "ok");
+        setStatus("寻路途中扫到目标，主动接战…", "ok");
       }
       if (near) {
         // V2.38.4 G2②：追怪目标保持——进入追怪记 chaseHold={gid,at} 并优先保持同一只；
@@ -11196,6 +11879,15 @@
       zHpWatch.hp = hp;
     } catch (e) {}
   }
+  // ================= V2.38.16 F3 锁定目标 mid 诊断（只进诊断环/本机日志，不改用户可见文案） =================
+  var zLockMidMissOpen = false, zLockMidMissCount = 0;
+  function zLockMidMissTick() {
+    try {
+      if (!zLockMidMissOpen) { zLockMidMissOpen = true; zLockMidMissCount++; try { tlog("lock-mid-miss 段=" + zLockMidMissCount); } catch (e0) {} }
+    } catch (e) {}
+  }
+  function zLockMidMissOk() { zLockMidMissOpen = false; }
+  // ================= V2.38.16 F3 锁定目标 mid 诊断结束 =================
   function zAttack() {
     try {
       if (!clientReady()) return;
@@ -11277,8 +11969,19 @@
       // V2.38.15：锁定的首位首领落在忽略集合里（不处理 / 尾刀未到线 / 血量未知）→ 本拍不打它、不因它保持追击、也不因它拒绝换目标，
       //   且绝不清除 zLock.gid：锁留着，条件满足后同一把锁自动恢复生效，用户无需重新锁定
       // V2.38.15 审计修复：只有「锁定的确是首领」才走忽略集合；用户手点的普通怪照旧正常解析与攻击（mid 取不到也按普通怪处理）
-      var zLockEntSkip = zLock.gid ? zEntOf(zLock.gid) : null;
-      var zLockMidSkip = zLockEntSkip ? (zLockEntSkip._job != null ? zLockEntSkip._job : (zLockEntSkip.job != null ? zLockEntSkip.job : zLockEntSkip.mobId)) : null;
+      // V2.38.16 F3：mid 不再只靠 EntityManager.get —— 优先用本拍已经扫过的怪表（zWalk 的 EM 遍历产物，条目本身带 mid），
+      //   拿不到再退回 zEntOf；mid 链补上 .mid 兜底（与还击候选链同口径）。真的取不到就按普通怪处理，并按「段」记一次诊断计数
+      var zLockScanEnt = null;
+      try {
+        var zLockPool = (typeof scanMobs !== "undefined" && scanMobs && scanMobs.length) ? scanMobs : ((typeof lastMobs !== "undefined" && lastMobs) ? lastMobs : null);
+        for (var zli = 0; zli < (zLockPool || []).length; zli++) {
+          var zlm = zLockPool[zli];
+          if (zlm && zlm.GID != null && gidInt(zlm.GID) === gidInt(zLock.gid)) { zLockScanEnt = zlm; break; }
+        }
+      } catch (eS1) {}
+      var zLockEntSkip = zLockScanEnt || (zLock.gid ? zEntOf(zLock.gid) : null);
+      var zLockMidSkip = zLockEntSkip ? (zLockEntSkip._job != null ? zLockEntSkip._job : (zLockEntSkip.job != null ? zLockEntSkip.job : (zLockEntSkip.mobId != null ? zLockEntSkip.mobId : (zLockEntSkip.mid != null ? zLockEntSkip.mid : null)))) : null;
+      if (zLock.gid && zLockMidSkip == null) { try { zLockMidMissTick(); } catch (e5) {} } else { try { zLockMidMissOk(); } catch (e6) {} }
       var zLockBossSkip = !!(zLock.gid && zBossIgnoredGid(zLock.gid, zLockMidSkip));
       if (zLockBossSkip) zMon.action = "锁定首领在忽略集合（保留锁）";
       if (!target && zLock.gid && !zLockBossSkip) {
@@ -12266,10 +12969,10 @@
     try {
       var chk = czSelfCheck();
       czRenderLine();
-      setStatus(chk.ok ? ("包体自检通过 · " + chk.brief) : ("包体自检未通过 · " + chk.brief), chk.ok ? "ok" : "err");
+      setStatus(chk.ok ? ("动作自检通过 · " + chk.brief) : ("动作自检未通过 · " + chk.brief), chk.ok ? "ok" : "err");
       tlog("cz-selfcheck " + (chk.ok ? "ok " : "FAIL ") + chk.brief);
       try { console.log("[ro-assist] " + chk.text); } catch (e0) {}
-    } catch (e) { setStatus("包体自检异常: " + (e && e.message), "err"); }
+    } catch (e) { setStatus("动作自检异常: " + (e && e.message), "err"); }
   });
   onId("dsh-z-on", "click", startZhu);
   onId("dsh-z-off", "click", stopZhu);
@@ -12616,20 +13319,20 @@
     var equipment=[4,5,8,12].indexOf(Number(it.type))>=0;
     if(equipment){
       var own=Object.prototype.hasOwnProperty,refineKeys=['RefiningLevel','refiningLevel'],randomKeys=['nRandomOptionCnt'],damageKeys=['IsDamaged'],wearKeys=['IsEquipped','WearState','wearState','equipped'];
-      if(!own.call(it,'IsIdentified')||!(it.IsIdentified===0||it.IsIdentified===false||it.IsIdentified===1||it.IsIdentified===true))return '装备保护字段不完整';
-      var present=refineKeys.filter(function(k){return own.call(it,k);});if(!present.length||present.some(function(k){return typeof it[k]!=='number'||it[k]!==0;}))return present.length?'精炼装备':'装备保护字段不完整';
-      if(!it.slot||typeof it.slot!=='object'||['card1','card2','card3','card4'].some(function(k){return !own.call(it.slot,k);}))return '装备保护字段不完整';
+      if(!own.call(it,'IsIdentified')||!(it.IsIdentified===0||it.IsIdentified===false||it.IsIdentified===1||it.IsIdentified===true))return '装备保护信息不完整';
+      var present=refineKeys.filter(function(k){return own.call(it,k);});if(!present.length||present.some(function(k){return typeof it[k]!=='number'||it[k]!==0;}))return present.length?'精炼装备':'装备保护信息不完整';
+      if(!it.slot||typeof it.slot!=='object'||['card1','card2','card3','card4'].some(function(k){return !own.call(it.slot,k);}))return '装备保护信息不完整';
       if(['card1','card2','card3','card4'].some(function(k){return typeof it.slot[k]!=='number'||it.slot[k]!==0;}))return '已插卡或插槽不明';
-      present=randomKeys.filter(function(k){return own.call(it,k);});if(!present.length)return '装备保护字段不完整';if(present.some(function(k){return typeof it[k]!=='number'||it[k]!==0;}))return '随机属性装备';
-      present=damageKeys.filter(function(k){return own.call(it,k);});if(!present.length)return '装备保护字段不完整';if(present.some(function(k){return !(it[k]===false||it[k]===0);}))return '损坏装备';
-      present=wearKeys.filter(function(k){return own.call(it,k);});if(!present.length)return '装备保护字段不完整';if(present.some(function(k){return !(it[k]===false||it[k]===0);}))return '穿戴中';
+      present=randomKeys.filter(function(k){return own.call(it,k);});if(!present.length)return '装备保护信息不完整';if(present.some(function(k){return typeof it[k]!=='number'||it[k]!==0;}))return '随机属性装备';
+      present=damageKeys.filter(function(k){return own.call(it,k);});if(!present.length)return '装备保护信息不完整';if(present.some(function(k){return !(it[k]===false||it[k]===0);}))return '损坏装备';
+      present=wearKeys.filter(function(k){return own.call(it,k);});if(!present.length)return '装备保护信息不完整';if(present.some(function(k){return !(it[k]===false||it[k]===0);}))return '穿戴中';
     }else if(it.IsEquipped||it.WearState||it.wearState||it.equipped)return '穿戴中';
     return '';
   }
   function bagCleanDescribe(it,cfg,typeNames){
     cfg=cfg||bagClean.config;typeNames=typeNames||bagCleanTypeNames();if(!it)return {ok:false,reason:'数据缺失'};
     var id=bagCleanInt(it.ITID,1,2147483647),index=bagCleanInt(it.index,1,65535),type=bagCleanInt(it.type,0,255),equipment=[4,5,8,12].indexOf(type)>=0;
-    var amount=bagCleanInt(it.count!=null?it.count:(it.amount!=null?it.amount:(equipment?1:NaN)),1,1000000000);if(id===null||index===null||amount===null||type===null)return {ok:false,reason:'索引/物品/数量/类型字段不明'};
+    var amount=bagCleanInt(it.count!=null?it.count:(it.amount!=null?it.amount:(equipment?1:NaN)),1,1000000000);if(id===null||index===null||amount===null||type===null)return {ok:false,reason:'索引/物品/数量/类型不明'};
     if(!typeNames[type])return {ok:false,reason:'类型未知，全部保护',id:id,index:index,type:type,amount:amount};
     if(cfg.protectedIds.indexOf(id)>=0)return {ok:false,reason:'类别保护例外（永不丢）',id:id,index:index,type:type,amount:amount};
     var protection=bagCleanProtected(it);if(protection)return {ok:false,reason:protection,id:id,index:index,type:type,amount:amount};
@@ -12759,7 +13462,7 @@
     box.querySelector('[data-enable]').onchange=function(){if(!this.checked){bagClean.enabled=false;bagClean.config.enabled=false;bagClean.generation++;bagCleanSave();bagCleanSay('自动丢弃已关闭');return;}if(!bagClean.config.armed){this.checked=false;bagClean.enabled=false;return bagCleanSay('尚未授权：请先「预览候选」并确认。');}if(!window.confirm('自动丢弃按当前口径触发（「随时丢弃」开启=名单里的物品随时丢，不看负重和空格；关闭=负重>70% 或 空格<20 才动手），并按刚确认的候选丢到地面。确认开启？')){this.checked=false;return;}bagClean.enabled=true;bagClean.config.enabled=true;bagClean.generation++;bagCleanSave();bagCleanSay('自动丢弃已开启（随时丢弃='+(bagClean.config.anytime===true?'开':'关')+'）');};
     box.querySelector('[data-anytime]').onchange=function(){bagClean.config.anytime=this.checked===true;changed('随时丢弃已修改：自动已关闭，需重新预览确认。');};
     box.querySelector('[data-stop]').onclick=function(){bagClean.enabled=false;bagClean.config.enabled=false;bagClean.generation++;bagCleanSave();box.querySelector('[data-enable]').checked=false;bagCleanSay('已停止；已发出的丢弃无法撤回');};
-    box.querySelector('[data-now]').onclick=function(){if(bagClean.busy)return;if(!clientReady())return bagCleanSay('客户端未就绪');var p=bagCleanPreview();if(!p)return;if(!window.confirm('将立即丢弃以下物品到地面：\n\n'+p.text+'\n\n这是不可逆操作，确认执行？'))return;var limits={};p.plan.forEach(function(r){limits[r.key+'|'+r.source]=r.drop;});bagCleanExecute(function(){},limits);};
+    box.querySelector('[data-now]').onclick=function(){if(bagClean.busy)return;if(!clientReady())return bagCleanSay('游戏画面还没准备好');var p=bagCleanPreview();if(!p)return;if(!window.confirm('将立即丢弃以下物品到地面：\n\n'+p.text+'\n\n这是不可逆操作，确认执行？'))return;var limits={};p.plan.forEach(function(r){limits[r.key+'|'+r.source]=r.drop;});bagCleanExecute(function(){},limits);};
     // 导出：Blob + URL.createObjectURL + <a download> 触发下载，同时复制到剪贴板（失败则选中文本让用户 Ctrl+C）
     box.querySelector('[data-export]').onclick=function(){var text=JSON.stringify(bagClean.config,null,2),ta=box.querySelector('[data-json]'),n=Object.keys(bagClean.config.discardRules).length;ta.value=text;var copied=false;
       try{var blob=new Blob([text],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='dsh-bag-clean-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();setTimeout(function(){try{a.remove();URL.revokeObjectURL(url);}catch(e){}},0);}catch(e){}
@@ -12868,7 +13571,7 @@
     var el = $id("dsh-drop-tree");
     if (!el) return;
     var mobDB = getMobDb();
-    if (!mobDB) { el.innerHTML = '<div class="st">怪物库未就绪（客户端加载后重试）</div>'; return; }
+    if (!mobDB) { el.innerHTML = '<div class="st">怪物资料还没准备好（进游戏后重试）</div>'; return; }
     if (!list || !list.length) {
       // 优先：当前地图怪物（同内挂检测目标地图表）；失败回退图鉴前8只
       var mapList = getMapMobList();
@@ -13150,7 +13853,7 @@
     var el = $id("dsh-book");
     if (!el) return;
     var logs = requireDB("DB/logsTable");
-    if (!logs) { el.innerHTML = '<div class="st">书本数据未就绪（客户端加载后重试）</div>'; return; }
+    if (!logs) { el.innerHTML = '<div class="st">书本资料还没准备好（进游戏后重试）</div>'; return; }
     var cv = DEFAULTS.ClientVer;
     var tbl = logs[cv] || logs[5] || {};
     var catMap = { "bk-npc": "guide", "bk-train": "train", "bk-money": "makeMonzy", "bk-dun": "dungeons", "bk-mvp": "mvp" };
@@ -13203,7 +13906,7 @@
         setStatus("书本前往: " + (it.npc || "") + "（步行寻路）", "ok");
         return;
       }
-      setStatus("客户端未就绪，无法前往", "err");
+      setStatus("游戏画面还没准备好，无法前往", "err");
     } catch (e) { setStatus("前往异常: " + e.message, "err"); }
   }
 
@@ -13407,7 +14110,7 @@
       if (cell) { try { cell.click(); clicked = true; } catch (e) {} }
       var mv = document.querySelector(".move");
       if (mv) { try { mv.click(); clicked = true; } catch (e) {} }
-      $id("dsh-tpmsg2").textContent = clicked ? "已点「前往」——客户端自动寻路" : "未找到世界地图窗口";
+      $id("dsh-tpmsg2").textContent = clicked ? "已点「前往」——游戏自动寻路" : "未找到世界地图窗口";
       planRoute(m);
     } catch (e) { $id("dsh-tpmsg2").textContent = "走去异常: " + e.message; }
   });
@@ -13533,12 +14236,12 @@
     }
     if (!m || !TP_MAP_RE.test(m)) return fail("地图名非法（^[a-z0-9_]{1,15}$）：" + (map == null ? "" : map));
     if (hasXY && (!isFinite(xn) || !isFinite(yn) || xn !== Math.floor(xn) || yn !== Math.floor(yn) || xn < 0 || xn > 65535 || yn < 0 || yn > 65535)) return fail("坐标必须是 0-65535 的整数：" + x + "," + y);
-    if (!(pv > 0)) return fail("客户端协议版本未就绪（拒绝盲发：无法确定 34B/26B 帧形）");
-    if (!clientReady() || !CLIENT.NM || typeof CLIENT.NM.sendPacket !== "function") return fail("客户端未就绪（发包通道不可用）");
+    if (!(pv > 0)) return fail("游戏数据还没准备好（无法确认传送方式）");
+    if (!clientReady() || !CLIENT.NM || typeof CLIENT.NM.sendPacket !== "function") return fail("游戏画面还没准备好（传送不可用）");
     var w = tpFrame(m, xn, yn, type, pv);
     tpLast.bytes = w.buffer.byteLength;
     var pkt = { build: function () { return tpFrame(m, xn, yn, type, pv); } };
-    try { CLIENT.NM.sendPacket(pkt); } catch (eS) { return fail("发包异常：" + (eS && eS.message ? eS.message : eS)); }
+    try { CLIENT.NM.sendPacket(pkt); } catch (eS) { return fail("传送异常：" + (eS && eS.message ? eS.message : eS)); }
     tpLast.sent = true;
     mvLog("[直发传送] → " + m + (hasXY ? "(" + xn + "," + yn + ")" : "（随机落点）") + " type=" + type + " 券=" + TP_SCROLL + " 帧长=" + w.buffer.byteLength + " 结果码=待回");
     tlog("tp-send map=" + m + " xy=" + (hasXY ? xn + "," + yn : "-") + " type=" + type + " itid=" + TP_SCROLL + " bytes=" + w.buffer.byteLength + " pv=" + pv);
@@ -14632,7 +15335,9 @@
       if (typeof txCap !== "undefined" && txCap && txCap.on) txCapPushInbound(bytes, op, 0, false, frameOff);
       if (op === 307 || op === 2048 || op === 2877 || op === 2072) blockMcHit(); // V2.38.2：其他玩家的摆摊商店 / 收购店回包 → 命中即关；NPC 商人 198/199 不在此列
       if (DPS_PKTS.indexOf(op) >= 0 && !dpsParsedSeen) dpsOnRawDamage(bytes, op);
+      if (DPS_PKTS.indexOf(op) >= 0) dlogOnRawDamage(bytes, op); // V2.38.17：按模块开关无条件记录原始伤害帧（补齐 139 的漏）
       if (op === 0x80) scrOnRawVanish(bytes);
+      if (op === 0x80) dlogOnVanish(bytes); // V2.38.17：死亡瞬间主路径
       if (op === 183) onMenuList(bytes);
       else if (op === 180) onSayDialog(bytes);
       else if (op === 182) onCloseDialog();
@@ -14968,7 +15673,7 @@
     } catch (e) { try { $id("dsh-txlog").textContent = "导出异常: " + e.message; } catch (e2) {} }
   }
   onId("dsh-txcap", "click", function () {
-    if (!hookSendPacket()) { $id("dsh-txlog").textContent = "客户端未就绪：请先进游戏，再点「开始抓包」"; return; }
+    if (!hookSendPacket()) { $id("dsh-txlog").textContent = "游戏画面还没准备好：请先进游戏，再点「开始抓包」"; return; }
     txCap.on = true; txCap.ring = []; txCap.n = 0; txCap.drop = 0; // V2.38.3（D2）：开始抓包清零上一轮的拦截计数
     $id("dsh-txlog").textContent = "出站抓包：已开始（先进图站稳 20 秒，再点停止）";
   });
@@ -15163,7 +15868,7 @@
     var el = $id("dsh-recon");
     if (!el) return;
     try {
-      if (!window.require) { el.textContent = "客户端未就绪"; return; }
+      if (!window.require) { el.textContent = "游戏画面还没准备好"; return; }
       var EM = requireDB("Renderer/EntityManager");
       if (!EM || !EM.forEach) { el.textContent = "实体管理器不可用"; return; }
       var mobs = 0, items = 0, parts = [];
@@ -15410,7 +16115,7 @@
   function mobGotoSearch(mid, name) {
     try {
       var WM = requireDB("UI/Components/WorldMap/WorldMap");
-      if (!WM || typeof WM.select !== "function") { setStatus("游戏内世界地图窗口不可用（客户端还没加载完）", "err"); return false; }
+      if (!WM || typeof WM.select !== "function") { setStatus("游戏内世界地图窗口不可用（游戏画面还没准备好）", "err"); return false; }
       var m = (getMobDb() || {})[String(mid)] || {};
       var nm = String(name || m.kName || "").trim();
       var en = String(m.name || "").trim();
@@ -15845,6 +16550,7 @@
           var gameCallback = callback;
           callback = function (pkt) {
             try { dpsParsedSeen = true; dpsSource = "parsed"; dpsOnDamage(pkt); } catch (e0) {}
+            try { dlogOnDamage(pkt); } catch (e0b) {} // V2.38.17：与内层同一条回调并列，不叠第二层包装
             return gameCallback.apply(this, arguments);
           };
           callback.__dshDpsTap = true;
@@ -15906,7 +16612,7 @@
       $id("dsh-dps-session").textContent = dpsNum(dpsRate(dps.total, sessionMs)) + " DPS";
       $id("dsh-dps-dur").textContent = dpsDur(sessionMs); $id("dsh-dps-active").textContent = dpsDur(activeMs);
       var stEl = $id("dsh-dps-state");
-      if (stEl) stEl.textContent = "监听：" + (dpsSource === "parsed" ? "客户端已解析回调" : (dpsSource === "raw" ? "原始收包兜底" : (dpsSource === "ready" ? "旁路已安装，等待伤害" : "等待客户端"))) + " · 收到 " + dps.raw + " 个（自己 " + dps.mine + " 个）";
+      if (stEl) stEl.textContent = "监听：" + (dpsSource === "parsed" ? "游戏已解析数据" : (dpsSource === "raw" ? "原始收包兜底" : (dpsSource === "ready" ? "旁路已安装，等待伤害" : "等待游戏"))) + " · 收到 " + dps.raw + " 个（自己 " + dps.mine + " 个）";
       dpsRenderSkills();
     } catch (e) {}
   }
@@ -16196,7 +16902,7 @@
     'MOON_COMFORT       月亮抚慰          STAR_COMFORT        星星抚慰',
     '',
     '=================================',
-    '三、技能条件段额外可写的中文（实体字段直判）',
+    '三、技能条件段额外可写的中文（游戏内状态直判）',
     '=================================',
     '球N（气弹数≥N）、爆气、狂暴、灵魂、骑乘、猎鹰、',
     '隐匿、手推车加速、钢体、涂毒、武器格挡、回旋刀刃、侦测、',
@@ -16213,8 +16919,8 @@
     '=================================',
     '五、规则说明',
     '=================================',
-    '1. 表一/表二没列到的状态名，助手会现场查客户端 StatusConst',
-    '   （自动补试 SC_ 前缀）；客户端认识就能用。',
+    '1. 表一/表二没列到的状态名，助手会现场查游戏状态表',
+    '   （自动补试 SC_ 前缀）；游戏认识就能用。',
     '2. 实在查不到的名字，日志会提示「状态名未识别」，此时直接写',
     '   数字 ID 最稳（游戏/助手状态查看器里可见对应数字）。',
     '3. 面板「当前状态」查看器：无 [debuff] 前缀 = 正面状态，直接写',
@@ -16488,7 +17194,7 @@
     window.addEventListener("message", function (ev) {
       if (ev.data === "ready") {
         state.ready = true;
-        setStatus("客户端已就绪", "ok");
+        setStatus("游戏画面已就绪", "ok");
         try { perfApply(true); } catch (e) {} // V2.23.0：客户端就绪后应用画面优化（此刻渲染器可用）
         try { fpsLockApply(); } catch (e) {} // V2.15.20：客户端就绪后应用多开帧率限制（此刻渲染器可用）
         tlog("client-ready");
@@ -16582,7 +17288,7 @@
       if (healCancelled) return; // V2.15.13 用户已关闭 → 不再清缓存刷新
       var done = false;
       try { done = sessionStorage.getItem(HEAL_KEY) === '1'; } catch (e) {}
-      if (!done) show('检测到加载卡住:正在清除旧缓存并刷新,请稍候(需重新下载约3MB客户端)', true);
+      if (!done) show('检测到加载卡住:正在清除旧缓存并刷新,请稍候(需重新下载约3MB游戏数据)', true);
       clearSWCache().then(function () {
         healReloadTimer = setTimeout(function () {
           if (healCancelled) return; // V2.15.13 已关闭 → 不刷新
@@ -16627,8 +17333,8 @@
           var done = false;
           try { done = sessionStorage.getItem(HEAL_KEY) === '1'; } catch (e) {}
           log('boot-stuck 150s');
-          show(done ? '已清理缓存仍卡在加载面:可能网络过慢(需下载约3MB客户端)或客户端异常。点击重试;仍失败请把浏览器控制台 [RO助手] 日志发来。'
-                    : '加载异常:客户端 2.5 分钟未出现服务器列表。点击重试(清缓存刷新)。', true);
+          show(done ? '已清理缓存仍卡在加载面:可能网络过慢(需下载约3MB游戏数据)或游戏异常。点击重试;仍失败请把浏览器控制台 [RO助手] 日志发来。'
+                    : '加载异常:游戏 2.5 分钟未出现服务器列表。点击重试(清缓存刷新)。', true);
         }
       } catch (e) {}
     }, 5000);
@@ -16986,11 +17692,11 @@
     }
     var beginSelfBoot = function () {
       detectDataServer(function () {
-        setStatus("正在启动客户端…", "warn");
+        setStatus("正在启动游戏…", "warn");
         setTimeout(boot, 300);
         setTimeout(function () {
           if (!state.ready && !state.bootedByPlugin) {
-            setStatus("未检测到客户端，尝试启动…", "warn");
+            setStatus("未检测到游戏，尝试启动…", "warn");
             tlog("retry-boot");
             boot();
           }
@@ -17463,7 +18169,7 @@
   }
   function scrTalkNpc(name) {
     try {
-      if (!clientReady()) { scrLogLine("talk: 客户端未就绪"); return; }
+      if (!clientReady()) { scrLogLine("talk: 游戏画面还没准备好"); return; }
       var EM = requireDB("Renderer/EntityManager");
       var ent = CLIENT.SS.Entity, target = null, best = 1e9;
       EM.forEach(function (e) {
@@ -17965,7 +18671,7 @@
     $id("dsh-arrow-rules-cur").onclick=function(){var mid=arrowCurrentMid();if(!mid){arrowSay("取不到当前目标（先锁定或攻击一只怪）");return;}if(find)find.value="";arrowFillMobs(mob,"");if(!mob.querySelector('option[value="'+mid+'"]')){var o=document.createElement("option");o.value=String(mid);o.textContent=arrowMobName(mid)+" #"+mid;mob.appendChild(o);}mob.value=String(mid);arrowSay("已选中 "+arrowMobName(mid)+" #"+mid);};
     $id("dsh-arrow-rules-mobsave").onclick=function(){var mid=arrowPos(mob.value),itid=arrowPos(mobItem.value);if(!mid||!itid){arrowSay("请选择怪物与箭矢");return;}arrowRules.byMid[mid]=itid;arrowSave();arrowRenderCfg();arrowSay("已保存 "+arrowMobName(mid)+" → "+arrowItemName(itid));};
     arrowSay(arrowStatus);return h;}
-  function arrowTargetTick(now){arrowReady=false;arrowBlocked=!!arrowTarget;if(!arrowTarget||!arrowRules.enabled){arrowBlocked=!!arrowTarget&&arrowRules.enabled;return arrowBlocked;}var eff=arrowEffectiveMid(arrowTarget.mid,arrowTarget.gid,now),midUse=eff.mid||arrowTarget.mid;if(!arrowStableGate("t"+midUse+"@"+arrowTarget.gid,now)){arrowBlocked=true;return true;}var list=arrowCandidates(midUse,arrowRules),ammo=readEquippedAmmo(),bag=readBagArrows(),pick=null,i=0,j=0;for(i=0;i<list.length;i++){if(ammo&&Number(ammo.itid)===list[i].itid&&Number(ammo.count)>0){pick=list[i];break;}for(j=0;j<bag.length;j++){if(Number(bag[j].itid)===list[i].itid){pick={kind:list[i].kind,itid:list[i].itid,index:bag[j].index};break;}}if(pick)break;}if(!list.length){arrowPending=null;arrowBlocked=false;arrowReady=true;arrowSay("未配置箭矢，保持当前箭");return false;}if(ammo&&pick&&Number(ammo.itid)===pick.itid&&Number(ammo.count)>0){arrowPending=null;arrowBlocked=false;arrowReady=true;arrowSay("已装备"+arrowKindName(pick.kind)+" #"+pick.itid);return false;}if(!pick){var q=arrowUseQuiver(list[0].itid);arrowSay(q&&q.q?("背包缺少"+arrowItemName(list[0].itid)+"，已尝试"+q.q.name):("阻塞：背包缺少 #"+list[0].itid));return true;}var p=arrowPending;if(p&&p.itid===pick.itid){if(now<p.confirmUntil)return true;if(!p.retryAt){p.retryAt=now+3000;arrowSay("确认超时，3秒后重试");return true;}if(now<p.retryAt)return true;}if(equipArrow(pick.index)){arrowPending={itid:pick.itid,confirmUntil:now+5000,retryAt:0};arrowSay("换箭中"+arrowKindName(pick.kind)+" #"+pick.itid);return true;}arrowSay("阻塞：装备请求失败");return true;}
+  function arrowTargetTick(now){arrowReady=false;arrowBlocked=!!arrowTarget;if(!arrowTarget||!arrowRules.enabled){arrowBlocked=!!arrowTarget&&arrowRules.enabled;return arrowBlocked;}var eff=arrowEffectiveMid(arrowTarget.mid,arrowTarget.gid,now),midUse=eff.mid||arrowTarget.mid;if(!arrowStableGate("t"+midUse+"@"+arrowTarget.gid,now)){arrowBlocked=true;return true;}var list=arrowCandidates(midUse,arrowRules),ammo=readEquippedAmmo(),bag=readBagArrows(),pick=null,i=0,j=0;for(i=0;i<list.length;i++){if(ammo&&Number(ammo.itid)===list[i].itid&&Number(ammo.count)>0){pick=list[i];break;}for(j=0;j<bag.length;j++){if(Number(bag[j].itid)===list[i].itid){pick={kind:list[i].kind,itid:list[i].itid,index:bag[j].index};break;}}if(pick)break;}if(!list.length){arrowPending=null;arrowBlocked=false;arrowReady=true;arrowSay("未配置箭矢，保持当前箭");return false;}if(ammo&&pick&&Number(ammo.itid)===pick.itid&&Number(ammo.count)>0){arrowPending=null;arrowBlocked=false;arrowReady=true;arrowSay("已装备"+arrowKindName(pick.kind)+" #"+pick.itid);return false;}if(!pick){var q=arrowUseQuiver(list[0].itid);arrowSay(q&&q.q?("背包缺少"+arrowItemName(list[0].itid)+"，已尝试"+q.q.name):("阻塞：背包缺少 #"+list[0].itid));return true;}var p=arrowPending;if(p&&p.itid===pick.itid){if(now<p.confirmUntil)return true;if(!p.retryAt){p.retryAt=now+3000;arrowSay("确认超时，3秒后重试");return true;}if(now<p.retryAt)return true;}if(equipArrow(pick.index)){arrowPending={itid:pick.itid,confirmUntil:now+5000,retryAt:0};arrowSay("换箭中"+arrowKindName(pick.kind)+" #"+pick.itid);return true;}arrowSay("阻塞：装备失败");return true;}
   setInterval(function(){var t=Date.now();try{arrowTargetTick(t);}catch(e){}try{arrowSelfTick(t);}catch(e){}},250);
 
   var API_PROTOCOL=1,apiGeneration=0,apiLease=null,apiMenuUsed="",apiNoticeObserver=null,apiBattleTarget=null,apiBattleSuppressed={},apiBattleAttackAt=0;
@@ -17986,7 +18692,7 @@
     zMon.action="外部代打启动";
     // V2.38.13 FIX-17：取消排队中的开内挂意图时必须同步刷新状态栏（与日志同一事实、措辞不含实现词、无 emoji）
     if(typeof npBattleExplicit!=="undefined"&&npBattleExplicit&&npBattleExplicit.want){
-      try{setStatus("内挂自动战斗请求已取消（外部代打进行中，本次开启不再生效）","warn");}catch(eS2){}
+      try{setStatus("内挂自动战斗：本次开启已取消（外部代打进行中，不再生效）","warn");}catch(eS2){}
     }
     // V2.38.13 FIX-13：代打开始即显式撤销排队中的开内挂意图，避免排队定时器触发时被抑制后静默丢失（用户看到「已排队」却永不兑现）
     if(typeof npBattleExplicit!=="undefined"&&npBattleExplicit&&npBattleExplicit.want){
@@ -18229,11 +18935,29 @@
   }
 
   // ================= V2.38.13 外部租约战斗准备 / 拾取开关 =================
-  // 用户口径：启动时清零当前角色档的锁定名单并改打全部怪；战斗阶段只自动捡卡片与装备；释放租约时还原「打全部怪」原值（名单不还原）。
+  // 用户口径：启动时清零当前角色档的锁定名单并改打全部怪；战斗阶段只自动捡卡片与装备；释放租约时把「打全部怪」原值与永久名单一并归还（V2.38.16 F1/F2）。
   var apiAllMobsSaved = null;
-  function apiAllMobsRestore() {
+  // V2.38.16 F2：代打启动前「永久锁定名单」整份快照。清名单动的是角色档里的永久名单（profileLockSave → profiles[k].lockList），
+  //   属于用户数据，释放时必须原样归还；不还原就是用户数据丢失（合并口径：代打期间新加的条目保留，两边都不动用户数据）。
+  var apiLockListSaved = null;
+  function apiLockListRestore() {
     try {
-      if (apiAllMobsSaved === null) return false;
+      if (apiLockListSaved === null) return false;
+      var snapLocks = apiLockListSaved, mergedLocks = {}, lk = null;
+      apiLockListSaved = null;
+      try { for (lk in lockList) { if (Object.prototype.hasOwnProperty.call(lockList, lk)) mergedLocks[lk] = lockList[lk]; } } catch (eK) {}
+      try { for (lk in snapLocks) { if (Object.prototype.hasOwnProperty.call(snapLocks, lk)) mergedLocks[lk] = snapLocks[lk]; } } catch (eL) {}
+      lockList = mergedLocks;
+      try { profileLockSave(); } catch (eS) {}
+      try { renderLockList(); } catch (eR) {}
+      try { if (profileTrusted(activeProfileKey())) npSyncTargets(); } catch (eT) {}
+      return true;
+    } catch (e) { return false; }
+  }
+  function apiAllMobsRestore() {
+    var locksDone = apiLockListRestore(); // V2.38.16 F2：先归还永久名单（写盘同样走 profileLockSave 那道门）
+    try {
+      if (apiAllMobsSaved === null) return locksDone;
       var v = !!apiAllMobsSaved;
       try { var el = $id("dsh-z-allmobs"); if (el) el.checked = v; } catch (e0) {}
       // V2.38.15 审计修复：按记下的原值回写设置并走同一套保存路径（saved + 角色档 ui 表），保证释放后落盘状态与启动代打前完全一致
@@ -18256,11 +18980,15 @@
       // V2.38.15：先记下「打全部怪」原值 —— 清空名单会触发自动勾选，自动值绝不能被当成原值
       var allMobsEl0 = null;
       try { allMobsEl0 = $id("dsh-z-allmobs"); } catch (eA) { allMobsEl0 = null; }
-      if (o.allMobs === true && allMobsEl0 && apiAllMobsSaved === null) apiAllMobsSaved = !!allMobsEl0.checked;
+      // V2.38.16 F1：原值只先读进本拍局部变量（清空名单会自动勾上，自动值绝不能被当成原值）；
+      //   只有可信分支真的走完（代打确实启动）才提交成暂存值，未识别/被拒时本拍直接返回，绝不留暂存值
+      var allMobsWas0 = (o.allMobs === true && allMobsEl0) ? !!allMobsEl0.checked : null;
       if (o.clearLocks === true) {
         try {
           // 只清当前角色档：未识别时名单是别档副本，一律拒绝，绝不误删别人档里的名单
           if (!profileTrusted(activeProfileKey())) return { ok: false, error: "profile-untrusted" };
+          // V2.38.16 F2：清空前把永久名单整份快照（只在第一次清时记；释放时归还）
+          if (apiLockListSaved === null) { var snap0 = {}, sk0 = null; for (sk0 in lockList) { if (Object.prototype.hasOwnProperty.call(lockList, sk0)) snap0[sk0] = lockList[sk0]; } apiLockListSaved = snap0; }
           cleared = Object.keys(lockList).length;
           lockList = {};
           profileLockSave();
@@ -18268,9 +18996,11 @@
           try { if (profileTrusted(activeProfileKey())) npSyncTargets(); } catch (eS) {}
         } catch (eL) { return { ok: false, error: "clear-failed" }; }
       }
+      // V2.38.16 F1：到这里说明代打确实启动（可信分支已过）→ 才把本拍读到的原值提交成暂存值
+      if (allMobsWas0 !== null && apiAllMobsSaved === null) apiAllMobsSaved = allMobsWas0;
       if (o.allMobs === true) {
         try {
-          if (allMobsEl0) { if (apiAllMobsSaved === null) apiAllMobsSaved = !!allMobsEl0.checked; allMobsEl0.checked = true; }
+          if (allMobsEl0) allMobsEl0.checked = true;
         } catch (eM) {}
       }
       return { ok: true, cleared: cleared, allMobsRestore: apiAllMobsSaved };
@@ -18771,7 +19501,7 @@
     if (!/^[a-z0-9_]{1,15}$/i.test(map)) return;
     function status(text) { if (mvpActionStatus) mvpActionStatus.textContent = text; }
     function current() { return String(getMapName() || "").replace(/\.gat$/i, "").toLowerCase(); }
-    if (!clientReady()) { status("传送失败：客户端未就绪，请先进入游戏"); return; }
+    if (!clientReady()) { status("传送失败：游戏画面还没准备好，请先进入游戏"); return; }
     if (current() === map.toLowerCase()) { status("已在目标地图 " + map); return; }
     try {
       status(tpTeleport(map) ? "传送包已发出 → " + map : "传送包发送失败");
@@ -20601,7 +21331,7 @@
       var SW = gearSwitchComp();
       var canIso = !!(EQ && typeof EQ.isInEquipList === "function");
       if (!EQ) bad.push("Equipment 组件不可用（uiComp / requireDB 都拿不到）");
-      if (!canIso) bad.push("该客户端没有 EQ.isInEquipList");
+      if (!canIso) bad.push("游戏没有可用的装备清单");
       if (!root) bad.push("装备窗口 DOM 不可用（组件未渲染或没有 getRoot）");
       if (!INV) bad.push("Inventory 组件不可用");
       if (!SW) bad.push("SwitchEquip 组件不可用");
@@ -20889,7 +21619,7 @@
       try {
         if (t.op === "off") { var p1 = new (czp("REQ_TAKEOFF_EQUIP"))(); p1.index = t.idx; CLIENT.NM.sendPacket(p1); sent.off++; }
         else { var p2 = new (czp("REQ_WEAR_EQUIP"))(); p2.index = t.idx; p2.wearLocation = t.mask; CLIENT.NM.sendPacket(p2); sent.on++; }
-      } catch (e) { sent.fail++; gearLog("装备发包失败：" + (e && e.message)); }
+      } catch (e) { sent.fail++; gearLog("装备穿戴失败：" + (e && e.message)); }
       setTimeout(nextGear, 380);
     }
     nextGear();
@@ -20930,7 +21660,7 @@
         try {
           if (t.op === "del") { var p1 = new (czp("REQUEST_CARDCONNECTION_CANCEL"))(); p1.tab = 0; p1.level = 1; p1.cardid = t.id; CLIENT.NM.sendPacket(p1); res.del++; }
           else { var p2 = new (czp("REQUEST_CARDCONNECTION_ADDMYDECK"))(); p2.tab = t.tab; p2.level = t.level; p2.cardid = t.id; CLIENT.NM.sendPacket(p2); res.add++; }
-        } catch (e) { res.fail++; gearLog("卡册发包失败：" + (e && e.message)); }
+        } catch (e) { res.fail++; gearLog("卡册操作失败：" + (e && e.message)); }
         setTimeout(nextCard, 380);
       }
       nextCard();
@@ -20947,8 +21677,8 @@
         sameN++;
       }
       function finish(deckMissing, deckExcess, deckN, deckOk) {
-        if (sent.fail) bad.push("装备发包失败" + sent.fail + " 次");
-        if (sent.cardFail) bad.push("卡册发包失败" + sent.cardFail + " 次");
+        if (sent.fail) bad.push("装备穿戴失败" + sent.fail + " 次");
+        if (sent.cardFail) bad.push("卡册操作失败" + sent.cardFail + " 次");
         var okAll = !bad.length && !deckMissing && !deckExcess && !missing.length && deckOk;
         var msg = "换装「" + ps.name + "」" + (okAll ? "完成" : "完成（有未生效项）") + "：装备脱 " + sent.off + " / 穿 " + sent.on + "，一致 " + sameN + " 槽" +
           (deckOk ? ("；卡册 " + deckN + " 张目标") : "；卡册未校验") +

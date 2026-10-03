@@ -764,7 +764,7 @@ test('exp 功能菜单五栏顺序与条目齐全', () => {
   assert.deepEqual(Array.from(ctx.secs), ['常用', '战斗功能', '战斗辅助', '提示', '其他'], 'sec 顺序即菜单显示顺序');
   assert.deepEqual(Array.from(ctx.bySec['常用']), ['gear', 'menu', 'tp', 'np', 'zhu', 'scr']);
   assert.deepEqual(Array.from(ctx.bySec['战斗功能']), ['arrowrules', 'mlock', 'zhu2', 'zskill']);
-  assert.deepEqual(Array.from(ctx.bySec['战斗辅助']), ['aid', 'party', 'dps', 'boss', 'askcombo', 'item']);
+  assert.deepEqual(Array.from(ctx.bySec['战斗辅助']), ['aid', 'party', 'dps', 'deathlog', 'boss', 'askcombo', 'item']);
   assert.deepEqual(Array.from(ctx.bySec['提示']), ['zhud', 'ztip', 'tgt', 'znear']);
   assert.deepEqual(Array.from(ctx.bySec['其他']), ['perf', 'txcap', 'mvp', 'panel']);
 });
@@ -1530,7 +1530,7 @@ test('bagClean equipment protection fields fail closed and complete zero gear re
   const h=bagCleanVm(),names=Object.assign(h.ctx.typeNames(),{4:'武器',5:'防具',8:'影子装备',12:'服饰'}),cfg={discardRules:{'1201':0},categoryTypes:[],protectedIds:[]};
   for(const type of [4,5,8,12])assert.equal(h.ctx.describe(safeGear({type}),cfg,names).ok,true);
   const incomplete=[withoutGear('IsIdentified'),withoutGear('RefiningLevel','refiningLevel'),safeGear({slot:null}),safeGear({slot:{card2:0,card3:0,card4:0}}),safeGear({slot:{card1:0,card3:0,card4:0}}),safeGear({slot:{card1:0,card2:0,card4:0}}),safeGear({slot:{card1:0,card2:0,card3:0}}),withoutGear('nRandomOptionCnt'),withoutGear('IsDamaged'),withoutGear('IsEquipped','WearState','wearState','equipped')];
-  for(const item of incomplete){const d=h.ctx.describe(item,cfg,names);assert.equal(d.ok,false);assert.equal(d.reason,'装备保护字段不完整')}
+  for(const item of incomplete){const d=h.ctx.describe(item,cfg,names);assert.equal(d.ok,false);assert.equal(d.reason,'装备保护信息不完整')}
   const unsafe=[safeGear({RefiningLevel:1}),safeGear({refiningLevel:1}),...['card1','card2','card3','card4'].map(key=>safeGear({slot:Object.assign({card1:0,card2:0,card3:0,card4:0},{[key]:4001})})),safeGear({nRandomOptionCnt:1}),safeGear({IsDamaged:true}),...['IsEquipped','WearState','wearState','equipped'].map(key=>safeGear({[key]:1}))];
   for(const item of unsafe)assert.equal(h.ctx.describe(item,cfg,names).ok,false);
 });
@@ -5029,7 +5029,7 @@ test('V2.38.4 手机版旁观模式：boot 零注入 / 不碰 ROConfig / 零探�
     assert.equal(p.msgHandlers.length, 1, name + ' boot 返回后助手仍必须挂上 ready 监听');
     p.fireReady();
     assert.equal(p.state.ready, true, name + ' 手机版 boot 返回后助手仍必须走到就绪检测');
-    assert.ok(p.statuses.indexOf('客户端已就绪') >= 0, name + ' 就绪时必须照旧写状态栏');
+    assert.ok(p.statuses.indexOf('游戏画面已就绪') >= 0, name + ' 就绪时必须照旧写状态栏');
   }
 });
 
@@ -7042,7 +7042,7 @@ function zwRouteScanOnly(src, tag) {
   assert.equal(a1.moves.length, 0, tag + ' 外部路线进行中：直走 / 贴近 / 换点一律不得发位移（czp/sendPacket 位移计数必须为 0）');
   assert.equal(a1.flies.length, 0, tag + ' 外部路线进行中：无目标瞬移换点也不得发');
   assert.ok(a1.rec.scans >= 1, tag + ' 外部路线进行中：扫描必须照常执行');
-  assert.match(a1.st(), /客户端路线进行中/, tag + ' 状态栏必须写明「客户端路线进行中…仅扫描」');
+  assert.match(a1.st(), /游戏自动寻路进行中/, tag + ' 状态栏必须写明「游戏自动寻路进行中…仅扫描」');
   assert.match(String(a1.ctx.zMon.action), /仅扫描/, tag + ' zMon.action 必须写明只扫不发');
   assert.equal(a1.state.routeActive, true, tag + ' 必须记住正在尊重外部路线');
   const a2 = zwVm(src, { t: T, map: 'B', startMap: 'A', mobs: [], walk: { total: 20, index: 6 }, state: { lastSelfMoveAt: T - 3000, mapChgKey: 'B', mapChgAt: T - 2000 } });
@@ -7061,7 +7061,7 @@ function zwRouteScanOnly(src, tag) {
   assert.match(a4.txt(), /被中断/, tag + ' walk 消失必须记为「被中断/消失」');
   assert.equal(a4.moves.length, 1, tag + ' 路线中断后必须回到既有寻怪逻辑');
 }
-test('V2.38.4 走路批次 a：外部客户端路线进行中 → 只扫不发（直走/换点/贴近/反向走计数 0）+ 结束后记自然走完/被中断（VM）', () => {
+test('V2.38.4 走路批次 a：外部游戏自动寻路进行中 → 只扫不发（直走/换点/贴近/反向走计数 0）+ 结束后记自然走完/被中断（VM）', () => {
   for (const [name, src] of splitSources) zwRouteScanOnly(src, name);
 });
 // ---------------- b：路线进行中扫到名单内怪 → 主动接战（先 resetRoute + walk-route-engage） ----------------
@@ -7085,7 +7085,7 @@ function zwRouteEngage(src, tag) {
   h3.tick();
   assert.equal(h3.moves.length, 0, tag + ' 名单外的怪不得触发接战（不得发位移）');
   assert.ok(!h3.txt().includes('walk-route-engage'), tag + ' 名单外的怪不得记 walk-route-engage');
-  assert.match(h3.st(), /客户端路线进行中/, tag + ' 名单外的怪仍然只扫不发');
+  assert.match(h3.st(), /游戏自动寻路进行中/, tag + ' 名单外的怪仍然只扫不发');
 }
 test('V2.38.4 走路批次 b：外部路线中扫到名单内怪 → resetRoute + walk-route-engage + 复用追怪链路；名单外绝不接战（VM）', () => {
   for (const [name, src] of splitSources) zwRouteEngage(src, name);
@@ -7096,11 +7096,11 @@ function zwSelfMoveNotExternal(src, tag) {
   const h = zwVm(src, { t: T, map: 'A', startMap: 'A', mobs: [], walk: { total: 20, index: 6 }, state: { lastSelfMoveAt: T - 500 } });
   h.tick();
   assert.equal(h.moves.length, 1, tag + ' 自己 500ms 前刚发过位移 → 不得算外部路线，必须正常走');
-  assert.ok(!/客户端路线进行中/.test(String(h.st())), tag + ' 自己刚移动过不得显示客户端路线进行中');
+  assert.ok(!/游戏自动寻路进行中/.test(String(h.st())), tag + ' 自己刚移动过不得显示游戏自动寻路进行中');
   assert.equal(h.state.lastSelfMoveAt, T, tag + ' 助手自己发位移必须打时间戳');
   h.tick(2000);
   assert.equal(h.moves.length, 1, tag + ' 超过 1500ms 且客户端仍有路线 → 转为外部路线，只扫不发');
-  assert.match(h.st(), /客户端路线进行中/, tag + ' 超时后必须识别为外部路线');
+  assert.match(h.st(), /游戏自动寻路进行中/, tag + ' 超时后必须识别为外部路线');
 }
 test('V2.38.4 走路批次 c：助手自己刚发过位移（<1500ms）不得被判成外部路线；超时后才只扫不发（VM）', () => {
   for (const [name, src] of splitSources) zwSelfMoveNotExternal(src, name);
@@ -9277,7 +9277,7 @@ test("V2.38.13 FIX-12 代打期间快捷键与 setBattle 必须给出同一句�
     assert.deepEqual(a.toggles, [], fileLabel + "：" + "两条路径都不得发出任何开启包");
     assert.equal(a.ctx.npHuntOn, false, fileLabel + "：" + "两条路径都不得改动本地内挂态");
     // 变异 M-FIX12@stable / M-FIX12@exp：把快捷键那条改回通用文案 → 两条路径不再同一句
-    rmCheck("M-FIX12", fileLabel, M23813(source, '      setStatus(result === "sent" ? "内挂自动战斗：快捷键已请求切换一次" : (result === "suppressed" ? "外部代打进行中：不开内挂自动战斗（已抑制）" : "内挂自动战斗状态未确认，未重复切换"), npResultKind(result, result === "sent" ? "ok" : "warn"));', '      setStatus(result === "sent" ? "内挂自动战斗：快捷键已请求切换一次" : "内挂自动战斗状态未确认，未重复切换", npResultKind(result, result === "sent" ? "ok" : "warn"));'), (fl, mut) => {
+    rmCheck("M-FIX12", fileLabel, M23813(source, '      setStatus(result === "sent" ? "内挂自动战斗：已用快捷键切换一次" : (result === "suppressed" ? "外部代打进行中：不开内挂自动战斗（已抑制）" : "内挂自动战斗状态未确认，未重复切换"), npResultKind(result, result === "sent" ? "ok" : "warn"));', '      setStatus(result === "sent" ? "内挂自动战斗：已用快捷键切换一次" : "内挂自动战斗状态未确认，未重复切换", npResultKind(result, result === "sent" ? "ok" : "warn"));'), (fl, mut) => {
       const m = boot(mut);
       m.ctx.setBattle(true); m.ctx.npToggleFight();
       assert.equal(m.statuses[1], m.statuses[0], fileLabel + "：" + fl + "：[M-FIX12] 变异体把「被抑制」说成「状态未确认」，两条路径不再同一句");
@@ -9552,7 +9552,7 @@ test("V2.38.13 FIX-17 代打取消排队中的开内挂意图必须同步刷新�
     assert.ok(!/generation|owner|release|租约|代次|队列项/i.test(text), fileLabel + "：" + "FIX-17：文案不得含实现词：" + text);
     assert.ok(h.logs.some((msg) => msg.indexOf("已取消排队的开内挂") >= 0), fileLabel + "：" + "日志同一事实必须仍在");
     // 变异 M-FIX17@stable / M-FIX17@exp：删掉状态栏刷新 → 「刷了一次」的断言必须红
-    rmCheck("M-FIX17", fileLabel, M23813(source, 'try{setStatus("内挂自动战斗请求已取消（外部代打进行中，本次开启不再生效）","warn");}catch(eS2){}', ""), (fl, mut) => {
+    rmCheck("M-FIX17", fileLabel, M23813(source, 'try{setStatus("内挂自动战斗：本次开启已取消（外部代打进行中，不再生效）","warn");}catch(eS2){}', ""), (fl, mut) => {
       const m = boot(mut);
       m.ctx.setBattle(true);
       m.statuses.length = 0;
@@ -9919,9 +9919,12 @@ function v15AssistLink(src, name) {
   assert.equal(h.ctx.restore(), true, name + '：释放必须执行还原');
   assert.equal(h.box.checked, false, name + '：释放必须还原清空前的原值 false');
   assert.equal(h.ctx.apiAllMobsSaved, null, name + '：还原后必须清空暂存');
-  const iCap = s.indexOf('apiAllMobsSaved = !!allMobsEl0.checked;');
+  const iRead = s.indexOf('var allMobsWas0 = (o.allMobs === true && allMobsEl0) ? !!allMobsEl0.checked : null;');
   const iClear = s.indexOf('if (o.clearLocks === true) {');
-  assert.ok(iCap >= 0 && iClear > iCap, name + '：源文件里「记原值」必须排在清名单之前');
+  const iCommit = s.indexOf('if (allMobsWas0 !== null && apiAllMobsSaved === null) apiAllMobsSaved = allMobsWas0;');
+  assert.ok(iRead >= 0 && iClear > iRead, name + '：源文件里「读原值」必须排在清名单之前（清名单自动勾上的值绝不能被当成原值）');
+  assert.ok(iCommit > iClear, name + '：V2.38.16 F1：只有代打确实启动（可信分支已过）才提交原值，提交点必须在清名单之后');
+  assert.ok(!s.includes('apiAllMobsSaved = !!allMobsEl0.checked'), name + '：V2.38.16 F1：不得在清名单之前往暂存值里写自动勾选的结果');
 }
 test('V2.38.15 ① 代打联动：清空名单→自动勾上，释放还原原值（两文件 VM）', () => {
   for (const [name, src] of splitSources) v15AssistLink(src, name);
@@ -10202,9 +10205,9 @@ const V23815_MUTS = [
     from: '      var want = Object.keys(lockList).length === 0;',
     to: '      var want = true; // 变异：判据写反',
     verify: v15AutoLink, expect: /名单非空必须自动取消勾选/ },
-  { tag: 'M-23815-A2', desc: '①代打把自动勾上的值当成原值（不前置记原值）',
-    from: '      if (o.allMobs === true && allMobsEl0 && apiAllMobsSaved === null) apiAllMobsSaved = !!allMobsEl0.checked;',
-    to: '      if (false) apiAllMobsSaved = !!allMobsEl0.checked; // 变异：不前置记原值',
+  { tag: 'M-23815-A2', desc: '①代打把自动勾上的值当成原值（提交时才读勾选值）',
+    from: '      if (allMobsWas0 !== null && apiAllMobsSaved === null) apiAllMobsSaved = allMobsWas0;',
+    to: '      if (o.allMobs === true && allMobsEl0 && apiAllMobsSaved === null) apiAllMobsSaved = !!allMobsEl0.checked; // 变异：提交时才读（读到清名单自动勾上的值）',
     verify: v15AssistLink, expect: /原值必须在清空名单之前记下/ },
   { tag: 'M-23815-B1', desc: '③瞬移模式遇锁定首领又转回优先攻击',
     from: '      if (act === "瞬移") { out.fly = true; out.reason = "BOSS(" + (rec.name || rec.mid) + ")"; }',
@@ -10518,7 +10521,7 @@ function a815Lock(src, lockGid, lockEnt, j) {
     zLock: { gid: lockGid, name: '?', dist: null, done: false, reactive: false },
     zLockCounts: {}, zCastIdx: 0, zAtkLast: { gid: lockGid, outOfRange: false },
     zMon: { action: '' }, zAtkWhy: '', tlog: () => {},
-    npMode: false, npThD: 10, zFollow: true, range: 12, atkRange: 2,
+    npMode: false, npThD: 10, zFollow: true, zNext: true, range: 12, atkRange: 2,
     ent: { position: [0, 0] }, tempTargetHeld: false,
     zEntOf: (gid) => (lockEnt && !lockEnt.isDeath && Number(gid) === Number(lockEnt.GID) ? lockEnt : null),
     zRangeDist: (a, b) => Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1])),
@@ -10603,7 +10606,7 @@ function a815AssistRestore(src, name) {
   assert.equal(h.box.checked, false, name + '：释放后界面勾选必须回到启动前');
   assert.equal(h.ctx.saved.allMobs, false, name + '：释放后必须把原值回写到设置（不得残留自动写入的 true）');
   assert.equal(h.st.saves, 1, name + '：回写必须走同一套保存路径（落盘一次）');
-  assert.equal(h.st.caps, 1, name + '：角色档 ui 表必须一起收割（与自动勾选同一条链路）');
+  assert.equal(h.st.caps, 2, name + '：角色档 ui 表必须一起收割（归还名单触发一次 + 回写原值触发一次）');
   h.st.saves = 0;
   assert.equal(h.ctx.restore(), false, name + '：已释放状态不得重复还原');
   assert.equal(h.st.saves, 0, name + '：重复释放必须零落盘');
@@ -10613,6 +10616,15 @@ function a815AssistRestore(src, name) {
   assert.equal(h2.ctx.restore(), true, name + '：第二条链路释放必须执行还原');
   assert.equal(h2.box.checked, true, name + '：原本是开 → 还原成开');
   assert.equal(h2.ctx.saved.allMobs, true, name + '：原本是开 → 设置原值保持 true');
+  // V2.38.16 F2/F1 交叉：原值 true 时，「归还名单」触发的自动联动会先把值改成 false，最终必须由「回写原值」纠正回 true
+  const h3 = v15AssistHarness(lf15(src));
+  h3.ctx.lockList = { '1002': { name: 'A' } };
+  h3.box.checked = true; h3.ctx.saved.allMobs = true;
+  assert.equal(h3.ctx.prep('builtin-dojo', { clearLocks: true, allMobs: true }).ok, true, name + '：第三条链路必须能准备');
+  assert.equal(h3.ctx.apiAllMobsSaved, true, name + '：原值 true 必须在清空名单之前记下');
+  assert.equal(h3.ctx.restore(), true, name + '：第三条链路释放必须执行还原');
+  assert.equal(h3.box.checked, true, name + '：原本是开 → 释放后仍必须是开');
+  assert.equal(h3.ctx.saved.allMobs, true, name + '：释放后必须把原值回写到设置（归还名单引发的自动联动会先把值改成 false，不得顶替回写）');
   assert.ok(lf15(src).includes('if (saved && saved.allMobs !== v) { saved.allMobs = v; saveSaved(saved); }'), name + '：释放必须把原值回写 saved 并落盘');
 }
 test('V2.38.15 审计修复 ④ 代打释放把「打全部怪」原值回写落盘，与启动前完全一致（两文件 VM）', () => {
@@ -10687,4 +10699,777 @@ test('V2.38.15 审计修复 变异矩阵：4 个变异在 stable/exp 上必须�
   assert.ok(A815_MATRIX.every((r) => r.actual === '红'), '不得存在变异存活行');
   console.log('[V2.38.15 审计修复 变异矩阵] ' + A815_MATRIX.length + ' 条全部为红：' + A815_MATRIX.map((r) => r.tag).join(', '));
   if (process.env.A815_JSON) fs.writeFileSync(process.env.A815_JSON, JSON.stringify(A815_MATRIX, null, 2), 'utf8');
+});
+
+// ================= V2.38.16：[F1] 代打留痕 / [F2] 永久名单归还 / [F3] 锁定目标编号 / [F4] 首领诊断 / [F5] 用户可见文案 =================
+const V23816_MATRIX = [];
+const v16Catch = (fn) => { try { fn(); return { ok: true }; } catch (e) { return { ok: false, e: e }; } };
+const v16Msg = (e) => String((e && e.message) || e).split(String.fromCharCode(10))[0].slice(0, 220);
+const v16Lf = (x) => String(x).split(String.fromCharCode(13)).join('');
+
+// ---------- F1：只有代打确实启动（可信分支走完）才提交「打全部怪」原值 ----------
+function v16PrepHarness(src, opts) {
+  const o = opts || {};
+  const h = v15AssistHarness(v16Lf(src));
+  h.ctx.profileTrusted = o.trusted === false ? () => false : () => true;
+  h.ctx.profWriteGuard = o.guard === false ? () => false : () => true;
+  return h;
+}
+function v16F1(src, name) {
+  // ① 角色档未识别：准备被拒 → 不留暂存值、零写盘、界面与设置原样（缺陷现场：留痕会被后续释放误写成 true）
+  const bad = v16PrepHarness(src, { trusted: false });
+  bad.ctx.lockList = { '1002': { name: 'A' } };
+  bad.box.checked = false; bad.ctx.saved.allMobs = false;
+  const r0 = bad.ctx.prep('builtin-dojo', { clearLocks: true, allMobs: true });
+  assert.equal(r0.ok, false, name + '：角色档未识别时代打准备必须被拒');
+  assert.equal(r0.error, 'profile-untrusted', name + '：必须如实回报未识别（不得静默成功）');
+  assert.equal(bad.ctx.apiAllMobsSaved, null, name + '：被拒时绝不留暂存值（否则后续释放会误写「打全部怪」）');
+  assert.equal(Object.keys(bad.ctx.lockList).length, 1, name + '：被拒时永久名单必须原样（不得清）');
+  assert.equal(bad.box.checked, false, name + '：被拒时界面勾选不得被改动');
+  assert.equal(JSON.stringify(bad.ctx.saved), '{"allMobs":false}', name + '：被拒时设置表必须逐字节原样');
+  assert.equal(bad.st.saves, 0, name + '：被拒时零落盘（saved）');
+  assert.equal(bad.st.writes, 0, name + '：被拒时零落盘（档案）');
+  assert.equal(bad.st.caps, 0, name + '：被拒时不得收割界面');
+  assert.equal(bad.ctx.restore(), false, name + '：没有暂存值 → 释放必须什么都不做（返回 false）');
+  assert.equal(bad.box.checked, false, name + '：释放后界面勾选仍是原值 false');
+  assert.equal(bad.ctx.saved.allMobs, false, name + '：释放后设置仍是原值 false（不得被误写成 true）');
+  assert.equal(bad.st.saves, 0, name + '：释放也必须零落盘');
+  // ② 之后角色档变为可识别、并且界面收割真的跑过一次 → 依然不得把「打全部怪」打开
+  bad.ctx.profileTrusted = () => true;
+  bad.ctx.captureAll();
+  assert.equal(bad.ctx.apiAllMobsSaved, null, name + '：可识别之后暂存值仍必须是空（残留会被当成原值）');
+  assert.equal(bad.ctx.restore(), false, name + '：可识别之后释放仍然必须什么都不做');
+  assert.equal(bad.box.checked, false, name + '：可识别之后界面勾选不得自己变成 true');
+  assert.equal(bad.ctx.saved.allMobs, false, name + '：可识别之后设置不得自己变成 true');
+  // ③ 可信 + 清名单成功：正常留痕与还原（与 2.38.15 语义一致）
+  const good = v16PrepHarness(src);
+  good.ctx.lockList = { '1002': { name: 'A' } };
+  good.box.checked = false; good.ctx.saved.allMobs = false;
+  const r1 = good.ctx.prep('builtin-dojo', { clearLocks: true, allMobs: true });
+  assert.equal(r1.ok, true, name + '：可信时准备必须成立');
+  assert.equal(r1.cleared, 1, name + '：必须清掉 1 条名单');
+  assert.equal(good.ctx.apiAllMobsSaved, false, name + '：可信分支走完才提交原值 false');
+  assert.equal(good.box.checked, true, name + '：清名单自动勾上 + 代打要求全部怪 → 必须为勾选');
+  assert.equal(good.ctx.restore(), true, name + '：释放必须执行还原');
+  assert.equal(good.box.checked, false, name + '：释放后必须回到清空前的原值');
+  assert.equal(good.ctx.saved.allMobs, false, name + '：释放后设置必须回到原值');
+  const r2 = good.ctx.prep('builtin-dojo', { clearLocks: true, allMobs: true });
+  assert.equal(r2.allMobsRestore, false, name + '：再准备一次不得把已改动的界面值当成新原值');
+}
+test('V2.38.16 F1 代打准备留痕：角色档未识别时零留痕零写盘，可信分支才提交「打全部怪」原值（两文件 VM）', () => {
+  for (const [name, src] of splitSources) v16F1(src, name);
+});
+
+// ---------- F2：清名单动的是角色档里的永久名单，释放必须归还 ----------
+function v16F2(src, name) {
+  const h = v16PrepHarness(src);
+  const snap = { '1002': { name: 'A' }, '1003': { name: 'B' } };
+  h.ctx.lockList = { '1002': { name: 'A' }, '1003': { name: 'B' } };
+  h.ctx.profiles['ch1'] = { lockList: { '1002': { name: 'A' }, '1003': { name: 'B' } } };
+  h.box.checked = false; h.ctx.saved.allMobs = false;
+  assert.equal(h.ctx.prep('builtin-dojo', { clearLocks: true, allMobs: true }).ok, true, name + '：前置——准备必须成立');
+  assert.equal(Object.keys(h.ctx.lockList).length, 0, name + '：前置——清名单必须真的清掉内存名单');
+  assert.equal(Object.keys(h.ctx.profiles['ch1'].lockList).length, 0, name + '：前置——清名单动的是角色档里的永久名单（这就是会被丢掉的用户数据）');
+  // 代打期间用户自己又加了一条 → 释放时不得丢
+  h.ctx.lockList['1004'] = { name: 'C' };
+  assert.equal(h.ctx.restore(), true, name + '：释放必须执行归还');
+  assert.equal(h.ctx.lockList['1002'] && h.ctx.lockList['1002'].name, 'A', name + '：永久名单必须按启动前快照归还（1002）');
+  assert.equal(h.ctx.lockList['1003'] && h.ctx.lockList['1003'].name, 'B', name + '：永久名单必须按启动前快照归还（1003）');
+  assert.equal(h.ctx.lockList['1004'] && h.ctx.lockList['1004'].name, 'C', name + '：代打期间新加的条目必须保留（不丢用户数据）');
+  assert.equal(JSON.stringify(h.ctx.profiles['ch1'].lockList), JSON.stringify({ '1002': { name: 'A' }, '1003': { name: 'B' }, '1004': { name: 'C' } }), name + '：归还必须落盘到角色档，且内容与内存态逐字节一致');
+  assert.equal(h.ctx.saved.allMobs, false, name + '：归还名单引发的自动联动不得把「打全部怪」留成 true');
+  assert.equal(h.ctx.apiLockListSaved, null, name + '：快照用完必须清空（不得重复归还）');
+  assert.equal(h.ctx.restore(), false, name + '：已释放状态不得重复归还（也不得重复落盘）');
+  // 未识别档：归还一律不写盘（内存态可以改，磁盘绝不动）
+  const u = v16PrepHarness(src, { trusted: false, guard: false });
+  u.ctx.lockList = {};
+  u.ctx.profiles['ch1'] = { lockList: {} };
+  u.ctx.apiLockListSaved = JSON.parse(JSON.stringify(snap));
+  u.st.writes = 0; u.st.saves = 0;
+  assert.equal(u.ctx.restore(), true, name + '：未识别档也要把内存名单还回去（界面不能停在空名单）');
+  assert.equal(u.st.writes, 0, name + '：未识别档归还绝不落盘（档案写入必须为 0）');
+  assert.equal(u.st.saves, 0, name + '：未识别档归还绝不落盘（saved 写入必须为 0）');
+  assert.equal(Object.keys(u.ctx.profiles['ch1'].lockList).length, 0, name + '：未识别档的磁盘内容必须原样（绝不写坏角色档）');
+}
+test('V2.38.16 F2 代打释放归还永久锁定名单：按启动前快照合并归还并落盘；未识别档零写盘（两文件 VM）', () => {
+  for (const [name, src] of splitSources) v16F2(src, name);
+});
+
+// ---------- F3：锁定目标 mid 不再只靠 EntityManager.get（优先本拍扫描表 + .mid 兜底 + 段计数） ----------
+function v16F3Harness(src, j, o) {
+  const s = v16Lf(src);
+  const counter = cut15(s, '  // ================= V2.38.16 F3 锁定目标 mid 诊断（只进诊断环/本机日志，不改用户可见文案） =================', '  function zAttack() {');
+  const seg = cut15(s, '      // V2.38.15：锁定的首位首领落在忽略集合里', '      if (tempTargetHeld && !target) {');
+  const ctx = {
+    zLock: { gid: o.lockGid, name: '?', dist: null, done: false, reactive: false },
+    zLockCounts: {}, zCastIdx: 0, zAtkLast: { gid: o.lockGid, outOfRange: false },
+    zMon: { action: '' }, zAtkWhy: '', tlog: () => {},
+    npMode: false, npThD: 10, zFollow: true, zNext: true, range: 12, atkRange: 2,
+    ent: { position: [0, 0] }, tempTargetHeld: false,
+    scanMobs: o.scan || [], lastMobs: [],
+    zEntOf: o.zEntOf || (() => null),
+    zRangeDist: (a, b) => Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1])),
+    gidInt: (v) => { const x = parseInt(v, 10); return isFinite(x) ? x : 0; },
+    EM: { forEach: (cb) => (o.em || []).forEach(cb) },
+    zBossIgnoredGid: (g, m) => j.ign(g, m),
+    Object, Math, String, Number, parseInt, isFinite,
+  };
+  vm.createContext(ctx);
+  vm.runInContext(counter + ';' + 'this.count=()=>zLockMidMissCount;this.open=()=>zLockMidMissOpen;' +
+    'this.fn=function(){var target=null,lockAliveOutside=false;' + seg + 'return {target:target,lock:zLock.gid,act:zMon.action};};', ctx);
+  return ctx;
+}
+function v16F3(src, name) {
+  const j = a815Decide(src, '不处理', [A815_BOSS, A815_NORM], -1);
+  assert.equal(j.ign(72, 2001), true, name + '：前置——「不处理」必须把首领 2001 放进忽略集合');
+  assert.equal(j.ign(71, '9999'), false, name + '：前置——普通怪 9999 不得被忽略');
+  // ① 锁定的首领：EntityManager.get 拿不到时，本拍扫描表里的 mid 必须照样认出它是首领并跳过
+  const hb = v16F3Harness(src, j, { lockGid: 72, zEntOf: () => null, em: [vmMob(72, '2001', [1, 0])],
+    scan: [{ GID: 72, _job: '2001', mid: 2001, name: 'B', dist: 1, isBoss: true }] });
+  const rb = hb.fn();
+  assert.equal(rb.target, null, name + '：EntityManager.get 不可用时，被忽略的首领同样不得成为攻击目标');
+  assert.equal(rb.lock, 72, name + '：被忽略的首领必须保留锁（条件满足后同一把锁自动恢复）');
+  assert.match(String(rb.act), /忽略集合/, name + '：必须写明「锁定首领在忽略集合」');
+  assert.equal(hb.count(), 0, name + '：能解析出 mid 时不得记「取不到」诊断');
+  // ② 锁定的普通怪：mid 只能从扫描表的 .mid 字段拿到（没有 _job），必须照样攻击
+  const hn = v16F3Harness(src, j, { lockGid: 71, zEntOf: () => null, em: [vmMob(71, '9999', [1, 0])],
+    scan: [{ GID: 71, mid: 9999, name: 'N', dist: 1, isBoss: false }] });
+  const rn = hn.fn();
+  assert.ok(rn.target && rn.target.GID === 71, name + '：EntityManager.get 不可用时，锁定普通怪必须照样解析成目标并攻击');
+  assert.equal(hn.count(), 0, name + '：扫描表的 mid 已经够用，不得记「取不到」诊断（不许只认 EntityManager.get）');
+  // ③ 真的取不到 → 按普通怪处理，并且「一段只记一次」
+  const hf = v16F3Harness(src, j, { lockGid: 55, zEntOf: () => null, em: [vmMob(55, null, [1, 0])], scan: [] });
+  hf.fn();
+  assert.equal(hf.count(), 1, name + '：mid 取不到必须记一次诊断计数（按段）');
+  hf.fn(); hf.fn();
+  assert.equal(hf.count(), 1, name + '：同一段连续取不到只记一次（不得每拍都记）');
+  assert.equal(hf.open(), true, name + '：取不到期间段标志必须保持打开');
+  hf.zLock.gid = 71; hf.scanMobs = [{ GID: 71, mid: 9999, dist: 1 }];
+  hf.fn();
+  assert.equal(hf.open(), false, name + '：解析成功必须结束当前段（段标志复位）');
+  hf.zLock.gid = 55; hf.scanMobs = []; hf.fn();
+  assert.equal(hf.count(), 2, name + '：重新取不到必须记为第二段（一段一记）');
+}
+test('V2.38.16 F3 锁定目标编号：EntityManager.get 不可用时按本拍扫描表解析 mid，取不到就按普通怪并只记一段（两文件 VM）', () => {
+  for (const [name, src] of splitSources) v16F3(src, name);
+});
+test('V2.38.16 F3 结构：mid 链含 .mid 兜底且扫描表优先、段计数进诊断快照（两文件）', () => {
+  for (const [name, src] of splitSources) {
+    const s = v16Lf(src);
+    assert.ok(s.includes('var zLockEntSkip = zLockScanEnt || (zLock.gid ? zEntOf(zLock.gid) : null);'), name + '：必须先认本拍扫描表，zEntOf 只作兜底');
+    assert.ok(s.includes('(zLockEntSkip.mobId != null ? zLockEntSkip.mobId : (zLockEntSkip.mid != null ? zLockEntSkip.mid : null))'), name + '：mid 链必须有 .mid 兜底（与还击候选链同口径）');
+    assert.ok(s.includes('lockMidMiss: zLockMidMissCount'), name + '：段计数必须进诊断快照');
+    assert.ok(s.includes('if (!zLockMidMissOpen) { zLockMidMissOpen = true; zLockMidMissCount++;'), name + '：一段只记一次');
+  }
+});
+
+// ---------- F4：首领诊断的「忽略」标记必须按 mid 判 ----------
+function v16F4(src, name) {
+  const s = v16Lf(src);
+  const code = cut15(s, '  function zBossDiagText() {', '  // 「首领诊断」按钮：');
+  const mobDb = { '1002': { MvpDropsNum: 1 }, '1003': { MvpDropsNum: 0 } };
+  const ctx = {
+    VER: '2.38.16',
+    getMobDb: () => mobDb,
+    zLock: { gid: 55, name: '波利', reactive: false },
+    $id: (id) => (id === 'dsh-z-bossact' ? { value: '等待残血补尾刀' } : (id === 'dsh-z-bossdist' ? { value: '14' } : null)),
+    scanMobs: [{ GID: 55, mid: 1002, name: '波利', dist: 3, isBoss: true }, { GID: 56, mid: 1003, name: '绿棉虫', dist: 5, isBoss: false }],
+    lastMobs: [], gidInt: Number, distInt: (d) => Math.round(Number(d)),
+    zBossIgnoreAll: true, zBossAllowGid: 0, zBossWantGid: 0, zBossLastBlock: '尾刀未到线', zBossDistUsed: 14,
+    zBossDistNow: () => 14,
+    // 与产品同口径：只有「mid 在怪物库里首领值 > 0」才算首领 —— 传 GID 一律认不出
+    zBossIgnoredGid: (g, m) => { const e = (m === null || m === undefined) ? null : mobDb[String(m)]; return !!(e && Number(e.MvpDropsNum) > 0); },
+    Object, Number, String, Array, Math, isFinite, parseInt };
+  vm.createContext(ctx);
+  vm.runInContext(code + ';this.txt=zBossDiagText;', ctx);
+  const txt = String(ctx.txt());
+  const lines = txt.split(String.fromCharCode(10));
+  const bossLine = lines.filter((x) => x.indexOf('编号=1002') >= 0).join('|');
+  const normLine = lines.filter((x) => x.indexOf('编号=1003') >= 0).join('|');
+  assert.ok(bossLine.indexOf('忽略') >= 0, name + '：首领那一行必须标出「忽略」（mid=1002 首领值 1，实际=' + bossLine + '）');
+  assert.ok(normLine.indexOf('忽略') < 0, name + '：普通怪那一行绝不能标「忽略」（mid=1003 首领值 0，实际=' + normLine + '）');
+  assert.ok(s.includes('zBossIgnoredGid(m.GID, m.mid)'), name + '：首领诊断的「忽略」标记必须按 mid 判（传成 GID 会认不出来）');
+}
+test('V2.38.16 F4 首领诊断按 mid 标「忽略」：传成 GID 必须认不出（两文件 VM）', () => {
+  for (const [name, src] of splitSources) v16F4(src, name);
+});
+
+// ---------- F5：用户可见文案不得出现实现词（白名单出口扫描） ----------
+function v16UiScan(src) {
+  const s = v16Lf(src);
+  const n = s.length, out = new Array(n), lits = [];
+  const NL = String.fromCharCode(10);
+  let i = 0;
+  while (i < n) {
+    const c = s[i];
+    if (c === '/' && s[i + 1] === '/') { while (i < n && s[i] !== NL) { out[i] = ' '; i++; } continue; }
+    if (c === '/' && s[i + 1] === '*') { out[i] = ' '; out[i + 1] = ' '; i += 2; while (i < n && !(s[i] === '*' && s[i + 1] === '/')) { out[i] = s[i] === NL ? NL : ' '; i++; } if (i < n) { out[i] = ' '; out[i + 1] = ' '; i += 2; } continue; }
+    if (c === '"' || c === "'" || c === '`') {
+      const st = i, q = c; out[i] = ' '; i++;
+      while (i < n) {
+        if (s[i] === '\\') { out[i] = ' '; out[i + 1] = ' '; i += 2; continue; }
+        if (s[i] === q) { out[i] = ' '; i++; break; }
+        out[i] = s[i] === NL ? NL : ' '; i++;
+      }
+      lits.push({ start: st, end: i, raw: s.slice(st, i) });
+      continue;
+    }
+    if (c === '/') {
+      let k = i - 1; while (k >= 0 && /\s/.test(s[k])) k--;
+      const prev = k >= 0 ? s[k] : '';
+      if (prev === '' || /[=(,:[!&|?{};+\-*%^~<>]/.test(prev) || /(return|typeof|case|in|of|new|delete|void|do|else)$/.test(s.slice(Math.max(0, k - 6), k + 1))) {
+        out[i] = ' '; i++;
+        let inClass = false;
+        while (i < n) { const ch = s[i]; if (ch === '\\') { out[i] = ' '; out[i + 1] = ' '; i += 2; continue; } if (ch === '[') inClass = true; else if (ch === ']') inClass = false; else if (ch === '/' && !inClass) { out[i] = ' '; i++; break; } else if (ch === NL) { break; } out[i] = ch === NL ? NL : ' '; i++; }
+        continue;
+      }
+    }
+    out[i] = c; i++;
+  }
+  const masked = out.join('');
+  const spans = [];
+  const calls = ['setStatus', 'npLog', 'mvLog', 'petLog', 'gearLog', 'bagCleanSay', 'scrLogLine', 'arrowSay', 'show', 'status', 'alert', 'confirm', 'fail'];
+  for (const nm of calls) {
+    const re = new RegExp('(?<![A-Za-z0-9_$.])' + nm + '\\s*\\(', 'g');
+    let m;
+    while ((m = re.exec(masked))) {
+      let d = 0, j = m.index + m[0].length - 1;
+      for (; j < masked.length; j++) { if (masked[j] === '(') d++; else if (masked[j] === ')') { d--; if (d === 0) { j++; break; } } }
+      spans.push({ name: nm, start: m.index, end: j });
+    }
+  }
+  for (const prop of ['innerHTML', 'textContent', 'title', 'placeholder']) {
+    const re = new RegExp('\\.' + prop + '\\s*=', 'g');
+    let m;
+    while ((m = re.exec(masked))) {
+      let d = 0, j = m.index + m[0].length;
+      for (; j < masked.length; j++) { const ch = masked[j]; if (ch === '(' || ch === '[' || ch === '{') d++; else if (ch === ')' || ch === ']' || ch === '}') { if (d === 0) break; d--; } else if (ch === ';' && d === 0) break; }
+      spans.push({ name: '.' + prop, start: m.index, end: j });
+    }
+  }
+  const ph = s.indexOf('var PAGE_HTML'), pc = s.indexOf('var PROF_CONTROLS');
+  if (ph >= 0 && pc > ph) spans.push({ name: 'PAGE_HTML', start: ph, end: pc });
+  const qi = s.indexOf('var STATUS_QUICKREF_TXT'), qj = s.indexOf('body.textContent = STATUS_QUICKREF_TXT;');
+  if (qi >= 0 && qj > qi) spans.push({ name: 'STATUS_QUICKREF_TXT', start: qi, end: qj });
+  const lineOf = (idx) => s.slice(0, idx).split(NL).length;
+  const violations = [];
+  for (const sp of spans) {
+    for (const li of lits) {
+      if (li.start < sp.start || li.end > sp.end) continue;
+      if (V15_UI_BAN.test(li.raw)) violations.push(sp.name + '@' + lineOf(li.start) + ': ' + li.raw.slice(0, 120));
+    }
+  }
+  return { lits: lits.length, spans: spans.length, violations: Array.from(new Set(violations)) };
+}
+function v16F5Scan(src, name) {
+  const r = v16UiScan(src);
+  assert.ok(r.lits >= 5000, name + '：扫描必须真的覆盖到大量字符串字面量（实际 ' + r.lits + '）');
+  assert.ok(r.spans >= 300, name + '：扫描必须真的覆盖到用户可见出口（实际 ' + r.spans + '）');
+  assert.deepEqual(r.violations, [], name + '：用户可见文案出现实现词（' + r.violations.slice(0, 4).join(' / ') + '）');
+  return r;
+}
+test('V2.38.16 F5 用户可见文案扫描：状态行/面板/浮窗/说明文案不得出现实现词（两文件；仅扫用户可见出口）', () => {
+  const info = [];
+  for (const [name, src] of splitSources) { const r = v16F5Scan(src, name); info.push(name + ' 出口=' + r.spans + ' 字面量=' + r.lits); }
+  console.log('[V2.38.16 F5 文案扫描] 实现词违规 0：' + info.join(' / '));
+});
+
+// ---------- V2.38.16 变异矩阵：每个缺陷都必须被「指定断言」杀死 ----------
+const V23816_MUTS = [
+  { tag: 'M-V16-1', desc: 'F1：未识别也照旧在清名单之前记原值（缺陷现场）',
+    from: '      var allMobsWas0 = (o.allMobs === true && allMobsEl0) ? !!allMobsEl0.checked : null;',
+    to: '      var allMobsWas0 = (o.allMobs === true && allMobsEl0) ? !!allMobsEl0.checked : null;' + String.fromCharCode(10) + '      if (o.allMobs === true && allMobsEl0 && apiAllMobsSaved === null) apiAllMobsSaved = !!allMobsEl0.checked; // 变异：未识别也留痕',
+    verify: v16F1, expect: /被拒时绝不留暂存值/ },
+  { tag: 'M-V16-2', desc: 'F2：清名单之前不记永久名单快照（释放时用户名单丢失）',
+    from: '          if (apiLockListSaved === null) { var snap0 = {}, sk0 = null; for (sk0 in lockList) { if (Object.prototype.hasOwnProperty.call(lockList, sk0)) snap0[sk0] = lockList[sk0]; } apiLockListSaved = snap0; }',
+    to: '          // 变异：清空前不记永久名单快照',
+    verify: v16F2, expect: /永久名单必须按启动前快照归还（1002）/ },
+  { tag: 'M-V16-3a', desc: 'F3：退回只认 EntityManager.get（不认本拍扫描表）',
+    from: '      var zLockEntSkip = zLockScanEnt || (zLock.gid ? zEntOf(zLock.gid) : null);',
+    to: '      var zLockEntSkip = (zLock.gid ? zEntOf(zLock.gid) : null); // 变异：不认本拍扫描表',
+    verify: v16F3, expect: /被忽略的首领同样不得成为攻击目标/ },
+  { tag: 'M-V16-3b', desc: 'F3：mid 链去掉 .mid 兜底',
+    from: '(zLockEntSkip.mobId != null ? zLockEntSkip.mobId : (zLockEntSkip.mid != null ? zLockEntSkip.mid : null))',
+    to: '(zLockEntSkip.mobId != null ? zLockEntSkip.mobId : null)',
+    verify: v16F3, expect: /扫描表的 mid 已经够用/ },
+  { tag: 'M-V16-3c', desc: 'F3：取不到诊断每拍都记（一段一记被破坏）',
+    from: '      if (!zLockMidMissOpen) { zLockMidMissOpen = true; zLockMidMissCount++;',
+    to: '      if (true) { zLockMidMissOpen = true; zLockMidMissCount++;',
+    verify: v16F3, expect: /同一段连续取不到只记一次/ },
+  { tag: 'M-V16-4', desc: 'F4：首领诊断把 mid 传成 GID（评审 V8 那一刀）',
+    from: '(zBossIgnoredGid(m.GID, m.mid) ? " 忽略" : "")',
+    to: '(zBossIgnoredGid(m.GID, m.GID) ? " 忽略" : "")',
+    verify: v16F4, expect: /首领那一行必须标出「忽略」/ },
+  { tag: 'M-V16-5', desc: 'F5：把一条用户可见文案改回实现词',
+    from: 'setStatus("游戏画面已就绪", "ok")',
+    to: 'setStatus("客户端已就绪", "ok")',
+    verify: v16F5Scan, expect: /用户可见文案出现实现词/ },
+];
+test('V2.38.16 变异矩阵：7 个变异在 stable/exp 上必须各自被「指定断言」杀死', () => {
+  for (const m of V23816_MUTS) {
+    for (const [name, src] of splitSources) {
+      const mutated = M23813(src, m.from, m.to);
+      const v = v16Catch(() => m.verify(mutated, name + '·' + m.tag));
+      const killed = v.ok === false;
+      V23816_MATRIX.push({ tag: m.tag + '@' + name, desc: m.desc, expected: '红', actual: killed ? '红' : '绿', caught: killed ? v16Msg(v.e) : '未被抓（变异存活）' });
+      assert.ok(killed, m.tag + '@' + name + '：变异必须让对应用例变红（' + m.desc + '）');
+      assert.match(v16Msg(v.e), m.expect, m.tag + '@' + name + '：必须被「指定断言」抓到，实际=' + v16Msg(v.e));
+    }
+  }
+  assert.equal(V23816_MATRIX.length, V23816_MUTS.length * splitSources.length, '每个变异 × 两文件都要独立真跑一次');
+  assert.ok(V23816_MATRIX.every((r) => r.actual === '红'), '不得存在变异存活行');
+  console.log('[V2.38.16 变异矩阵] ' + V23816_MATRIX.length + ' 条全部为红：' + V23816_MATRIX.map((r) => r.tag).join(', '));
+  if (process.env.V23816_JSON) fs.writeFileSync(process.env.V23816_JSON, JSON.stringify(V23816_MATRIX, null, 2), 'utf8');
+});
+// ================= V2.38.17：死亡回放（文字型杀因 + 死亡前 N 秒事件流 · 独立存盘，不进档案与同步键表）=================
+const V23817_MATRIX = [];
+const v17Catch = (fn) => { try { fn(); return { ok: true }; } catch (e) { return { ok: false, e: e }; } };
+const v17Msg = (e) => String((e && e.message) || e).split(String.fromCharCode(10))[0].slice(0, 220);
+
+function v17Module(src) {
+  const s = lf15(src);
+  const a = '  // ================= V2.38.17 死亡回放（文字型';
+  const b = '  // ================= V2.38.17 死亡回放 END =================';
+  const i = s.indexOf(a), j = s.indexOf(b);
+  assert.ok(i >= 0 && j > i, '死亡回放模块必须存在且自成一段');
+  return s.slice(i, j);
+}
+
+function v17Harness(src, opts) {
+  const o = opts || {};
+  const code = v17Module(src);
+  const st = { t: o.t || 1000000, modOn: o.modOn !== false, fwOpenCalls: 0, diag: [], setStatus: 0, setCalls: 0, fail: 0 };
+  const ls = new Map();
+  const ent = o.ent || { GID: 4242, life: { hp: 500, hp_max: 1000, sp: 120 }, action: 0, isDeath: false, ACTION: { DIE: 9 } };
+  const names = o.names || {};
+  const ctx = {
+    Number, String, Math, JSON, Object, isFinite, parseInt, Infinity, DataView,
+    Date: { now: () => st.t },
+    localStorage: {
+      getItem: (k) => (ls.has(k) ? ls.get(k) : null),
+      setItem: (k, v) => { st.setCalls++; if (st.fail > 0) { st.fail--; throw new Error('容量已满'); } ls.set(k, String(v)); },
+      removeItem: (k) => { ls.delete(k); },
+    },
+    CLIENT: { SS: { GID: 4242, AID: 4242, Entity: ent } },
+    gidInt: (v) => { const n = Math.floor(Number(v)); return (isFinite(n) && n > 0) ? n : 0; },
+    DSHCollect: { ringPush: (ring, item, max) => { ring.push(item); if (max > 0 && ring.length > max) ring.splice(0, ring.length - max); return item; } },
+    roModOn: () => st.modOn,
+    buffActive: o.buff || {},
+    BUFF_DEBUFF_CN: { '中毒': 'POISON' },
+    STATUS_ID_TABLE: [{ cn: '中毒', id: 5, deb: 1 }],
+    buffStId: (k) => (k === 'POISON' ? 5 : -1),
+    statusNameById: (id) => (id === 5 ? '中毒' : null),
+    getSkillNameById: (id) => (id === 5 ? '怒雷强击' : null),
+    dpsEntName: (gid) => names[gid] || '',
+    requireDB: () => null,
+    scrPos: () => (o.pos || [120, 80]),
+    getMapName: () => (o.map || 'pay_fild01'),
+    getMapNameCn: () => '佩伊原野',
+    normMapKey: (m) => String(m || '').replace(/\.(rsw|gat)$/i, '').replace(/^map_/i, '').toLowerCase(),
+    selfCharId: () => 4242,
+    selfName: () => '测试角色',
+    activeProfileKey: () => 'ch4242',
+    fmtK: (n) => String(Math.floor(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ','),
+    roEscTxt: (x) => String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'),
+    TGT_SPRITE_BASE: 'http://127.0.0.1:8898/monster-sprites/by-id/',
+    fwOpen: (id) => { st.fwOpenCalls++; return o.fwOpenFail ? false : true; },
+    fwActualOpen: () => false,
+    dshDiag: (ev) => { st.diag.push(ev); },
+    setStatus: () => { st.setStatus++; },
+    document: { addEventListener: () => {}, getElementById: () => null, createElement: () => null, documentElement: null },
+    $id: () => null,
+    console: { log: () => {} },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(code + ';this.D={' +
+    'push:dlogPushEvt,win:dlogWindowEvents,hatch:dlogHatch,sample:dlogSample,onVanish:dlogOnVanish,' +
+    'onRaw:dlogOnRawDamage,onDamage:dlogOnDamage,tick:dlogTick,store:dlogStore,list:dlogList,build:dlogBuild,' +
+    'killers:dlogBuildKillers,timeline:dlogTimeline,fallback:dlogAvatarFallback,wire:dlogWireAvatars,' +
+    'avsrc:dlogAvatarSrc,avhtml:dlogAvatarHtml,sktext:dlogSkillText,honest:dlogHonestHtml,reset:dlogReset,' +
+    'clear:dlogClear,maybePop:dlogMaybePop,ring:function(){return __dshDeathEvt;},' +
+    'setCfg:function(a,s){dlogCfg.auto=a;dlogCfg.span=s;},cfg:function(){return dlogCfg;},' +
+    'snapshot:function(){return JSON.parse(localStorage.getItem(DLOG_KEY)||"null");},KEY:DLOG_KEY};', ctx);
+  return { ctx, D: ctx.D, st, ls, ent, names };
+}
+
+const V17_FRAME = new Uint8Array([0x80, 0, 0x92, 0x10, 0, 0, 1]).buffer;   // 我（GID 4242）死亡通知（真实入站消息就是 ArrayBuffer）
+
+// ---------- ① 事件环：追加式 / 超 400 截断 / 读取时按回放时长剔除 ----------
+function v17Ring(src, name) {
+  const h = v17Harness(src);
+  for (let i = 0; i < 401; i++) h.D.push({ t: 1000000 + i * 31, k: 'dmg', src: 7, tg: 4242, dmg: 10 + i, cnt: 1 });
+  const r = h.D.ring();
+  assert.equal(r.length, 400, name + '：事件环超 400 必须丢最旧');
+  assert.equal(r[0].dmg, 11, name + '：丢掉的必须是最旧那条');
+  assert.equal(r[399].dmg, 410, name + '：保留的必须是最新那条');
+  const h2 = v17Harness(src);
+  h2.D.setCfg(true, 3);
+  [1000, 4000, 6000, 8000, 9000].forEach((t) => h2.D.push({ t, k: 'dmg', src: 7, tg: 4242, dmg: t, cnt: 1 }));
+  const ts = (arr) => { const out = []; for (let i = 0; i < arr.length; i++) out.push(arr[i].t); return out; };
+  assert.deepEqual(ts(h2.D.win(9000, 3)), [6000, 8000, 9000], name + '：只保留回放时长内的事件（超时的必须剔除）');
+  assert.deepEqual(ts(h2.D.win(9000, 1)), [8000, 9000], name + '：回放时长 1 秒时窗口同样收敛');
+  assert.deepEqual(ts(h2.D.win(9000, 99)), [1000, 4000, 6000, 8000, 9000], name + '：回放时长超范围时按上限 10 秒收敛');
+}
+test('V2.38.17 ① 死亡回放事件环：追加式、超 400 丢最旧、读取时按回放时长剔除（两文件 VM）', () => {
+  for (const [name, src] of splitSources) v17Ring(src, name);
+});
+
+// ---------- ② 同一次死亡只产 1 条 / 上限 / 写盘异常不抛 ----------
+function v17Record(src, name) {
+  const h = v17Harness(src, { names: { 77: '腐尸' } });
+  h.st.t = 1000000;
+  h.D.push({ t: 999500, k: 'dmg', src: 77, tg: 4242, mid: 1002, name: '腐尸', skid: 0, sk: null, dmg: 300, cnt: 1 });
+  assert.equal(h.D.onVanish(V17_FRAME), true, name + '：服务器死亡通知必须产出记录');
+  assert.equal(h.D.onVanish(V17_FRAME), false, name + '：同一次死亡再次通知不得重复产记录');
+  h.ent.isDeath = true; h.ent.life.hp = 0;
+  h.st.t = 1000800;
+  assert.equal(h.D.tick(), false, name + '：同一次死亡的每秒兜底不得重复产记录');
+  assert.equal(h.D.list().length, 1, name + '：同一次死亡只产 1 条记录');
+  h.ent.isDeath = false; h.ent.life.hp = 600; h.st.t = 1002000; h.D.tick();
+  h.ent.isDeath = true; h.ent.life.hp = 0; h.st.t = 1002400;
+  assert.equal(h.D.tick(), true, name + '：复活后的下一次死亡要重新产记录');
+  assert.equal(h.D.list().length, 2, name + '：两次死亡两条记录');
+  const snap = h.D.snapshot();
+  assert.equal(snap.v, 1, name + '：独立键版本号必须是 1');
+  assert.equal(Number(snap.at), 1002400, name + '：独立键要记最近一次的时间');
+  const rec = snap.items[0];
+  assert.equal(rec.charId, 4242, name + '：记录必须带角色 ID');
+  assert.equal(rec.name, '测试角色', name + '：记录必须带角色名');
+  assert.equal(rec.key, 'ch4242', name + '：记录必须带档键');
+  assert.equal(rec.map, 'pay_fild01', name + '：记录必须带地图');
+  assert.deepEqual([rec.x, rec.y], [120, 80], name + '：记录必须带坐标');
+  assert.equal(rec.hp, 0, name + '：记录必须带当时的血量');
+  const h2 = v17Harness(src);
+  for (let i = 0; i < 25; i++) h2.D.store({ at: 5000 + i, events: [], killers: [] });
+  const items = h2.D.list();
+  assert.equal(items.length, 20, name + '：条数上限 20');
+  assert.equal(items[0].at, 5024, name + '：新记录在最前');
+  assert.equal(items[19].at, 5005, name + '：超上限时丢最旧');
+  const h3 = v17Harness(src);
+  h3.D.setCfg(true, 10);
+  h3.st.t = 1050000;
+  for (let i = 0; i < 130; i++) h3.D.push({ t: 1050000 - (130 - i), k: 'dmg', src: 90, tg: 4242, dmg: 1 + i, cnt: 1 });
+  const rec3 = h3.D.build(1050000, 'caps');
+  assert.equal(rec3.events.length, 120, name + '：单条事件上限 120');
+  assert.equal(rec3.events[0].dmg, 11, name + '：超上限时丢最旧的事件');
+  assert.equal(rec3.events[119].dmg, 130, name + '：保留最新的事件');
+  const h4 = v17Harness(src);
+  for (let i = 0; i < 20; i++) h4.D.store({ at: 1000 + i, events: [], killers: [] });
+  assert.equal(h4.D.list().length, 20, name + '：先铺满 20 条');
+  const base = h4.st.setCalls;
+  h4.st.fail = 2;
+  let threw = false, ok = null;
+  try { ok = h4.D.store({ at: 9999, events: [], killers: [] }); } catch (e) { threw = true; }
+  assert.equal(threw, false, name + '：写盘异常绝不能抛出去');
+  assert.equal(ok, false, name + '：两次写盘都失败时要如实回报失败');
+  assert.equal(h4.st.setCalls - base, 2, name + '：容量满必须丢最旧后再重试一次（总共两次写）');
+  h4.st.fail = 1;
+  assert.equal(h4.D.store({ at: 9998, events: [], killers: [] }), true, name + '：第一次失败后重试必须成功');
+  const after = h4.D.list();
+  assert.equal(after[0].at, 9998, name + '：重试成功后新记录仍在最前');
+  assert.equal(after.length, 19, name + '：容量满时丢的是最旧那条');
+}
+test('V2.38.17 ② 死亡记录：同一次死亡只产 1 条、条数/事件上限、写盘异常不抛（两文件 VM）', () => {
+  for (const [name, src] of splitSources) v17Record(src, name);
+});
+
+// ---------- ③ 静态结构：独立键不进同步键表/档案、模块与浮窗登记齐全 ----------
+function v17Static(src, name) {
+  const s = lf15(src);
+  const kv = /  var KV_KEYS = \[([^\]]*)\];/.exec(s);
+  assert.ok(kv, name + '：必须还能找到本机同步键表');
+  assert.ok(!kv[1].includes('dsh_ro_deathlog_v1'), name + '：记录键绝不能进同步键表');
+  const uses = (s.match(/dsh_ro_deathlog_v1/g) || []).length;
+  assert.equal(uses, 1, name + '：记录键只允许出现在它自己的声明处（不得进角色档等其它结构）');
+  assert.ok(s.includes('var DLOG_KEY = "dsh_ro_deathlog_v1";'), name + '：缺独立键声明');
+  assert.ok(s.includes('{ id:"deathlog", name:"死亡回放", kind:"fw", sec:"战斗辅助" }'), name + '：功能菜单必须登记死亡回放');
+  assert.ok(s.includes('fwReg("deathlog", "死亡回放", dlogEnsureHost)'), name + '：必须走标准浮窗登记');
+  assert.ok(s.includes('"dsh-fw-deathlog"') && s.includes('"dsh-deathlog-dock"'), name + '：缺浮窗宿主与停靠点');
+  assert.ok(s.includes('"dsh-deathlog-list"') && s.includes('"dsh-deathlog-detail"'), name + '：缺历史列表与详情容器');
+  assert.ok(s.includes('document.getElementById("dsh-win-fw-" + id)'), name + '：窗口沿用标准浮窗容器命名');
+  assert.ok(s.includes('charId: cid, name: nm, key: key,'), name + '：记录必须带角色 ID / 角色名 / 档键');
+  assert.ok(s.includes('map: map, mapCn: mapCn, x: x, y: y, hp: hp, hpMax: hpMax, sp: sp,'), name + '：记录必须带地图 / 坐标 / 血量');
+  assert.ok(s.includes('DSHCollect.ringPush(__dshDeathEvt, ev, DLOG_RING_MAX)'), name + '：事件必须走统一环形缓冲');
+  assert.ok(s.includes('var DLOG_RING_MAX = 400, DLOG_MAX_ITEMS = 20, DLOG_MAX_EVENTS = 120;'), name + '：三个上限必须写死');
+  assert.equal((s.match(/localStorage\.setItem\(DLOG_KEY/g) || []).length, 1, name + '：记录键只允许有一处写入口');
+  assert.ok(s.includes('masterTickReg(function () { try { dlogSample(); } catch (e) {} });'), name + '：1 秒采样必须挂在主循环上');
+  assert.ok(s.includes('try { dlogReset("切换角色"); } catch (eDL) {}'), name + '：换角色必须复位');
+  assert.ok(s.includes('try { dlogOnDamage(pkt); } catch (e0b) {}'), name + '：伤害记录必须并列挂在已有回调里');
+  assert.equal((s.match(/nm\.hookPacket = function/g) || []).length, 1, name + '：不得为死亡回放再叠一层回调包装');
+  assert.ok(s.includes('if (op === 0x80) dlogOnVanish(bytes);'), name + '：死亡瞬间必须走通知主路径');
+  assert.ok(s.includes('if (DPS_PKTS.indexOf(op) >= 0) dlogOnRawDamage(bytes, op);'), name + '：原始伤害帧必须无条件记录');
+  // 文案自检：窗口里每一句玩家可见文字都不得出现实现词 / 中英夹杂 / 表情符号
+  const dl = s.slice(s.indexOf('  // ================= V2.38.17 死亡回放（文字型'), s.indexOf('  // ================= V2.38.17 死亡回放 END ================='));
+  const lits = [];
+  let mm;
+  const re1 = /'(\\.|[^'\\\n])*'/g;
+  while ((mm = re1.exec(dl))) lits.push(mm[0].slice(1, -1));
+  const re2 = /"(\\.|[^"\\\n])*"/g;
+  while ((mm = re2.exec(dl))) lits.push(mm[0].slice(1, -1));
+  let seen = 0;
+  for (const raw of lits) {
+    const txt = raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!/[\u4e00-\u9fa5]/.test(txt)) continue;
+    seen++;
+    assert.ok(!/发包|客户端|字段|接口|请求/.test(txt), name + '：窗口文案不得出现实现词：' + txt);
+    assert.ok(!/[A-Za-z]/.test(txt), name + '：窗口文案不得中英夹杂：' + txt);
+    assert.ok(!/[\uD83C-\uD83E\u2600-\u27BF]/.test(txt), name + '：窗口文案不得带表情符号：' + txt);
+  }
+  assert.ok(seen >= 60, name + '：文案自检必须真的扫到足够多的玩家可见文字（实际 ' + seen + '）');
+}
+test('V2.38.17 ③ 死亡回放静态结构：独立键不进同步键表与角色档、模块与浮窗登记齐全（两文件）', () => {
+  for (const [name, src] of splitSources) v17Static(src, name);
+});
+
+// ---------- ④ 技能名未命中留编号、无图走首字色块、onerror 分支 ----------
+function v17SkillAvatar(src, name) {
+  const h = v17Harness(src, { names: { 77: '腐尸' } });
+  h.st.t = 1000000; h.D.setCfg(true, 3);
+  h.D.push({ t: 999500, k: 'dmg', src: 77, tg: 4242, mid: 1002, name: '腐尸', skid: 0, sk: null, dmg: 120, cnt: 1 });
+  h.D.push({ t: 999600, k: 'dmg', src: 77, tg: 4242, mid: 1002, name: '腐尸', skid: 5, sk: '怒雷强击', dmg: 200, cnt: 2 });
+  h.D.push({ t: 999700, k: 'dmg', src: 77, tg: 4242, mid: 1002, name: '腐尸', skid: 60666, sk: null, dmg: 80, cnt: 1 });
+  const rec = h.D.build(1000000, 'skill');
+  const k = rec.killers[0];
+  assert.equal(k.dmg, 400, name + '：同一只怪的伤害要合并');
+  assert.equal(k.segs, 3, name + '：段数按记录条数算');
+  assert.equal(k.hits, 4, name + '：下数按每段次数累加');
+  const by = {}; for (let i = 0; i < k.skills.length; i++) by[k.skills[i].skid] = k.skills[i];
+  assert.equal(by[5].name, '怒雷强击', name + '：收录的技能名要显示');
+  assert.equal(by[60666].skid, 60666, name + '：没收录的技能必须留下编号');
+  assert.equal(by[60666].name, null, name + '：技能名未命中写编号且名字为 null');
+  assert.equal(h.D.sktext(0, null), '普攻', name + '：没有法术编号的一律显示普攻');
+  assert.equal(h.D.sktext(60666, null), '技能60666', name + '：没收录的技能显示技能加编号');
+  const fb = { style: { display: 'none' } };
+  const img = { style: { display: '' }, parentNode: { querySelector: () => fb } };
+  assert.equal(h.D.fallback(img), true, name + '：头像取不到必须回退首字色块');
+  assert.equal(img.style.display, 'none', name + '：头像取不到必须把图藏起来');
+  assert.equal(fb.style.display, 'flex', name + '：头像取不到必须亮出首字色块');
+  const noMid = h.D.avhtml(0, '腐尸');
+  assert.equal(noMid.includes('<img'), false, name + '：无图怪不得出现图片节点');
+  assert.ok(noMid.includes('腐'), name + '：无图怪必须显示名字首字');
+  const withMid = h.D.avhtml(1002, '腐尸');
+  assert.ok(withMid.includes('<img') && withMid.includes('/1002.png'), name + '：有编号的怪才走图源');
+  assert.ok(h.D.avsrc(1002).indexOf('127.0.0.1:8898') >= 0, name + '：头像必须沿用既有图源');
+  const fb2 = { style: { display: 'none' } };
+  const im2 = { style: { display: '' }, parentNode: { querySelector: () => fb2 }, complete: false, naturalWidth: 0 };
+  assert.equal(h.D.wire({ querySelectorAll: () => [im2] }), 1, name + '：每个头像都要接上失败分支');
+  assert.equal(typeof im2.onerror, 'function', name + '：头像必须有失败回调');
+  im2.onerror();
+  assert.equal(fb2.style.display, 'flex', name + '：无图必须走首字色块分支');
+}
+test('V2.38.17 ④ 技能名未命中留编号名字为 null、无图走首次色块与失败回调（两文件 VM）', () => {
+  for (const [name, src] of splitSources) v17SkillAvatar(src, name);
+});
+
+// ---------- ⑤ 弹出冷却：同一次死亡只弹 1 次、冷却内不重复弹 ----------
+function v17Pop(src, name) {
+  const h = v17Harness(src);
+  h.D.setCfg(true, 3);
+  assert.equal(h.D.maybePop(1000000), true, name + '：第一次死亡应当弹出');
+  assert.equal(h.D.maybePop(1001000), false, name + '：冷却内不得重复弹');
+  assert.equal(h.D.maybePop(1002000), false, name + '：冷却内不得重复弹（第二次）');
+  assert.equal(h.st.fwOpenCalls, 1, name + '：冷却内只弹 1 次');
+  assert.equal(h.D.maybePop(1006000), true, name + '：冷却满 5 秒后可以再弹');
+  assert.equal(h.st.fwOpenCalls, 2, name + '：冷却满 5 秒后才会第二次弹');
+  const h2 = v17Harness(src); h2.D.setCfg(false, 3);
+  assert.equal(h2.D.maybePop(1000000), false, name + '：关掉自动弹出后不得弹');
+  assert.equal(h2.st.fwOpenCalls, 0, name + '：关掉自动弹出后零弹窗');
+  const h3 = v17Harness(src, { fwOpenFail: true });
+  h3.D.setCfg(true, 3);
+  let threw = false;
+  try { h3.D.maybePop(1000000); } catch (e) { threw = true; }
+  assert.equal(threw, false, name + '：窗口没建起来也绝不能抛');
+  assert.ok(h3.st.diag.indexOf('deathlog-pop-fail') >= 0, name + '：窗口没建起来必须写诊断日志');
+  const h4 = v17Harness(src);
+  h4.D.setCfg(true, 3);
+  h4.st.t = 1000000;
+  h4.D.onVanish(V17_FRAME);
+  h4.st.t = 1000100; h4.D.onVanish(V17_FRAME);
+  h4.ent.isDeath = true; h4.st.t = 1000200; h4.D.tick();
+  assert.equal(h4.D.list().length, 1, name + '：同一次死亡三条触发路径只产 1 条');
+  assert.equal(h4.st.fwOpenCalls, 1, name + '：同一次死亡只弹 1 次');
+  h4.st.t = 1003400; h4.ent.isDeath = false; h4.ent.life.hp = 700; h4.D.tick();
+  h4.st.t = 1003800; h4.ent.isDeath = true; h4.ent.life.hp = 0; h4.D.tick();
+  assert.equal(h4.D.list().length, 2, name + '：3.4 秒后的第二次死亡要产第 2 条');
+  assert.equal(h4.st.fwOpenCalls, 1, name + '：冷却内不得再弹');
+  h4.st.t = 1011000; h4.ent.isDeath = false; h4.ent.life.hp = 700; h4.D.tick();
+  h4.st.t = 1011400; h4.ent.isDeath = true; h4.ent.life.hp = 0; h4.D.tick();
+  assert.equal(h4.D.list().length, 3, name + '：第三次死亡产第 3 条');
+  assert.equal(h4.st.fwOpenCalls, 2, name + '：冷却过后才允许再弹');
+}
+test('V2.38.17 ⑤ 死亡回放弹出冷却：冷却内不重复弹、同一次死亡只弹 1 次（两文件 VM）', () => {
+  for (const [name, src] of splitSources) v17Pop(src, name);
+});
+
+// ---------- ⑥ 模块关闭：不记录、不弹窗、不写盘 ----------
+function v17Off(src, name) {
+  const h = v17Harness(src, { modOn: false });
+  h.st.t = 1000000;
+  assert.equal(h.D.onDamage({ GID: 77, targetGID: 4242, damage: 500, count: 1 }), false, name + '：模块关闭时伤害不得进环');
+  assert.equal(h.D.onRaw(new Uint8Array(23).buffer, 139), false, name + '：模块关闭时原始伤害帧不得进环');
+  assert.equal(h.D.onVanish(V17_FRAME), false, name + '：模块关闭时死亡不得记录');
+  h.ent.isDeath = true; h.ent.life.hp = 0;
+  assert.equal(h.D.tick(), false, name + '：模块关闭时兜底不得记录');
+  assert.equal(h.D.sample(), false, name + '：模块关闭时采样必须直接返回');
+  assert.equal(h.D.hatch('off'), false, name + '：模块关闭时记录入口必须直接返回');
+  assert.equal(h.D.ring().length, 0, name + '：模块关闭时事件环必须为空');
+  assert.equal(h.D.list().length, 0, name + '：模块关闭时必须零写盘');
+  assert.equal(h.ls.size, 0, name + '：模块关闭时不得写任何本地键');
+  assert.equal(h.st.fwOpenCalls, 0, name + '：模块关闭时不得弹窗');
+}
+test('V2.38.17 ⑥ 死亡回放模块关闭时零记录零写盘零弹窗（两文件 VM）', () => {
+  for (const [name, src] of splitSources) v17Off(src, name);
+});
+
+// ---------- ⑦ 换角色复位 ----------
+function v17Reset(src, name) {
+  const h = v17Harness(src);
+  h.st.t = 1000000;
+  h.D.push({ t: 999000, k: 'dmg', src: 77, tg: 4242, dmg: 10, cnt: 1 });
+  h.D.push({ t: 998000, k: 'dmg', src: 77, tg: 4242, dmg: 20, cnt: 1 });
+  assert.equal(h.D.ring().length, 2, name + '：事件先入环');
+  assert.equal(h.D.onVanish(V17_FRAME), true, name + '：死亡必须产出一条记录');
+  assert.equal(h.D.list().length, 1, name + '：死亡记录已落盘');
+  assert.equal(h.D.reset('切换角色'), true, name + '：复位必须返回成立');
+  assert.equal(h.D.ring().length, 0, name + '：换角色必须清空事件环');
+  h.st.t = 1000100;
+  assert.equal(h.D.onVanish(V17_FRAME), true, name + '：换角色后去重标志必须复位（新角色第一次死亡仍要记录）');
+  assert.equal(h.D.list().length, 2, name + '：换角色后仍能追加新记录');
+}
+test('V2.38.17 ⑦ 死亡回放换角色复位：清空事件环与去重标志（两文件 VM）', () => {
+  for (const [name, src] of splitSources) v17Reset(src, name);
+});
+
+// ---------- ⑧ 分派主路径：死亡通知与原始伤害帧的调用点 ----------
+function v17DispatchHarness(src) {
+  const s = lf15(src);
+  const a = '  function dispatchInboundFrame(bytes, op, frameOff, lenTblOk) {';
+  const b = '  function onSelfSpirits(bytes, frameOff, lenTblOk) {';
+  assert.equal(s.split(a).length - 1, 1, '单帧分派函数锚点必须唯一');
+  const i = s.indexOf(a), j = s.indexOf(b, i);
+  assert.ok(i >= 0 && j > i, '单帧分派函数切段失败');
+  const calls = [];
+  const ctx = {
+    Number, String, Math, Object, JSON, isFinite, parseInt, DataView,
+    identityPktHook: () => {}, gearPktHook: () => {}, bagPktHook: () => {}, worldPktHook: () => {},
+    tpOnAck: () => {}, collectOpStat: () => {}, itipPktProbe: () => {}, blockMcHit: () => {},
+    DPS_PKTS: [138, 139, 737, 2248, 276, 478], dpsParsedSeen: false,
+    dpsOnRawDamage: (b2, o) => calls.push('dps:' + o),
+    dlogOnRawDamage: (b2, o) => calls.push('dlog:' + o),
+    scrOnRawVanish: () => calls.push('scr'),
+    dlogOnVanish: () => calls.push('van'),
+    onMenuList: () => {}, onSayDialog: () => {}, onCloseDialog: () => {},
+    onSkillPostDelay: () => {}, onSkillAck3: () => {}, onSelfSpirits: () => {}, itipShopPkt: () => {}, onRawOpcode: () => {},
+  };
+  vm.createContext(ctx);
+  vm.runInContext(s.slice(i, j) + ';this.dispatch=dispatchInboundFrame;', ctx);
+  return { ctx, calls };
+}
+function v17Dispatch(src, name) {
+  const h = v17DispatchHarness(src);
+  h.ctx.dispatch(V17_FRAME, 0x80, 0, true);
+  assert.ok(h.calls.indexOf('van') >= 0, name + '：死亡帧必须走服务器通知主路径（不许只留每秒兜底）');
+  assert.ok(h.calls.indexOf('scr') >= 0, name + '：原有击杀统计必须保持');
+  h.calls.length = 0;
+  h.ctx.dpsParsedSeen = true;
+  h.ctx.dispatch(new Uint8Array(23).buffer, 139, 0, true);
+  assert.equal(h.calls.indexOf('dps:139'), -1, name + '：已就绪后旧的原始伤害统计口径不变');
+  assert.ok(h.calls.indexOf('dlog:139') >= 0, name + '：死亡回放必须无条件记下原始伤害帧（补齐 139 的漏）');
+}
+test('V2.38.17 ⑧ 死亡回放分派主路径：死亡通知与原始伤害帧（两文件 VM）', () => {
+  for (const [name, src] of splitSources) v17Dispatch(src, name);
+});
+
+// ---------- ⑨ 时间线 + 诚实边界 ----------
+function v17Timeline(src, name) {
+  const h = v17Harness(src, { names: { 77: '腐尸' } });
+  h.D.setCfg(true, 3);
+  h.D.push({ t: 997000, k: 'hp', hp: 800, sp: 100, map: 'pay_fild01', x: 1, y: 2 });
+  h.D.push({ t: 998000, k: 'hp', hp: 300, sp: 90, map: 'pay_fild01', x: 1, y: 2 });
+  h.D.push({ t: 998100, k: 'st', id: 5, name: '中毒', neg: true, rem: 4000 });
+  h.D.push({ t: 998500, k: 'dmg', src: 77, tg: 4242, mid: 1002, name: '腐尸', skid: 5, sk: '怒雷强击', dmg: 250, cnt: 1 });
+  h.D.push({ t: 999000, k: 'dmg', src: 77, tg: 4242, mid: 1002, name: '腐尸', skid: 0, sk: null, dmg: 50, cnt: 1 });
+  h.ent.life.hp = 0;
+  const rec = h.D.build(1000000, 'timeline');
+  assert.equal(rec.total, 300, name + '：总受击伤害');
+  assert.equal(rec.top.gid, 77, name + '：最大来源');
+  assert.equal(rec.last.dmg, 50, name + '：补最后一刀');
+  assert.equal(rec.last.skid, 0, name + '：最后一刀是普攻');
+  assert.equal(rec.hp, 300, name + '：死亡瞬间的血量取最近一次采样');
+  const rows = h.D.timeline(rec);
+  assert.equal(rows.length, 2, name + '：时间线只列受击');
+  assert.equal(rows[0].dt, 1.5, name + '：距死亡秒数按死亡时刻倒推');
+  assert.equal(rows[0].hp, 300, name + '：时间线要带当时的血量');
+  assert.equal(rows[0].sts.length, 1, name + '：时间线要带当时的在身状态');
+  assert.equal(rows[0].sts[0].name, '中毒', name + '：状态中文名');
+  assert.equal(rec.debuffs.length, 1, name + '：致死时刻的负面状态');
+  assert.equal(rec.debuffs[0].id, 5, name + '：负面状态编号');
+  assert.equal(rec.debuffs[0].neg, true, name + '：负面状态必须标成负面');
+  assert.equal(rec.debuffs[0].rem, 4000, name + '：负面状态剩余时间');
+  const honest = h.D.honest({ span: 3 });
+  for (const need of ['普攻', '技能', '色块', '每秒采样', '3 秒']) assert.ok(honest.indexOf(need) >= 0, name + '：诚实边界必须写清楚（' + need + '）');
+  assert.ok(h.D.honest({ span: 5 }).indexOf('5 秒') >= 0, name + '：诚实边界要跟着回放时长');
+}
+test('V2.38.17 ⑨ 死亡回放时间线与诚实边界（两文件 VM）', () => {
+  for (const [name, src] of splitSources) v17Timeline(src, name);
+});
+
+// ---------- ⑩ 变异矩阵：每个变异必须被指定断言杀死 ----------
+const V23817_MUTS = [
+  { tag: 'M1 去掉死亡通知主路径只留每秒兜底',
+    from: '      if (op === 0x80) dlogOnVanish(bytes); // V2.38.17：死亡瞬间主路径',
+    to: '      // 变异：去掉死亡通知主路径，只留每秒兜底',
+    expect: '死亡帧必须走服务器通知主路径', verify: v17Dispatch },
+  { tag: 'M2 原始伤害帧被「已就绪」挡住',
+    from: '      if (DPS_PKTS.indexOf(op) >= 0) dlogOnRawDamage(bytes, op); // V2.38.17：按模块开关无条件记录原始伤害帧（补齐 139 的漏）',
+    to: '      if (DPS_PKTS.indexOf(op) >= 0 && !dpsParsedSeen) dlogOnRawDamage(bytes, op); // 变异',
+    expect: '无条件记下原始伤害帧', verify: v17Dispatch },
+  { tag: 'M3 去掉同一次死亡去重',
+    from: '      if (dlogDeathAt && now - dlogDeathAt < DLOG_DEATH_GAP) return false; // 同一次死亡只产一条记录',
+    to: '      // 变异：不判同一次死亡',
+    expect: '同一次死亡再次通知不得重复产记录', verify: v17Record },
+  { tag: 'M4 记录键混进本机同步键表',
+    from: '"dsh_ro_casttrace"];',
+    to: '"dsh_ro_casttrace", "dsh_ro_deathlog_v1"];',
+    expect: '记录键绝不能进同步键表', verify: v17Static },
+  { tag: 'M5 头像失败不回退首字色块',
+    from: '      im.style.display = "none"; // 头像取不到 → 藏图、亮首字色块（服务没启动也不报错）',
+    to: '      throw new Error("变异：不回退首字色块");',
+    expect: '头像取不到必须回退首字色块', verify: v17SkillAvatar },
+  { tag: 'M6 条数上限失效',
+    from: '      if (db.items.length > DLOG_MAX_ITEMS) db.items.length = DLOG_MAX_ITEMS; // 条数上限：只留最新 20 条',
+    to: '      // 变异：条数上限失效',
+    expect: '条数上限 20', verify: v17Record },
+  { tag: 'M7 事件上限失效',
+    from: '      if (evOut.length > DLOG_MAX_EVENTS) evOut = evOut.slice(evOut.length - DLOG_MAX_EVENTS); // 事件上限：只留最新的 120 条',
+    to: '      // 变异：事件上限失效',
+    expect: '单条事件上限 120', verify: v17Record },
+  { tag: 'M8 回放时长之外的事件没被剔除',
+    from: '        if (ev.t < from) continue;              // 回放时长之外的事件一律剔除',
+    to: '        if (false) continue; // 变异',
+    expect: '只保留回放时长内的事件', verify: v17Ring },
+  { tag: 'M9 模块开关被忽略',
+    from: '      if (!roModOn("deathlog")) return false; // 模块关闭：不采样',
+    to: '      if (false) return false; // 变异：忽略模块开关',
+    expect: '模块关闭时采样必须直接返回', verify: v17Off },
+  { tag: 'M10 弹出冷却失效',
+    from: '      if (dlogPopAt && now - dlogPopAt < DLOG_POP_GAP) return false; // 弹出冷却不少于 5 秒',
+    to: '      // 变异：弹出冷却失效',
+    expect: '冷却内不得重复弹', verify: v17Pop },
+];
+test('V2.38.17 ⑩ 变异矩阵：10 个变异在 stable/exp 上必须各自被「指定断言」杀死', () => {
+  for (const m of V23817_MUTS) {
+    for (const [name, src] of splitSources) {
+      const mutated = M23813(src, m.from, m.to);
+      const v = v17Catch(() => m.verify(mutated, name + '·' + m.tag));
+      const killed = v.ok === false;
+      V23817_MATRIX.push({ tag: m.tag + '@' + name, desc: m.tag, expected: '红', actual: killed ? '红' : '绿', caught: killed ? v17Msg(v.e) : '未被抓（变异存活）' });
+      assert.ok(killed, m.tag + '@' + name + '：变异必须让对应用例变红（' + m.tag + '）');
+      assert.match(v17Msg(v.e), new RegExp(m.expect), m.tag + '@' + name + '：必须被「指定断言」抓到，实际=' + v17Msg(v.e));
+    }
+  }
+  assert.equal(V23817_MATRIX.length, V23817_MUTS.length * splitSources.length, '每个变异 × 两文件都要独立真跑一次');
+  assert.ok(V23817_MATRIX.every((r) => r.actual === '红'), '不得存在变异存活行');
+  console.log('[V2.38.17 变异矩阵] ' + V23817_MATRIX.length + ' 条全部为红：' + V23817_MATRIX.map((r) => r.tag).join(', '));
+  if (process.env.V23817_JSON) fs.writeFileSync(process.env.V23817_JSON, JSON.stringify(V23817_MATRIX, null, 2), 'utf8');
 });

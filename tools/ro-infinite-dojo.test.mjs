@@ -12,6 +12,13 @@ const OWNER = 'ro-infinite-dojo';
 const ENTRY_MAP = 'prontera';
 const PLAYER_ADJ = { gid: 1, position: [147, 147], hp: 100, maxHp: 100 };
 
+// @name 行的可见名称（供断言与变异复用；内部标识一律不动）
+function nameLine(src) {
+  const h = src.slice(0, src.indexOf('// ==/UserScript=='));
+  const m = h.match(/@name\s+(.+)/);
+  return m ? m[1].trim() : '';
+}
+
 /* ============================================================
  * 极简 DOM / 环境：足够跑真实脚本体（面板 + 状态机），不做浏览器模拟
  * ============================================================ */
@@ -780,9 +787,16 @@ test('静态：不新增端点、不自己做任何一步动作，只走约定�
   assert.ok(SRC.includes('requestFly'), '必须保留飞行能力调用');
 
   const header = SRC.slice(0, SRC.indexOf('// ==/UserScript=='));
-  assert.match(header, /@name\s+仙境传说 · 无限道场（独立版）/);
+  assert.match(header, /@name\s+仙境传说 · 脚本入口（独立版）/, '@name 必须叫「脚本入口」');
+  assert.equal(nameLine(SRC), '仙境传说 · 脚本入口（独立版）', '@name 必须是「脚本入口」');
+
+  // 变异 M-DOJO-NAME：把 @name 改回旧名「无限道场」→ 上面的 @name 断言必须真的杀红
+  const mutName = mutate(SRC, '@name         仙境传说 · 脚本入口（独立版）', '@name         仙境传说 · 无限道场（独立版）');
+  assert.notEqual(mutName, SRC, '变异必须真的改动脚本');
+  assert.throws(() => assert.equal(nameLine(mutName), '仙境传说 · 脚本入口（独立版）', '@name 必须是「脚本入口」'),
+    /脚本入口/, '变异 M-DOJO-NAME：@name 改回旧名必须被杀');
   assert.match(header, /@namespace\s+dsh\.ro-plugin/);
-  assert.match(header, /@version\s+1\.0\.4/);
+  assert.match(header, /@version\s+1\.0\.5/);
   assert.match(header, /@updateURL\s+https:\/\/raw\.githubusercontent\.com\/Keeee1th\/Lro-user-scripts\/main\/ro-infinite-dojo\.user\.js/);
   assert.match(header, /@downloadURL\s+https:\/\/raw\.githubusercontent\.com\/Keeee1th\/Lro-user-scripts\/main\/ro-infinite-dojo\.user\.js/);
   assert.match(header, /@grant\s+GM_xmlhttpRequest/);
@@ -860,7 +874,7 @@ test('界面：优先用助手浮窗，不可用时退回自带面板且控件�
 });
 
 /* ============================================================
- * 7.5 V1.0.3 手动打开：开局不自动弹出 + 常驻「无限道场」启动按钮
+ * 7.5 V1.0.3 手动打开：开局不自动弹出 + 常驻「脚本入口」启动按钮
  * ============================================================ */
 
 // 把当前还活着的定时器回调都跑一轮（clearInterval 会从表里移除，先做快照）
@@ -890,9 +904,17 @@ test('V1.0.3 手动打开 b：standalone 模式容器存在但初始 display:non
   assert.equal(wrap.style.display, 'none', '自带面板初始必须 display:none（boot 期间不得可见）');
   assert.ok(launcherOf(h), '启动按钮必须存在（#ro-dojo-launcher）');
   assert.ok(h.doc.getElementById('ro-dojo-launcher-box'), '启动按钮必须挂在自己创建的容器上');
-  assert.equal(launcherOf(h).textContent, '无限道场', '按钮文案必须是「无限道场」');
+  assert.equal(launcherOf(h).textContent, '脚本入口', '按钮文案必须是「脚本入口」');
+  assert.equal(launcherOf(h).title, '打开或收起脚本入口面板', '按钮 title 必须是「打开或收起脚本入口面板」');
+
+  // 变异 M-DOJO-LAUNCHER：把胶囊文案改回旧名「无限道场」→ 上面的按钮文案断言必须真的杀红
+  const mutBtn = mutate(SRC, 'text: "脚本入口", title: "打开或收起脚本入口面板"', 'text: "无限道场", title: "打开或收起无限道场面板"');
+  assert.notEqual(mutBtn, SRC, '变异必须真的改动脚本');
+  const hb = boot(mutBtn, { noWindow: true });
+  assert.throws(() => assert.equal(launcherOf(hb).textContent, '脚本入口', '按钮文案必须是「脚本入口」'),
+    /脚本入口/, '变异 M-DOJO-LAUNCHER：胶囊文案改回旧名必须被杀');
   assert.equal(h.T.panelShown(), false, 'boot 后必须是「未打开」状态');
-  assert.ok(h.logs().includes('点右下角「无限道场」按钮打开面板'), '就绪日志必须引导用户手动打开：' + h.logs());
+  assert.ok(h.logs().includes('点右下角「脚本入口」按钮打开面板'), '就绪日志必须引导用户手动打开：' + h.logs());
 });
 
 test('V1.0.3 手动打开 c：点启动按钮开关面板（standalone 切显示 / window 调 openWindow + closeWindow）', () => {
@@ -1810,7 +1832,7 @@ test('文案扫描：全部用户可见文案（logLine / 状态行 / 按钮标�
   for (const must of ['本图识别到的 NPC：', '脚本已就绪（', '已报名，等待传送到道场']) {
     assert.ok(texts.has(must), 'logLine 文案必须在扫描范围内：' + must);
   }
-  for (const must of ['无限道场已停止：', '无限道场：']) {
+  for (const must of ['脚本入口已停止：', '脚本入口：']) {
     assert.ok(texts.has(must), '助手通知文案必须在扫描范围内：' + must);
   }
   for (const must of ['可能需要在副本内对话，请把该 NPC 名字发我', '如需读取本机文件，请在浏览器扩展详情里为本脚本开启「允许访问文件网址」']) {
@@ -1944,7 +1966,7 @@ test('V1.0.4 启动按钮 b：点一下（不移动）位置原样、不写位�
   w.doc.dispatch('mouseup', {});
   wbtn.dispatch('click');
   assert.equal(w.callsTo('openWindow').length, 1, '点一下必须恰好打开一次（togglePanel 恰好被调用一次）');
-  assert.deepEqual(w.last('openWindow'), ['openWindow', 'ro-infinite-dojo'], '打开的是无限道场浮窗');
+  assert.deepEqual(w.last('openWindow'), ['openWindow', 'ro-infinite-dojo'], '打开的是脚本入口浮窗（内部标识不变）');
 });
 
 test('V1.0.4 启动按钮 c：拖过 >3px 才记位置（键 v2）、clamp 在视口内、拖动那一下不展开', () => {

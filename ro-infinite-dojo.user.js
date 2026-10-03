@@ -1,10 +1,10 @@
 // ==UserScript==
-// @name         仙境传说 · 无限道场（独立版）
+// @name         仙境传说 · 脚本入口（独立版）
 // @namespace    dsh.ro-plugin
-// @version      1.0.4
+// @version      1.0.5
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-infinite-dojo.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-infinite-dojo.user.js
-// @description  在 post.lastro.cn / game.lastro.cn 的页面上自动完成无限道场：到报名点、按对话流程报名、进道场战斗、按轮次领奖、结束后自动再来一轮；需要先启用 RO 助手。
+// @description  脚本入口（无限道场）：在 post.lastro.cn / game.lastro.cn 的页面上自动完成无限道场：到报名点、按对话流程报名、进道场战斗、按轮次领奖、结束后自动再来一轮；需要先启用 RO 助手。
 // @author       DSH
 // @match        http://post.lastro.cn/*
 // @match        https://post.lastro.cn/*
@@ -60,6 +60,8 @@
 // 打开游戏不再自动弹出面板，改为点「无限道场」按钮手动打开。
 // ---------------- V1.0.4 ----------------
 // 1. 修启动按钮点一下就跳到左边并卡住；现在点一下位置不动，并且会跟着悬浮球走。
+// ---------------- V1.0.5 ----------------
+// 用户可见名称改为「脚本入口」，内部标识不变（下载地址 / 存储键 / 元素 id 照旧，老用户的设置与自动更新都不受影响）。
 
 (function () {
   'use strict';
@@ -105,7 +107,7 @@
 
   /* ==================== 常量 ==================== */
 
-  var VERSION        = "1.0.4";
+  var VERSION        = "1.0.5";
   var API_PROTOCOL   = 1;
   var OWNER          = "ro-infinite-dojo";      // 控制权属主，全程一致
   var SCOPES         = ["dojo", "battle", "movement", "dialog", "fly"];
@@ -613,7 +615,7 @@
     run.settleUntil = 0;
     setPhase("已停止：" + reason + (code ? "（" + code + "）" : ""), run.cycle ? "第 " + run.cycle + " 轮循环" : "");
     logLine("停止：" + reason + (code ? "（" + code + "）" : ""), "err");
-    if (wasOn) pushNotice("无限道场已停止：" + reason);
+    if (wasOn) pushNotice("脚本入口已停止：" + reason);
     render();
     return reason;
   }
@@ -954,7 +956,7 @@
         run.noMobWarned = true;
         logLine("本图识别到的 NPC：" + npcDigest(s.npcs), "warn");
         logLine(NO_MOB_HINT, "warn");
-        pushNotice("无限道场：" + NO_MOB_HINT);
+        pushNotice("脚本入口：" + NO_MOB_HINT);
       }
       setPhase("道场内没有目标", "无怪 " + sec(waited));
       return;
@@ -1227,7 +1229,7 @@
     if (kids) for (var i = 0; i < kids.length; i++) if (kids[i]) n.appendChild(kids[i]);
     return n;
   }
-  function sep() { return el("div", { cls: "sec", text: "无限道场（独立版）" }); }
+  function sep() { return el("div", { cls: "sec", text: "脚本入口（独立版）" }); }
   function check(id, label) {
     var box = el("input", { type: "checkbox", id: id });
     return { node: el("label", { cls: "switch" }, [box, el("span", { text: label })]), box: box };
@@ -1304,7 +1306,7 @@
     buildPanel();
     injectCss(PANEL_CSS_TEXT);
     var close = el("button", { text: "收起", on: { click: function () { showPanel(false); } } });
-    var bar = el("div", { cls: "bar" }, [el("span", { cls: "sp", text: "无限道场（独立版）" }), close]);
+    var bar = el("div", { cls: "bar" }, [el("span", { cls: "sp", text: "脚本入口（独立版）" }), close]);
     var body = el("div", { cls: "bd" }, [root]);
     wrap = el("div", { id: "ro-dojo-standalone" }, [bar, body]);
     try { wrap.style.display = "none"; } catch (e) {}      // 开局一律隐藏：只有用户点按钮才显示
@@ -1366,12 +1368,12 @@
     } catch (e) {}
   }
   // 优先复用助手浮窗；不可用时退回自建面板。
-  // V1.0.3：这里只注册，不替用户打开 —— 打开 / 收起一律由「无限道场」按钮触发。
+  // V1.0.3：这里只注册，不替用户打开 —— 打开 / 收起一律由「脚本入口」按钮触发。
   function registerWindowMode() {
     var a = api();
     if (!a || !isFn(a.registerWindow) || !isFn(a.openWindow)) return false;
     buildPanel();
-    var reg = call(a, "registerWindow", [WIN_ID, "无限道场（独立版）", function () { return root; }]);
+    var reg = call(a, "registerWindow", [WIN_ID, "脚本入口（独立版）", function () { return root; }]);
     if (!reg || reg.ok !== true) return false;
     mode = "window";
     return true;
@@ -1472,7 +1474,7 @@
   function mountLauncher() {
     if (launcherBox && launcherBox.parentNode) return launcherBox;
     injectCss(LAUNCHER_CSS_TEXT);
-    launcherBtn = el("div", { id: "ro-dojo-launcher", cls: "ro-dojo-launcher", text: "无限道场", title: "打开或收起无限道场面板" });
+    launcherBtn = el("div", { id: "ro-dojo-launcher", cls: "ro-dojo-launcher", text: "脚本入口", title: "打开或收起脚本入口面板" });
     launcherBox = el("div", { id: "ro-dojo-launcher-box" }, [launcherBtn]);
     placeLauncher();
     launcherBtn.addEventListener("click", function () {
@@ -1556,7 +1558,7 @@
     mountLauncher();
     // 助手可用只注册浮窗，不替用户打开；不可用退回自带面板，同样先隐藏 —— 任何路径都不得让面板可见
     if (!registerWindowMode()) mountStandalone();
-    logLine("脚本已就绪（" + VERSION + "）；点右下角「无限道场」按钮打开面板");
+    logLine("脚本已就绪（" + VERSION + "）；点右下角「脚本入口」按钮打开面板");
     render();
 
     var tries = 0;
@@ -1594,7 +1596,7 @@
     } catch (e) {}
   }
 
-  try { boot(); } catch (e) { try { console.error("[无限道场] 启动失败", e); } catch (e2) {} }
+  try { boot(); } catch (e) { try { console.error("[脚本入口] 启动失败", e); } catch (e2) {} }
 
   /* ==================== 测试钩子（只在显式打开时挂上） ==================== */
 

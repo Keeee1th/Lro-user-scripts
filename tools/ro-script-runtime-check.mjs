@@ -914,8 +914,8 @@ test('exp 尾刀模式跳过只来自尾刀分支，其它三模式与非选中�
 test('exp v2.34.3 格子距离口径与内挂接管兜底：两文件同步、坐下 gate 已放宽', () => {
   // 1) 版本号：稳定版与实验版都必须是 2.36.1（@version 与运行时常量一致）
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.12', name + ' @version 必须是 2.38.12（锚定行首元数据行）');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.12', name + ' 运行时常量 VER 必须是 2.38.12');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.14', name + ' @version 必须是 2.38.14（锚定行首元数据行）');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.14', name + ' 运行时常量 VER 必须是 2.38.14');
   }
   // 2) 头部只差 3 行（@name / @updateURL / @downloadURL），其余逐字节相同
   const stripHead = (s) => s.replace(/\r\n/g,'\n').split('\n').filter((_, i) => i !== 1 && i !== 4 && i !== 5).join('\n');
@@ -1287,8 +1287,8 @@ test('V2.34.5 战斗诊断快照 prof 字段已就位（不改既有字段）', 
 // ================= V2.34.5：配置自动备份（两代）/ 黄金副本找回（纯函数真值表 / 按钮 / 键隔离）=================
 test('V2.34.5 版本号升到 2.34.5（@version 与运行时常量一致，两文件同步）', () => {
   for (const [name, src] of [['stable', source], ['exp', expSource]]) {
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.12', name + ' @version 必须是 2.38.12（锚定行首元数据行）');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.12', name + ' 运行时常量 VER 必须是 2.38.12');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.14', name + ' @version 必须是 2.38.14（锚定行首元数据行）');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.14', name + ' 运行时常量 VER 必须是 2.38.14');
   }
 });
 
@@ -1577,9 +1577,9 @@ test('V2.38.2 定点修复：随时丢弃开启时零候选不抛错（阈值模
 
 // ================= V2.35.1 assistant API + standalone dojo =================
 const splitSources=[['stable',source],['exp',expSource]];
-test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(s)?.[1],'2.38.12',name+' @version 必须锚定行首元数据行（旧的非锚定正则可能命中变更日志/正文里的 @version 字样）');assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
+test('V2.35.1 assistant removes challenge and keeps arrow rules plus API lockstep',()=>{for(const[name,s]of splitSources){assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(s)?.[1],'2.38.14',name+' @version 必须锚定行首元数据行（旧的非锚定正则可能命中变更日志/正文里的 @version 字样）');assert.equal((s.match(/dsh-ro-challenge-v1/g)||[]).length,1,name+' keeps only one non-destructive arrow migration read');assert.ok(!/function challenge|challengeOwnsCombat|challengeStop/.test(s),name+' challenge automation removed');assert.ok(s.includes('dsh-ro-arrow-rules-v1'));assert.ok(s.includes('function arrowDecision('));assert.ok(s.includes('fwReg("arrowrules", "换箭设置", arrowEnsureHost)'));assert.ok(s.includes('window.__DSH_RO_ASSIST_API__'));assert.ok(s.includes('externalAutomationOwns("arrow") || arrowTarget'));assert.ok(s.includes('externalAutomationOwns("battle")'));}});
 test('V2.35.1 public API uses owner-only external signatures and validates the current lease owner',()=>{for(const[,s]of splitSources){assert.ok(s.includes('/^[A-Za-z0-9_.:-]{8,128}$/'));assert.ok(s.includes('dojo:1,battle:1,movement:1,dialog:1,arrow:1,fly:1'));assert.ok(s.includes('if(apiLease&&apiLease.owner!==owner)'));for(const sig of ['apiHas(owner,scope)','apiSnapshot(owner)','apiRelease(owner)','apiContact(owner,gid)','apiWalk(owner,payload)','apiChoose(owner,payload)','apiBattle(owner,on)','apiSetArrow(owner,target)','apiClearArrow(owner)','apiFly(owner,payload)'])assert.ok(s.includes('function '+sig),sig);assert.ok(s.includes('apiLease.generation===generation'));assert.ok(!s.includes('apiHas(owner,generation'));}});
-test('V2.35.1 snapshot and battle/menu ownership contracts are explicit',()=>{for(const[,s]of splitSources){for(const key of ['ready:','map:','player:','mobs:','npcs:','target:','inDojoMap:','dialogOpen:','menu:','battleState:','busy:','arrow:'])assert.ok(s.includes(key),key);assert.ok(s.includes('if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"}'));assert.ok(s.includes('b.state="pending-on"'));assert.ok(s.includes('if(b.state!=="owned")return {ok:true,result:"not-owned"}'));assert.ok(s.includes('l.battle.state==="owned"||l.battle.state==="pending-off"'));assert.ok(s.includes('if(s!==false)return {ok:true,result:s===true?"preexisting":"unknown"}'));}});
+test('V2.35.1 snapshot and battle/menu ownership contracts are explicit',()=>{for(const[,s]of splitSources){for(const key of ['ready:','map:','player:','mobs:','npcs:','target:','inDojoMap:','dialogOpen:','menu:','battleState:','busy:','arrow:'])assert.ok(s.includes(key),key);assert.ok(s.includes('if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"}'));assert.ok(s.includes('b.state="pending-on"'));assert.ok(s.includes('if(b.state!=="owned")return {ok:true,result:"not-owned"}'));assert.ok(s.includes('if(s!==false)return {ok:true,result:s===true?"preexisting":"unknown"}'),'内挂入口 requestBattle 的既有语义必须原样保留');assert.ok(s.includes('l.battle.state==="owned"||l.battle.state==="pending-off"'));assert.ok(s.includes('var r=apiCombatStart(owner);')&&s.includes('apiCombatStop();return {ok:true,result:"stopped"}'));assert.ok(s.includes('if(typeof apiCombat!=="undefined"&&apiCombat)return {ok:false,error:"combat-owned"}'),'代打期间必须拒绝再开内挂');assert.ok(s.includes('assistCombat:apiAssistCombat,'),'门面必须暴露 assistCombat 代打入口');assert.ok(s.includes('zMon.action="外部代打启动";')&&s.includes('if(npBattleState()===true){'));}});
 test('V2.36.11 arrow rules use a per-monster table plus a default arrow',()=>{for(const[name,s]of splitSources){
   assert.ok(s.includes('function arrowDecision(mid,cfg)'),name+' 决策改为按怪物 id');
   assert.ok(s.includes('add("elem",ev)')&&s.includes('add("mob",v&&v.itid!=null?v.itid:v)'),name+' 属性箭 > 指定怪箭');
@@ -1722,7 +1722,7 @@ test('V2.36.0 builtin dojo joins the shared lease and refuses when the lease is 
     assert.ok(s.includes('++menuReconGeneration'),name+' apiMenu 仍用 menuRecon 指纹');
     assert.ok(s.includes('if(fp===apiMenuUsed)return {ok:false,error:"menu-already-used"}'));
     assert.ok(s.includes('dojo:1,battle:1,movement:1,dialog:1,arrow:1,fly:1'));
-    for(const sig of ['apiHas(owner,scope)','apiSnapshot(owner)','apiRelease(owner)','apiContact(owner,gid)','apiWalk(owner,payload)','apiChoose(owner,payload)','apiBattle(owner,on)','apiSetArrow(owner,target)','apiClearArrow(owner)','apiFly(owner,payload)'])assert.ok(s.includes('function '+sig),sig);
+    for(const sig of ['apiHas(owner,scope)','apiSnapshot(owner)','apiRelease(owner)','apiContact(owner,gid)','apiWalk(owner,payload)','apiChoose(owner,payload)','apiBattle(owner,on)','apiAssistCombat(owner,on)','apiCombatStart(owner)','apiCombatActive()','apiCombatStop()','apiTeleport(owner,payload)','apiSetArrow(owner,target)','apiClearArrow(owner)','apiFly(owner,payload)'])assert.ok(s.includes('function '+sig),sig);
     assert.ok(s.includes('if(dojoRun.timer)clearInterval(dojoRun.timer)'),name+' 停止/暂停必须清定时器');
   }
   const code=extract('  function dojoStart(params){','  function dojoStop(reason){')+extract('  function dojoStop(reason){','  function dojoRender(){');
@@ -1913,7 +1913,7 @@ test('V2.36.1 内置道馆换箭 gate：未就绪 / 被阻塞 / 目标不匹配�
     const calls=[];
     const run={on:true,generation:1,phase:'',npc:null,lastMenu:'',lastFly:0,round:0,remaining:null,timer:null};
     const arrowRules=arrowCfg||{enabled:false};
-    const m=mob||{mid:1002,gid:42,dead:false};
+    const m=mob||{mid:1002,gid:42,dead:false,isBoss:true}; // V2.38.13 FIX-6：内置道场恢复 BOSS-only，换箭 gate 的夹具必须是 BOSS
     const e=extra||{};
     const snap=Object.assign({},base,{mobs:[m],arrow:arrow},e.arrow!==undefined?{arrow:e.arrow}:{});
     const a={snapshot:()=>snap,setBattleTarget:(o,t)=>calls.push(['setBattleTarget',t.mid,t.gid]),clearBattleTarget:()=>calls.push(['clearBattleTarget']),setArrowTarget:()=>{calls.push(['setArrow']);return{ok:true};},requestBattle:(o,on)=>{calls.push(['battle',on]);},clearArrowTarget:()=>calls.push(['clearArrow']),contactNpc:()=>calls.push(['contact']),walkTo:()=>calls.push(['walk']),requestFly:()=>calls.push(['fly']),chooseMenu:()=>calls.push(['choose'])};
@@ -2186,11 +2186,13 @@ test('v2.36.4 脚本执行：点「执行」弹表单设置界面', () => {
 
 
 // ================= V2.36.13 走路拾取下线 / 内挂校对 / 属性箭 / 防抖粘性 =================
-test('V2.36.13 走路拾取暂时下线：三条拾取路径都被同一个开关挡住，界面标注暂时下线',()=>{for(const[name,s]of splitSources){
-  assert.ok(s.includes('var PICKUP_WALK_OFF = true;'),name+' 总开关必须存在且默认下线');
-  assert.ok(s.includes('if (!PICKUP_WALK_OFF && wl[String(itid)]'),name+' 掉落钩子路径已挡');
-  assert.ok(s.includes('var en = !PICKUP_WALK_OFF && $id("dsh-picken")'),name+' 5 秒轮询路径已挡');
-  assert.ok(s.includes('if (PICKUP_WALK_OFF) return;'),name+' 走过去拾取已挡');
+test('V2.38.13 走路拾取默认仍下线：三条拾取路径被统一开关挡住，只有外部租约能打开',()=>{for(const[name,s]of splitSources){
+  assert.ok(s.includes('var PICKUP_WALK_OFF = true;'),name+' 总开关必须存在且默认仍是下线');
+  assert.ok(s.includes('function pickupWalkAllowed() { return pickupApiOn === true || PICKUP_WALK_OFF !== true; }'),name+' 统一放行判据必须存在（默认关）');
+  assert.ok(s.includes('var pickupApiOn = false, pickupApiTypes = null;'),name+' 外部租约开关必须默认关');
+  assert.ok(s.includes('if (pickupWalkAllowed() && ((pickupApiOn && apiPickupWants(itid))'),name+' 掉落钩子路径已挡');
+  assert.ok(s.includes('var en = pickupWalkAllowed() && (pickupApiOn || ($id("dsh-picken") && $id("dsh-picken").checked));'),name+' 5 秒轮询路径已挡');
+  assert.ok(s.includes('if (!pickupWalkAllowed()) return;'),name+' 走过去拾取已挡');
   assert.ok(s.includes('id="dsh-pickoff"'),name+' 界面必须标注暂时下线');
   assert.ok(s.includes('id="dsh-wllist"'),name+' 白名单数据/界面保留（只是走路拾取下线）');
 }});
@@ -2632,10 +2634,10 @@ test('V2.38.1 临时战斗目标严格验证、死亡清理与 ONLYTARGET 恢复
   vm.createContext(ctx);vm.runInContext(code+';this.A={acquire:apiAcquire,set:apiSetBattleTarget,clear:apiClearBattleTarget,tick:apiBattleTick,release:apiRelease,get:function(){return apiBattleTarget},lease:function(){return apiLease}}',ctx);
   assert.equal(ctx.A.acquire('owner-one',['battle']).ok,true);
   entities.push(mob(7,3001));
-  assert.equal(ctx.A.set('owner-one',{mid:3001,gid:7}).error,'battle-target-not-live-boss');assert.deepEqual(packets,[],'普通怪非法 set 必须零发包');
+  assert.equal(ctx.A.set('owner-one',{mid:3001,gid:7}).ok,true,'A3：非 BOSS 的活怪（type=5 且 mid/gid 匹配）也必须能作为租约目标');assert.equal(packets.length,0,'V2.38.13：非 DOJO_OWNER 的代打目标绝不同步内挂 ONLYTARGET（代打由助手自己选目标）');
   entities.length=0;entities.push(mob(77,2001));
-  assert.equal(ctx.A.set('owner-one',{mid:2001,gid:77}).ok,true);assert.deepEqual(packets,[[2001,1]],'合法 BOSS 可设置');
-  entities[0].isDeath=true;ctx.A.tick();assert.equal(ctx.A.get(),null);assert.deepEqual(packets.slice(-1),[[2001,0]],'下个 API tick 自动清死亡目标');
+  assert.equal(ctx.A.set('owner-one',{mid:2001,gid:77}).ok,true);assert.equal(packets.length,0,'切换代打目标同样一个内挂包都不发');
+  entities[0].isDeath=true;ctx.A.tick();assert.equal(ctx.A.get(),null);assert.equal(packets.length,0,'非 DOJO_OWNER 目标死亡清理也不得发内挂包');
   ctx.A.release('owner-one');assert.equal(ctx.A.lease(),null,'runtime fixture 必须覆盖 apiRelease 依赖');
 
   packets.length=0;entities[0]=mob(88,2002);ctx.lockList={'1001':{name:'A'},'1002':{name:'B'}};
@@ -2652,11 +2654,11 @@ test('V2.38.1 临时战斗目标严格验证、死亡清理与 ONLYTARGET 恢复
 
 test('V2.38.1 master 租约驱动 zAttack 且临时射程外不选普通目标（VM）',()=>{
   const drive=extract('  function apiBattleDrive(){','  function apiRelease(owner)');let now=1000,calls=0;
-  const dc={Date:{now:()=>now},apiBattleAttackAt:0,zRunning:false,apiLease:{owner:'builtin-dojo',scopes:['battle'],battle:{state:'pending-on'}},apiBattleTarget:{owner:'builtin-dojo',mid:2,gid:8},apiBattleTargetEntity:()=>({gid:8}),zAttack:()=>calls++};
-  vm.createContext(dc);vm.runInContext(drive+';this.run=apiBattleDrive',dc);dc.run();dc.run();assert.equal(calls,1);now=1250;dc.run();assert.equal(calls,2);dc.zRunning=true;now=1500;dc.run();assert.equal(calls,2);
-  const atk=extract('  function zAttack() {','  // 技能行统一序列化'),boss={GID:8,objecttype:5,_job:2,position:[20,20],life:{hp:10}},normal={GID:9,objecttype:5,_job:3,position:[1,1],life:{hp:10}},seen=[];
-  const ac={CLIENT:{SS:{Entity:{life:{hp:100},position:[0,0]}}},clientReady:()=>true,escapePending:()=>false,updateHpWatch(){},sitMaintain(){},isSitting:()=>false,window:{},requireDB:()=>({forEach(fn){seen.push('scan');[boss,normal].forEach(fn);}}),$id:id=>({value:id==='dsh-z-range'?'12':id==='dsh-z-pmrange'?'2':id==='dsh-z-mgrange'?'9':'0',checked:true}),calcAtkRange:()=>2,npHuntMode:()=> 'np',isHybrid:()=>false,takeoverDist:()=>12,lockList:{3:1},zHpWatch:{lastHitAt:0},zLock:{gid:null,name:'',dist:null,done:false,reactive:false},apiBattleTarget:{owner:'builtin-dojo',mid:2,gid:8},apiBattleTargetEntity:()=>({gid:8,mid:2,name:'Boss'}),zEntOf:g=>Number(g)===8?boss:Number(g)===9?normal:null,zRangeDist:(a,b)=>Math.max(Math.abs(a[0]-b[0]),Math.abs(a[1]-b[1])),gidInt:Number,zLockCounts:{},zCastIdx:0,zBossDecide:()=>null,zBossSkipGid:0,defSnap:{isCombatMap:true},zMon:{},zAtkWhy:'',Date:{now:()=>1000},Object,Math,Number,String,parseInt,parseFloat,isFinite};
-  vm.createContext(ac);vm.runInContext(atk+';this.run=zAttack',ac);ac.run();assert.equal(ac.zLock.gid,8);assert.equal(ac.zAtkWhy,'临时目标在射程外');assert.ok(seen.length<=1,'不得进入普通候选扫描接管');
+  const dc={Date:{now:()=>now},apiBattleAttackAt:0,zRunning:false,apiCombat:null,apiLease:{owner:'builtin-dojo',scopes:['battle'],battle:{state:'pending-on'}},apiBattleTarget:{owner:'builtin-dojo',mid:2,gid:8},apiBattleTargetEntity:()=>({gid:8}),zAttack:()=>calls++};
+  vm.createContext(dc);vm.runInContext(drive+';this.run=apiBattleDrive',dc);dc.run();dc.run();assert.equal(calls,1);now=1250;dc.run();assert.equal(calls,2);dc.zRunning=true;now=1500;dc.run();assert.equal(calls,2);dc.apiCombat={owner:'builtin-dojo'};dc.zRunning=false;now=1750;dc.run();assert.equal(calls,2,'A5：代打期间 apiBattleDrive 必须让位（不得双份出手）');
+  const atk=extract('  function zAttack() {','  // 技能行统一序列化'),boss={GID:8,objecttype:5,_job:2,position:[20,20],life:{hp:10}},normal={GID:9,objecttype:5,_job:3,position:[1,1],life:{hp:10}},seen=[];let walks=0;
+  const ac={CLIENT:{SS:{Entity:{life:{hp:100},position:[0,0]}}},clientReady:()=>true,escapePending:()=>false,updateHpWatch(){},sitMaintain(){},isSitting:()=>false,window:{},requireDB:()=>({forEach(fn){seen.push('scan');[boss,normal].forEach(fn);}}),$id:id=>({value:id==='dsh-z-range'?'12':id==='dsh-z-pmrange'?'2':id==='dsh-z-mgrange'?'9':'0',checked:true}),calcAtkRange:()=>2,npHuntMode:()=> 'np',isHybrid:()=>false,takeoverDist:()=>12,lockList:{3:1},zHpWatch:{lastHitAt:0},zLock:{gid:null,name:'',dist:null,done:false,reactive:false},apiBattleTarget:{owner:'builtin-dojo',mid:2,gid:8},apiBattleTargetEntity:()=>({gid:8,mid:2,name:'Boss'}),zEntOf:g=>Number(g)===8?boss:Number(g)===9?normal:null,zRangeDist:(a,b)=>Math.max(Math.abs(a[0]-b[0]),Math.abs(a[1]-b[1])),gidInt:Number,zLockCounts:{},zCastIdx:0,zWalk:()=>{walks++;},zBossDecide:()=>null,zBossSkipGid:0,defSnap:{isCombatMap:true},zMon:{},zAtkWhy:'',Date:{now:()=>1000},Object,Math,Number,String,parseInt,parseFloat,isFinite};
+  vm.createContext(ac);vm.runInContext(atk+';this.run=zAttack',ac);ac.run();assert.equal(ac.zLock.gid,8);assert.equal(ac.zAtkWhy,'临时目标在射程外');assert.ok(seen.length<=1,'不得进入普通候选扫描接管');assert.equal(walks,1,'A4：临时目标在射程外必须先调用 zWalk() 由助手自己走近再 return（不再直接 return）');
 });
 
 test('V2.38.1 dojo 优先 BOSS、普通怪回原行为并在 stop 前清临时目标（VM）',()=>{
@@ -3117,7 +3119,7 @@ test('V2.38.2 apiRelease 只在持有 battle 能力且内挂确认在跑时置�
   const code = extract('  function apiRelease(owner)', '  function apiContact(owner,gid)');
   function run(lease, npState) {
     const zeros = [];
-    const ctx = { apiLease: lease, npBattleState: () => npState, npZeroBattle: (r) => { zeros.push(r); return 'sent'; },
+    const ctx = { apiLease: lease, apiCombat: null, apiCombatStop() {}, npBattleState: () => npState, npZeroBattle: (r) => { zeros.push(r); return 'sent'; },
       apiClearBattleTarget: () => ({ ok: true }), apiBattleTick() {}, npClearBattleIntent() {}, npRequestBattle: () => 'sent', apiEmit() {},
       moveXY: {}, arrowTarget: null, arrowPending: null, arrowReady: false, arrowBlocked: false };
     vm.createContext(ctx); vm.runInContext(code + ';this.rel=apiRelease', ctx);
@@ -4153,8 +4155,8 @@ test('V2.38.4 静态断言：新函数就位、判定链未改、零发包零 ho
     const sum = src.slice(src.indexOf('// ---------------- V2.38.4 变更摘要'), src.indexOf('// ---------------- V2.38.3 变更摘要'));
     assert.ok(sum.includes('入站分帧') && sum.includes('气弹') && sum.includes('按帧') && sum.includes('2.38.4'), name + ' V2.38.4 摘要必须覆盖：分帧 / 气弹 / 抓包按帧 / 版本');
     assert.ok(!EMOJI.test(sum) && !EMOJI.test(code), name + ' 新增内容不得含 emoji');
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.12', name + ' @version 必须是 2.38.12');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.12', name + ' VER 必须是 2.38.12');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.14', name + ' @version 必须是 2.38.14');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.14', name + ' VER 必须是 2.38.14');
   }
   assert.equal((source.match(/(?<!\r)\n/g) || []).length, 0, '稳定版必须纯 CRLF');
   assert.equal((expSource.match(/\r\n/g) || []).length, 0, '实验版必须纯 LF');
@@ -4177,7 +4179,6 @@ test('V2.38.4 变异测试：把分帧改回「只处理第一帧」→ 气弹�
     console.log('[V2.38.4 变异测试] ' + name + ' 变异体（分帧改回只处理第一帧）被杀死：' + mutMsg.split('\n')[0]);
   }
 });
-
 
 
 // ================= V2.38.4 A：隐藏名字牌元素复用 / 剪枝恢复（独立审计缺陷回归） =================
@@ -5105,7 +5106,7 @@ test('V2.38.4 静态断言：三处新口径就位、分帧分派链与已完成
     assert.ok(src.includes('if (!clientScriptPresent()) injectClient(cfg, false);'), name + ' 本机私有入口保持现状（DOM 去重 + 立即注入）');
     assert.ok(src.includes('if (state.ready || state.bootedByWrapper || state.bootedByPlugin) return;'), name + ' 启动去重必须保留');
     assert.ok(src.includes('officialBooted: false,'), name + ' state 必须有 officialBooted 标记');
-    assert.ok(src.includes('// @version      2.38.12') && src.includes('var VER = "2.38.12";'), name + ' 版本必须仍是 2.38.12（V2.38.9 批次：直发传送 + 审计 F1/F2/F4）');
+    assert.ok(src.includes('// @version      2.38.14') && src.includes('var VER = "2.38.14";'), name + ' 版本必须仍是 2.38.14（V2.38.9 批次：直发传送 + 审计 F1/F2/F4）');
     assert.ok(src.includes('// ---------------- V2.38.9 变更摘要 ----------------'), name + ' 必须有 V2.38.9 变更摘要（视角控制 + 审计收尾）');
     // 已完成批次与分帧分派链不得回改
     assert.equal((src.match(/op === 307/g) || []).length, 1, name + ' 摆摊识别集合仍只出现一处（拉黑/闸门批次未回改）');
@@ -5738,6 +5739,359 @@ test('V2.38.4 换箭修复 e：readEquippedAmmo / readEquippedWeaponType 走新�
     assert.equal(JSON.stringify(c2.A.readEquippedAmmo()), JSON.stringify({ index: 6, count: 999, itid: 1750, src: 'switchEquip' }), name + ' 箭矢必须走 switchEquip 兜底');
   }
 });
+// ================= V2.38.14：自动续箭不再把插在武器槽上的卡片当武器 / 卡片永远不算箭矢 =================
+// 统一桩：物品表（含「系列=卡片」）+ 装备组件 + 背包；行为级真跑读取与换箭函数，只看行为不看源码字面量。
+const V23814_ITEMS = {
+  4094: { identifiedDisplayName: '邪骸弓箭手卡片', Type: 6, ClassNum: 0 },
+  1701: { identifiedDisplayName: '十字长弓', Type: 4, ClassNum: 11 },
+  1101: { identifiedDisplayName: '双刃短剑', Type: 4, ClassNum: 1 },
+  1751: { identifiedDisplayName: '火箭矢', Type: 10, ClassNum: 0 },
+  1750: { identifiedDisplayName: '普通箭矢', Type: 10, ClassNum: 0 },
+};
+const V23814_WT = { 1701: 11, 1101: 1, 4094: 0, 1751: 0, 1750: 0 };
+function v23814ArrowVm(src, opt) {
+  opt = opt || {};
+  const packets = [], logEl = { textContent: '' };
+  const items = Object.assign({}, V23814_ITEMS, opt.items || {});
+  const wtMap = Object.assign({}, V23814_WT, opt.wt || {});
+  const db = {
+    getWeaponType: (id) => (wtMap[Number(id)] != null ? wtMap[Number(id)] : 0),
+    getItemInfo: (id) => (items[Number(id)] || null),
+  };
+  const bag = opt.bag || [];
+  const ctx = {
+    Number, String, Object, Array, JSON, Math, isFinite, parseInt, console, Date,
+    ARROW_PLAIN_ITID: 1750, ARROW_MAGIC_QUIVER: 2000030, ARROW_LOW_AMMO: 50,
+    arrowRules: { enabled: true, defaultItid: 1750, byMid: {}, byElem: {} },
+    arrowTarget: null, externalAutomationOwns: () => false, arrowSelfWanted: () => false,
+    clientReady: () => true,
+    $id: (id) => (id === 'dsh-arrowen' ? { checked: true } : (id === 'dsh-arrowlog' ? logEl : null)),
+    arrowPos: (v) => { const n = Number(v); return (isFinite(n) && n > 0) ? n : null; },
+    arrowUseQuiver: () => null, useItemById: () => false,
+    arrowItemName: (i) => '箭' + i,
+    getItemName: (i) => (items[Number(i)] ? items[Number(i)].identifiedDisplayName : 'IT' + i),
+    itipDB: () => db,
+    CLIENT: { EquipmentLocation: { WEAPON: 2, SHIELD: 32, AMMO: 32768, ARMOR: 16 }, PS: { CZ: { REQ_WEAR_EQUIP: function () {} } }, NM: { sendPacket: (p) => packets.push({ index: p.index, wearLocation: p.wearLocation }) } },
+    profiles: {}, activeProfileKey: () => 'ch999',
+    ensureProfile(k) { if (!ctx.profiles[k]) ctx.profiles[k] = { name: k, gearSets: { list: [], sel: '' } }; return ctx.profiles[k]; },
+    saveProfiles() {}, findInventory: () => bag,
+    uiComp: opt.uiComp || (() => null), requireDB: () => null,
+    bagItemByIndex: opt.bagItemByIndex || (() => null),
+    bagList: () => bag,
+    window: {}, packets, logEl,
+  };
+  ctx.czp = (n) => ctx.CLIENT.PS.CZ[n];
+  vm.createContext(ctx);
+  vm.runInContext(v2384ArrowCode(src) + ';this.A={tickArrow,readEquippedAmmo,readEquippedWeaponType,equippedWeaponItid,readBagWorn,readBagAmmo,arrowIsCard,arrowWeaponCandidates,arrowBagWornCands,arrowGearPktStale};', ctx);
+  return ctx;
+}
+// 把「当前装备」整表快照塞进装备读取的首路（包流）：装备槽这一路读到的是卡片
+function v23814PktWeapon(c, itid, name) {
+  c.gearPkt.slots = { 2: { itid: itid, name: name } };
+  c.gearPkt.complete = true; c.gearPkt.n = 1; c.gearPkt.at = Date.now();
+}
+function v23814CheckA(src, name) {
+  const weapon = { ITID: 1701, index: 5, location: 2 };
+  const ammo = { ITID: 1751, index: 4, count: 49, location: 32768 };
+  const EQ = { name: 'Equipment', isInEquipList: (m) => (m === 2 ? weapon : (m === 32768 ? ammo : 0)) };
+  const bag = [{ index: 7, ITID: 1751, count: 30, type: 10 }];
+  const c = v23814ArrowVm(src, { uiComp: (n) => (n === 'Equipment' ? EQ : null), bag });
+  v23814PktWeapon(c, 4094, '邪骸弓箭手卡片');
+  const wq = c.A.readEquippedWeaponType();
+  assert.equal(wq.wt, 11, name + ' 手持的是弓 → 武器类型必须是 11，实际=' + wq.wt);
+  assert.equal(wq.itid, 1701, name + ' 必须跳过卡片采用真弓 1701，实际=' + wq.itid);
+  assert.ok(String(wq.why).indexOf('isInEquipList') >= 0, name + ' 必须采用给出真弓的那条候选，实际=' + wq.why);
+  c.A.tickArrow();
+  assert.deepEqual(c.packets, [{ index: 7, wearLocation: 32768 }], name + ' 认出真弓后必须照常换箭（存量 49 < 50）');
+}
+function v23814CheckB(src, name) {
+  const card = { ITID: 4094, index: 9, location: 2 };
+  const ammo = { ITID: 1751, index: 4, count: 10, location: 32768 };
+  const EQ = { name: 'Equipment', isInEquipList: (m) => (m === 2 ? card : (m === 32768 ? ammo : 0)) };
+  const bag = [{ index: 7, ITID: 1751, count: 30, type: 10 }];
+  const c = v23814ArrowVm(src, { uiComp: (n) => (n === 'Equipment' ? EQ : null), bag });
+  const wq = c.A.readEquippedWeaponType();
+  assert.equal(wq.wt, -1, name + ' 只有卡片时必须算「没认出武器」，实际=' + wq.wt);
+  assert.equal(wq.itid, null, name + ' 绝不能把卡片 4094 当手持武器返回，实际=' + wq.itid);
+  c.A.tickArrow();
+  assert.equal(c.packets.length, 0, name + ' 没认出武器必须零动作（不换箭、不发任何请求）');
+  assert.ok(String(c.logEl.textContent).indexOf('没认出当前手持的武器') >= 0, name + ' 必须给玩家能看懂的提示，实际=' + c.logEl.textContent);
+  assert.ok(String(c.logEl.textContent).indexOf('邪骸弓箭手卡片') >= 0, name + ' 提示必须带上最近读到的物品名，实际=' + c.logEl.textContent);
+  assert.doesNotMatch(String(c.logEl.textContent), /发包|字段|客户端|接口/, name + ' 提示不得出现实现词');
+}
+function v23814CheckB2(src, name) {
+  const sword = { ITID: 1101, index: 5, location: 2 };
+  const ammo = { ITID: 1751, index: 4, count: 10, location: 32768 };
+  const EQ = { name: 'Equipment', isInEquipList: (m) => (m === 2 ? sword : (m === 32768 ? ammo : 0)) };
+  const bag = [{ index: 7, ITID: 1751, count: 30, type: 10 }];
+  const c = v23814ArrowVm(src, { uiComp: (n) => (n === 'Equipment' ? EQ : null), bag });
+  const wq = c.A.readEquippedWeaponType();
+  assert.equal(wq.itid, null, name + ' 不是弓/乐器/鞭子的手持武器必须判成「没认出武器」，实际=' + JSON.stringify(wq));
+  assert.equal(wq.wt, -1, name + ' 非弓/乐器/鞭子的类型必须是 -1，实际=' + wq.wt);
+  c.A.tickArrow();
+  assert.equal(c.packets.length, 0, name + ' 非弓/乐器/鞭子必须零动作');
+  assert.ok(String(c.logEl.textContent).indexOf('没认出当前手持的武器') >= 0, name + ' 必须给出「没认出武器」提示，实际=' + c.logEl.textContent);
+  assert.ok(String(c.logEl.textContent).indexOf('双刃短剑') >= 0, name + ' 提示必须带上最近读到的物品名，实际=' + c.logEl.textContent);
+}
+function v23814CheckC(src, name) {
+  const card = { ITID: 4094, index: 9, count: 1, location: 32768 };
+  const EQ = { name: 'Equipment', isInEquipList: (m) => (m === 32768 ? card : 0) };
+  const bag = [{ index: 9, ITID: 4094, count: 1, type: 6, WearState: 32768 }];
+  const c = v23814ArrowVm(src, { uiComp: (n) => (n === 'Equipment' ? EQ : null), bag });
+  assert.equal(c.A.arrowIsCard(4094), true, name + ' 系列=卡片 必须被认成卡片');
+  assert.equal(c.A.arrowIsCard(1751), false, name + ' 真箭矢不能被误判成卡片');
+  assert.equal(c.A.readEquippedAmmo(), null, name + ' 箭矢槽上是卡片时必须当作「没有当前箭矢」，绝不能返回卡片');
+  assert.equal(c.A.readBagAmmo(), null, name + ' 背包兜底读到卡片时同样必须当作「没有当前箭矢」');
+  const arrow = { ITID: 1751, index: 4, count: 20, location: 32768 };
+  const c2 = v23814ArrowVm(src, { uiComp: (n) => (n === 'Equipment' ? { isInEquipList: (m) => (m === 32768 ? arrow : 0) } : null) });
+  assert.equal(JSON.stringify(c2.A.readEquippedAmmo()), JSON.stringify({ index: 4, count: 20, itid: 1751, src: 'isInEquipList' }), name + ' 真箭矢必须照旧原样读出（不得被卡片守卫误伤）');
+}
+function v23814CheckD(src, name) {
+  const card = { ITID: 4094, index: 9, location: 2 };
+  const ammo = { ITID: 1751, index: 4, count: 10, location: 32768 };
+  const EQ = { name: 'Equipment', isInEquipList: (m) => (m === 2 ? card : (m === 32768 ? ammo : 0)) };
+  const bag = [{ index: 7, ITID: 1751, count: 30, type: 10 }];
+  const c = v23814ArrowVm(src, { uiComp: (n) => (n === 'Equipment' ? EQ : null), bag, wt: { 4094: 11 } });
+  assert.equal(c.A.arrowIsCard(4094), true, name + ' 系列=卡片 优先于武器类型值');
+  const wq = c.A.readEquippedWeaponType();
+  assert.equal(wq.itid, null, name + ' 卡片绝不能被当成本身手持的武器，实际=' + JSON.stringify(wq));
+  assert.equal(wq.wt, -1, name + ' 必须判成没认出武器，实际=' + wq.wt);
+  c.A.tickArrow();
+  assert.equal(c.packets.length, 0, name + ' 只读到卡片必须零动作');
+  assert.ok(String(c.logEl.textContent).indexOf('没认出当前手持的武器') >= 0, name + ' 必须给「没认出武器」提示，实际=' + c.logEl.textContent);
+}
+
+// ===== V2.38.14-审计修正（MEDIUM/LOW-MEDIUM）用例桩 =====
+// 把包流整表快照写成「刚收到整表」的干净状态：changedAt 与整表同刻、dirty 为空 → 不算陈旧。
+function v23814PktFresh(c, slots) {
+  c.gearPkt.slots = slots;
+  c.gearPkt.byIndex = {};
+  c.gearPkt.n = Object.keys(slots).length;
+  c.gearPkt.complete = c.gearPkt.n > 0;
+  c.gearPkt.at = Date.now();
+  c.gearPkt.changedAt = c.gearPkt.at;
+  c.gearPkt.dirty = {};
+  return c.gearPkt.at;
+}
+// 整表之后来一条穿脱确认：只标 dirty + changedAt、不改槽位（方案 E4：等整表校正）。
+function v23814PktAck(c, idx, at) {
+  c.gearPkt.changedAt = at;
+  c.gearPkt.dirty[idx] = { at: at, kind: 'wear', loc: 2, raw: 1, ok: true, op: 170 };
+}
+// 审计修正（MEDIUM）：整表给出「旧武器（剑 1101，类型 1）」，其后收到穿脱确认（dirty 晚于整表）；
+//   实时路（EQ.isInEquipList）给出换武器之后的弓 1701 → 陈旧快照必须让位。
+function v23814CheckStale(src, name) {
+  const bow = { ITID: 1701, index: 6, location: 2 };
+  const ammo = { ITID: 1751, index: 4, count: 49, location: 32768 };
+  const EQ = { name: 'Equipment', isInEquipList: (m) => (m === 2 ? bow : (m === 32768 ? ammo : 0)) };
+  const bag = [{ index: 7, ITID: 1751, count: 30, type: 10 }];
+  const c = v23814ArrowVm(src, { uiComp: (n) => (n === 'Equipment' ? EQ : null), bag });
+  const at = v23814PktFresh(c, { 2: { itid: 1101, name: '双刃短剑' } });
+  assert.equal(c.A.arrowGearPktStale(), false, name + ' 前置：刚收到整表（无 dirty、changedAt=整表时刻）不得算陈旧');
+  v23814PktAck(c, 7, at + 1);
+  assert.equal(c.A.arrowGearPktStale(), true, name + ' 整表之后出现 dirty 标记（换武器）→ 包流快照必须判成陈旧');
+  const cands = c.A.arrowWeaponCandidates();
+  assert.ok(!cands.some((x) => Number(x.itid) === 1101), name + ' 陈旧包流快照绝不能再作为候选（否则换武器后仍按旧武器决策、继续消耗箭矢），实际候选=' + JSON.stringify(cands));
+  assert.ok(cands.some((x) => Number(x.itid) === 1701), name + ' 实时路给出的新弓必须在候选里，实际候选=' + JSON.stringify(cands));
+  const wq = c.A.readEquippedWeaponType();
+  assert.equal(wq.wt, 11, name + ' 陈旧快照必须让位给实时路 → 武器类型必须是 11，实际=' + wq.wt);
+  assert.equal(wq.itid, 1701, name + ' 必须采用实时路的弓 1701，实际=' + wq.itid);
+  assert.ok(String(wq.why).indexOf('isInEquipList') >= 0, name + ' 必须走实时路，实际=' + wq.why);
+  c.A.tickArrow();
+  assert.deepEqual(c.packets, [{ index: 7, wearLocation: 32768 }], name + ' 认出真弓后必须照常换箭（存量 49 < 50）');
+}
+// 陈旧判定的口径已定稿：只认「dirty 晚于整表」这一个信号；changedAt 晚于整表必须「不算」陈旧（反向红线）。
+function v23814CheckStaleDirtyOnly(src, name) {
+  const c = v23814ArrowVm(src, { uiComp: () => null });
+  const at = v23814PktFresh(c, { 2: { itid: 1101, name: '双刃短剑' } });
+  v23814PktAck(c, 7, at + 1);
+  c.gearPkt.changedAt = at; // 只留「dirty 晚于整表」这一个信号
+  assert.equal(c.A.arrowGearPktStale(), true, name + ' 只有 dirty 标记晚于整表（changedAt 与整表同刻）也必须算陈旧');
+  assert.ok(!c.A.arrowWeaponCandidates().some((x) => Number(x.itid) === 1101), name + ' 只有 dirty 信号的陈旧快照同样不得作为候选');
+}
+// 反向定稿：changedAt 会被分流会话结束（gearPktParseSess 结束那一拍）抬高，移动端每次背包整表 burst 结束后都会出现；
+//   若把它也算成陈旧，包流（移动端唯一可用的路）会被整体跳过 → 过度判陈旧。故：只 changedAt 晚于整表必须「不算」陈旧。
+function v23814CheckStaleChangedOnly(src, name) {
+  const c = v23814ArrowVm(src, { uiComp: () => null });
+  const at = v23814PktFresh(c, { 2: { itid: 1101, name: '双刃短剑' } });
+  c.gearPkt.changedAt = at + 1; // 分流会话结束晚于整表（dirty 仍为空、槽位未变）
+  assert.equal(c.A.arrowGearPktStale(), false, name + ' 仅分流会话结束（dirty 为空、changedAt 晚于整表）不得算陈旧');
+  assert.ok(c.A.arrowWeaponCandidates().some((x) => Number(x.itid) === 1101), name + ' 不得陈旧的包流快照必须仍作候选（changedAt 不得误杀手机端唯一可用的路）');
+}
+// 反例方向：非陈旧的包流快照仍然可用（手机端组件不可达时唯一可行路线，绝不能整体关掉）。
+function v23814CheckFresh(src, name) {
+  const c = v23814ArrowVm(src, { uiComp: () => null });
+  v23814PktFresh(c, { 2: { itid: 1701, name: '十字长弓' } });
+  assert.equal(c.A.arrowGearPktStale(), false, name + ' 刚收到整表、无 dirty、changedAt=整表时刻不得算陈旧');
+  const cands = c.A.arrowWeaponCandidates();
+  assert.ok(cands.some((x) => Number(x.itid) === 1701), name + ' 非陈旧的包流快照仍必须是候选（手机端唯一可行路线），实际候选=' + JSON.stringify(cands));
+  const wq = c.A.readEquippedWeaponType();
+  assert.equal(wq.wt, 11, name + ' 非陈旧快照必须照旧读出弓（证明不是把包流整体关掉），实际=' + wq.wt);
+  assert.equal(wq.itid, 1701, name + ' 必须采用包流快照里的弓 1701，实际=' + wq.itid);
+  assert.ok(String(wq.why).indexOf('packet') >= 0, name + ' 必须走包流快照路线，实际=' + wq.why);
+}
+// 「实时路优先、包流兜底」的红线：即使包流快照不陈旧，也绝不允许它抢在实时路前面决策。
+function v23814CheckRealtimeFirst(src, name) {
+  const bow = { ITID: 1701, index: 6, location: 2 };
+  const EQ = { name: 'Equipment', isInEquipList: (m) => (m === 2 ? bow : 0) };
+  const c = v23814ArrowVm(src, { uiComp: (n) => (n === 'Equipment' ? EQ : null) });
+  v23814PktFresh(c, { 2: { itid: 1101, name: '双刃短剑' } }); // 快照不陈旧，但内容与实时路不一致
+  assert.equal(c.A.arrowGearPktStale(), false, name + ' 前置：这份快照不算陈旧');
+  const cands = c.A.arrowWeaponCandidates().map((x) => Number(x.itid));
+  assert.equal(cands[0], 1701, name + ' 候选表第一位必须是实时路（包流只作兜底），实际候选=' + JSON.stringify(cands));
+  const wq = c.A.readEquippedWeaponType();
+  assert.equal(wq.itid, 1701, name + ' 实时路必须优先于（不陈旧的）包流快照，实际=' + JSON.stringify(wq));
+  assert.equal(wq.wt, 11, name + ' 实时路的弓类型必须是 11，实际=' + wq.wt);
+  assert.ok(String(wq.why).indexOf('isInEquipList') >= 0, name + ' 必须走实时路，实际=' + wq.why);
+}
+// 审计修正（LOW-MEDIUM）：背包兜底必须枚举全部穿戴命中项（第一条是卡片、第二条才是真武器）。
+function v23814CheckBagMulti(src, name) {
+  const bag = [
+    { index: 1, ITID: 4094, count: 1, type: 6, WearState: 2 }, // 卡片排在真武器前面
+    { index: 2, ITID: 1701, count: 1, type: 4, WearState: 2 }, // 真弓
+  ];
+  const c = v23814ArrowVm(src, { uiComp: () => null, bag }); // 其它路全部为空
+  const cands = Array.from(c.A.arrowBagWornCands(2), (x) => Number(x.itid)); // 跨 realm：必须用宿主 Array.from 收成宿主数组
+  assert.deepEqual(cands, [4094, 1701], name + ' 背包候选必须按背包顺序枚举全部命中项，实际=' + JSON.stringify(cands));
+  assert.equal(c.A.readBagWorn(2).ITID, 4094, name + ' readBagWorn 保持原样（其它调用方共用，仍只返回第一条）');
+  const wq = c.A.readEquippedWeaponType();
+  assert.equal(wq.itid, 1701, name + ' 背包兜底必须跳过第一条的卡片、采用第二条的真弓 1701，实际=' + JSON.stringify(wq));
+  assert.equal(wq.wt, 11, name + ' 真弓类型必须是 11，实际=' + wq.wt);
+  assert.equal(wq.why, 'getWeaponType/背包穿戴标记', name + ' 必须走背包穿戴标记兜底，实际=' + wq.why);
+}
+
+function v23814Mutate(src, from, to, label) {
+  const t = lfSrc(src);
+  assert.equal(t.split(from).length - 1, 1, label + ' 变异锚点必须唯一: ' + from.slice(0, 60));
+  return t.split(from).join(to);
+}
+// 期望失败必须锁定到「哪一条断言」：只断言「抛了异常」会让语法错误也通过（审计 LOW）。
+function v23814ExpectRed(run, src, label, need) {
+  assert.ok(need != null && String(need).length > 0, label + ' 必须写明期望被哪条断言抓到（禁止只断言「抛了异常」）');
+  let msg = '', nm = '';
+  try { run(src, label); } catch (e) { msg = String((e && e.message) || e); nm = String((e && e.name) || ''); }
+  assert.ok(msg, label + ' 必须让对应用例变红，但当前未变红（说明该红线是覆盖空洞）');
+  assert.notEqual(nm, 'SyntaxError', label + ' 变异把源码改成了语法错误（假红），必须改成行为级变异：' + msg.slice(0, 140));
+  assert.match(msg, need instanceof RegExp ? need : new RegExp(String(need)), label + ' 必须被指定断言抓到：期望匹配 ' + need + '，实际=' + msg.slice(0, 160));
+  return msg;
+}
+
+test('V2.38.14 换箭修复 a：装备槽读到卡片（4094）而另一条路给出弓（1701）→ 必须跳过卡片采用弓（VM）', () => {
+  for (const [name, src] of splitSources) v23814CheckA(src, name);
+});
+test('V2.38.14 换箭修复 b：装备槽只读到卡片 → 必须报「没认出武器」且一拍都不动作（VM）', () => {
+  for (const [name, src] of splitSources) v23814CheckB(src, name);
+});
+test('V2.38.14 换箭修复 b2：手持普通武器（非 11/13/14）→ 必须只提示、零动作（VM）', () => {
+  for (const [name, src] of splitSources) v23814CheckB2(src, name);
+});
+test('V2.38.14 换箭修复 c：卡片永远不算箭矢（箭矢槽读取与背包兜底两条路）（VM）', () => {
+  for (const [name, src] of splitSources) v23814CheckC(src, name);
+});
+test('V2.38.14 换箭修复 d：卡片判据优先于武器类型（类型值看着像弓也必须跳过）（VM）', () => {
+  for (const [name, src] of splitSources) v23814CheckD(src, name);
+});
+test('V2.38.14 换箭修复 e：陈旧包流快照必须让位给实时路（换武器后不得再按旧武器决策）（VM）', () => {
+  for (const [name, src] of splitSources) v23814CheckStale(src, name);
+});
+test('V2.38.14 换箭修复 e2：陈旧判定只认 dirty（dirty 晚于整表必须算陈旧；仅 changedAt 晚于整表必须不算）（VM）', () => {
+  for (const [name, src] of splitSources) { v23814CheckStaleDirtyOnly(src, name); v23814CheckStaleChangedOnly(src, name); }
+});
+test('V2.38.14 换箭修复 e3：非陈旧的包流快照仍可用（无实时路时手机端靠它，不得整体关掉）（VM）', () => {
+  for (const [name, src] of splitSources) v23814CheckFresh(src, name);
+});
+test('V2.38.14 换箭修复 e4：实时路必须优先于包流快照（候选表第一位是实时路）（VM）', () => {
+  for (const [name, src] of splitSources) v23814CheckRealtimeFirst(src, name);
+});
+test('V2.38.14 换箭修复 f：背包兜底必须枚举全部穿戴命中项（第一条是卡片也要读到第二条真武器）（VM）', () => {
+  for (const [name, src] of splitSources) v23814CheckBagMulti(src, name);
+});
+
+test('V2.38.14 变异矩阵：卡片守卫 / 弓乐器鞭子过滤 / 陈旧判定（只认 dirty 单一信号）/ 候选顺序 / 背包兜底 → 必须各自被「指定断言」杀死（stable 与 exp 各自独立变异）', () => {
+  const MUTS = [
+    {
+      label: '变异①（撤掉卡片守卫）',
+      from: '      if (Number(info.Type) === 6) return true; // 系列 = 卡片\n      var cn = (info.ClassNum == null) ? NaN : Number(info.ClassNum);\n      if (cn === 0 && /卡片$/.test(arrowItemNameOf(itid))) return true;',
+      to: '      return false; // 变异①：撤掉卡片守卫',
+      cases: [
+        ['(c)', (s, n) => v23814CheckC(s, n), /系列=卡片 必须被认成卡片/],
+        ['(d)', (s, n) => v23814CheckD(s, n), /系列=卡片 优先于武器类型值/],
+      ],
+    },
+    {
+      label: '变异②（撤掉 11/13/14 过滤）',
+      from: '        if (wt === 11 || wt === 13 || wt === 14) return { itid: itid, wt: wt, src: cands[i].src, name: last.name };',
+      to: '        return { itid: itid, wt: wt, src: cands[i].src, name: last.name }; // 变异②：撤掉 11/13/14 过滤',
+      cases: [['(b2)', (s, n) => v23814CheckB2(s, n), /不是弓\/乐器\/鞭子的手持武器必须判成/]],
+    },
+    {
+      label: '变异③（撤掉陈旧判定调用点：陈旧包流快照照用）',
+      from: '      if (!arrowGearPktStale() && typeof gearReadEquipped === "function") {',
+      to: '      if (typeof gearReadEquipped === "function") { // 变异③：撤掉陈旧判定',
+      cases: [['(e)', (s, n) => v23814CheckStale(s, n), /陈旧包流快照绝不能再作为候选/]],
+    },
+    {
+      label: '变异④（陈旧判定恒不陈旧）',
+      from: '      if (typeof gearPkt === "undefined" || !gearPkt) return false;',
+      to: '      if (true) return false; // 变异④：陈旧判定恒不陈旧',
+      cases: [
+        ['(e)', (s, n) => v23814CheckStale(s, n), /包流快照必须判成陈旧/],
+        ['(e2 dirty)', (s, n) => v23814CheckStaleDirtyOnly(s, n), /只有 dirty 标记晚于整表/],
+      ],
+    },
+    {
+      label: '变异⑤（把 changedAt 也算进陈旧）',
+      from: '      if (!(at > 0)) return false; // 没收到过整表：不是「旧」是「没有」，快照自身按 complete/n 拒绝\n',
+      to: '      if (!(at > 0)) return false; // 没收到过整表：不是「旧」是「没有」，快照自身按 complete/n 拒绝\n      if ((Number(gearPkt.changedAt) || 0) > at) return true; // 变异⑤：把 changedAt 也算进陈旧\n',
+      cases: [['(e2 changed)', (s, n) => v23814CheckStaleChangedOnly(s, n), /仅分流会话结束.*不得算陈旧/]],
+    },
+    {
+      label: '变异⑥（撤掉 dirty 陈旧信号）',
+      from: '      var dirty = gearPkt.dirty;\n      if (dirty) {\n        for (var k in dirty) {\n          if (!Object.prototype.hasOwnProperty.call(dirty, k)) continue;\n          var d = dirty[k];\n          if (d && (Number(d.at) || 0) > at) return true;\n        }\n      }',
+      to: '      var dirty = null; // 变异⑥：撤掉 dirty 陈旧信号',
+      cases: [['(e2 dirty)', (s, n) => v23814CheckStaleDirtyOnly(s, n), /只有 dirty 标记晚于整表/]],
+    },
+    {
+      label: '变异⑦（陈旧判定过激：一律视为陈旧）',
+      from: '      if (typeof gearPkt === "undefined" || !gearPkt) return false;\n      var at = Number(gearPkt.at) || 0;',
+      to: '      if (typeof gearPkt === "undefined" || !gearPkt) return false;\n      var at = Number(gearPkt.at) || 0;\n      return true; // 变异⑦：一律视为陈旧（changedAt 信号已撤，旧锚点 at=1 不再产生陈旧）',
+      cases: [['(e3)', (s, n) => v23814CheckFresh(s, n), /不得算陈旧/]],
+    },
+    {
+      label: '变异⑧（包流抢到实时路前面）',
+      from: '        if (sl && sl.itid != null) out.push({ itid: Number(sl.itid), src: rt || "装备读取", name: sl.name });',
+      to: '        if (sl && sl.itid != null) out.unshift({ itid: Number(sl.itid), src: rt || "装备读取", name: sl.name }); // 变异⑧：包流抢到实时路前面',
+      cases: [['(e4)', (s, n) => v23814CheckRealtimeFirst(s, n), /候选表第一位必须是实时路/]],
+    },
+    {
+      label: '变异⑩（枚举器自身只取第一条命中项）',
+      from: '        out.push({ itid: id, src: "背包穿戴标记", name: it.name });',
+      to: '        out.push({ itid: id, src: "背包穿戴标记", name: it.name }); return out; // 变异⑩：只取第一条命中项',
+      cases: [['(f)', (s, n) => v23814CheckBagMulti(s, n), /背包候选必须按背包顺序枚举全部命中项/]],
+    },
+    {
+      label: '变异⑨（背包兜底退回「只取第一条」）',
+      from: '      var bagCands = arrowBagWornCands(2);',
+      to: '      var _one = readBagWorn(2); // 变异⑨：背包兜底只取第一条（旧行为）\n      var bagCands = _one ? [{ itid: (_one.ITID != null ? _one.ITID : _one.itemid), src: "背包穿戴标记" }] : [];',
+      cases: [['(f)', (s, n) => v23814CheckBagMulti(s, n), /背包兜底必须跳过第一条的卡片/]],
+    },
+  ];
+  const rows = [];
+  for (const [srcName, rawSrc] of splitSources) {
+    for (const m of MUTS) {
+      const mutated = v23814Mutate(rawSrc, m.from, m.to, srcName + ' · ' + m.label);
+      for (const [caseName, run, need] of m.cases) {
+        const tag = srcName + ' · ' + m.label + ' → 期望红/实际红，被 ' + caseName + ' 抓到';
+        const msg = v23814ExpectRed(run, mutated, tag, need);
+        rows.push(tag + ' —— ' + msg.replace(/\s+/g, ' ').slice(0, 96));
+      }
+    }
+  }
+  const want = splitSources.length * MUTS.reduce((s, m) => s + m.cases.length, 0);
+  assert.equal(rows.length, want, '变异矩阵必须逐条真跑（期望 ' + want + ' 条）');
+  for (const r of rows) console.log('[V2.38.14 变异矩阵] ' + r);
+});
+
 test('V2.38.4 字段兼容 f：refiningLevel / Refine、grade、1 起始 Options 与 0 起始 options（VM）', () => {
   for (const [name, src] of splitSources) {
     const G = v2384GearVm(src, {}).G;
@@ -6033,8 +6387,8 @@ test('V2.38.4 审计修正 静态：F1–F6 锚点就位，旧的跨角色认领
     assert.ok(t.includes('L.push("识别状态："'), name + ' 诊断必须有「识别状态：」');
     assert.ok(t.includes('L.push("未认领旧档："'), name + ' 诊断必须有「未认领旧档：」');
     // 版本不变
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.12', name + ' @version 必须仍是 2.38.9');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.12', name + ' VER 必须仍是 2.38.9');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.14', name + ' @version 必须仍是 2.38.9');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.14', name + ' VER 必须仍是 2.38.9');
   }
   assert.equal((source.match(/(?<!\r)\n/g) || []).length, 0, '稳定版必须纯 CRLF');
   assert.equal((expSource.match(/\r\n/g) || []).length, 0, '实验版必须纯 LF');
@@ -8109,4 +8463,1320 @@ test('V2.38.9 F7：守卫加回——PRIVATE_AIRSHIP_REQUEST 只允许出现在�
     assert.ok(!src.includes('new CLIENT.PS.CZ.PRIVATE_AIRSHIP_REQUEST'),name+' 不许 new 客户端类');
     console.log('[F7 守卫]['+name+'] '+lines.length+' 处引用全部在注释里');
   }
+});
+// ================= 契约 v2：道场联调（外部代打 / 对外传送）=================
+test('契约 v2：外部代打期间 npHuntMode 强制 self，无代打时按控件原值（VM）',()=>{
+  const code=extract('  function npHuntMode() {','  // V2.33.0 混合寻怪');
+  const mk=(el,combat)=>{const ctx={apiCombat:combat||null,$id:()=>el};vm.createContext(ctx);vm.runInContext(code+';this.f=npHuntMode',ctx);return ctx.f();};
+  assert.equal(mk({value:'np'},null),'np','无代打时必须原样返回控件值');
+  assert.equal(mk({value:'hybrid'},null),'hybrid');
+  assert.equal(mk({value:'np'},{owner:'builtin-dojo'}),'self','代打期间必须强制自研直走寻怪');
+  assert.equal(mk({value:'hybrid'},{owner:'builtin-dojo'}),'self');
+  assert.equal(mk(null,null),'self','读不到控件时仍按 self');
+  assert.equal(mk({value:'np'},null),'np','代打结束后必须恢复原值');
+});
+test('契约 v2：代打启动/停止、幂等与租约校验（VM）',()=>{
+  const code=extract('  var apiCombat=null;','  function apiEmit(kind,detail)');
+  const J=v=>JSON.parse(JSON.stringify(v));
+  function mk(o){
+    o=o||{};
+    const st={intervals:0,cleared:0,attacks:0,inner:0,want:null,ms:0,fn:null,clearedId:null};
+    const ctx={apiGuard:()=>o.guard||null,zRunning:!!o.busy,apiLease:{owner:'builtin-dojo',generation:3,scopes:['battle']},
+      zLock:{gid:1,name:'x',dist:3,done:true,reactive:true},zMon:{action:''},zUseCounts:{a:1},zLockCounts:{b:1},zCastIdx:2,
+      zAtkLast:{gid:7,at:9,outOfRange:true},npBattleState:()=>o.npHunt===false?false:true,
+      npRequestBattle:(want,src,opt)=>{st.inner++;st.want=[want,src,opt];return 'sent';},
+      tlog:()=>{},$id:id=>id==='dsh-z-attint'?(o.att===undefined?{value:'0.4'}:o.att):null,
+      setInterval:(fn,ms)=>{st.intervals++;st.fn=fn;st.ms=ms;return 7;},clearInterval:id=>{st.cleared++;st.clearedId=id;},
+      zAttack:()=>st.attacks++,Date:{now:()=>1000},Math,Number,parseFloat,isFinite};
+    vm.createContext(ctx);vm.runInContext(code+';this.C={apiCombatActive,apiCombatStart,apiCombatStop};this.get=()=>apiCombat;',ctx);
+    return {ctx,st};
+  }
+  const a=mk();
+  assert.deepEqual(J(a.ctx.C.apiCombatStart('builtin-dojo')),{ok:true,result:'started'});
+  assert.equal(a.st.intervals,1,'必须开代打定时器');assert.equal(a.st.ms,400,'间隔必须取 #dsh-z-attint 的秒数');
+  assert.equal(a.st.inner,1,'原先内挂开着时只发一次关闭');assert.deepEqual(J(a.st.want),[false,'external:builtin-dojo',true]);
+  assert.equal(a.ctx.C.apiCombatActive(),true);assert.equal(a.ctx.zLock.gid,null);assert.equal(a.ctx.zCastIdx,0);assert.equal(a.ctx.zUseCounts.a,undefined);assert.equal(a.ctx.zMon.action,'外部代打启动');
+  a.st.fn();assert.equal(a.st.attacks,1,'定时器必须驱动助手自己的 zAttack');
+  assert.deepEqual(J(a.ctx.C.apiCombatStart('builtin-dojo')),{ok:true,result:'already'},'同租约重复启动必须幂等');
+  assert.equal(a.st.intervals,1,'幂等不得再开定时器');
+  assert.deepEqual(J(a.ctx.C.apiCombatStart('other-script')),{ok:false,error:'combat-owned'},'别的租约不能接管');
+  a.ctx.C.apiCombatStop();
+  assert.equal(a.st.cleared,1);assert.equal(a.st.clearedId,7);assert.equal(a.ctx.get(),null);assert.equal(a.ctx.C.apiCombatActive(),false);assert.equal(a.ctx.zMon.action,'外部代打已停止');
+  assert.equal(a.st.inner,1,'代打期间不得再发内挂包');
+  const b=mk({busy:true});assert.deepEqual(J(b.ctx.C.apiCombatStart('builtin-dojo')),{ok:false,error:'assistant-busy'});assert.equal(b.st.intervals,0,'助手挂机在跑时不得抢控制');
+  const c=mk({guard:{ok:false,error:'lease-required'}});assert.deepEqual(J(c.ctx.C.apiCombatStart('builtin-dojo')),{ok:false,error:'lease-required'});
+  const d=mk({npHunt:false});assert.deepEqual(J(d.ctx.C.apiCombatStart('builtin-dojo')),{ok:true,result:'started'});assert.equal(d.st.inner,0,'原先没开内挂时一个内挂包都不发');
+  const e=mk({att:{value:'abc'}});assert.deepEqual(J(e.ctx.C.apiCombatStart('builtin-dojo')),{ok:true,result:'started'});assert.equal(e.st.ms,250,'读不到/非法间隔必须退回 0.25 秒');
+});
+test('契约 v2：apiRelease 必须先停代打再释放租约（VM）',()=>{
+  const code=extract('  function apiRelease(owner)','  function apiContact(owner,gid)');
+  const order=[];
+  const ctx={apiLease:{owner:'builtin-dojo',generation:1,scopes:['battle'],battle:{state:'none'}},apiCombat:{owner:'builtin-dojo',generation:1},
+    apiCombatStop:()=>order.push('combat-stop'),apiBattleTick(){},apiClearBattleTarget:()=>order.push('clear-target'),
+    npBattleState:()=>false,npZeroBattle:()=>order.push('zero'),npClearBattleIntent:()=>order.push('clear-intent'),npRequestBattle:()=>order.push('inner'),
+    apiEmit(){},moveXY:{},arrowTarget:null,arrowPending:null,arrowReady:false,arrowBlocked:false,zRunning:true};
+  vm.createContext(ctx);vm.runInContext(code+';this.release=apiRelease',ctx);
+  const r=JSON.parse(JSON.stringify(ctx.release('builtin-dojo')));
+  assert.deepEqual(order.slice(0,2),['combat-stop','clear-target'],'必须先停代打，再清战斗目标');
+  assert.deepEqual(r,{ok:true});
+  assert.equal(ctx.apiLease,null,'释放完成后租约必须清空');
+});
+test('契约 v2：apiTeleport 守卫与参数校验，失败一律 {ok:false,error}（VM）',()=>{
+  const code=extract('  function apiTeleport(owner,payload){','  function apiChoose(owner,payload)');
+  const J=v=>JSON.parse(JSON.stringify(v));
+  const calls=[];
+  function mk(guard,tp){
+    const ctx={apiGuard:()=>guard||null,tpSend:(m,x,y,o)=>{calls.push([m,x,y,o]);return tp||{ok:true,map:m,x:x,y:y,bytes:9};},Number,String,Array,Object,Math,isFinite,parseFloat};
+    vm.createContext(ctx);vm.runInContext(code+';this.t=apiTeleport',ctx);return ctx;
+  }
+  assert.deepEqual(J(mk({ok:false,error:'lease-required'}).t('o',{map:'prontera'})),{ok:false,error:'lease-required'},'守卫失败必须原样返回');
+  assert.deepEqual(J(mk(null).t('o',null)),{ok:false,error:'invalid-map'});
+  const a=mk(null);
+  assert.deepEqual(J(a.t('o',{map:'prontera',x:1})),{ok:false,error:'invalid-position'},'只给 x 必须拒绝');
+  assert.deepEqual(J(a.t('o',{map:'prontera',x:'1.5',y:2})),{ok:false,error:'invalid-position'},'非整数必须拒绝');
+  assert.deepEqual(J(a.t('o',{map:'prontera',x:-1,y:2})),{ok:false,error:'invalid-position'},'负坐标必须拒绝');
+  assert.deepEqual(J(a.t('o',{map:'prontera',x:1,y:70000})),{ok:false,error:'invalid-position'},'越界坐标必须拒绝');
+  assert.deepEqual(J(a.t('o',{map:'prontera'})),{ok:true,map:'prontera',x:null,y:null,bytes:9},'只给地图（不带坐标）必须放行');
+  assert.deepEqual(calls.at(-1),['prontera',null,null,null],'不带坐标必须按 tpSend(map,null,null,null) 委托');
+  assert.deepEqual(J(a.t('o',{map:'prontera',x:148,y:147})),{ok:true,map:'prontera',x:148,y:147,bytes:9});
+  assert.deepEqual(calls.at(-1),['prontera',148,147,null],'必须复用既有 tpSend，不新造发包逻辑');
+  assert.equal(calls.length,2,'非法参数不得进到发送层');
+  const f=mk(null,{ok:false,why:'teleport-blocked'});
+  assert.deepEqual(J(f.t('o',{map:'prontera',x:1,y:2})),{ok:false,error:'teleport-blocked'},'tpSend 失败必须把 why 原文带回');
+  const g=mk(null,{ok:false});
+  assert.deepEqual(J(g.t('o',{map:'prontera',x:1,y:2})),{ok:false,error:'teleport-failed'},'没有 why 时给 teleport-failed');
+});
+test('契约 v2：assistCombat 是新代打入口，代打期间 requestBattle(true) 必须被拒（VM）',()=>{
+  const code=extract('  function apiBattle(owner,on){','  function apiAssistCombat(owner,on){')+extract('  function apiAssistCombat(owner,on){','  function apiSetArrow(owner,target)');
+  const J=v=>JSON.parse(JSON.stringify(v));
+  function mk(o){
+    o=o||{};
+    const st={inner:0,started:0,stopped:0};
+    const ctx={apiGuard:()=>o.guard||null,apiBattleTick(){},apiLease:{owner:'owner-123',generation:4,battle:{state:'none'}},
+      npBattleState:()=>o.np===undefined?null:o.np,apiCurrent:()=>true,npRequestBattle:(...a)=>{st.inner++;st.args=a;return 'sent';},
+      apiCombat:o.combat||null,apiCombatStart:()=>{st.started++;return o.startResult||{ok:true,result:'started'};},apiCombatStop:()=>{st.stopped++;},
+      Date:{now:()=>1},Math,Number,String,Array,Object,isFinite};
+    vm.createContext(ctx);vm.runInContext(code+';this.C={apiBattle,apiAssistCombat};',ctx);
+    return {ctx,st};
+  }
+  const a=mk();
+  assert.deepEqual(J(a.ctx.C.apiBattle('owner-123',true)),{ok:true,result:'unknown'},'内挂状态未知时老入口保持原语义');
+  assert.equal(a.st.inner,0,'未知状态不得发内挂包');
+  const b=mk({np:false});
+  assert.deepEqual(J(b.ctx.C.apiBattle('owner-123',true)),{ok:true,result:'sent'},'状态明确时老入口仍按原语义工作');
+  assert.equal(b.st.inner,1);
+  const c=mk({combat:{owner:'owner-123'}});
+  assert.deepEqual(J(c.ctx.C.apiBattle('owner-123',true)),{ok:false,error:'combat-owned'},'代打期间禁止再开内挂');
+  assert.equal(c.st.inner,0,'被拒时不得发任何内挂包');
+  const d=mk();
+  assert.deepEqual(J(d.ctx.C.apiAssistCombat('owner-123',true)),{ok:true,result:'started'});
+  assert.equal(d.st.started,1);assert.equal(d.st.inner,0,'代打入口绝不碰内挂');
+  assert.deepEqual(J(d.ctx.C.apiAssistCombat('owner-123',false)),{ok:true,result:'stopped'});
+  assert.equal(d.st.stopped,1);
+  assert.deepEqual(J(d.ctx.C.apiAssistCombat('owner-123','x')),{ok:false,error:'invalid-payload'});
+  const e=mk({guard:{ok:false,error:'lease-required'}});
+  assert.deepEqual(J(e.ctx.C.apiAssistCombat('owner-123',true)),{ok:false,error:'lease-required'});
+  const f=mk({startResult:{ok:false,error:'assistant-busy'}});
+  assert.deepEqual(J(f.ctx.C.apiAssistCombat('owner-123',true)),{ok:false,error:'assistant-busy'},'代打启动失败必须原样回传');
+});
+
+// ================= V2.38.13：取消换箭 / 传送权限 / 战斗准备 / 自动拾取 / 代打零内挂包 =================
+const A23813 = (s, a, b) => { const t = String(s); const i = t.indexOf(a); const j = t.indexOf(b, i + 1); assert.ok(i >= 0 && j > i, "提取失败: " + a.slice(0, 60)); return t.slice(i, j); };
+const M23813 = (src, from, to) => { const s = String(src).replace(/\r\n/g, "\n"); assert.equal(s.split(from).length - 1, 1, "变异锚点必须唯一: " + from.slice(0, 70)); return s.replace(from, to); };
+const J23813 = (v) => JSON.parse(JSON.stringify(v));
+
+test("V2.38.13 R1 助手换箭自主接管：租约不含 arrow 必须自己换箭，含 arrow 一律让位（VM）", () => {
+  const code = A23813(expSource, "  function arrowSelfTick(now){", "  function arrowEnsureHost(){");
+  assert.ok(code.includes('externalAutomationOwns("arrow")'), "助手换箭必须真的去看租约是否含 arrow");
+  const run = (script, ownsArrow) => {
+    const clock = 10000; const equipped = [];
+    const ctx = { Number, String, Date: { now: () => clock },
+      arrowRules: { enabled: true, defaultItid: 1802, byMid: {}, byElem: {} },
+      arrowTarget: null, arrowSelfPending: null, arrowStickyBoss: null,
+      externalAutomationOwns: () => ownsArrow, clientReady: () => true,
+      arrowCurrentMid: () => 0, arrowMobGone: () => false,
+      arrowPos: (v) => { const n = Number(v); return Number.isInteger(n) && n > 0 ? n : null; },
+      arrowStableGate: (key, now) => { if (ctx.__gk !== key) { ctx.__gk = key; ctx.__ga = now; return false; } return now - ctx.__ga >= 1500; },
+      readEquippedAmmo: () => ({ itid: 1757, count: 50 }), readBagArrows: () => [{ index: 7, itid: 1802, count: 30 }],
+      equipArrow: (i) => { equipped.push(i); return true; },
+      arrowItemName: (i) => "IT" + i, arrowSelfSay: () => {}, arrowSay: () => {},
+      arrowUseQuiver: () => null, arrowEffectiveMid: (mid) => ({ mid, sticky: false }),
+      arrowMobName: () => "怪", arrowBoss: () => false, arrowKindName: (k) => k, arrowCandidates: () => [],
+      arrowPickSay: () => "换箭", ARROW_PLAIN_ITID: 1750, mobElemName: () => "",
+      __gk: "", __ga: 0,
+    };
+    ctx.context = ctx; vm.createContext(ctx); vm.runInContext(script, ctx);
+    ctx.arrowSelfTick(clock); ctx.arrowSelfTick(clock + 1600);
+    return equipped;
+  };
+  assert.equal(JSON.stringify(run(code, false)), "[7]", "租约不含 arrow：助手必须自己走到换箭决策路径并装回默认箭（可观测装备动作）");
+  assert.equal(JSON.stringify(run(code, true)), "[]", "租约含 arrow：助手换箭必须被抑制（一个装备动作都不做）");
+  // 变异 M-R1a：删掉「被外部接管就让位」这一道门 → 第二对必须红
+  const mut = M23813(expSource, '||externalAutomationOwns("arrow")||', "||");
+  const mutCode = A23813(mut, "  function arrowSelfTick(now){", "  function arrowEnsureHost(){");
+  assert.equal(JSON.stringify(run(mutCode, true)), "[7]", "变异体删掉让位门后含 arrow 的租约也会自己换箭（说明该断言能抓到这个缺陷）");
+});
+
+test("V2.38.13 R2 传送权限：movement 或 fly 任一即可，两者都没有一律 lease-required（VM）", () => {
+  const guard = A23813(source, "  function apiHas(owner,scope){", "  function apiBattleTargetEntity(target){");
+  const mk = (script) => {
+    const body = A23813(script, "  function apiTeleport(owner,payload){", "    var hasX=payload.x!=null") + '    return {ok:true,gate:"passed"};\n  }';
+    const run = (scopes) => {
+      const ctx = { clientReady: () => true, apiLease: { owner: "o", generation: 1, scopes: scopes } };
+      vm.createContext(ctx); vm.runInContext(guard + body + ";this.t=apiTeleport", ctx);
+      return J23813(ctx.t("o", { map: "prontera", x: 148, y: 147 }));
+    };
+    return run;
+  };
+  const run = mk(source);
+  assert.equal(run(["movement"]).ok, true, "只持 movement 必须能调传送");
+  assert.equal(run(["fly"]).ok, true, "只持 fly 必须能调传送（语义交给服务器 2634 回包判定）");
+  assert.equal(run(["battle"]).error, "lease-required", "两个都没有必须 lease-required");
+  assert.equal(run(["dialog"]).error, "lease-required");
+  assert.equal(run([]).error, "lease-required");
+  // 变异 M-R2：退回「只认 movement」→ 只持 fly 必须红
+  const mut = M23813(source, 'var bad=apiGuard(owner,"movement"); if(bad&&bad.error==="lease-required")bad=apiGuard(owner,"fly"); if(bad)return bad;', 'var bad=apiGuard(owner,"movement"); if(bad)return bad;');
+  assert.equal(mk(mut)(["fly"]).error, "lease-required", "变异体只认 movement，只持 fly 的租约被拒（说明该断言能抓到这个缺陷）");
+  assert.equal(mk(mut)(["movement"]).ok, true, "变异体仍放行 movement（证明变异不是把整段删空）");
+});
+
+test("V2.38.13 R3 prepareCombat：清当前档锁定名单 + 改打全部怪，租约外拒绝，幂等（VM）", () => {
+  const boot = (script) => {
+    const h = A23813(script, "  var PICKUP_WALK_OFF = true;", "  var wl = (function () {");
+    const g = A23813(script, "  function apiHas(owner,scope){", "  function apiCurrent(owner,generation){")
+      + A23813(script, "  function apiGuard(owner,scope){", "  function apiBattleTargetEntity(target){");
+    const blk = A23813(script, "  // ================= V2.38.13 外部租约战斗准备 / 拾取开关 =================", "  // ================= V2.38.13 结束 =================");
+    assert.ok(blk.includes("function apiPrepareCombat(owner, opts)"), "提取必须命中战斗准备块");
+    assert.ok(g.includes("function apiGuard(owner,scope){"), "提取必须覆盖 apiGuard（FIX-3 的 scope 门就是它）");
+    const calls = { save: 0, render: 0, sync: 0 };
+    const box = { checked: false };
+    const ctx = { clientReady: () => true,
+      apiLease: { owner: "ext", generation: 1, scopes: ["dojo", "battle"] },
+      lockList: { "1002": { name: "A" }, "1003": { name: "B" } },
+      activeProfileKey: () => "p1", profileTrusted: () => true,
+      profileLockSave: () => calls.save++, renderLockList: () => calls.render++, npSyncTargets: () => calls.sync++,
+      $id: (id) => (id === "dsh-z-allmobs" ? box : null), pendingPick: 1, CLIENT: {}, requireDB: () => null };
+    vm.createContext(ctx);
+    vm.runInContext(g + h + blk + ";this.prep=apiPrepareCombat;this.pick=apiRequestPickup;this.restore=apiAllMobsRestore;this.walk=pickupWalkAllowed;this.wants=apiPickupWants;this.reset=apiPickupReset", ctx);
+    return { ctx, calls, box };
+  };
+  const out = boot(source);
+  out.ctx.apiLease = null;
+  assert.equal(J23813(out.ctx.prep("ext", { clearLocks: true, allMobs: true })).error, "lease-required", "非租约持有者调用必须拒绝");
+  assert.equal(Object.keys(out.ctx.lockList).length, 2, "被拒绝时一个条目都不能动");
+  const t = boot(source);
+  t.ctx.profileTrusted = () => false;
+  assert.equal(J23813(t.ctx.prep("ext", { clearLocks: true })).error, "profile-untrusted");
+  assert.equal(Object.keys(t.ctx.lockList).length, 2, "未识别档案时一个条目都不能删");
+  const a = boot(source);
+  const r = J23813(a.ctx.prep("ext", { clearLocks: true, allMobs: true }));
+  assert.equal(r.ok, true);
+  assert.equal(r.cleared, 2, "必须报出清掉的条数");
+  assert.equal(Object.keys(a.ctx.lockList).length, 0, "当前角色档的锁定名单必须被清空");
+  assert.equal(a.calls.save, 1, "必须走档案持久化（不能只改内存）");
+  assert.equal(a.calls.render, 1, "必须刷新名单界面");
+  assert.equal(a.calls.sync, 1, "必须按空名单同步一次");
+  assert.equal(a.box.checked, true, "必须勾上「打全部怪」");
+  assert.equal(r.allMobsRestore, false, "必须记下原值（原本没勾）");
+  const r2 = J23813(a.ctx.prep("ext", { clearLocks: true, allMobs: true }));
+  assert.equal(r2.ok, true);
+  assert.equal(r2.cleared, 0, "第二次没有可清的条目（幂等）");
+  assert.equal(r2.allMobsRestore, false, "原值必须仍是第一次记下的");
+  const b = boot(source);
+  b.box.checked = true;
+  assert.equal(J23813(b.ctx.prep("ext", { allMobs: true })).allMobsRestore, true, "原本已勾选时必须记下 true");
+  assert.equal(b.ctx.restore(), true);
+  assert.equal(b.box.checked, true, "原本是开 → 还原成开");
+  // FIX-3：只申请 dialog 权限的租约不得清名单 / 强开「打全部怪」——必须被 scope 门挡住且零副作用
+  const scoped = boot(source);
+  scoped.ctx.apiLease = { owner: "ext", generation: 1, scopes: ["dialog"] };
+  assert.equal(J23813(scoped.ctx.prep("ext", { clearLocks: true, allMobs: true })).error, "lease-required", "只持 dialog 不得调 prepareCombat");
+  assert.equal(Object.keys(scoped.ctx.lockList).length, 2, "被 scope 门拒绝时名单一条都不能动");
+  assert.equal(scoped.box.checked, false, "被 scope 门拒绝时不得改「打全部怪」");
+  assert.equal(scoped.calls.save + scoped.calls.render + scoped.calls.sync, 0, "被 scope 门拒绝时零持久化 / 零渲染 / 零同步");
+  // 变异 M-FIX3a：删掉 dojo scope 门 → 上面那条「只持 dialog 必须被拒」必然红
+  const mutScope = M23813(source, '      var badScope = apiGuard(owner, "dojo"); if (badScope) return badScope; ', "");
+  const sc = boot(mutScope);
+  sc.ctx.apiLease = { owner: "ext", generation: 1, scopes: ["dialog"] };
+  assert.equal(J23813(sc.ctx.prep("ext", { clearLocks: true, allMobs: true })).ok, true, "变异体只持 dialog 也能清名单（说明该断言能抓到这个缺陷）");
+  assert.equal(Object.keys(sc.ctx.lockList).length, 0, "变异体确实动了名单");
+  // 变异 M-R3a：prepareCombat 不清名单 → 上面「名单清空」断言必须红
+  const mutList = M23813(source, "          lockList = {};\n          profileLockSave();", "          profileLockSave();");
+  const m2 = boot(mutList);
+  J23813(m2.ctx.prep("ext", { clearLocks: true }));
+  assert.equal(Object.keys(m2.ctx.lockList).length, 2, "变异体不清名单：条目仍在（说明该断言能抓到这个缺陷）");
+});
+
+test("V2.38.13 R3b apiRelease 必须还原「打全部怪」并收起自动拾取（VM）+ 变异 M-R3b", () => {
+  const mk = (script) => {
+    const code = A23813(script, "  function apiRelease(owner)", "  function apiContact(owner,gid)");
+    const order = [];
+    const ctx = { apiLease: { owner: "builtin-dojo", generation: 1, scopes: ["battle"], battle: { state: "none" } },
+      apiCombat: { owner: "builtin-dojo", generation: 1 }, apiCombatStop: () => order.push("combat-stop"),
+      apiAllMobsRestore: () => { order.push("allmobs-restore"); return true; }, apiPickupReset: () => { order.push("pickup-reset"); return true; },
+      apiBattleTick() {}, apiClearBattleTarget: () => order.push("clear-target"), npBattleState: () => false, npZeroBattle: () => order.push("zero"),
+      npClearBattleIntent: () => order.push("clear-intent"), npRequestBattle: () => order.push("inner"), apiEmit() {}, moveXY: {},
+      arrowTarget: null, arrowPending: null, arrowReady: false, arrowBlocked: false, zRunning: true };
+    vm.createContext(ctx); vm.runInContext(code + ";this.release=apiRelease", ctx);
+    return { order, res: J23813(ctx.release("builtin-dojo")) };
+  };
+  const a = mk(source);
+  assert.equal(a.res.ok, true);
+  assert.ok(a.order.indexOf("allmobs-restore") >= 0, "释放租约必须还原「打全部怪」的原值");
+  assert.ok(a.order.indexOf("pickup-reset") >= 0, "释放租约必须收起自动拾取");
+  assert.ok(a.order.indexOf("combat-stop") < a.order.indexOf("allmobs-restore"), "必须先停代打再还原");
+  const mut = M23813(source, 'apiCombatStop();if(typeof apiAllMobsRestore==="function")apiAllMobsRestore();', "apiCombatStop();");
+  const b = mk(mut);
+  assert.equal(b.order.indexOf("allmobs-restore"), -1, "变异体释放时不还原（说明该断言能抓到这个缺陷）");
+  assert.ok(b.order.indexOf("pickup-reset") >= 0, "变异只删还原那一处，收起拾取仍在（证明变异是定点的）");
+});
+
+test("V2.38.13 R4 requestPickup：只认卡片6/装备4/防具5，类型过滤、租约外拒绝、off 复位（VM）", () => {
+  const helpers = A23813(source, "  var PICKUP_WALK_OFF = true;", "  var wl = (function () {");
+  const block = A23813(source, "  // ================= V2.38.13 外部租约战斗准备 / 拾取开关 =================", "  // ================= V2.38.13 结束 =================");
+  const TYPES = { 3001: { type: 6 }, 1101: { type: 4 }, 2101: { type: 5 }, 501: { type: 0 }, 1201: { type: 2 }, 601: { type: 11 }, 9999: null };
+  const boot = (script) => {
+    const h = A23813(script, "  var PICKUP_WALK_OFF = true;", "  var wl = (function () {");
+    const blk = A23813(script, "  // ================= V2.38.13 外部租约战斗准备 / 拾取开关 =================", "  // ================= V2.38.13 结束 =================");
+    const g = A23813(script, "  function apiHas(owner,scope){", "  function apiCurrent(owner,generation){")
+      + A23813(script, "  function apiGuard(owner,scope){", "  function apiBattleTargetEntity(target){");
+    assert.ok(g.includes("function apiGuard(owner,scope){"), "提取必须覆盖 apiGuard（FIX-3 的 scope 门就是它）");
+    const hk = { hooks: 0 };
+    const ctx = { clientReady: () => true, apiLease: { owner: "ext", generation: 1, scopes: ["battle"] },
+      lockList: {}, activeProfileKey: () => "p1", profileTrusted: () => true, profileLockSave: () => {}, renderLockList: () => {}, npSyncTargets: () => {},
+      $id: () => null, hookItemObjects: () => { hk.hooks++; }, zLock: { gid: null }, apiCombatActive: () => false,
+      gidInt: (v) => { const n = Math.floor(Number(v)); return isFinite(n) && n > 0 ? n : 0; },
+      CLIENT: { DB: { getItemInfo: (itid) => TYPES[itid] || null } }, requireDB: () => null };
+    vm.createContext(ctx);
+    vm.runInContext(g + h + blk + ";this.pick=apiRequestPickup;this.walk=pickupWalkAllowed;this.wants=apiPickupWants;this.mayWalk=pickupMayWalk;this.restore=apiAllMobsRestore", ctx);
+    ctx.__hk = hk;
+    return ctx;
+  };
+  const ctx = boot(source);
+  assert.equal(ctx.walk(), false, "默认必须仍是关（普通用户行为一字不变）");
+  assert.equal(J23813(ctx.pick("ext", {})).error, "invalid-payload", "非法载荷必须拒绝");
+  assert.equal(J23813(ctx.pick("ext", { on: true })).error, "invalid-types", "没配类型必须拒绝");
+  assert.equal(J23813(ctx.pick("ext", { on: true, types: [0, 2] })).error, "invalid-types", "一个有效类型都没有必须拒绝");
+  const on = J23813(ctx.pick("ext", { on: true, types: [4, 5, 6] }));
+  assert.equal(on.ok, true);
+  assert.equal(JSON.stringify(on.types), "[4,5,6]");
+  assert.equal(ctx.walk(), true, "打开后走路拾取才被放行");
+  assert.equal(ctx.wants(3001), true, "卡片(6)必须捡");
+  assert.equal(ctx.wants(1101), true, "装备武器(4)必须捡");
+  assert.equal(ctx.wants(2101), true, "装备防具(5)必须捡");
+  assert.equal(ctx.wants(501), false, "消耗品(0)不得捡");
+  assert.equal(ctx.wants(1201), false, "使用品(2)不得捡");
+  assert.equal(ctx.wants(601), false, "其它类型(11)不得捡");
+  assert.equal(ctx.wants(9999), false, "查不到物品信息的不得捡");
+  assert.equal(JSON.stringify(J23813(ctx.pick("ext", { on: true, types: [0, 2, 6] })).types), "[6]", "只保留卡片/装备/防具三类");
+  const off = J23813(ctx.pick("ext", { on: false }));
+  assert.equal(off.ok, true);
+  assert.equal(ctx.walk(), false, "off 后必须恢复默认关闭");
+  assert.equal(ctx.wants(3001), false, "off 后不再捡");
+  ctx.apiLease = { owner: "other", generation: 1, scopes: ["battle"] };
+  assert.equal(J23813(ctx.pick("ext", { on: true, types: [6] })).error, "lease-required", "租约外一律拒绝");
+  // FIX-3：只申请 dialog 权限的租约不得打开自动拾取（零拾取包、零副作用）
+  const scoped = boot(source);
+  scoped.apiLease = { owner: "ext", generation: 1, scopes: ["dialog"] };
+  assert.equal(J23813(scoped.pick("ext", { on: true, types: [4, 5, 6] })).error, "lease-required", "只持 dialog 不得调 requestPickup");
+  assert.equal(scoped.walk(), false, "被 scope 门拒绝时走路拾取必须仍关闭");
+  assert.equal(scoped.wants(3001), false, "被 scope 门拒绝时卡片也不得捡");
+  assert.equal(scoped.__hk.hooks, 0, "被 scope 门拒绝时零副作用（不装物品钩子）");
+  assert.equal(J23813(scoped.pick("ext", { on: false })).error, "lease-required", "只持 dialog 连 off 也必须被门挡（门禁在入口）");
+  // 变异 M-FIX3b：删掉 battle scope 门 → 上面「只持 dialog 必须被拒」必然红
+  const mutScope = M23813(source, '      var badScope = apiGuard(owner, "battle"); if (badScope) return badScope; ', "");
+  const s2 = boot(mutScope);
+  s2.apiLease = { owner: "ext", generation: 1, scopes: ["dialog"] };
+  assert.equal(J23813(s2.pick("ext", { on: true, types: [4, 5, 6] })).ok, true, "变异体只持 dialog 也能打开自动拾取（说明该断言能抓到这个缺陷）");
+  assert.equal(s2.walk(), true, "变异体确实放行了走路拾取");
+  // 走路策略：只在没有战斗目标时才走过去捡
+  const w = boot(source);
+  assert.equal(w.mayWalk(), true, "没有战斗目标时才允许走远捡");
+  w.zLock = { gid: 5001 };
+  assert.equal(w.mayWalk(), false, "有战斗目标时绝不移动");
+  w.zLock = { gid: null }; w.apiCombatActive = () => true;
+  assert.equal(w.mayWalk(), false, "代打正在追怪时也绝不移动");
+  // 变异 M-R4a：拾取不看类型 → 消耗品也会被捡
+  const mutA = M23813(source, "return t != null && pickupApiTypes.indexOf(t) >= 0;", "return t != null;");
+  const a2 = boot(mutA);
+  a2.pick("ext", { on: true, types: [4, 5, 6] });
+  assert.equal(a2.wants(501), true, "变异体不看类型，消耗品也被捡（说明该断言能抓到这个缺陷）");
+  // 变异 M-R4b：有战斗目标也走过去捡
+  const mutB = M23813(source, 'if (typeof gidInt === "function" && gidInt(zLock && zLock.gid)) return false;', "");
+  const b2 = boot(mutB);
+  b2.zLock = { gid: 5001 };
+  assert.equal(b2.mayWalk(), true, "变异体有战斗目标也走远（说明该断言能抓到这个缺陷）");
+});
+
+
+// ================= FIX23813：13 条 FIX-* 用例的文件参数化 + 变异矩阵 harness =================
+// 约定：
+//   * 13 条标题含 FIX-n 的用例一律对 [stable, exp] 两文件分别跑（FIX23813_SRC 复用 splitSources）；
+//   * 断言消息前缀 fileLabel，失败时直接看出是哪个文件；
+//   * 每个变异都分别作用在 stable 与 exp 上，两次都必须让对应用例变红（rmCheck）；
+//   * rmCheck 把「期望红 / 实际红 / 被抓断言」记进 FIX23813_MATRIX，报告可一次取证。
+const FIX23813_SRC = [['stable', source], ['exp', expSource]];
+const FIX23813_MATRIX = [];
+globalThis.__FIX23813_MATRIX__ = FIX23813_MATRIX;
+const fixCatch23813 = (fn) => { try { fn(); return { ok: true }; } catch (e) { return { ok: false, e: e }; } };
+const fixErrMsg23813 = (e) => String((e && e.message) || e).split(String.fromCharCode(10))[0].slice(0, 200);
+// verifyFn(fileLabel, mutate) 必须抛出「目标断言」：抛了才算变异被杀死，没抛就是变异存活。
+const rmCheck = (fix, fileLabel, mutate, verifyFn) => {
+  const tag = fix + '@' + fileLabel;
+  const v = fixCatch23813(() => verifyFn(fileLabel, mutate));
+  const killed = v.ok === false;
+  FIX23813_MATRIX.push({ fix: fix, file: fileLabel, tag: tag, expected: '红', actual: killed ? '红' : '绿', caught: killed ? fixErrMsg23813(v.e) : '未被抓（变异存活）' });
+  if (!killed) throw new Error('[FIX23813 变异矩阵] ' + tag + ' 必须让对应用例变红，实际：变异体通过了 verify（该断言没抓到缺陷）');
+  return mutate;
+};
+
+
+test("V2.38.13 FIX-2 代打期间：开一律抑制 / 关永远允许（四差分对）+ 变异 M-FIX2（两文件）", () => {
+  for (const [fileLabel, src2] of FIX23813_SRC) {
+  const source = src2;
+    const MOBPOS = [60, 50];
+    const ENT = { GID: 5001, gid: 5001, objecttype: 5, type: 5, dead: false, isDeath: false, mid: 1002, _job: 1002, position: MOBPOS,
+      life: { hp: 900, hp_max: 1000 }, display: { name: "Mob" }, ACTION: { DIE: 9 }, action: 0, job: 1002 };
+    const el = (x) => Object.assign({ value: "12", checked: true, textContent: "", style: {}, addEventListener() {}, getAttribute() { return null; },
+      setAttribute() {}, closest() { return null; }, querySelector() { return null; }, querySelectorAll() { return []; },
+      classList: { add() {}, remove() {}, contains() { return false; } } }, x || {});
+    const VALS = { "dsh-z-switchdelay": "0.001", "dsh-z-minrange": "0", "dsh-z-attint": "0.25" };
+    const boot = (script, npHuntOn) => {
+      const region = A23813(script, "  function zRangeDist(a, b) {", "  function skillLine(o) {");
+      const pre = A23813(script, "  function npSendBattle(want, source, beforeToggle) {", "  function npRequestBattle(want, source, immediate, beforeToggle) {")
+        + A23813(script, "  function npRequestBattle(want, source, immediate, beforeToggle) {", '  onId("dsh-battleon", "click"');
+      const apiBlock = A23813(script, "  var apiCombat=null;", "  function apiEmit(kind,detail){");
+      assert.ok(region.includes("function zAttack() {"), fileLabel + "：" + "提取必须命中 zAttack");
+      assert.ok(region.includes("function npHuntStop(source, immediate) {"), fileLabel + "：" + "提取必须覆盖内挂关闭通道");
+      assert.ok(pre.includes("function npRequestBattle(want, source, immediate, beforeToggle) {"), fileLabel + "：" + "提取必须覆盖内挂事务入口");
+      assert.ok(apiBlock.includes("function apiCombatStart(owner){"), fileLabel + "：" + "提取必须覆盖代打启动");
+      const inner = []; const wire = []; const requests = []; const EM = { forEach(fn) { fn(ENT); } };
+      let NOW = 1000000;
+      const ctx = { Math, Number, String, Array, Object, JSON, Date: { now: () => NOW }, parseInt, parseFloat, isNaN, isFinite, RegExp, Error,
+        Int16Array, Promise, Map, Set, console, setTimeout: () => 0, clearTimeout() {}, setInterval: () => 7, clearInterval() {},
+        document: { addEventListener() {}, querySelector() { return null; }, querySelectorAll() { return []; }, createElement: () => el(), documentElement: {}, head: {}, body: {}, getElementById() { return null; } },
+        window: {}, localStorage: { getItem: () => null, setItem() {}, removeItem() {} }, getComputedStyle: () => ({ display: "block", visibility: "visible" }),
+        $id: (id) => el({ value: (id in VALS) ? VALS[id] : "12" }),
+        czp: (n) => function () { this.__t = n; },
+        CLIENT: { SS: { Entity: { GID: 1, position: [50, 50], life: { hp: 1000, hp_max: 1000 } } },
+          NM: { sendPacket: (p) => { wire.push(p); return true; } }, PS: { CZ: { NOTIFY_ONLYTARGET: function () {} } } },
+        requireDB: (n) => (String(n).indexOf("EntityManager") >= 0 ? EM : null),
+        gidInt: (v) => { const n = Math.floor(Number(v)); return isFinite(n) && n > 0 ? n : 0; },
+        zLock: { gid: 5001, name: "Mob", dist: 10, reactive: false, done: false }, zLockCounts: {}, zCastIdx: 0, zHitBy: {}, zHpWatch: { lastHitAt: 0, lastHp: 1000 },
+        zMon: { action: "" }, zUseCounts: {}, zAtkLast: { gid: null, at: 0, outOfRange: false },
+        apiLease: { owner: "ext", generation: 1, scopes: ["battle"] }, apiGuard: () => null,
+        apiCombat: null,
+        apiBattleTarget: { owner: "ext", mid: 1002, gid: 5001, npAdded: false },
+        lockList: {}, DEFAULTS: { ClientVer: 5 }, zRunning: false, moveXY: {}, arrowRules: { enabled: false }, arrowTarget: null,
+        npHuntOn: !!npHuntOn, npBattleKnown: true, npBattleLastSentAt: -Infinity, npBattleConfirmedAt: 0, npBattleCandidate: null, npBattleExplicit: null, npBattleExplicitTimer: null,
+        npIsThree: () => false, npSendUpdate: () => { inner.push({ __t: "NPC_TOGGLE" }); return true; }, npSendWhisper: () => { inner.push({ __t: "NPC_TOGGLE" }); return true; },
+        npSyncBattleCheckbox: () => {}, npBattleState: () => ctx.npHuntOn,
+        zEntOf: (g) => ({ GID: Number(g), gid: Number(g), type: 5, dead: false, position: MOBPOS, life: { hp: 900, hp_max: 1000 }, display: { name: "Mob" }, _job: 1002, action: 0, ACTION: { DIE: 9 } }),
+        isSitting: () => false, escapePending: () => false, requestEmergencyEscape() {}, zHoldTick() {}, updateHpWatch() {}, sitMaintain() {}, entStatus: () => ({}),
+        clientReady: () => true, tlog() {}, setStatus() {}, onId() {}, npLog() {}, npApplyBattleState() {}, npClearBattleIntent() {},
+        npHuntMode: () => "self", isHybrid: () => false, parseSkillOrder: () => [], captureAll() {}, ensureProfilesInit() {}, activeProfileKey: () => "p1", cloneList: (o) => o,
+        profileTrusted: () => true, profWriteGuard: () => true, ensureProfile: () => ({}), saveProfiles() {}, renderMapLock() {}, roListReadOnly: () => false, roListRoBanner() {}, mobRefLinksHtml: () => "", pendingEditsTouch() {},
+        distInt: () => 1, btLog() {}, normMapKey: (m) => m, skillCdMs: () => 0, dshCastMark() {}, BOSS: 1, learnedSkillLv: () => 1, masterTickReg() {}, potHpThr: () => 0.5,
+        uiComp: () => null, bagPktByIndex: () => null, bagPktSnapshot: () => null, readEquippedAmmo: () => null, arrowItemName: () => "", poll: () => 0, qswPaint() {}, dshDiag() {}, czSelfCheck() {}, czRenderLine() {},
+        deathReturnCancel() {}, buffStateOn: () => false, hookStatusIcons() {}, teleportToMap: () => true, castOrderSkill: () => false, skillNextGap: () => 0, mobid: (m) => Number(m),
+        getSkillRange: () => 1, getSkillNameById: () => "Sk", getMobName: () => "Mob", getMapName: () => "dojo_a", getMobDb: () => ({ 1002: { MvpDropsNum: 0 } }), getworldData: () => ({}), getmobData: () => ({}),
+        apiBattleTargetEntity: () => ENT, apiClearBattleTarget: () => ({ ok: true }), btDiagOn: () => false, skillTypeBits: () => ({ phy: true, mag: false }), mvSnapWalkable: (x, y) => [x, y] };
+      vm.createContext(ctx); vm.runInContext(apiBlock + pre + region, ctx);
+      // 真实 npRequestBattle 之上包一层，只为记录「意图」（want=true 就是开启包）
+      const realRequestBattle = ctx.npRequestBattle;
+      ctx.npRequestBattle = function (want, source, immediate, beforeToggle) {
+        requests.push([!!want, source]);
+        return realRequestBattle.call(this, want, source, immediate, beforeToggle);
+      };
+      const packets = () => inner.map((x) => x && x.__t); // 只统计内挂包（NPC_TOGGLE / UPDATEINFO / WHISPER），不把 zAttack 的 REQUEST_ACT 混进来
+      return { ctx, requests, packets, wire, tick: (n) => { for (let i = 0; i < n; i++) { NOW += 1000; ctx.zAttack(); } } };
+    };
+    // (a) 内挂原本关着 + 代打 → 零内挂包（开与关都为 0）
+    const a = boot(source, false);
+    assert.equal(J23813(a.ctx.apiCombatStart("ext")).ok, true, fileLabel + "：" + "代打必须真的启动");
+    assert.equal(a.ctx.apiCombatActive(), true, fileLabel + "：" + "夹具必须处于代打态");
+    a.ctx.npEnsureHunt();       // 打开路径（zAttack 的 np/hybrid 分支同款）
+    a.tick(4);
+    assert.equal(a.ctx.zAtkWhy, "已出手", fileLabel + "：" + "夹具必须真的走到「有目标开打」那一步（否则用例是空跑）：" + a.ctx.zAtkWhy);
+    assert.deepEqual(a.packets(), [], fileLabel + "：" + "(a) 内挂关着 + 代打：开与关都必须是 0 个内挂包");
+    assert.equal(a.ctx.npHuntOn, false, fileLabel + "：" + "(a) 代打不得把内挂态改成 on");
+
+    // (b) 内挂原本开着 + 代打启动 → 恰好 1 个关闭包，之后不得再出第二个
+    const b = boot(source, true);
+    assert.equal(J23813(b.ctx.apiCombatStart("ext")).ok, true);
+    assert.deepEqual(b.packets(), ["NPC_TOGGLE"], fileLabel + "：" + "(b) 原先开着 → 启动只发一次关闭包");
+    assert.equal(b.ctx.npHuntOn, false, fileLabel + "：" + "(b) 关闭后本地态必须落实到 false");
+    b.ctx.npEnsureHunt();
+    b.tick(4);
+    assert.deepEqual(b.packets(), ["NPC_TOGGLE"], fileLabel + "：" + "(b) 之后的每拍不得再补第二个内挂包（与 zAttack 的关闭收敛为只发一次）");
+
+    // (c) 代打期间手动 setBattle(true) → 零开启包，内挂态不得被改成 on
+    const c = boot(source, false);
+    c.ctx.apiCombat = { owner: "ext", generation: 1 };
+    assert.equal(c.ctx.apiCombatActive(), true);
+    c.ctx.setBattle(true);
+    c.tick(4);
+    assert.deepEqual(c.packets(), [], fileLabel + "：" + "(c) 代打期间不得发出任何开启包");
+    assert.equal(c.ctx.npHuntOn, false, fileLabel + "：" + "(c) 内挂态不得被改成 on");
+    assert.equal(c.requests.some((r) => r[0] === true), true, fileLabel + "：" + "(c) 必须真的走到「打开路径」才会被抑制（否则用例是空跑）");
+
+    // (d) 代打期间手动触发 npHuntStop("map-change",true) → 必须真的发出关闭包（审计红过的场景）
+    const d = boot(source, true);
+    d.ctx.apiCombat = { owner: "ext", generation: 1 };
+    assert.equal(d.ctx.apiCombatActive(), true);
+    d.ctx.npHuntStop("map-change", true);
+    assert.deepEqual(d.packets(), ["NPC_TOGGLE"], fileLabel + "：" + "(d) 代打期间「关」必须真的出包");
+    assert.equal(d.ctx.npHuntOn, false, fileLabel + "：" + "(d) 关闭后本地态必须落实");
+
+    // 变异 M-FIX2a@stable / M-FIX2a@exp：删掉 npRequestBattle 的开启门 → (c) 必须红
+    rmCheck("M-FIX2a", fileLabel, M23813(source, '    if (want && typeof apiCombatActive === "function" && apiCombatActive()) { try { tlog("np-hunt-on suppressed (external combat) source=" + source); } catch (eS) {} return "suppressed"; }\n', ""), (fl, mut) => {
+      const ma = boot(mut, false);
+      ma.ctx.apiCombat = { owner: "ext", generation: 1 };
+      ma.ctx.setBattle(true);
+      assert.deepEqual(ma.packets(), [], fileLabel + "：" + fl + "：[M-FIX2a] 变异体删掉开启门后仍发出开启包");
+      assert.equal(ma.ctx.npHuntOn, false, fileLabel + "：" + fl + "：[M-FIX2a] 变异体把内挂态改成了 on");
+    });
+    // 变异 M-FIX2b@stable / M-FIX2b@exp：把 npHuntStop 的早退加回来 → (d) 必须红
+    rmCheck("M-FIX2b", fileLabel, M23813(source, '  function npHuntStop(source, immediate) {\n    try {\n', '  function npHuntStop(source, immediate) {\n    try {\n      if (typeof apiCombatActive === "function" && apiCombatActive()) return;\n'), (fl, mut) => {
+      const mb = boot(mut, true);
+      mb.ctx.apiCombat = { owner: "ext", generation: 1 };
+      mb.ctx.npHuntStop("map-change", true);
+      assert.equal(mb.packets().indexOf("NPC_TOGGLE"), 0, fileLabel + "：" + fl + "：[M-FIX2b] 变异体把早退加回来后，代打期间关不掉内挂");
+      assert.equal(mb.ctx.npHuntOn, false, fileLabel + "：" + fl + "：[M-FIX2b] 变异体把内挂态留在 on");
+    });
+  }
+});
+
+test("V2.38.13 变异 M-R5：把非 DOJO_OWNER 的 ONLYTARGET 同步加回去 → 必须被真实断言杀死", () => {
+  const mk = (script) => {
+    const code = A23813(script, "  function apiClearBattleTarget(owner){", "  function apiBattleTick(){");
+    const packets = []; let syncs = 0;
+    const ctx = { apiGuard: () => null, arrowPos: (v) => { const n = Number(v); return n > 0 ? n : null; },
+      apiBattleTargetEntity: () => ({ gid: 7, mid: 3001, type: 5, dead: false }),
+      npSyncTargets: () => { syncs++; }, npOnlyTarget: (mid, v) => packets.push([Number(mid), v]),
+      DOJO_OWNER: "builtin-dojo", apiBattleTarget: null, apiBattleSuppressed: {}, lockList: {} };
+    vm.createContext(ctx); vm.runInContext(code + ";this.set=apiSetBattleTarget;this.clear=apiClearBattleTarget", ctx);
+    return { ctx, packets, syncs: () => syncs };
+  };
+  const a = mk(source);
+  assert.equal(J23813(a.ctx.set("owner-one", { mid: 3001, gid: 7 })).ok, true);
+  assert.equal(a.packets.length, 0, "非 DOJO_OWNER 的代打目标一个内挂包都不发");
+  a.ctx.clear("owner-one");
+  assert.equal(a.packets.length, 0, "非 DOJO_OWNER 清目标也不发");
+  const d = mk(source);
+  d.ctx.set("builtin-dojo", { mid: 3001, gid: 7 });
+  assert.equal(d.syncs(), 1, "内置道场路径必须保持原样（仍同步锁定目录）");
+  // 变异 M-R5：恢复非 DOJO_OWNER 的 npOnlyTarget
+  const mut = M23813(source, "apiBattleTarget={owner:owner,mid:mid,gid:gid,npAdded:false};if(owner===DOJO_OWNER)npSyncTargets();return {ok:true};}",
+    "var added=!lockList[String(mid)];apiBattleTarget={owner:owner,mid:mid,gid:gid,npAdded:added};if(owner===DOJO_OWNER)npSyncTargets();else if(added)npOnlyTarget(mid,1);return {ok:true};}");
+  const b = mk(mut);
+  b.ctx.set("owner-one", { mid: 3001, gid: 7 });
+  assert.equal(b.packets.length, 1, "变异体把 ONLYTARGET 加回来了（说明该断言能抓到这个缺陷）");
+});
+
+test("V2.38.13 契约锁：门面新增 prepareCombat / requestPickup / teleportResult，版本与 capabilities 就位", () => {
+  for (const [name, src] of [["stable", source], ["exp", expSource]]) {
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], "2.38.14", name + " @version 必须是 2.38.14");
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], "2.38.14", name + " VER 必须是 2.38.14");
+    const line = src.split(/\r?\n/).find((l) => l.indexOf("var apiFacade={protocol:API_PROTOCOL") >= 0);
+    assert.ok(line, name + " 必须能找到 apiFacade 字面量");
+    for (const k of ["teleport", "teleportResult", "prepareCombat", "requestPickup", "assistCombat", "setBattleTarget", "clearBattleTarget", "requestFly", "release", "acquire", "snapshot", "contactNpc", "walkTo", "chooseMenu"]) {
+      assert.ok(line.includes(k + ":"), name + " 门面必须有 " + k);
+    }
+    const flat = src.replace(/\r?\n/g, "");
+    const cap = /capabilities:function\(\)\{return \{protocol:API_PROTOCOL,scopes:\[([^\]]*)\],modules:\[([^\]]*)\],arrowRules:true,battleTarget:true,\s*assistCombat:true\};\}/.exec(flat);
+    assert.ok(cap, name + " capabilities 必须是六项 scopes + dojo 模块 + 三项能力全 true");
+    assert.equal(cap[1], '"dojo","battle","movement","dialog","arrow","fly"', name + " scopes 六项不得变");
+    assert.equal(cap[2], '"dojo"', name + " modules 必须含 dojo");
+  }
+  // 变异 M-R1b：把 arrow 加回具名能力门面之外的口径 —— 只允许换箭能力本身保留，防止误删
+  assert.ok(source.includes('externalAutomationOwns("arrow")'), "助手侧换箭让位门必须仍在");
+  assert.ok(source.includes("function arrowSelfTick(now){"), "助手侧换箭实现必须仍在（取消的是道场申请，不是助手能力）");
+});
+
+test("V2.38.13 FIX-1/FIX-8 apiBattleTick 状态迁移 + 关闭包必须发出 + 租约消失收起拾取（VM）+ 变异 M-FIX1（两文件）", () => {
+  for (const [fileLabel, src2] of FIX23813_SRC) {
+  const source = src2;
+    const boot = (script) => {
+      const t = A23813(script, "  function apiBattleTick(){", "  function apiBattleDrive(){");
+      const b = A23813(script, "  function apiBattle(owner,on){", "  function apiAssistCombat(owner,on){");
+      assert.ok(t.includes("if(!apiLease)return;"), fileLabel + "：" + "提取必须命中 apiBattleTick");
+      assert.ok(b.includes("function apiBattle(owner,on){"), fileLabel + "：" + "提取必须命中 apiBattle");
+      const sent = []; const emits = [];
+      let pickupResets = 0;
+      const ctx = {
+        apiGuard: () => null,
+        apiLease: { owner: "ext", generation: 4, scopes: ["battle"], released: false, battle: { state: "none" } },
+        npBattleState: () => ctx.__npOn,
+        npRequestBattle: (want, src, imm, cb) => { sent.push([!!want, src]); ctx.__npOn = !!want; return "sent"; },
+        apiBattleTargetEntity: () => true, apiClearBattleTarget: () => {},
+        apiPickupReset: () => { pickupResets++; },
+        apiEmit: (k, d) => emits.push([k, d]),
+        apiCombat: null, apiCurrent: () => true,
+        Date: { now: () => 1000 }, Math, Number, String, Array, Object, isFinite,
+        __npOn: false };
+      vm.createContext(ctx);
+      vm.runInContext(t + b + ";this.tick=apiBattleTick;this.battle=apiBattle;this.lease=()=>apiLease", ctx);
+      return { ctx, sent, emits, pickupResets: () => pickupResets };
+    };
+    const h = boot(source);
+    assert.ok(h.ctx.lease().battle, fileLabel + "：" + "租约必须带 battle 事务槽");
+    h.ctx.tick();
+    assert.equal(h.ctx.lease().battle.state, "none", fileLabel + "：" + "初始态必须是 none");
+    const r1 = J23813(h.ctx.battle("ext", true));
+    assert.equal(r1.ok, true);
+    assert.deepEqual(h.sent, [[true, "external:ext"]], fileLabel + "：" + "开启必须真的出包");
+    assert.equal(h.ctx.lease().battle.state, "pending-on", fileLabel + "：租约 battle 必须进入 pending-on");
+    h.ctx.tick();
+    assert.equal(h.ctx.lease().battle.state, "owned", fileLabel + "：" + "FIX-1：pending-on + 内挂确认在跑 → owned");
+    h.sent.length = 0;
+    const r2 = J23813(h.ctx.battle("ext", false));
+    assert.equal(r2.ok, true);
+    assert.deepEqual(h.sent, [[false, "external:ext"]], fileLabel + "：" + "FIX-1：owned 之后关闭包必须真的发出去（不得静默 not-owned）");
+    assert.equal(h.ctx.lease().battle.state, "pending-off", fileLabel + "：租约 battle 必须进入 pending-off");
+    h.ctx.tick();
+    assert.equal(h.ctx.lease().battle.state, "none", fileLabel + "：" + "FIX-1：pending-off + 内挂确认关闭 → none");
+    // FIX-8：released 且已收敛 → 租约消失的同一条路径必须一并收起自动拾取
+    const before = h.pickupResets();
+    h.ctx.lease().released = true;
+    h.ctx.tick();
+    assert.equal(h.ctx.lease(), null, fileLabel + "：" + "released 且已收敛 → 租约必须消失");
+    assert.equal(h.pickupResets(), before + 1, fileLabel + "：" + "FIX-8：租约消失路径必须一并 apiPickupReset()");
+    // 变异 M-FIX1@stable / M-FIX1@exp：删掉两句状态迁移 → pending-on 永远不收敛，关闭包发不出去
+    rmCheck("M-FIX1", fileLabel, M23813(source, 'var b=apiLease.battle,s=npBattleState();if(b.state==="pending-on"&&s===true)b.state="owned";else if(b.state==="pending-off"&&s===false)b.state="none";', ""), (fl, mut) => {
+      const m = boot(mut);
+      m.ctx.battle("ext", true); m.ctx.tick();
+      assert.equal(m.ctx.lease().battle.state, "pending-on", fileLabel + "：" + fl + "：[M-FIX1] 变异体状态永远停在 pending-on");
+      m.sent.length = 0;
+      const mr = J23813(m.ctx.battle("ext", false));
+      assert.equal(mr.result, "sent", fileLabel + "：" + fl + "：[M-FIX1] 变异体关闭分支被 not-owned 门槛挡住");
+      assert.equal(m.sent.length, 1, fileLabel + "：" + fl + "：[M-FIX1] 变异体关闭包发不出去");
+    });
+  }
+});
+
+test("V2.38.13 FIX-7 apiTeleportResult(owner)：租约门 + 0/2/3/4/no-ack 映射（VM）+ 变异 M-FIX7（两文件）", () => {
+  for (const [fileLabel, src2] of FIX23813_SRC) {
+  const source = src2;
+    const boot = (script) => {
+      const g = A23813(script, "  function apiHas(owner,scope){", "  function apiCurrent(owner,generation){")
+        + A23813(script, "  function apiGuard(owner,scope){", "  function apiBattleTargetEntity(target){");
+      const f = A23813(script, "  function apiTeleportResult(owner){", "  function apiChoose(owner,payload){");
+      assert.ok(f.startsWith("  function apiTeleportResult(owner)"), fileLabel + "：" + "FIX-7：apiTeleportResult 必须接收 owner");
+      assert.ok(g.includes("function apiGuard(owner,scope){"), fileLabel + "：" + "提取必须覆盖 apiGuard");
+      const ctx = { clientReady: () => true, apiLease: { owner: "ext", generation: 1, scopes: ["movement"] },
+        tpLast: { code: null }, TP_ACK_WHY: { 0: "受理", 2: "没卷轴或会员卡", 3: "地图不支持", 4: "未知地图" },
+        Number, String, Array, Object };
+      vm.createContext(ctx);
+      vm.runInContext(g + f + ";this.res=apiTeleportResult", ctx);
+      return ctx;
+    };
+    const ctx = boot(source);
+    ctx.apiLease = null;
+    assert.equal(J23813(ctx.res("ext")).error, "lease-required", fileLabel + "：" + "无租约必须拒绝（FIX-7）");
+    ctx.apiLease = { owner: "other", generation: 1, scopes: ["movement"] };
+    assert.equal(J23813(ctx.res("ext")).error, "lease-required", fileLabel + "：" + "他人租约必须拒绝");
+    ctx.apiLease = { owner: "ext", generation: 1, scopes: ["dialog"] };
+    assert.equal(J23813(ctx.res("ext")).error, "lease-required", fileLabel + "：" + "本人租约但没有 movement/fly 也必须拒绝");
+    ctx.apiLease = { owner: "ext", generation: 1, scopes: ["movement"] };
+    ctx.tpLast = { code: 0 };
+    assert.deepEqual(J23813(ctx.res("ext")), { ok: true, code: 0, error: "" }, fileLabel + "：" + "code=0 必须映射成受理成功（审计点名的覆盖洞）");
+    ctx.tpLast = { code: 2 };
+    assert.deepEqual(J23813(ctx.res("ext")), { ok: false, code: 2, error: "code=2（没卷轴或会员卡）" });
+    ctx.tpLast = { code: 3 };
+    assert.deepEqual(J23813(ctx.res("ext")), { ok: false, code: 3, error: "code=3（地图不支持）" });
+    ctx.tpLast = { code: 4 };
+    assert.deepEqual(J23813(ctx.res("ext")), { ok: false, code: 4, error: "code=4（未知地图）" });
+    ctx.tpLast = { code: 9 };
+    assert.deepEqual(J23813(ctx.res("ext")), { ok: false, code: 9, error: "code=9（未知代码）" });
+    ctx.tpLast = { code: null };
+    assert.deepEqual(J23813(ctx.res("ext")), { ok: null, code: null, error: "no-ack" }, fileLabel + "：" + "没有回包必须 no-ack");
+    // 变异 M-FIX7a@stable / M-FIX7a@exp：把 code=0 改成失败 → 映射用例必须红
+    rmCheck("M-FIX7a", fileLabel, M23813(source, 'if(tpLast.code===0)return {ok:true,code:0,error:""};', 'if(false)return {ok:true,code:0,error:""};'), (fl, mut) => {
+      const ma = boot(mut);
+      ma.apiLease = { owner: "ext", generation: 1, scopes: ["movement"] }; ma.tpLast = { code: 0 };
+      assert.deepEqual(J23813(ma.res("ext")), { ok: true, code: 0, error: "" }, fileLabel + "：" + fl + "：[M-FIX7a] 变异体把 code=0 也当失败");
+    });
+    // 变异 M-FIX7b@stable / M-FIX7b@exp：退回无租约校验的全局单槽 → 无租约也能读回执
+    rmCheck("M-FIX7b", fileLabel, M23813(source, 'function apiTeleportResult(owner){var bad=apiGuard(owner,"movement");if(bad&&bad.error==="lease-required")bad=apiGuard(owner,"fly");if(bad)return {ok:false,error:"lease-required"};', 'function apiTeleportResult(owner){'), (fl, mut) => {
+      const mb = boot(mut);
+      mb.apiLease = null; mb.tpLast = { code: 0 };
+      assert.equal(J23813(mb.res("ext")).error, "lease-required", fileLabel + "：" + fl + "：[M-FIX7b] 变异体无租约也能读回执");
+    });
+  }
+});
+
+test("V2.38.13 FIX-6 内置道场恢复 BOSS-only（外部租约路径不得连坐）（VM）+ 变异 M-FIX6（两文件）", () => {
+  for (const [fileLabel, src2] of FIX23813_SRC) {
+  const source = src2;
+    const base = { ready: true, inDojoMap: true, mobs: [], npcs: [], player: { position: [0, 0], hp: 100, maxHp: 100 }, dialogOpen: false, menu: null };
+    const runTick = (script, mob) => {
+      const c = A23813(script, "  function dojoTick(g){", "  function dojoStart(params){");
+      assert.ok(c.includes("live.filter"), fileLabel + "：" + "提取必须命中内置道场战斗分支");
+      const calls = [];
+      const a = { snapshot: () => Object.assign({}, base, { mobs: [mob], arrow: { enabled: false, ready: false, blocked: false, target: null } }),
+        setBattleTarget: (o, t) => { calls.push(["setBattleTarget", t.mid]); },
+        clearBattleTarget: () => calls.push(["clearBattleTarget"]),
+        setArrowTarget: (o, t) => { calls.push(["setArrowTarget", t.mid]); return { ok: true }; },
+        clearArrowTarget: () => calls.push(["clearArrowTarget"]),
+        requestBattle: (o, on) => calls.push(["requestBattle", on]),
+        contactNpc: () => calls.push(["contact"]), walkTo: () => calls.push(["walk"]),
+        requestFly: () => calls.push(["fly"]), chooseMenu: () => calls.push(["choose"]) };
+      const run = { on: true, generation: 1, phase: "", npc: null, lastMenu: "", lastFly: 0, round: 0, remaining: null, timer: null };
+      const ctx = { dojoRun: run, dojoCfg: { difficulty: "basic", stop100: false, fly: false, emergency: false },
+        arrowRules: { enabled: false }, DOJO_OWNER: "builtin-dojo", dojoApi: () => a, dojoRender: () => {},
+        dojoStop: (r) => { calls.push(["stop", r]); return r; }, dojoChoose: () => false,
+        dojoContact: () => calls.push(["contactPath"]), dojoNorm: (s) => String(s || ""),
+        Math, Number, String, Array, Object, Infinity, Date };
+      vm.createContext(ctx); vm.runInContext(c + ";this.tick=dojoTick", ctx);
+      ctx.tick(1);
+      return { calls, run };
+    };
+    const boss = { mid: 2002, gid: 7, dead: false, isBoss: true };
+    const normal = { mid: 1002, gid: 8, dead: false, isBoss: false };
+    const withBoss = runTick(source, boss);
+    assert.deepEqual(withBoss.calls.filter((x) => x[0] === "setBattleTarget"), [["setBattleTarget", 2002]], fileLabel + "：" + "BOSS 必须被指定为战斗目标（证明用例不是空跑）");
+    assert.ok(withBoss.calls.some((x) => x[0] === "requestBattle" && x[1] === true), fileLabel + "：" + "BOSS 在场必须开战");
+    const withNormal = runTick(source, normal);
+    assert.equal(withNormal.calls.some((x) => x[0] === "setBattleTarget"), false, fileLabel + "：" + "FIX-6：非 BOSS 不得被指定为战斗目标");
+    assert.equal(withNormal.calls.some((x) => x[0] === "setArrowTarget"), false, fileLabel + "：" + "FIX-6：非 BOSS 不得被指定为换箭目标（普通怪不进客户端锁定名单）");
+    assert.equal(withNormal.calls.some((x) => x[0] === "requestBattle"), false, fileLabel + "：" + "FIX-6：非 BOSS 不得开战，必须回到 NPC 接触流程");
+    assert.equal(withNormal.calls.some((x) => x[0] === "contactPath"), true, fileLabel + "：" + "FIX-6：非 BOSS 必须回到 dojoContact");
+    // 外部租约路径不得被连坐：apiBattleTargetEntity 仍认任何活怪，apiSetBattleTarget 必须接受非 BOSS
+    const entCtx = { DOJO_OWNER: "builtin-dojo", apiGuard: () => null, arrowPos: (v) => { const n = Number(v); return n > 0 ? n : null; },
+      apiEntities: () => [{ gid: 8, mid: 1002, type: 5, dead: false, isBoss: false }],
+      apiBattleTarget: null, apiBattleSuppressed: {}, lockList: {}, npSyncTargets: () => {}, npOnlyTarget: () => {} };
+    const entCode = A23813(source, "  function apiBattleTargetEntity(target){", "  function apiBattleTick(){");
+    vm.createContext(entCtx);
+    vm.runInContext(entCode + ";this.set=apiSetBattleTarget;this.ent=apiBattleTargetEntity", entCtx);
+    assert.equal(!!entCtx.ent({ mid: 1002, gid: 8 }), true, fileLabel + "：" + "非 BOSS 也必须能被 apiBattleTargetEntity 认成活怪");
+    assert.equal(J23813(entCtx.set("ext-owner", { mid: 1002, gid: 8 })).ok, true, fileLabel + "：" + "FIX-6：外部租约路径喂非 BOSS 必须 setBattleTarget");
+    // 变异 M-FIX6@stable / M-FIX6@exp：把内置那条改回 live[0] 兜底 → 非 BOSS 用例必须红
+    rmCheck("M-FIX6", fileLabel, M23813(source, '})[0]; // V2.38.13 FIX-6：内置道场恢复 BOSS-only（普通怪不再占用战斗/换箭目标）；外部租约路径的 apiBattleTargetEntity 不变', "})[0]||live[0];"), (fl, mut) => {
+      const mutNormal = runTick(mut, normal);
+      assert.equal(mutNormal.calls.some((x) => x[0] === "setBattleTarget"), false, fileLabel + "：" + fl + "：[M-FIX6] 变异体把普通怪指定为战斗目标");
+      assert.equal(mutNormal.calls.some((x) => x[0] === "setArrowTarget"), false, fileLabel + "：" + fl + "：[M-FIX6] 变异体把普通怪当目标指定换箭");
+    });
+  }
+});
+
+test("V2.38.13 FIX-10b assistCombat(owner,false) 停代打必须还原「打全部怪」原值（VM）+ 变异 M-FIX10b（两文件）", () => {
+  for (const [fileLabel, src2] of FIX23813_SRC) {
+  const source = src2;
+    const boot = (script) => {
+      const allmobs = A23813(script, "  var apiAllMobsSaved = null;", "  function apiRequestPickup(owner, payload) {");
+      const combat = A23813(script, "  var apiCombat=null;", "  function apiEmit(kind,detail){");
+      const assist = A23813(script, "  function apiAssistCombat(owner,on){", "  function apiSetArrow(owner,target){");
+      const box = { checked: false };
+      const ctx = { apiGuard: () => null, clientReady: () => true,
+        apiLease: { owner: "ext", generation: 1, scopes: ["dojo", "battle"], battle: { state: "none" } },
+        npBattleState: () => false, npRequestBattle: () => "already",
+        zRunning: false, tlog: () => {}, $id: (id) => (id === "dsh-z-allmobs" ? box : null),
+        zLock: {}, zMon: {}, zUseCounts: {}, zLockCounts: {}, zCastIdx: 0, zAtkLast: {},
+        setInterval: () => 7, clearInterval: () => {}, Date: { now: () => 1 },
+        Math, Number, String, Array, Object, isFinite, parseFloat,
+        profileTrusted: () => true, activeProfileKey: () => "p1", lockList: {},
+        profileLockSave: () => {}, renderLockList: () => {}, npSyncTargets: () => {} };
+      vm.createContext(ctx);
+      vm.runInContext(allmobs + combat + assist + ";this.prep=apiPrepareCombat;this.assist=apiAssistCombat;this.stop=apiCombatStop", ctx);
+      return { ctx, box, combat };
+    };
+    const h = boot(source);
+    const prep = J23813(h.ctx.prep("ext", { allMobs: true }));
+    assert.equal(prep.ok, true, fileLabel + "：" + "战斗准备必须成立");
+    assert.equal(h.box.checked, true, fileLabel + "：" + "准备阶段先勾上「打全部怪」");
+    assert.equal(prep.allMobsRestore, false, fileLabel + "：" + "必须记下原值 false");
+    assert.equal(J23813(h.ctx.assist("ext", true)).ok, true, fileLabel + "：" + "开启代打");
+    assert.equal(h.box.checked, true, fileLabel + "：" + "开启代打本身不得改动「打全部怪」");
+    assert.equal(J23813(h.ctx.assist("ext", false)).ok, true, fileLabel + "：" + "关闭代打");
+    assert.equal(h.box.checked, false, fileLabel + "：" + "FIX-10b：assistCombat(owner,false) 停代打必须还原 #dsh-z-allmobs 原值");
+    assert.equal(J23813(h.ctx.assist("ext", false)).ok, true, fileLabel + "：" + "重复关闭必须幂等");
+    assert.equal(h.box.checked, false, fileLabel + "：" + "幂等关闭后仍必须是还原值");
+    // 变异 M-FIX10b@stable / M-FIX10b@exp：删掉 apiCombatStop 里的还原 → 「打全部怪」留在开
+    rmCheck("M-FIX10b", fileLabel, M23813(source, '\n    if(typeof apiAllMobsRestore==="function")apiAllMobsRestore();\n', "\n"), (fl, mut) => {
+      const m = boot(mut);
+      J23813(m.ctx.prep("ext", { allMobs: true }));
+      J23813(m.ctx.assist("ext", true));
+      J23813(m.ctx.assist("ext", false));
+      assert.equal(m.box.checked, false, fileLabel + "：" + fl + "：[M-FIX10b] 变异体停代打不还原，「打全部怪」留在开");
+    });
+  }
+});
+
+test("V2.38.13 FIX-12 代打期间快捷键与 setBattle 必须给出同一句「已抑制」文案（VM）+ 变异 M-FIX12（两文件）", () => {
+  for (const [fileLabel, src2] of FIX23813_SRC) {
+  const source = src2;
+    const boot = (script) => {
+      const pre = A23813(script, "  function npSendBattle(want, source, beforeToggle) {", "  function npRequestBattle(want, source, immediate, beforeToggle) {")
+        + A23813(script, "  function npRequestBattle(want, source, immediate, beforeToggle) {", '  onId("dsh-battleon", "click"');
+      const hk = A23813(script, "  function npToggleFight() {", "  // 助手自动战斗快捷键");
+      assert.ok(pre.includes("function setBattle(on) {"), fileLabel + "：" + "提取必须覆盖 setBattle");
+      assert.ok(hk.includes('npRequestBattle(want, "hotkey", true)'), fileLabel + "：" + "提取必须覆盖快捷键入口");
+      const statuses = []; const toggles = [];
+      const ctx = { Math, Number, String, Array, Object, isFinite, parseInt, parseFloat, isNaN, RegExp, Error, JSON,
+        Date: { now: () => 1000000 }, setTimeout: () => 0, clearTimeout: () => {},
+        npHuntOn: false, npBattleKnown: true, npBattleLastSentAt: -Infinity, npBattleConfirmedAt: 0,
+        npBattleCandidate: null, npBattleExplicit: null, npBattleExplicitTimer: null, npZeroVerifyTimer: null,
+        apiCombatActive: () => true, npToggleHunt: () => { toggles.push(1); return true; }, npSyncBattleCheckbox: () => {},
+        tlog: () => {}, setStatus: (t) => statuses.push(String(t)), dshDiag: () => {} };
+      vm.createContext(ctx); vm.runInContext(pre + hk, ctx);
+      return { ctx, statuses, toggles };
+    };
+    const SUPPRESSED = "外部代打进行中：不开内挂自动战斗（已抑制）";
+    const a = boot(source);
+    a.ctx.setBattle(true);
+    assert.equal(a.statuses[0], SUPPRESSED, fileLabel + "：" + "setBattle 路径在代打期间必须明确说「已抑制」");
+    a.ctx.npToggleFight();
+    assert.equal(a.statuses[1], a.statuses[0], fileLabel + "：" + "FIX-12：快捷键路径必须与 setBattle 说同一句话");
+    assert.deepEqual(a.toggles, [], fileLabel + "：" + "两条路径都不得发出任何开启包");
+    assert.equal(a.ctx.npHuntOn, false, fileLabel + "：" + "两条路径都不得改动本地内挂态");
+    // 变异 M-FIX12@stable / M-FIX12@exp：把快捷键那条改回通用文案 → 两条路径不再同一句
+    rmCheck("M-FIX12", fileLabel, M23813(source, '      setStatus(result === "sent" ? "内挂自动战斗：快捷键已请求切换一次" : (result === "suppressed" ? "外部代打进行中：不开内挂自动战斗（已抑制）" : "内挂自动战斗状态未确认，未重复切换"), npResultKind(result, result === "sent" ? "ok" : "warn"));', '      setStatus(result === "sent" ? "内挂自动战斗：快捷键已请求切换一次" : "内挂自动战斗状态未确认，未重复切换", npResultKind(result, result === "sent" ? "ok" : "warn"));'), (fl, mut) => {
+      const m = boot(mut);
+      m.ctx.setBattle(true); m.ctx.npToggleFight();
+      assert.equal(m.statuses[1], m.statuses[0], fileLabel + "：" + fl + "：[M-FIX12] 变异体把「被抑制」说成「状态未确认」，两条路径不再同一句");
+    });
+  }
+});
+
+test("V2.38.13 FIX-13 代打开始必须显式撤销排队中的开内挂意图并留日志（VM）+ 变异 M-FIX13（两文件）", () => {
+  for (const [fileLabel, src2] of FIX23813_SRC) {
+  const source = src2;
+    const boot = (script) => {
+      const combat = A23813(script, "  var apiCombat=null;", "  function apiEmit(kind,detail){");
+      const pre = A23813(script, "  function npSendBattle(want, source, beforeToggle) {", "  function npRequestBattle(want, source, immediate, beforeToggle) {")
+        + A23813(script, "  function npRequestBattle(want, source, immediate, beforeToggle) {", '  onId("dsh-battleon", "click"');
+      assert.ok(combat.includes("function apiCombatStart(owner){"), fileLabel + "：" + "提取必须覆盖代打启动");
+      assert.ok(pre.includes("function npRunExplicit() {"), fileLabel + "：" + "提取必须覆盖排队定时器回调");
+      const logs = []; const packets = []; const timers = new Map(); let tid = 0; const NOW = 1000000;
+      const ctx = { Math, Number, String, Array, Object, isFinite, parseInt, parseFloat, isNaN, RegExp, Error, JSON,
+        Date: { now: () => NOW }, setTimeout: (fn) => { timers.set(++tid, { fn: fn, cleared: false }); return tid; },
+        clearTimeout: (id) => { const t = timers.get(id); if (t) t.cleared = true; },
+        setInterval: () => 7, clearInterval: () => {},
+        npHuntOn: false, npBattleKnown: false, npBattleLastSentAt: NOW, npBattleConfirmedAt: 0,
+        npBattleCandidate: null, npBattleExplicit: null, npBattleExplicitTimer: null, npZeroVerifyTimer: null,
+        apiCombat: null, apiLease: { owner: "ext-owner", generation: 3, scopes: ["battle"] }, apiGuard: () => null,
+        zRunning: false, zLock: {}, zUseCounts: {}, zLockCounts: {}, zCastIdx: 0, zAtkLast: {}, zMon: {},
+        $id: () => ({ value: "0.25" }), tlog: (msg) => logs.push(String(msg)), setStatus: () => {}, dshDiag: () => {},
+        npBattleState: () => ctx.npHuntOn, apiAllMobsRestore: () => {}, npToggleHunt: () => { packets.push(1); return true; } };
+      vm.createContext(ctx); vm.runInContext(combat + pre, ctx);
+      return { ctx, logs, packets, timers };
+    };
+    const CANCEL = "已取消排队的开内挂";
+    const h = boot(source);
+    h.ctx.setBattle(true);
+    assert.equal(h.ctx.npHuntOn, false, fileLabel + "：" + "夹具必须处在内挂关（开内挂才需要排队）");
+    assert.equal(h.ctx.npBattleExplicit && h.ctx.npBattleExplicit.want, true, fileLabel + "：" + "夹具必须真的把「开内挂」意图排进队");
+    const qid = h.ctx.npBattleExplicitTimer;
+    assert.ok(qid && h.timers.has(qid), fileLabel + "：" + "排队必须真的挂上定时器");
+    assert.equal(h.timers.get(qid).cleared, false, fileLabel + "：" + "排队中定时器不得已被撤销");
+    assert.deepEqual(h.packets, [], fileLabel + "：" + "入队阶段不得发出开启包");
+    assert.equal(J23813(h.ctx.apiCombatStart("ext-owner")).ok, true, fileLabel + "：" + "代打必须真的启动");
+    assert.equal(h.ctx.npBattleExplicit, null, fileLabel + "：" + "FIX-13：代打开始必须显式清掉排队中的开内挂意图");
+    assert.equal(h.ctx.npBattleExplicitTimer, null, fileLabel + "：" + "FIX-13：排队定时器句柄必须一并清空");
+    assert.equal(h.timers.get(qid).cleared, true, fileLabel + "：" + "FIX-13：排队定时器必须被撤销");
+    assert.ok(h.logs.some((msg) => msg.indexOf(CANCEL) >= 0), fileLabel + "：" + "FIX-13：必须留下「外部代打开始，已取消排队的开内挂」日志：" + JSON.stringify(h.logs));
+    h.timers.get(qid).fn();
+    assert.deepEqual(h.packets, [], fileLabel + "：" + "FIX-13：排队定时器即便触发也必须是零开启包");
+    assert.equal(h.ctx.npHuntOn, false, fileLabel + "：" + "FIX-13：本地态不得被改成 on");
+    // 变异 M-FIX13@stable / M-FIX13@exp：删掉代打开始时的清理 → 意图残留、日志缺失
+    rmCheck("M-FIX13", fileLabel, M23813(source, 'if(typeof npBattleExplicit!=="undefined"&&npBattleExplicit&&npBattleExplicit.want){\n      if(typeof npBattleExplicitTimer!=="undefined"&&npBattleExplicitTimer)clearTimeout(npBattleExplicitTimer);\n      npBattleExplicitTimer=null;\n      npBattleExplicit=null;\n      try{tlog("np-hunt-on queued cancel 外部代打开始，已取消排队的开内挂 source=external:"+owner);}catch(eQ){}\n    }', ""), (fl, mut) => {
+      const m = boot(mut);
+      m.ctx.setBattle(true);
+      const mq = m.ctx.npBattleExplicitTimer;
+      J23813(m.ctx.apiCombatStart("ext-owner"));
+      assert.equal(m.ctx.npBattleExplicit, null, fileLabel + "：" + fl + "：[M-FIX13] 变异体代打开始后排队意图仍然留着");
+      assert.equal(m.logs.some((msg) => msg.indexOf(CANCEL) >= 0), true, fileLabel + "：" + fl + "：[M-FIX13] 变异体取消日志缺失");
+      m.timers.get(mq).fn();
+    });
+  }
+});
+
+test("V2.38.13 FIX-14 release 后同一 owner 立刻 acquire：released 复位 / scopes 刷新 / 代次递增（VM）+ 变异 M-FIX14（两文件）", () => {
+  for (const [fileLabel, src2] of FIX23813_SRC) {
+  const source = src2;
+    const boot = (script) => {
+      const tick = A23813(script, "  function apiBattleTick(){", "  function apiBattleDrive(){");
+      const acq = A23813(script, "  function apiAcquire(owner,scopes){", "  function apiGuard(owner,scope){");
+      const rel = A23813(script, "  function apiRelease(owner){", "  function apiContact(owner,gid){");
+      assert.ok(tick.includes('if(apiLease.released&&b.state==="none")'), fileLabel + "：" + "提取必须覆盖租约清空路径");
+      assert.ok(rel.includes('npRequestBattle(false,"external-release:"+owner'), fileLabel + "：" + "提取必须覆盖 release 的关闭包");
+      const sent = []; let pickups = 0;
+      const ctx = { Math, Number, String, Array, Object, isFinite, RegExp, Error, JSON, Date: { now: () => 1000 },
+        apiLease: { owner: "ext-owner", generation: 4, scopes: ["battle"], released: false, selectedNpc: 0, battle: { state: "owned" } },
+        apiGeneration: 4, clientReady: () => true,
+        apiOwner: (o) => typeof o === "string" && /^[A-Za-z0-9_.:-]{8,128}$/.test(o),
+        apiScopes: (s) => Array.isArray(s) && s.length > 0 && s.every((x) => ["dojo", "battle", "movement", "dialog", "arrow", "fly"].indexOf(x) >= 0),
+        npBattleState: () => false, npRequestBattle: (want, src) => { sent.push([!!want, src]); return "sent"; },
+        npClearBattleIntent: () => {}, npZeroBattle: () => {}, apiCombat: null,
+        apiAllMobsRestore: () => {}, apiPickupReset: () => { pickups++; },
+        apiClearBattleTarget: () => ({ ok: true }), apiEmit: () => {},
+        moveXY: {}, arrowTarget: null, arrowPending: null, arrowReady: false, arrowBlocked: false,
+        zRunning: false, bagClean: { busy: false } };
+      vm.createContext(ctx);
+      vm.runInContext(tick + acq + rel + ";this.acquire=apiAcquire;this.release=apiRelease;this.tick=apiBattleTick;this.lease=()=>apiLease", ctx);
+      return { ctx, sent, pickups: () => pickups };
+    };
+    const h = boot(source);
+    const rel1 = J23813(h.ctx.release("ext-owner"));
+    assert.equal(rel1.ok, true);
+    assert.equal(rel1.result, "pending-off", fileLabel + "：" + "owned 走 release 必须停在 pending-off 并把租约留在原地");
+    assert.deepEqual(h.sent, [[false, "external-release:ext-owner"]], fileLabel + "：" + "旧语义：release 该发的关闭包必须照样发出");
+    assert.equal(h.ctx.lease().released, true, fileLabel + "：" + "release 后租约必须被标记已释放");
+    const p0 = h.pickups();
+    h.sent.length = 0;
+    const acq1 = J23813(h.ctx.acquire("ext-owner", ["battle", "movement"]));
+    assert.equal(acq1.ok, true, fileLabel + "：" + "同一 owner 在 released 窗口内重新获取必须成功");
+    assert.equal(acq1.generation, 5, fileLabel + "：" + "FIX-14：必须递增代次（不得把旧代次 4 原样发回去）");
+    assert.deepEqual(J23813(h.ctx.lease().scopes), ["battle", "movement"], fileLabel + "：" + "FIX-14：scopes 必须是本次请求的值");
+    for (let i = 0; i < 5; i++) h.ctx.tick();
+    assert.ok(h.ctx.lease(), fileLabel + "：" + "FIX-14：连续 5 帧 apiBattleTick 之后新租约必须还在（不得被当成已释放的旧租约清空）");
+    assert.equal(h.ctx.lease().released, false, fileLabel + "：" + "FIX-14：必须复位 released，否则下一帧会把新租约清掉");
+    assert.equal(h.ctx.lease().generation, 5, fileLabel + "：" + "FIX-14：活下来的必须是新代次");
+    assert.deepEqual(J23813(h.ctx.lease().scopes), ["battle", "movement"], fileLabel + "：" + "FIX-14：活下来的 scopes 必须是本次请求值");
+    assert.deepEqual(h.sent, [], fileLabel + "：" + "重新获取本身不得补发任何内挂包");
+    assert.equal(h.pickups(), p0, fileLabel + "：" + "重新获取不得误触发 apiPickupReset（租约未被清空 → 不得多一次）");
+    // 变异 M-FIX14@stable / M-FIX14@exp：把 released 复位去掉 → 下一帧按旧租约清空
+    rmCheck("M-FIX14", fileLabel, M23813(source, ';apiLease.released=false;apiLease.scopes=scopes.slice();', ';apiLease.scopes=scopes.slice();'), (fl, mut) => {
+      const m = boot(mut);
+      m.ctx.release("ext-owner");
+      const mAcq = J23813(m.ctx.acquire("ext-owner", ["battle", "movement"]));
+      assert.equal(mAcq.generation, 5, fileLabel + "：" + fl + "：[M-FIX14] 变异体代次照样递增");
+      assert.equal(m.ctx.lease().released, false, fileLabel + "：" + fl + "：[M-FIX14] 变异体 released 未复位");
+      m.ctx.tick();
+      assert.ok(m.ctx.lease(), fl + "：[M-FIX14] 变异体下一帧把刚到手的租约清空");
+    });
+  }
+});
+
+// ================= 第五轮：FIX-15 / FIX-16 / FIX-17 / FIX-18 =================
+
+test("V2.38.13 FIX-15 限流窗口内 release 的同属主重取：迟到的关闭包必须兑现且租约可回收（VM）+ 变异 M-FIX15（两文件）", () => {
+  for (const [fileLabel, src2] of FIX23813_SRC) {
+  const source = src2;
+    const boot = (script) => {
+      const pre = A23813(script, "  function npSendBattle(want, source, beforeToggle) {", "  function npRequestBattle(want, source, immediate, beforeToggle) {")
+        + A23813(script, "  function npRequestBattle(want, source, immediate, beforeToggle) {", '  onId("dsh-battleon", "click"');
+      const tick = A23813(script, "  function apiBattleTick(){", "  function apiBattleDrive(){");
+      const acq = A23813(script, "  function apiAcquire(owner,scopes){", "  function apiGuard(owner,scope){");
+      const rel = A23813(script, "  function apiRelease(owner){", "  function apiContact(owner,gid){");
+      assert.ok(pre.includes("function npSendBattle(want, source, beforeToggle) {"), fileLabel + "：" + "提取必须覆盖内挂发包");
+      let NOW = 1000000; const timers = new Map(); let tid = 0;
+      const packets = [];
+      const ctx = { Math, Number, String, Array, Object, isFinite, RegExp, Error, JSON, parseInt, parseFloat, isNaN,
+        Date: { now: () => NOW },
+        setTimeout: (fn, ms) => { const id = ++tid; timers.set(id, { fn: fn, at: NOW + ms }); return id; },
+        clearTimeout: (id) => { timers.delete(id); },
+        npHuntOn: true, npBattleKnown: true, npBattleLastSentAt: NOW, npBattleConfirmedAt: 0,
+        npBattleCandidate: null, npBattleExplicit: null, npBattleExplicitTimer: null, npZeroVerifyTimer: null,
+        npToggleHunt: () => { packets.push("NPC_TOGGLE"); return true; }, npSyncBattleCheckbox: () => {}, tlog: () => {},
+        npBattleState: () => ctx.npHuntOn, apiCombatActive: () => false, apiCombat: null, npZeroBattle: () => {},
+        apiLease: { owner: "ext-owner", generation: 4, scopes: ["battle"], released: false, selectedNpc: 0, battle: { state: "owned" } },
+        apiGeneration: 4, clientReady: () => true,
+        apiOwner: (o) => typeof o === "string" && /^[A-Za-z0-9_.:-]{8,128}$/.test(o),
+        apiScopes: (s) => Array.isArray(s) && s.length > 0 && s.every((x) => ["dojo", "battle", "movement", "dialog", "arrow", "fly"].indexOf(x) >= 0),
+        apiAllMobsRestore: () => {}, apiPickupReset: () => {}, apiClearBattleTarget: () => ({ ok: true }),
+        apiBattleTarget: null, apiBattleTargetEntity: () => true,
+        apiEmit: () => {}, moveXY: {}, arrowTarget: null, arrowPending: null, arrowReady: false, arrowBlocked: false,
+        zRunning: false, bagClean: { busy: false } };
+      vm.createContext(ctx);
+      vm.runInContext(tick + acq + rel + pre + ";this.acquire=apiAcquire;this.release=apiRelease;this.tick=apiBattleTick;this.lease=()=>apiLease", ctx);
+      return { ctx, packets, timers,
+        release: (o) => J23813(ctx.apiRelease(o)), acquire: (o, s) => J23813(ctx.apiAcquire(o, s)),
+        fire: () => { NOW += 500; for (const [id, t] of [...timers]) if (t.at <= NOW) { timers.delete(id); t.fn(); } } };
+    };
+    // 抽取窗口必须真正覆盖目标代码：守卫本体若不在 apiRelease → apiContact 之间，下面的「恰好一次兑现」就是在空跑
+    assert.ok(A23813(source, "  function apiRelease(owner){", "  function apiContact(owner,gid){").includes("function(){return !!(apiLease&&apiLease.owner===owner);}"), fileLabel + "：" + "FIX-15：提取窗口必须覆盖按属主放行的守卫");
+    // (a) 精确重放：release 落在 350ms 限流窗口内（改成 pending-off 排队）→ 同属主立刻 acquire（代次 +1）→ 队列兑现
+    const h = boot(source);
+    const rel1 = h.release("ext-owner");
+    assert.equal(rel1.ok, true, fileLabel + "：" + "(a) release 必须被受理");
+    assert.equal(rel1.result, "pending-off", fileLabel + "：" + "(a) 限流窗口内必须变成「排队等兑现」的 pending-off");
+    assert.deepEqual(h.packets, [], fileLabel + "：" + "(a) 入队阶段不得发出关闭包");
+    assert.ok(h.ctx.npBattleExplicit && h.ctx.npBattleExplicit.want === false, fileLabel + "：" + "(a) 必须真的把「关内挂」意图排进队");
+    assert.equal(h.timers.size, 1, fileLabel + "：" + "(a) 必须真的挂上限流队列定时器（否则用例是空跑）");
+    const acq1 = h.acquire("ext-owner", ["battle"]);
+    assert.equal(acq1.ok, true, fileLabel + "：" + "(a) 同属主在 released 窗口内重取必须成功");
+    assert.equal(acq1.generation, 5, fileLabel + "：" + "(a) FIX-14：重取递增代次（这正是让旧守卫失效的成因）");
+    h.fire();
+    assert.deepEqual(h.packets, ["NPC_TOGGLE"], fileLabel + "：" + "(a) 迟到的关闭包必须恰好兑现一次");
+    assert.equal(h.ctx.npHuntOn, false, fileLabel + "：" + "(a) 关闭后本地态必须落实为 false");
+    h.ctx.tick();
+    assert.equal(h.ctx.lease().battle.state, "none", fileLabel + "：" + "(a) pending-off 必须收敛为 none");
+    assert.ok(h.ctx.lease(), fileLabel + "：" + "(a) 重取后的租约必须还在（不得被当成已释放的旧租约清空）");
+    const rel2 = h.release("ext-owner");
+    assert.equal(rel2.ok, true, fileLabel + "：" + "(a) 收敛后必须能正常回收租约");
+    assert.equal(h.ctx.lease(), null, fileLabel + "：" + "(a) 租约必须最终被回收（不得被永久占住）");
+    assert.deepEqual(h.packets, ["NPC_TOGGLE"], fileLabel + "：" + "(a) 回收过程不得再补发内挂包");
+    // (b) 反例：属主已换 / 租约已清空 → 迟到的关闭包必须被否决（零包），语义不得回退
+    const negative = (mangle, label) => {
+      const n = boot(source);
+      assert.equal(n.release("ext-owner").result, "pending-off", fileLabel + "：" + label + "：夹具必须真的把关闭包排进队");
+      mangle(n);
+      n.fire();
+      assert.deepEqual(n.packets, [], fileLabel + "：" + label + "：迟到的关闭包必须被否决（零包）");
+      assert.equal(n.ctx.npHuntOn, true, fileLabel + "：" + label + "：被否决时本地内挂态不得被改成 off");
+    };
+    negative((n) => { n.ctx.apiLease = { owner: "other-owner", generation: 9, scopes: ["battle"], released: false, battle: { state: "none" } }; }, "FIX-15(b1) 属主已换");
+    negative((n) => { n.ctx.apiLease = null; }, "FIX-15(b2) 租约已清空");
+    // 变异 M-FIX15@stable / M-FIX15@exp：还原 FIX-15 之前的「同属主且代次未变」口径 → 迟到的关闭包必须被否决
+    rmCheck("M-FIX15", fileLabel, M23813(source, "function(){return !!(apiLease&&apiLease.owner===owner);}", "(function(){var gAtRel=apiLease?apiLease.generation:null;return function(){return !!(apiLease&&apiLease.owner===owner&&apiLease.generation===gAtRel);};})()"), (fl, mut) => {
+      const m = boot(mut);
+      assert.equal(m.release("ext-owner").result, "pending-off", fileLabel + "：" + fl + "：[M-FIX15] 变异体照样把关闭包排进队");
+      m.acquire("ext-owner", ["battle"]);
+      m.fire();
+      assert.equal(m.ctx.lease().battle.state, "none", fileLabel + "：" + fl + "：[M-FIX15] 变异体代次等式守卫失败：迟到关闭包被否决，battle 卡在 pending-off 永不收敛");
+    });
+  }
+});
+
+test("V2.38.13 FIX-16 setBattle 与快捷键的「已抑制」必须同文案同颜色（VM）+ 变异 M-FIX16（两文件）", () => {
+  for (const [fileLabel, src2] of FIX23813_SRC) {
+  const source = src2;
+    const boot = (script) => {
+      const pre = A23813(script, "  function npSendBattle(want, source, beforeToggle) {", "  function npRequestBattle(want, source, immediate, beforeToggle) {")
+        + A23813(script, "  function npRequestBattle(want, source, immediate, beforeToggle) {", '  onId("dsh-battleon", "click"');
+      const hk = A23813(script, "  function npToggleFight() {", "  // 助手自动战斗快捷键");
+      assert.ok(pre.includes("function npResultKind(result, other)"), fileLabel + "：" + "FIX-16：两条入口必须共用同一个颜色映射");
+      const statuses = []; const toggles = [];
+      const ctx = { Math, Number, String, Array, Object, isFinite, parseInt, parseFloat, isNaN, RegExp, Error, JSON,
+        Date: { now: () => 1000000 }, setTimeout: () => 0, clearTimeout: () => {},
+        npHuntOn: false, npBattleKnown: true, npBattleLastSentAt: -Infinity, npBattleConfirmedAt: 0,
+        npBattleCandidate: null, npBattleExplicit: null, npBattleExplicitTimer: null, npZeroVerifyTimer: null,
+        apiCombatActive: () => true, npToggleHunt: () => { toggles.push(1); return true; }, npSyncBattleCheckbox: () => {},
+        tlog: () => {}, setStatus: (t, k) => statuses.push([String(t), k]), dshDiag: () => {} };
+      vm.createContext(ctx); vm.runInContext(pre + hk, ctx);
+      return { ctx, statuses, toggles };
+    };
+    const SUPPRESSED = "外部代打进行中：不开内挂自动战斗（已抑制）";
+    const h = boot(source);
+    h.ctx.setBattle(true);
+    h.ctx.npToggleFight();
+    assert.equal(h.statuses.length, 2, fileLabel + "：" + "两条路径都必须真的刷新状态栏");
+    assert.equal(h.statuses[0][0], SUPPRESSED, fileLabel + "：" + "setBattle 在代打期间必须明确说「已抑制」");
+    assert.equal(h.statuses[1][0], h.statuses[0][0], fileLabel + "：" + "FIX-12：快捷键必须与 setBattle 同一句话");
+    assert.equal(h.statuses[0][1], "warn", fileLabel + "：" + "FIX-16：请求被拒绝必须用 warn（不得再标成 ok）");
+    assert.equal(h.statuses[1][1], "warn", fileLabel + "：" + "FIX-16：快捷键同样是 warn");
+    assert.equal(h.statuses[1][1], h.statuses[0][1], fileLabel + "：" + "FIX-16：同一句话必须同一个颜色");
+    assert.deepEqual(h.toggles, [], fileLabel + "：" + "两条路径都不得发出开启包");
+    // 变异 M-FIX16@stable / M-FIX16@exp：把 setBattle 这一侧改回 ok（两处颜色不一致）
+    rmCheck("M-FIX16", fileLabel, M23813(source, 'npResultKind(result, result === "failed" ? "err" : "ok")', 'result === "failed" ? "err" : "ok"'), (fl, mut) => {
+      const m = boot(mut);
+      m.ctx.setBattle(true);
+      m.ctx.npToggleFight();
+      assert.equal(m.statuses[0][1], "warn", fileLabel + "：" + fl + "：[M-FIX16] 变异体 setBattle 把「已抑制」又标成 ok");
+    });
+  }
+});
+
+test("V2.38.13 FIX-17 代打取消排队中的开内挂意图必须同步刷新状态栏（VM）+ 变异 M-FIX17（两文件）", () => {
+  for (const [fileLabel, src2] of FIX23813_SRC) {
+  const source = src2;
+    const boot = (script) => {
+      const combat = A23813(script, "  var apiCombat=null;", "  function apiEmit(kind,detail){");
+      const pre = A23813(script, "  function npSendBattle(want, source, beforeToggle) {", "  function npRequestBattle(want, source, immediate, beforeToggle) {")
+        + A23813(script, "  function npRequestBattle(want, source, immediate, beforeToggle) {", '  onId("dsh-battleon", "click"');
+      assert.ok(combat.includes("function apiCombatStart(owner){"), fileLabel + "：" + "提取必须覆盖代打启动");
+      const statuses = []; const logs = []; const timers = new Map(); let tid = 0; const NOW = 1000000;
+      const ctx = { Math, Number, String, Array, Object, isFinite, parseInt, parseFloat, isNaN, RegExp, Error, JSON,
+        Date: { now: () => NOW },
+        setTimeout: (fn) => { timers.set(++tid, { fn: fn, cleared: false }); return tid; },
+        clearTimeout: (id) => { const t = timers.get(id); if (t) t.cleared = true; },
+        setInterval: () => 7, clearInterval: () => {},
+        npHuntOn: false, npBattleKnown: false, npBattleLastSentAt: NOW, npBattleConfirmedAt: 0,
+        npBattleCandidate: null, npBattleExplicit: null, npBattleExplicitTimer: null, npZeroVerifyTimer: null,
+        apiCombat: null, apiLease: { owner: "ext-owner", generation: 3, scopes: ["battle"] }, apiGuard: () => null,
+        zRunning: false, zLock: {}, zUseCounts: {}, zLockCounts: {}, zCastIdx: 0, zAtkLast: {}, zMon: {},
+        $id: () => ({ value: "0.25" }), tlog: (msg) => logs.push(String(msg)), setStatus: (t, k) => statuses.push([String(t), k]), dshDiag: () => {},
+        npBattleState: () => ctx.npHuntOn, apiAllMobsRestore: () => {}, npToggleHunt: () => true };
+      vm.createContext(ctx); vm.runInContext(combat + pre, ctx);
+      return { ctx, statuses, logs, timers };
+    };
+    const h = boot(source);
+    h.ctx.setBattle(true);
+    assert.equal(h.ctx.npHuntOn, false, fileLabel + "：" + "夹具必须处在内挂关（开内挂才需要排队）");
+    assert.ok(h.ctx.npBattleExplicit && h.ctx.npBattleExplicit.want === true, fileLabel + "：" + "夹具必须真的排进「开内挂」意图");
+    assert.ok(h.ctx.npBattleExplicitTimer, fileLabel + "：" + "排队必须真的挂上定时器");
+    h.statuses.length = 0;
+    assert.equal(J23813(h.ctx.apiCombatStart("ext-owner")).ok, true, fileLabel + "：" + "代打必须真的启动");
+    const canceled = h.statuses.filter((s) => s[0].indexOf("已取消") >= 0);
+    assert.equal(canceled.length, 1, fileLabel + "：" + "FIX-17：取消排队必须刷一次状态栏，实际：" + JSON.stringify(h.statuses));
+    const text = canceled[0][0];
+    assert.ok(!/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u.test(text), fileLabel + "：" + "FIX-17：文案不得含 emoji");
+    assert.ok(!/generation|owner|release|租约|代次|队列项/i.test(text), fileLabel + "：" + "FIX-17：文案不得含实现词：" + text);
+    assert.ok(h.logs.some((msg) => msg.indexOf("已取消排队的开内挂") >= 0), fileLabel + "：" + "日志同一事实必须仍在");
+    // 变异 M-FIX17@stable / M-FIX17@exp：删掉状态栏刷新 → 「刷了一次」的断言必须红
+    rmCheck("M-FIX17", fileLabel, M23813(source, 'try{setStatus("内挂自动战斗请求已取消（外部代打进行中，本次开启不再生效）","warn");}catch(eS2){}', ""), (fl, mut) => {
+      const m = boot(mut);
+      m.ctx.setBattle(true);
+      m.statuses.length = 0;
+      J23813(m.ctx.apiCombatStart("ext-owner"));
+      assert.equal(m.statuses.filter((s) => s[0].indexOf("已取消") >= 0).length, 1, fileLabel + "：" + fl + "：[M-FIX17] 变异体取消只写日志不刷状态栏");
+    });
+  }
+});
+
+test("V2.38.13 FIX-18 代打开始必须丢弃「开」方向候补（「关」方向不动）+ 变异 M-FIX18（两文件）", () => {
+  for (const [fileLabel, src2] of FIX23813_SRC) {
+  const source = src2;
+    const boot = (script) => {
+      const combat = A23813(script, "  var apiCombat=null;", "  function apiEmit(kind,detail){");
+      const pre = A23813(script, "  function npSendBattle(want, source, beforeToggle) {", "  function npRequestBattle(want, source, immediate, beforeToggle) {")
+        + A23813(script, "  function npRequestBattle(want, source, immediate, beforeToggle) {", '  onId("dsh-battleon", "click"');
+      const ensure = A23813(script, "  function npEnsureHunt() {", "  function npHuntStop(source, immediate) {");
+      assert.ok(ensure.includes("npRequestBattle(true, \"npEnsureHunt\""), fileLabel + "：" + "提取必须覆盖 npEnsureHunt");
+      let NOW = 1000000;
+      const packets = []; const logs = [];
+      const ctx = { Math, Number, String, Array, Object, isFinite, parseInt, parseFloat, isNaN, RegExp, Error, JSON,
+        Date: { now: () => NOW }, setTimeout: () => 0, clearTimeout: () => {},
+        setInterval: () => 7, clearInterval: () => {},
+        npHuntOn: false, npBattleKnown: true, npBattleLastSentAt: -Infinity, npBattleConfirmedAt: 0,
+        npBattleCandidate: null, npBattleExplicit: null, npBattleExplicitTimer: null, npZeroVerifyTimer: null,
+        apiCombat: null, apiLease: { owner: "ext-owner", generation: 3, scopes: ["battle"] }, apiGuard: () => null,
+        zRunning: false, zLock: {}, zUseCounts: {}, zLockCounts: {}, zCastIdx: 0, zAtkLast: {}, zMon: {},
+        $id: () => ({ value: "0.25" }), tlog: (msg) => logs.push(String(msg)), setStatus: () => {}, dshDiag: () => {},
+        npBattleState: () => ctx.npHuntOn, apiAllMobsRestore: () => {},
+        npToggleHunt: () => { packets.push("NPC_TOGGLE"); return true; }, npSyncBattleCheckbox: () => {},
+        npIsThree: () => false, DEFAULTS: { ClientVer: 5 },
+        npSendUpdate: () => { packets.push("UPDATEINFO:38"); return true; }, npSendWhisper: () => { packets.push("NPC_TOGGLE"); return true; } };
+      vm.createContext(ctx); vm.runInContext(combat + pre + ensure, ctx);
+      return { ctx, packets, logs, advance: (ms) => { NOW += ms; } };
+    };
+    // 抽取窗口必须真正覆盖目标代码：「开」候补清理若不在 apiCombatStart 内，下面的清空断言就是在空跑
+    assert.ok(A23813(source, "  var apiCombat=null;", "  function apiEmit(kind,detail){").includes('if(typeof npBattleCandidate!=="undefined"&&npBattleCandidate&&npBattleCandidate.want){'), fileLabel + "：" + "FIX-18：提取窗口必须覆盖代打开始处的「开」候补清理");
+    const h = boot(source);
+    h.ctx.npEnsureHunt(); // 代打前先落一个「开」方向 debounce 候补
+    assert.ok(h.ctx.npBattleCandidate && h.ctx.npBattleCandidate.want === true, fileLabel + "：" + "夹具必须真的落下「开」方向候补");
+    assert.deepEqual(h.packets, [], fileLabel + "：" + "候补阶段零内挂包");
+    h.advance(2000); // 让候补的 800ms 窗口过期（保留原缺陷时它下一拍就会兑现）
+    assert.equal(J23813(h.ctx.apiCombatStart("ext-owner")).ok, true, fileLabel + "：" + "代打必须真的启动");
+    assert.equal(h.ctx.npBattleCandidate, null, fileLabel + "：" + "FIX-18：代打开始必须丢弃「开」方向候补");
+    h.ctx.npEnsureHunt(); // 代打期间驱动 → suppressed，且不得重新落下开启候补
+    assert.equal(h.ctx.npBattleCandidate, null, fileLabel + "：" + "FIX-18：代打期间驱动不得留下开启候补");
+    assert.deepEqual(h.packets, [], fileLabel + "：" + "代打期间零开启包");
+    h.ctx.apiCombatStop(); // 代打结束
+    h.ctx.npEnsureHunt();  // 结束后再驱动一次：只能重新 debounce，绝不兑现陈旧候补
+    assert.deepEqual(h.packets, [], fileLabel + "：" + "FIX-18：代打结束后不得兑现陈旧候补（零开启包）");
+    assert.ok(h.ctx.npBattleCandidate && h.ctx.npBattleCandidate.want === true, fileLabel + "：" + "结束时应当重新落下一个新的开启候补（而非兑现旧的）");
+    // 「关」方向候补不受影响
+    h.ctx.npBattleCandidate = { want: false, source: "npHuntStop", since: 0, beforeToggle: null };
+    J23813(h.ctx.apiCombatStart("ext-owner"));
+    assert.ok(h.ctx.npBattleCandidate && h.ctx.npBattleCandidate.want === false, fileLabel + "：" + "FIX-18：「关」方向候补不得被清掉");
+    // 变异 M-FIX18@stable / M-FIX18@exp：把「开」候补清理的守卫改成恒假 → 陈旧候补得以兑现
+    rmCheck("M-FIX18", fileLabel, M23813(source, 'if(typeof npBattleCandidate!=="undefined"&&npBattleCandidate&&npBattleCandidate.want){', 'if(false){'), (fl, mut) => {
+      const m = boot(mut);
+      m.ctx.npEnsureHunt();
+      m.advance(2000);
+      m.ctx.apiCombatStart("ext-owner");
+      assert.equal(m.ctx.npBattleCandidate, null, fileLabel + "：" + fl + "：[M-FIX18] 变异体代打开始后陈旧开启候补仍在");
+      m.ctx.apiCombatStop();
+      m.ctx.npEnsureHunt();
+      assert.equal(m.packets.indexOf("NPC_TOGGLE"), -1, fileLabel + "：" + fl + "：[M-FIX18] 变异体陈旧候补被兑现，发出开内挂包");
+    });
+  }
+});
+
+// ================= 第六轮：FIX-19 apiRelease 战斗释放分支的严格模式红线 =================
+test("V2.38.13 FIX-19 release 战斗分支必须局部声明 r：严格模式真跑「sent/queued → pending-off，其它 → released=false」+ 变异 M-FIX19", () => {
+  // 产品里 "use strict" 在第 445 行（roAssistMain IIFE 顶部）：把函数从 IIFE 里切出来单独执行会丢掉严格模式，
+  // 而「未声明的 r」在非严格模式下只会悄悄建一个全局变量、不抛错 → 用例会永远绿。所以下面必须逐字复现严格模式。
+  const strictMode = '"use strict";';
+  const boot = (script, label) => {
+    const rel = A23813(script, "  function apiRelease(owner){", "  function apiContact(owner,gid){");
+    // 抽取窗口必须真的盖住被测分支：守卫/判定若不在窗口里，下面的断言就是在空跑
+    assert.ok(rel.includes('external-release:'), label + "：提取窗口必须覆盖 release 的关闭包");
+    assert.ok(rel.includes('if(r==="sent"||r==="queued")l.battle.state="pending-off";else l.released=false;'), label + "：提取窗口必须覆盖 r 的判定分支");
+    const asks = [];
+    const state = { result: "sent" };
+    const ctx = { Math, Number, String, Array, Object, isFinite, RegExp, Error, JSON, Date: { now: () => 1000 },
+      apiLease: { owner: "ext-owner", generation: 4, scopes: ["battle"], released: false, selectedNpc: 0, battle: { state: "owned" } },
+      clientReady: () => true,
+      apiOwner: (o) => typeof o === "string" && /^[A-Za-z0-9_.:-]{8,128}$/.test(o),
+      apiScopes: (s) => Array.isArray(s) && s.length > 0 && s.every((x) => ["dojo", "battle", "movement", "dialog", "arrow", "fly"].indexOf(x) >= 0),
+      npBattleState: () => false, npClearBattleIntent: () => {}, npZeroBattle: () => {},
+      npRequestBattle: (want, src, immediate, beforeToggle) => { asks.push([want, String(src), immediate, typeof beforeToggle]); return state.result; },
+      apiCombat: null, apiAllMobsRestore: () => {}, apiPickupReset: () => {}, apiClearBattleTarget: () => ({ ok: true }),
+      apiBattleTick: () => {}, apiEmit: () => {},
+      moveXY: {}, arrowTarget: null, arrowPending: null, arrowReady: false, arrowBlocked: false,
+      zRunning: false, bagClean: { busy: false } };
+    vm.createContext(ctx);
+    vm.runInContext(strictMode + rel + ";this.release=apiRelease;this.lease=()=>apiLease", ctx);
+    return { ctx, asks, state,
+      release: (o) => J23813(ctx.apiRelease(o)), // 严格模式下的 ReferenceError 必须原样冒出来（绝不 try/catch 吞掉）
+      lease: () => ctx.apiLease };
+  };
+  for (const [fileLabel, script] of FIX23813_SRC) {
+    // (1) owned + "sent" → pending-off：租约留在原地并标记 released（内挂关闭包已排队）
+    const h = boot(script, fileLabel);
+    const r1 = h.release("ext-owner");
+    assert.equal(r1.ok, true, fileLabel + "：sent 之后 release 必须报 ok:true");
+    assert.equal(r1.result, "pending-off", fileLabel + "：sent 必须走到 pending-off");
+    assert.equal(h.asks.length, 1, fileLabel + "：必须真的问过一次关闭包（否则用例空跑）");
+    assert.deepEqual(h.asks[0], [false, "external-release:ext-owner", true, "function"], fileLabel + "：关闭包必须带按属主放行的守卫");
+    assert.ok(h.lease(), fileLabel + "：pending-off 期间租约必须留在原地等 apiBattleTick 收敛");
+    assert.equal(h.lease().battle.state, "pending-off", fileLabel + "：战斗态必须落到 pending-off");
+    assert.equal(h.lease().released, true, fileLabel + "：必须标记已释放，否则下一帧不会回收");
+    // (1b) queued 与 sent 同权（限流队列兑现）
+    const hq = boot(script, fileLabel + "(queued)");
+    hq.state.result = "queued";
+    assert.equal(hq.release("ext-owner").result, "pending-off", fileLabel + "：queued 必须与 sent 同权走到 pending-off");
+    // (2) owned + "failed" → 绝不假装成功：状态不动、released 回滚、如实报 ok:false
+    const h2 = boot(script, fileLabel + "(failed)");
+    h2.state.result = "failed";
+    const r2 = h2.release("ext-owner");
+    assert.equal(r2.ok, false, fileLabel + "：关闭包没发出去就不能报成功");
+    assert.equal(r2.result, "owned", fileLabel + "：失败时战斗态必须停在 owned");
+    assert.equal(h2.lease().battle.state, "owned", fileLabel + "：失败时不得改战斗态");
+    assert.equal(h2.lease().released, false, fileLabel + "：失败时必须回滚 released");
+    // (3) 已经 pending-off → 一次都不许再问，直接按已释回收口
+    const h3 = boot(script, fileLabel + "(pending-off)");
+    h3.lease().battle.state = "pending-off";
+    h3.lease().released = true;
+    const r3 = h3.release("ext-owner");
+    assert.equal(r3.ok, true, fileLabel + "：pending-off 必须直接放行");
+    assert.equal(r3.result, "pending-off", fileLabel + "：pending-off 必须原样返回");
+    assert.deepEqual(h3.asks, [], fileLabel + "：已经在 pending-off 时一个关闭包都不许再发");
+  }
+  // 变异 M-FIX19@stable / M-FIX19@exp：把局部声明删掉（还原导致发布阻塞的原始写法）→ 严格模式下必须 ReferenceError
+  for (const [fl19, src19] of FIX23813_SRC) {
+    rmCheck("M-FIX19", fl19, M23813(src19, '{var r=npRequestBattle(false,"external-release:"+owner', '{r=npRequestBattle(false,"external-release:"+owner'), (fl, mut) => {
+      const m = boot(mut, fl + "(变异体)");
+      assert.throws(() => m.release("ext-owner"),
+        (err) => !!err && err.name === "ReferenceError" && /r is not defined/.test(String(err.message)),
+        fl + "：[M-FIX19] 未声明的 r 在严格模式下必须抛 ReferenceError（证明用例真的在执行这段分支，不是只比源码字符串）");
+      assert.equal(m.lease().released, false, fl + "：[M-FIX19] 变异体抛错发生在写回判定之前 → released 已置 true");
+      assert.equal(m.lease().battle.state, "owned", fl + "：[M-FIX19] 变异体战斗态卡在 owned、apiLease 永不清空");
+    });
+  }
+});
+
+
+// ================= V2.38.13：apiSetBattleTarget 的 battle-target-not-live 行为级用例 =================
+// 覆盖 ro-assist.user.js:17571 的分支 {ok:false,error:"battle-target-not-live"}（实体不存在/已死时返回）。
+// 全部在 vm 里真跑 apiSetBattleTarget，不看源码字面量。
+test("V2.38.13 apiSetBattleTarget 目标不存活必须 battle-target-not-live（活目标仍 ok:true）+ 变异 M-FIX-BTLIVE（两文件）", () => {
+  for (const [fileLabel, src2] of FIX23813_SRC) {
+    const source = src2; // FIX23813 参数化：本块内 source 指向当前被测文件
+    const mk = (script) => {
+      const code = A23813(script, "  function apiBattleTargetEntity(target){", "  function apiBattleTick(){");
+      // 抽取窗口必须真的盖住被测分支
+      assert.ok(code.includes("function apiSetBattleTarget(owner,target){"), fileLabel + "：提取窗口必须覆盖 apiSetBattleTarget");
+      if (code.indexOf(String.fromCharCode(34) + "battle-target-not-live" + String.fromCharCode(34)) >= 0) assert.ok(true, fileLabel + "：提取窗口必须覆盖 not-live 分支");
+      const entities = []; let syncs = 0; let clears = 0;
+      const ctx = {
+        DOJO_OWNER: "builtin-dojo",
+        apiGuard: () => null,
+        apiEntities: () => entities.slice(),
+        arrowPos: (v) => { const n = Number(v); return n > 0 ? n : null; },
+        apiBattleTarget: null, apiBattleSuppressed: {}, lockList: {},
+        npSyncTargets: () => { syncs++; },
+        apiClearBattleTarget: () => { clears++; return { ok: true }; },
+        Number, Math, String, Array, Object, isFinite };
+      vm.createContext(ctx);
+      vm.runInContext(code + ";this.set=apiSetBattleTarget;this.ent=apiBattleTargetEntity", ctx);
+      return { ctx, entities, syncs: () => syncs, clears: () => clears };
+    };
+    const live = { gid: 8, type: 5, mid: 1002, dead: false, position: [10, 10] };
+    // (a) 目标实体不存在 → battle-target-not-live，且零副作用（不落目标、不同步、不清目标）
+    const a = mk(source);
+    assert.equal(a.entities.length, 0, fileLabel + "：(a) 夹具必须真的没有任何实体");
+    assert.deepEqual(J23813(a.ctx.set("owner-one", { mid: 1002, gid: 8 })), { ok: false, error: "battle-target-not-live" }, fileLabel + "：(a) 实体不存在必须报 battle-target-not-live");
+    assert.equal(a.ctx.apiBattleTarget, null, fileLabel + "：(a) 失败时不得落下战斗目标");
+    assert.equal(a.syncs(), 0, fileLabel + "：(a) 失败时零内挂同步");
+    assert.equal(a.clears(), 0, fileLabel + "：(a) 失败时不得去清目标");
+    // (a2) 目标已死 → 同样 not-live
+    const a2 = mk(source);
+    a2.entities.push({ gid: 8, type: 5, mid: 1002, dead: true, position: [10, 10] });
+    assert.deepEqual(J23813(a2.ctx.set("owner-one", { mid: 1002, gid: 8 })), { ok: false, error: "battle-target-not-live" }, fileLabel + "：(a2) 目标已死必须报 battle-target-not-live");
+    assert.equal(a2.ctx.apiBattleTarget, null, fileLabel + "：(a2) 目标已死时不得落下战斗目标");
+    // (a3) 只有同 gid 但 mid 不匹配 → 同样 not-live（不会张冠李戴）
+    const a3 = mk(source);
+    a3.entities.push({ gid: 8, type: 5, mid: 9999, dead: false, position: [10, 10] });
+    assert.deepEqual(J23813(a3.ctx.set("owner-one", { mid: 1002, gid: 8 })), { ok: false, error: "battle-target-not-live" }, fileLabel + "：(a3) gid 命中但 mid 不匹配必须报 battle-target-not-live");
+    // (b) 活着的目标成功路径仍必须 ok:true
+    const b = mk(source);
+    b.entities.push(live);
+    assert.equal(J23813(b.ctx.set("owner-one", { mid: 1002, gid: 8 })).ok, true, fileLabel + "：(b) 活着的目标必须 ok:true");
+    assert.deepEqual(J23813(b.ctx.apiBattleTarget), { owner: "owner-one", mid: 1002, gid: 8, npAdded: false }, fileLabel + "：(b) 必须真的落下战斗目标");
+    assert.equal(b.syncs(), 0, fileLabel + "：(b) 非 DOJO_OWNER 不得同步内挂目录");
+    // (b2) 同一 owner 同一目标重复设置 → 幂等 ok:true，且不得清目标 / 不得重复同步
+    const b2 = mk(source);
+    b2.entities.push(live);
+    assert.equal(J23813(b2.ctx.set("owner-one", { mid: 1002, gid: 8 })).ok, true, fileLabel + "：(b2) 首次设置必须 ok");
+    const snap = J23813(b2.ctx.apiBattleTarget);
+    assert.equal(J23813(b2.ctx.set("owner-one", { mid: 1002, gid: 8 })).ok, true, fileLabel + "：(b2) 重复设置必须幂等 ok:true");
+    assert.deepEqual(J23813(b2.ctx.apiBattleTarget), snap, fileLabel + "：(b2) 幂等路径必须原样保留已有目标");
+    assert.equal(b2.clears(), 0, fileLabel + "：(b2) 幂等路径不得先清再设");
+    assert.equal(b2.syncs(), 0, fileLabel + "：(b2) 幂等路径不得补发同步");
+    // (b3) 内置道场 owner 的活目标 → ok:true 且同步一次
+    const b3 = mk(source);
+    b3.entities.push(live);
+    assert.equal(J23813(b3.ctx.set("builtin-dojo", { mid: 1002, gid: 8 })).ok, true, fileLabel + "：(b3) 内置道场活目标必须 ok:true");
+    assert.equal(b3.syncs(), 1, fileLabel + "：(b3) 内置道场路径必须同步一次锁定目录");
+    // (c) 变异 M-FIX-BTLIVE@stable / @exp：整段删掉 not-live 判定 → 实体不存在时必须变红（无判定后不再返回 not-live，而是继续走到赋值）。
+    //     实测红法：无判定后实体不存在时直接落下目标并返回 {ok:true}（实例：实际 {"ok":true}），与 (a) 的 not-live 期望不符 → 用例变红。
+    const mutNotLive = M23813(source, 'var entity=apiBattleTargetEntity({mid:mid,gid:gid});if(!entity)return {ok:false,error:"battle-target-not-live"};', "");
+    rmCheck("M-FIX-BTLIVE", fileLabel, mutNotLive, (fl, mut) => {
+      const am = mk(mut);
+      let res = null;
+      try { res = J23813(am.ctx.set("owner-one", { mid: 1002, gid: 8 })); } catch (e) { res = { threw: String(e && e.message) }; }
+      assert.deepEqual(res, { ok: false, error: "battle-target-not-live" }, fl + "：[M-FIX-BTLIVE] 删掉 not-live 判定后，实体不存在时不再返回 not-live（实际：" + JSON.stringify(res) + "）");
+    });
+    // (c2) 变异 M-FIX-BTLIVE-COUNT：把存活判定改成「只数到 gid 就算活」→ 目标已死也放行
+    const mutCount = M23813(source, "var rows=apiEntities();for(var i=0;i<rows.length;i++){var e=rows[i];if(e.gid===gid&&e.type===5&&!e.dead&&e.mid===mid)return e;}return null;", "var rows=apiEntities();for(var i=0;i<rows.length;i++){var e=rows[i];if(e.gid===gid&&e.type===5)return e;}return null;");
+    rmCheck("M-FIX-BTLIVE-COUNT", fileLabel, mutCount, (fl, mut) => {
+      const cm = mk(mut);
+      cm.entities.push({ gid: 8, type: 5, mid: 1002, dead: true, position: [10, 10] });
+      assert.deepEqual(J23813(cm.ctx.set("owner-one", { mid: 1002, gid: 8 })), { ok: false, error: "battle-target-not-live" }, fl + "：[M-FIX-BTLIVE-COUNT] 变异体把已死实体当成活目标");
+    });
+  }
+});
+
+// ================= FIX23813 变异矩阵：13 条 FIX-* 的每个变异在 stable/exp 上都必须变红 =================
+test("FIX23813 变异矩阵：13 条 FIX-* 用例的全部 15 个变异都在 stable/exp 上独立验证且必须变红（覆盖核对）", () => {
+  // 13 条 FIX-* 用例共 15 个变异（FIX-2/FIX-7 各两个），每个都必须分别在 stable 与 exp 上独立作用并让用例变红
+  const FIX_MUTATIONS = ["M-FIX1","M-FIX2a","M-FIX2b","M-FIX6","M-FIX7a","M-FIX7b","M-FIX10b","M-FIX12","M-FIX13","M-FIX14","M-FIX15","M-FIX16","M-FIX17","M-FIX18","M-FIX19"];
+  const FIX_FAMILIES = 13;
+  let rows = 0;
+  for (const mut of FIX_MUTATIONS) {
+    for (const fl of ["stable", "exp"]) {
+      const hits = FIX23813_MATRIX.filter((m) => m.fix === mut && m.file === fl);
+      assert.equal(hits.length, 1, mut + "@" + fl + "：该变异必须在 " + fl + " 上独立跑一次（当前 " + hits.length + " 次）");
+      for (const hit of hits) {
+        assert.equal(hit.expected, "红", hit.tag + " 期望必须记成红");
+        assert.equal(hit.actual, "红", hit.tag + " 变异必须真的被断言杀死（实际 " + hit.actual + "）");
+        assert.ok(hit.caught && hit.caught.indexOf("未被抓") < 0, hit.tag + " 必须记录到被抓断言，实际：" + hit.caught);
+        rows++;
+      }
+    }
+  }
+  assert.equal(rows, FIX_MUTATIONS.length * 2, "15 个变异 × 两文件 = 30 条覆盖，实际 " + rows + " 条");
+  assert.equal(FIX_FAMILIES, 13, "FIX-* 用例数必须是 13 条");
+  // 另外 2 个属于本次新增行为级用例（apiSetBattleTarget 的 not-live 分支）的变异，同样必须两文件各自变红
+  const NEW_MUTATIONS = ["M-FIX-BTLIVE", "M-FIX-BTLIVE-COUNT"];
+  let newRows = 0;
+  for (const mut of NEW_MUTATIONS) {
+    for (const fl of ["stable", "exp"]) {
+      const hits = FIX23813_MATRIX.filter((m) => m.fix === mut && m.file === fl);
+      assert.equal(hits.length, 1, mut + "@" + fl + "：新增用例的变异必须在 " + fl + " 上独立跑一次（当前 " + hits.length + " 次）");
+      const hit = hits[0];
+      assert.equal(hit.expected, "红", hit.tag + " 期望必须记成红");
+      assert.equal(hit.actual, "红", hit.tag + " 变异必须真的被断言杀死（实际 " + hit.actual + "）");
+      assert.ok(hit.caught && hit.caught.indexOf("未被抓") < 0, hit.tag + " 必须记录到被抓断言，实际：" + hit.caught);
+      newRows++;
+    }
+  }
+  assert.equal(newRows, NEW_MUTATIONS.length * 2, "2 个新增变异 × 两文件 = 4 条覆盖，实际 " + newRows + " 条");
+  assert.equal(FIX23813_MATRIX.length, rows + newRows, "矩阵里不得出现未被覆盖核对的孤儿行");
+  // 无法在 exp 上独立作用的变异必须显式登记为 N/A（当前 0 个：全部变异锚点在 stable/exp 两文件都唯一存在）
+  const NA = [];
+  assert.equal(NA.length, 0, "当前不存在无法在 exp 独立作用的变异；若出现必须在此登记并给出等价证据");
+  console.log("[FIX23813 变异矩阵] " + rows + " 条覆盖全部为红：" + FIX_MUTATIONS.map((m) => m + "@stable, " + m + "@exp").join(", "));
+  if (process.env.FIX_MATRIX_JSON) {
+    fs.writeFileSync(process.env.FIX_MATRIX_JSON, JSON.stringify(FIX23813_MATRIX, null, 2), "utf8");
+    console.log("[FIX23813 变异矩阵] 已写出 " + process.env.FIX_MATRIX_JSON);
+  }
+  assert.deepEqual([...new Set(FIX23813_MATRIX.map((m) => m.file))].sort(), ["exp", "stable"], "矩阵必须同时覆盖 stable 与 exp");
+  assert.ok(FIX23813_MATRIX.every((m) => m.fix.indexOf("M-") === 0), "矩阵键必须使用变异标签命名约定");
+  assert.ok(FIX23813_MATRIX.every((m) => String(m.caught).indexOf("未被抓") < 0), "不得存在变异存活行");
 });

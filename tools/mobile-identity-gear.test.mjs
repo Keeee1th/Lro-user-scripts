@@ -233,11 +233,14 @@ for (const [label, fn] of checks) {
 }
 
 // ============ I7 结构断言：版本 / 门位置清单 / EOL / 行数 / 差异 ============
-test('V2.38.8 结构断言：版本 2.38.9、九处门就位、EOL 与两文件差异不变', () => {
+test('V2.38.8 结构断言：版本与产品文件派生一致、九处门就位、EOL 与两文件差异不变', () => {
   const stable = SOURCES[0][1], exp = SOURCES[1][1];
+  // 版本期望不再硬编码：从产品文件（stable）的 @version 派生，升版本时无需手改测试。
+  const prodVer = /^\/\/\s*@version\s+(\S+)/m.exec(stable)?.[1];
+  assert.ok(prodVer, '必须能从 ro-assist.user.js 读出 @version 作为期望基准');
   for (const [name, src] of SOURCES) {
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.12', name + ' @version 必须是 2.38.12');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.12', name + ' VER 必须是 2.38.12');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], prodVer, name + ' @version 必须与产品文件派生值一致（期望 ' + prodVer + '）');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], prodVer, name + ' VER 必须与产品文件派生值一致（期望 ' + prodVer + '）');
     const t = lfSrc(src);
     const gates = [
       ['saveProfiles', '      if (!profWriteGuard("档案落盘")) return;'],

@@ -478,9 +478,12 @@ test('V2.38.7 9a 启动期（未进游戏）不刷「角色未识别」，已进
 // ================= 结构断言（版本 / EOL / 两文件差异） =================
 test('V2.38.8 结构断言：版本与 EOL 不变量（两文件）', () => {
   const stable = readSrc('ro-assist.user.js'), exp = readSrc('ro-assist-exp.user.js');
+  // 版本期望不再硬编码：从产品文件（stable）的 @version 派生，升版本时无需手改测试。
+  const prodVer = /^\/\/\s*@version\s+(\S+)/m.exec(stable)?.[1];
+  assert.ok(prodVer, '必须能从 ro-assist.user.js 读出 @version 作为期望基准');
   for (const [name, src] of [['stable', stable], ['exp', exp]]) {
-    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], '2.38.12', name + ' @version 必须是 2.38.12');
-    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], '2.38.12', name + ' VER 必须是 2.38.12');
+    assert.equal(/^\/\/\s*@version\s+(\S+)/m.exec(src)?.[1], prodVer, name + ' @version 必须与产品文件派生值一致（期望 ' + prodVer + '）');
+    assert.equal(/var VER = "([^"]+)"/.exec(src)?.[1], prodVer, name + ' VER 必须与产品文件派生值一致（期望 ' + prodVer + '）');
     assert.ok(src.includes('// ---------------- V2.38.8 变更摘要 ----------------'), name + ' 必须有 V2.38.8 变更摘要');
     assert.ok(src.includes('// ---------------- V2.38.9 变更摘要 ----------------'), name + ' 必须有 V2.38.9 变更摘要（视角控制 + 审计收尾）');
     assert.ok(src.includes('// ---------------- V2.38.7 变更摘要 ----------------'), name + ' V2.38.7 摘要必须保留（历史批次不删）');

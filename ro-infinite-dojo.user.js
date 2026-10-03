@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         仙境传说 · 无限道场（独立版）
 // @namespace    dsh.ro-plugin
-// @version      1.0.3
+// @version      1.0.4
 // @updateURL    https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-infinite-dojo.user.js
 // @downloadURL  https://raw.githubusercontent.com/Keeee1th/Lro-user-scripts/main/ro-infinite-dojo.user.js
 // @description  在 post.lastro.cn / game.lastro.cn 的页面上自动完成无限道场：到报名点、按对话流程报名、进道场战斗、按轮次领奖、结束后自动再来一轮；需要先启用 RO 助手。
@@ -58,6 +58,8 @@
 //    站点首页、登录页、公告页等一律不启动（不建面板、不挂定时器、不碰页面）。
 // ---------------- V1.0.3 ----------------
 // 打开游戏不再自动弹出面板，改为点「无限道场」按钮手动打开。
+// ---------------- V1.0.4 ----------------
+// 1. 修启动按钮点一下就跳到左边并卡住；现在点一下位置不动，并且会跟着悬浮球走。
 
 (function () {
   'use strict';
@@ -103,13 +105,13 @@
 
   /* ==================== 常量 ==================== */
 
-  var VERSION        = "1.0.3";
+  var VERSION        = "1.0.4";
   var API_PROTOCOL   = 1;
   var OWNER          = "ro-infinite-dojo";      // 控制权属主，全程一致
   var SCOPES         = ["dojo", "battle", "movement", "dialog", "fly"];
   var CLIENT_TAG     = "ro-infinite-dojo";
   var CFG_KEY        = "dsh-ro-dojo-standalone-v1";
-  var UI_KEY         = "dsh-ro-dojo-ui-v1";          // 启动按钮位置（与面板配置分开，互不影响）
+  var UI_KEY         = "dsh-ro-dojo-ui-v2";          // 启动按钮位置（与面板配置分开，互不影响；v1 里可能留下点一下跳位的坏坐标，不再读）
   var WIN_ID         = "ro-infinite-dojo";
   var REPO_URL       = "https://github.com/Keeee1th/Lro-user-scripts";
   var CONFIG_URL     = "file:///dsh-ro-infinite-dojo.config.json";
@@ -1200,8 +1202,8 @@
     "#ro-dojo-standalone .tip{color:#5a6b7f;font-size:12px;line-height:1.55}" +
     "#ro-dojo-standalone .tip a{color:#1259b3}";
 
-  // 启动按钮：默认贴右下角，并避开助手悬浮球（球是 #dsh-ball：right 28 / bottom 80 / 56×56），
-  // 所以放在球正上方 right 28 / bottom 146（留 10px 间隙）；自带面板在左下角，互不遮挡。
+  // 启动按钮：默认锚在助手悬浮球上方（球是 #dsh-ball：right 28 / bottom 80 / 56×56），
+  // 与球右边缘对齐、留约 10px 间隙；球不在或量不到时退回 right 28 / bottom 146；自带面板在左下角，互不遮挡。
   var LAUNCHER_CSS_TEXT =
     "#ro-dojo-launcher-box{position:fixed;right:28px;bottom:146px;z-index:2147483645;display:flex;align-items:center}" +
     "#ro-dojo-launcher{padding:4px 10px;border-radius:999px;background:#1f9d4d;border:1px solid #17793a;color:#fff;" +
@@ -1317,7 +1319,7 @@
   }
   function dragify(node, handle) {
     try {
-      var dragging = false, moved = false, sx = 0, sy = 0, ox = 0, oy = 0;
+      var dragging = false, moved = false, sx = 0, sy = 0, ox = 0, oy = 0, prev = null;
       handle.addEventListener("mousedown", function (ev) {
         if (ev.target && ev.target.tagName === "BUTTON") return;
         dragging = true;
@@ -1325,8 +1327,15 @@
         try { node.__dshDragged = false; } catch (e) {}
         sx = ev.clientX; sy = ev.clientY;
         var r = node.getBoundingClientRect ? node.getBoundingClientRect() : { left: 0, top: 0 };
-        ox = r.left; oy = r.top;
+        ox = Number(r.left) || 0; oy = Number(r.top) || 0;
+        prev = { left: node.style.left, top: node.style.top, right: node.style.right, bottom: node.style.bottom };
+        // 顺序不能反：先把当前视口坐标钉成 left/top（此时 right/bottom 还在，视觉零变化），
+        // 再让 right/bottom 让位。绝不允许出现「right 已 auto 而 left 还没写」的中间状态 ——
+        // 那会让固定定位元素退回静态位置（左边缘），看起来就是「点一下就飞到左边并卡住」。
+        node.style.left = ox + "px";
+        node.style.top = oy + "px";
         node.style.right = "auto";
+        node.style.bottom = "auto";
         ev.preventDefault();
       });
       document.addEventListener("mousemove", function (ev) {
@@ -1337,11 +1346,22 @@
         }
         node.style.left = Math.max(0, ox + ev.clientX - sx) + "px";
         node.style.top = Math.max(0, oy + ev.clientY - sy) + "px";
-        node.style.bottom = "auto";
       });
       document.addEventListener("mouseup", function () {
-        if (dragging && moved && node === launcherBox) saveUiPos();   // 拖过才记位置：拖动后不触发展开
+        if (!dragging) return;
         dragging = false;
+        if (moved) {
+          // 拖过 >3px 才算拖动：只给启动按钮记位置（面板位置不落盘，与 1.0.3 一致）
+          if (node === launcherBox) { saveUiPos(); launcherAnchorKey = ""; }
+          return;
+        }
+        // 没移动的单击：位置保持原样（把按下时钉的四项还原回去），也不写记住的位置
+        if (prev) {
+          node.style.left = prev.left || "";
+          node.style.top = prev.top || "";
+          node.style.right = prev.right || "";
+          node.style.bottom = prev.bottom || "";
+        }
       });
     } catch (e) {}
   }
@@ -1368,9 +1388,56 @@
 
   /* ==================== 启动按钮（常驻小胶囊） ====================
    * 打开游戏不自动弹面板：两种显示方式下都挂这个按钮，用户点它才打开 / 收起。
-   * 位置：默认贴右下角并避开助手悬浮球（球是 #dsh-ball：right 28 / bottom 80 / 56×56，
-   * 见助手样式），按钮取球正上方 right 28 / bottom 146（留 10px 间隙）；
-   * 自带面板在左下角（left 14 / bottom 14），两处互不遮挡。拖动后可记住位置。 */
+   * 位置：默认跟着助手悬浮球走 —— 与球右边缘对齐、贴在球上方约 10px（球是 #dsh-ball：
+   * right 28 / bottom 80 / 56×56，见助手样式）；球不在或不可见时退回 right 28 / bottom 146。
+   * 球被拖动或窗口尺寸变化后由 launcherFollowTimer 重新贴合；用户自己拖过按钮之后一律以
+   * 记住的位置为准，不再跟随悬浮球（见 loadUiPos / saveUiPos / startLauncherFollow）。
+   * 自带面板在左下角（left 14 / bottom 14），两处互不遮挡。 */
+  var LAUNCHER_FOLLOW_MS = 500;                  // 贴合悬浮球的轮询间隔（球被拖动或窗口尺寸变化后重新贴合）
+  var launcherFollowTimer = null;
+  var launcherAnchorKey = "";                    // 上一次贴合出来的锚点；值没变就不碰样式，避免频繁重排
+
+  function launcherAnchor() {
+    // 由悬浮球决定的默认锚点：与球右边缘对齐、贴在球上方约 10px（球默认 right 28 / bottom 80 / 56×56）。
+    // 球不存在、没尺寸（不可见）或量不到视口尺寸时，退回球默认位置对应的 right 28 / bottom 146。
+    var fallback = { right: 28, bottom: 146 };
+    try {
+      var ball = document.getElementById("dsh-ball");
+      var r = (ball && isFn(ball.getBoundingClientRect)) ? ball.getBoundingClientRect() : null;
+      if (!r) return fallback;
+      var rw = Number(r.width), rh = Number(r.height);
+      if (!(rw > 0) || !(rh > 0)) return fallback;
+      var w = pageWindow(), vw = Number(w.innerWidth), vh = Number(w.innerHeight);
+      if (!isFinite(vw) || !isFinite(vh) || vw <= 0 || vh <= 0) return fallback;
+      var rl = Number(r.left) || 0, rt = Number(r.top) || 0;
+      var rr = isFinite(Number(r.right)) ? Number(r.right) : rl + rw;
+      return {
+        right: Math.max(8, Math.round(vw - rr)),
+        bottom: Math.max(8, Math.min(vh - 40, Math.round(vh - rt) + 10))
+      };
+    } catch (e) { return fallback; }
+  }
+  function placeLauncherByAnchor(force) {
+    // 只在锚点真的变了才写样式：每 500ms 一次的轮询不产生无谓的重排
+    if (!launcherBox || !launcherBox.style) return;
+    var a = launcherAnchor();
+    var key = a.right + "|" + a.bottom;
+    if (!force && key === launcherAnchorKey) return;
+    launcherAnchorKey = key;
+    launcherBox.style.left = "auto";
+    launcherBox.style.top = "auto";
+    launcherBox.style.right = a.right + "px";
+    launcherBox.style.bottom = a.bottom + "px";
+  }
+  function startLauncherFollow() {
+    if (launcherFollowTimer !== null) return;
+    launcherFollowTimer = setInterval(function () {
+      try {
+        if (loadUiPos()) return;         // 用户拖过按钮：以记住的位置为准，不再跟随悬浮球
+        placeLauncherByAnchor(false);
+      } catch (e) {}
+    }, LAUNCHER_FOLLOW_MS);
+  }
   function loadUiPos() {
     try {
       var raw = JSON.parse(localStorage.getItem(UI_KEY) || "null");
@@ -1391,20 +1458,15 @@
   function placeLauncher() {
     var p = loadUiPos();
     try {
-      if (p) {                                        // 用户拖过就按记住的位置放
+      if (p) {                                        // 用户拖过就按记住的位置放，之后不再跟随悬浮球
         launcherBox.style.left = p.lx + "px";
         launcherBox.style.top = p.ly + "px";
         launcherBox.style.right = "auto";
         launcherBox.style.bottom = "auto";
+        launcherAnchorKey = "";
         return;
       }
-      var ball = document.getElementById("dsh-ball");
-      var r = (ball && isFn(ball.getBoundingClientRect)) ? ball.getBoundingClientRect() : null;
-      var vh = Number(pageWindow().innerHeight);
-      var bottom = 146;                               // 悬浮球底部 80 + 高 56 + 10 间隙
-      if (r && r.height > 0 && isFinite(vh) && vh > 0) bottom = Math.max(8, Math.min(vh - 40, Math.round(vh - r.top) + 10));
-      launcherBox.style.right = "28px";
-      launcherBox.style.bottom = bottom + "px";
+      placeLauncherByAnchor(true);
     } catch (e) {}
   }
   function mountLauncher() {
@@ -1419,6 +1481,7 @@
     });
     dragify(launcherBox, launcherBtn);
     try { document.body.appendChild(launcherBox); } catch (e) { try { document.documentElement.appendChild(launcherBox); } catch (e2) {} }
+    startLauncherFollow();
     return launcherBox;
   }
   // 面板是否处于打开状态：拿得到助手浮窗节点就以它为准，拿不到退化为本地标记

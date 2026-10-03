@@ -63,9 +63,12 @@ function fakeDocument(probe) {
   const body = fakeElement('body', probe), head = fakeElement('head', probe), html = fakeElement('html', probe);
   const doc = {
     body, head, documentElement: html,
+    _listeners: {},                                     // 文档级监听：拖动靠它把 mousemove / mouseup 送到脚本
     createElement: (t) => { if (probe) { probe.createElement++; probe.order.push('createElement'); } return fakeElement(t, probe); },
     getElementById: (id) => walk(body, []).concat(walk(head, [])).find((n) => n.id === id) || null,
-    addEventListener() {}, removeEventListener() {},
+    addEventListener(k, fn) { (doc._listeners[k] = doc._listeners[k] || []).push(fn); },
+    removeEventListener(k, fn) { const l = doc._listeners[k]; if (l) { const i = l.indexOf(fn); if (i >= 0) l.splice(i, 1); } },
+    dispatch(k, ev) { (doc._listeners[k] || []).slice().forEach((fn) => fn(ev || {})); },
     querySelector() { return null; }, querySelectorAll() { return []; }
   };
   return doc;
@@ -211,6 +214,7 @@ function boot(src, opts = {}) {
     win.require = req;
   }
   const storage = new Map();
+  if (opts.storage) for (const k of Object.keys(opts.storage)) storage.set(k, String(opts.storage[k]));
   const context = {
     window: win,
     document: doc,
@@ -778,7 +782,7 @@ test('静态：不新增端点、不自己做任何一步动作，只走约定�
   const header = SRC.slice(0, SRC.indexOf('// ==/UserScript=='));
   assert.match(header, /@name\s+仙境传说 · 无限道场（独立版）/);
   assert.match(header, /@namespace\s+dsh\.ro-plugin/);
-  assert.match(header, /@version\s+1\.0\.3/);
+  assert.match(header, /@version\s+1\.0\.4/);
   assert.match(header, /@updateURL\s+https:\/\/raw\.githubusercontent\.com\/Keeee1th\/Lro-user-scripts\/main\/ro-infinite-dojo\.user\.js/);
   assert.match(header, /@downloadURL\s+https:\/\/raw\.githubusercontent\.com\/Keeee1th\/Lro-user-scripts\/main\/ro-infinite-dojo\.user\.js/);
   assert.match(header, /@grant\s+GM_xmlhttpRequest/);
@@ -1831,4 +1835,225 @@ test('文案扫描：全部用户可见文案（logLine / 状态行 / 按钮标�
   const mutG8c = mutate(SRC, '"无怪时飞行"', '"无怪时飞行🎉"');
   assert.equal(copyInScope(mutG8c).some((r) => r[0] === 'check.label' && COPY_EMOJI.test(r[1])), true, '变异 G8c：开关标签里的 emoji 必须真的进入扫描范围');
   assert.throws(() => assertCopyClean(copyInScope(mutG8c)), /不得出现表情/, '变异 G8c：开关标签里的 emoji 必须被扫到');
+});
+
+/* ============================================================
+ * 15. V1.0.4 启动按钮位置：点一下不跳位 + 跟着悬浮球走
+ *    用户实机报的缺陷（1.0.3）：按下时先写 right:auto 却没同时写 left，
+ *    固定定位元素因此退回静态位置（左边缘），点一下就飞到左边并卡住。
+ * ============================================================ */
+
+const UI_V2 = 'dsh-ro-dojo-ui-v2';
+const UI_V1 = 'dsh-ro-dojo-ui-v1';
+const VIEW = { w: 1000, h: 800 };
+
+// 真浏览器里 unset 的行内定位读出来是空串（夹具的 style 是普通对象，这里统一归一化）
+function inlinePos(node) {
+  const s = node.style || {};
+  return { left: s.left || '', top: s.top || '', right: s.right || '', bottom: s.bottom || '' };
+}
+// 把一个节点的视口矩形钉死（真浏览器由 getBoundingClientRect 给出）
+function setRect(node, r) {
+  node.getBoundingClientRect = () => Object.assign({ left: 0, top: 0, width: 0, height: 0, right: 0, bottom: 0 }, r);
+  return node;
+}
+function mouseEv(x, y, target) { return { clientX: x, clientY: y, target: target, preventDefault() {} }; }
+// 悬浮球替身：#dsh-ball，带真实矩形
+function fakeBall(h, r) {
+  const ball = fakeElement('div');
+  ball.id = 'dsh-ball';
+  setRect(ball, r);
+  h.doc.body.appendChild(ball);
+  return ball;
+}
+// 启动按钮夹具：容器视口坐标 812 / 560（模拟真浏览器里靠 right/bottom 落在右下角的胶囊）
+function launcherFixture(src, opts) {
+  const h = boot(src, Object.assign({ noWindow: true }, opts || {}));
+  const box = h.T.launcher();
+  const btn = launcherOf(h);
+  h.win.innerWidth = VIEW.w; h.win.innerHeight = VIEW.h;
+  setRect(box, { left: 812, top: 560, width: 96, height: 26, right: 908, bottom: 586 });
+  return { h: h, box: box, btn: btn, wrap: h.doc.getElementById('ro-dojo-standalone') };
+}
+// 按下瞬间：left/top 必须已被钉成按下时的视口坐标，right/bottom 才让位
+function assertNoJumpOnPress(fx) {
+  const box = fx.box;
+  fx.btn.dispatch('mousedown', mouseEv(812, 560, fx.btn));
+  assert.equal(box.style.left, '812px', '按下后 left 必须仍然是按下时的视口坐标（不得跳回 0）');
+  assert.equal(box.style.top, '560px', '按下后 top 必须仍然是按下时的视口坐标');
+  assert.equal(box.style.right, 'auto', '按下后 right 必须让位给 left');
+  assert.equal(box.style.bottom, 'auto', '按下后 bottom 必须让位给 top');
+  const noLeft = box.style.left === '' || box.style.left === 'auto' || box.style.left === undefined;
+  assert.equal(box.style.right === 'auto' && noLeft, false,
+    '绝不允许出现「right=auto 且没有 left」的中间态（那会让胶囊飞到左边缘并卡住）');
+}
+// 没拖过按钮时：胶囊必须贴到球上方、与球右边缘对齐；球被拖走 / 窗口变了要跟着动；球没了退回默认锚点
+function assertFollowsBall(h) {
+  const box = h.T.launcher();
+  h.win.innerWidth = VIEW.w; h.win.innerHeight = VIEW.h;
+  const ball = fakeBall(h, { left: 900, top: 700, width: 56, height: 56, right: 956, bottom: 756 });
+  runIntervals(h);
+  assert.equal(box.style.right, '44px', '必须与球右边缘对齐（1000-956=44）');
+  assert.equal(box.style.bottom, '110px', '必须贴在球上方约 10px（800-700+10=110）');
+  setRect(ball, { left: 700, top: 500, width: 56, height: 56, right: 756, bottom: 556 });
+  runIntervals(h);
+  assert.equal(box.style.right, '244px', '球被拖走后必须跟着重新贴合');
+  assert.equal(box.style.bottom, '310px', '球被拖走后必须跟着重新贴合');
+  h.win.innerWidth = 1200;
+  runIntervals(h);
+  assert.equal(box.style.right, '444px', '窗口尺寸变化后必须重新贴合');
+  h.doc.body.removeChild(ball);
+  runIntervals(h);
+  assert.equal(box.style.right, '28px', '球不在了必须退回默认锚点');
+  assert.equal(box.style.bottom, '146px', '球不在了必须退回默认锚点');
+}
+
+test('V1.0.4 启动按钮 a：按下先钉 left/top 再让位，不得跳到左边缘 + 变异 M-DOJO-PIN', () => {
+  assertNoJumpOnPress(launcherFixture(SRC));
+
+  // 变异 ①：去掉按下时的 left/top 钉位（回到 1.0.3 的「只写 right=auto」）→ 跳位红线必须红
+  const mut = mutate(SRC, '        node.style.left = ox + "px";\n        node.style.top = oy + "px";\n', '');
+  assert.notEqual(mut, SRC, '变异必须真的改动脚本');
+  assert.equal(/node\.style\.left = ox \+ "px";/.test(mut), false, '变异 M-DOJO-PIN：按下时的 left 钉位必须真的没了');
+  assert.throws(() => assertNoJumpOnPress(launcherFixture(mut)), /不得跳回 0/,
+    '变异 M-DOJO-PIN：去掉钉位后按下瞬间没有 left，跳位红线必须杀红');
+});
+
+test('V1.0.4 启动按钮 b：点一下（不移动）位置原样、不写位置、正好开关一次', () => {
+  const fx = launcherFixture(SRC);
+  const h = fx.h, box = fx.box, btn = fx.btn;
+  const before = inlinePos(box);
+  assert.equal(before.right, '28px', '基线：没有悬浮球时按默认锚点放');
+  assert.equal(before.bottom, '146px', '基线：没有悬浮球时按默认锚点放');
+
+  btn.dispatch('mousedown', mouseEv(812, 560, btn));
+  h.doc.dispatch('mouseup', {});
+  assert.deepEqual(inlinePos(box), before, '点一下（不移动）之后定位样式必须原样：位置不动');
+  assert.equal(h.storage.has(UI_V2), false, '点一下不得写记住的位置');
+  assert.equal(box.__dshDragged, false, '点一下不算拖动');
+
+  btn.dispatch('click');
+  assert.equal(fx.wrap.style.display, 'block', '点一下仍然照常展开面板');
+  assert.equal(h.T.panelShown(), true, '展开后状态必须是「已打开」');
+
+  // window 模式：助手通道上的开窗调用次数就是 togglePanel 的调用次数
+  const w = boot(SRC, {});
+  const wbox = w.T.launcher(), wbtn = launcherOf(w);
+  setRect(wbox, { left: 812, top: 560, width: 96, height: 26 });
+  wbtn.dispatch('mousedown', mouseEv(812, 560, wbtn));
+  w.doc.dispatch('mouseup', {});
+  wbtn.dispatch('click');
+  assert.equal(w.callsTo('openWindow').length, 1, '点一下必须恰好打开一次（togglePanel 恰好被调用一次）');
+  assert.deepEqual(w.last('openWindow'), ['openWindow', 'ro-infinite-dojo'], '打开的是无限道场浮窗');
+});
+
+test('V1.0.4 启动按钮 c：拖过 >3px 才记位置（键 v2）、clamp 在视口内、拖动那一下不展开', () => {
+  const fx = launcherFixture(SRC);
+  const h = fx.h, box = fx.box, btn = fx.btn;
+
+  // 位移正好 3px：不算拖动 → 不记位置、样式还原成原样
+  const before = inlinePos(box);
+  btn.dispatch('mousedown', mouseEv(812, 560, btn));
+  h.doc.dispatch('mousemove', mouseEv(815, 560, btn));
+  h.doc.dispatch('mouseup', {});
+  assert.equal(h.storage.has(UI_V2), false, '位移不到 >3px 不得记位置（与 1.0.3 一致）');
+  assert.deepEqual(inlinePos(box), before, '没到阈值的按下 / 松开必须把位置还原成原样');
+
+  // 位移 8 / 6 > 3px：记位置，键必须是 v2
+  btn.dispatch('mousedown', mouseEv(812, 560, btn));
+  h.doc.dispatch('mousemove', mouseEv(820, 566, btn));
+  h.doc.dispatch('mouseup', {});
+  assert.equal(box.style.left, '820px', '拖动后 left 必须跟着走');
+  assert.equal(box.style.top, '566px', '拖动后 top 必须跟着走');
+  assert.equal(box.style.right, 'auto', '拖动后 right 保持让位');
+  assert.equal(box.style.bottom, 'auto', '拖动后 bottom 保持让位');
+  assert.deepEqual(JSON.parse(h.storage.get(UI_V2)), { lx: 820, ly: 566 }, '拖动后必须把位置写进 v2 键');
+  assert.equal(h.storage.has(UI_V1), false, '不得再往 v1 键写（旧键留着不读）');
+  assert.equal(box.__dshDragged, true, '拖过 >3px 必须置上拖动标记');
+  btn.dispatch('click');
+  assert.equal(fx.wrap.style.display, 'none', '拖动结束那一下 click 不得展开面板');
+  assert.equal(box.__dshDragged, false, '拖动标记读过之后必须清掉');
+
+  // clamp：往左上拖出视口 → 停在 0（与 1.0.3 的下界一致）
+  const cx = launcherFixture(SRC, { storage: { 'dsh-ro-dojo-ui-v2': JSON.stringify({ lx: 100, ly: 100 }) } });
+  assert.equal(cx.box.style.left, '100px', '有记住的位置必须按它放');
+  setRect(cx.box, { left: 100, top: 100, width: 96, height: 26 });
+  cx.btn.dispatch('mousedown', mouseEv(500, 500, cx.btn));
+  cx.h.doc.dispatch('mousemove', mouseEv(50, 50, cx.btn));
+  cx.h.doc.dispatch('mouseup', {});
+  assert.equal(cx.box.style.left, '0px', '拖出视口左边必须 clamp 到 0');
+  assert.equal(cx.box.style.top, '0px', '拖出视口上边必须 clamp 到 0');
+  assert.deepEqual(JSON.parse(cx.h.storage.get(UI_V2)), { lx: 0, ly: 0 }, 'clamp 后的位置才是记住的位置');
+});
+
+test('V1.0.4 启动按钮 d：没拖过就跟着悬浮球走 + 变异 M-DOJO-FOLLOW', () => {
+  const h = boot(SRC, { noWindow: true });
+  const box = h.T.launcher();
+  h.win.innerWidth = VIEW.w; h.win.innerHeight = VIEW.h;
+  assert.equal(box.style.right, '28px', '基线：没有悬浮球时用默认锚点');
+  assert.equal(box.style.bottom, '146px', '基线：没有悬浮球时用默认锚点');
+  assertFollowsBall(h);
+
+  // 变异 ②：拿掉跟随 tick 里重新贴合的调用 → 跟随用例必须红
+  const mut = mutate(SRC, 'placeLauncherByAnchor(false);', 'void 0;');
+  assert.notEqual(mut, SRC, '变异必须真的改动脚本');
+  assert.throws(() => assertFollowsBall(boot(mut, { noWindow: true })), /必须与球右边缘对齐/,
+    '变异 M-DOJO-FOLLOW：拿掉跟随 tick 后胶囊不再重新贴合，跟随用例必须杀红');
+});
+
+test('V1.0.4 启动按钮 e：用户拖过之后以记住的位置为准，不再跟随悬浮球', () => {
+  const h = boot(SRC, { noWindow: true });
+  const box = h.T.launcher(), btn = launcherOf(h);
+  h.win.innerWidth = VIEW.w; h.win.innerHeight = VIEW.h;
+  setRect(box, { left: 812, top: 560, width: 96, height: 26 });
+  btn.dispatch('mousedown', mouseEv(812, 560, btn));
+  h.doc.dispatch('mousemove', mouseEv(300, 200, btn));
+  h.doc.dispatch('mouseup', {});
+  assert.deepEqual(JSON.parse(h.storage.get(UI_V2)), { lx: 300, ly: 200 }, '拖动必须被记住');
+
+  fakeBall(h, { left: 900, top: 700, width: 56, height: 56, right: 956, bottom: 756 });
+  runIntervals(h, 3);
+  assert.equal(box.style.left, '300px', '拖过之后必须以记住的位置为准');
+  assert.equal(box.style.top, '200px', '拖过之后必须以记住的位置为准');
+  assert.equal(box.style.right, 'auto', '拖过之后不得再被锚点改写');
+  assert.equal(box.style.bottom, 'auto', '拖过之后不得再被锚点改写');
+
+  // 反过来：重启后读到记住的位置也照样不跟随
+  const r = boot(SRC, { noWindow: true, storage: { 'dsh-ro-dojo-ui-v2': JSON.stringify({ lx: 300, ly: 200 }) } });
+  const rbox = r.T.launcher();
+  r.win.innerWidth = VIEW.w; r.win.innerHeight = VIEW.h;
+  assert.equal(rbox.style.left, '300px', '有记住的位置必须按它放');
+  assert.equal(rbox.style.right, 'auto', '有记住的位置必须按它放');
+  fakeBall(r, { left: 900, top: 700, width: 56, height: 56, right: 956, bottom: 756 });
+  runIntervals(r, 3);
+  assert.equal(rbox.style.left, '300px', '有记住的位置时，球怎么动都不跟随');
+  assert.equal(rbox.style.top, '200px', '有记住的位置时，球怎么动都不跟随');
+});
+
+test('V1.0.4 面板拖拽回归：拖 bar 后位置照旧、单击位置不动（与 1.0.3 相同）', () => {
+  const h = boot(SRC, { noWindow: true });
+  const wrap = h.doc.getElementById('ro-dojo-standalone');
+  const bar = wrap.children[0];
+  assert.equal(bar.className, 'bar', '面板第一层必须是标题栏（拖拽把手）');
+  setRect(wrap, { left: 14, top: 500, width: 308, height: 280 });
+
+  // 单击不移动：left/top 必须原样（1.0.3 也只是把 right 置 auto，面板位置不动）
+  const before = inlinePos(wrap);
+  bar.dispatch('mousedown', mouseEv(100, 510, bar));
+  h.doc.dispatch('mouseup', {});
+  assert.equal(inlinePos(wrap).left, before.left, '单击后 left 必须原样');
+  assert.equal(inlinePos(wrap).top, before.top, '单击后 top 必须原样');
+
+  // 拖走：位置按位移更新，right/bottom 让位；面板位置不落盘（与 1.0.3 一致，只记启动按钮）
+  bar.dispatch('mousedown', mouseEv(100, 510, bar));
+  h.doc.dispatch('mousemove', mouseEv(160, 460, bar));
+  h.doc.dispatch('mouseup', {});
+  assert.equal(wrap.style.left, '74px', '拖 bar 后 left 必须等于 14 + 60');
+  assert.equal(wrap.style.top, '450px', '拖 bar 后 top 必须等于 500 - 50');
+  assert.equal(wrap.style.right, 'auto', '拖 bar 后 right 必须让位');
+  assert.equal(wrap.style.bottom, 'auto', '拖 bar 后 bottom 必须让位');
+  assert.equal(h.storage.has(UI_V2), false, '面板位置不落盘（只有启动按钮记位置）');
+  h.doc.dispatch('mouseup', {});
+  assert.equal(wrap.style.left, '74px', '再松开一次不得把面板位置还原');
+  assert.equal(wrap.style.display, 'none', '拖 bar 不得把面板变成可见');
 });
